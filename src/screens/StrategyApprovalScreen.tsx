@@ -6,7 +6,7 @@ import { useAgentStore } from '../store/agentStore';
 import { Strategy, CreativeAsset } from '../types/agent';
 import { AutonomousService } from '../services/autonomous';
 
-type Props = NativeStackScreenProps<RootStackParamList, 'StrategyApprovalScreen'>;
+type Props = NativeStackScreenProps<RootStackParamList, 'StrategyApproval'>;
 
 const { width } = Dimensions.get('window');
 
