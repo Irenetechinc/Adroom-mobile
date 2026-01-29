@@ -1,17 +1,31 @@
 const { getDefaultConfig } = require("expo/metro-config");
+const path = require("path");
 
 const config = getDefaultConfig(__dirname);
 
-// NativeWind v4 causes "Received protocol 'c:'" error on Windows when loaded via ESM.
-// To avoid this locally while ensuring it works in the cloud (EAS), we conditionally load it.
-const isEAS = process.env.EAS_BUILD === 'true';
+let withNativeWind;
 
-if (isEAS) {
-  // Cloud Build (Linux/Mac): Use NativeWind
-  const { withNativeWind } = require("nativewind/metro");
-  module.exports = withNativeWind(config, { input: "./global.css" });
+try {
+  // NativeWind v4 can cause issues on Windows with absolute paths ("protocol c:" error).
+  // We strictly avoid loading it locally on Windows unless we are sure it's safe.
+  // We ALWAYS load it on EAS Build (Linux/Mac).
+  const isWindows = process.platform === 'win32';
+  const isEAS = process.env.EAS_BUILD === 'true';
+
+  if (!isWindows || isEAS) {
+    console.log('🔌 Loading NativeWind configuration...');
+    withNativeWind = require("nativewind/metro").withNativeWind;
+  } else {
+    console.log('⚠️  Windows detected: Skipping NativeWind to prevent build crash.');
+  }
+} catch (error) {
+  console.warn('⚠️  Failed to load NativeWind:', error.message);
+}
+
+if (withNativeWind) {
+  // Use absolute path for input to be safe
+  const inputPath = path.join(__dirname, "global.css");
+  module.exports = withNativeWind(config, { input: inputPath });
 } else {
-  // Local Build (Windows): Skip NativeWind to prevent crash
-  // NOTE: Styles might not regenerate locally on Windows, but this allows 'eas build' to run.
   module.exports = config;
 }
