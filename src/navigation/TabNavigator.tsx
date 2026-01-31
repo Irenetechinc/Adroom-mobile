@@ -4,28 +4,51 @@ import { MainTabParamList } from '../types';
 import DashboardScreen from '../screens/DashboardScreen';
 import CampaignListScreen from '../screens/CampaignListScreen';
 import SettingsScreen from '../screens/SettingsScreen';
-import { Text } from 'react-native';
+import AgentChatScreen from '../screens/AgentChatScreen';
+import { Text, View } from 'react-native';
 
 const Tab = createBottomTabNavigator<MainTabParamList>();
+
+// Simple futuristic icon component placeholder
+const TabIcon = ({ name, focused, color }: { name: string; focused: boolean; color: string }) => (
+  <View className={`items-center justify-center ${focused ? 'bg-adroom-neon/20 rounded-full p-2' : ''}`}>
+    <Text style={{ color, fontSize: 20, fontWeight: focused ? 'bold' : 'normal' }}>
+      {name}
+    </Text>
+  </View>
+);
 
 export default function TabNavigator() {
   return (
     <Tab.Navigator
       screenOptions={({ route }) => ({
         headerShown: false,
-        tabBarActiveTintColor: '#1E40AF',
-        tabBarInactiveTintColor: 'gray',
+        tabBarStyle: {
+          backgroundColor: '#0B0F19',
+          borderTopColor: '#1E293B',
+          height: 60,
+          paddingBottom: 8,
+          paddingTop: 8,
+        },
+        tabBarActiveTintColor: '#00F0FF',
+        tabBarInactiveTintColor: '#94A3B8',
         tabBarIcon: ({ focused, color, size }) => {
-          let iconName = '•'; 
+          let iconSymbol = '•'; 
           
-          if (route.name === 'Dashboard') iconName = 'D';
-          if (route.name === 'CampaignList') iconName = 'C';
-          if (route.name === 'Settings') iconName = 'S';
+          if (route.name === 'AgentChat') iconSymbol = '◈'; // Agent
+          if (route.name === 'Dashboard') iconSymbol = '⊞'; // Dash
+          if (route.name === 'CampaignList') iconSymbol = '≣'; // List
+          if (route.name === 'Settings') iconSymbol = '⚙'; // Settings
 
-          return <Text style={{ color, fontSize: 18, fontWeight: focused ? 'bold' : 'normal' }}>{iconName}</Text>;
+          return <TabIcon name={iconSymbol} focused={focused} color={color} />;
         },
       })}
     >
+      <Tab.Screen 
+        name="AgentChat" 
+        component={AgentChatScreen} 
+        options={{ title: 'Agent' }}
+      />
       <Tab.Screen name="Dashboard" component={DashboardScreen} />
       <Tab.Screen 
         name="CampaignList" 
