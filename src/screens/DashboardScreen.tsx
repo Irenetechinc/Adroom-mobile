@@ -76,7 +76,7 @@ export default function DashboardScreen() {
           Connect your Facebook account to start autonomous marketing.
         </Text>
         <TouchableOpacity 
-          onPress={() => navigation.navigate('FacebookConfig')}
+          onPress={() => navigation.navigate('AgentChat', { fromStrategyApproval: true })}
           className="bg-adroom-neon px-6 py-3 rounded-lg"
         >
           <Text className="text-adroom-dark font-bold uppercase">Connect Facebook</Text>
