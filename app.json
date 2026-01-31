@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "AdRoom Mobile",
+    "name": "adroom",
     "slug": "adroom-mobile",
     "scheme": "adroom",
     "version": "1.0.0",
@@ -11,7 +11,7 @@
     "splash": {
       "image": "./assets/splash-icon.png",
       "resizeMode": "contain",
-      "backgroundColor": "#ffffff"
+      "backgroundColor": "#0B0F19"
     },
     "ios": {
       "supportsTablet": true,
@@ -30,7 +30,8 @@
       "favicon": "./assets/favicon.png"
     },
     "plugins": [
-      "expo-secure-store"
+      "expo-secure-store",
+      "expo-web-browser"
     ],
     "extra": {
       "eas": {

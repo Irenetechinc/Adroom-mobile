@@ -1,17 +1,14 @@
-export interface CreativeAsset {
-  id: string;
-  type: 'IMAGE' | 'VIDEO';
-  url: string; // Generated URL or Local Path
-  prompt: string; // The prompt used to generate it
-  purpose: 'AWARENESS' | 'CONVERSION' | 'RETARGETING';
-}
+import { CreativeAsset, Strategy } from './agent';
 
 export interface ChatMessage {
   id: string;
   text: string;
   sender: 'user' | 'agent';
   timestamp: number;
-  imageUri?: string; // Support for user uploading an image in chat
+  imageUri?: string;
+  // Custom UI Types for Interactive Elements
+  uiType?: 'standard' | 'facebook_connect' | 'page_selection' | 'ad_account_selection' | 'completion_card';
+  uiData?: any; // Data for the custom UI (e.g. list of pages)
 }
 
 export interface ProductDetails {
@@ -20,26 +17,9 @@ export interface ProductDetails {
   price?: string;
   targetAudience?: string;
   category?: string;
-  baseImageUri?: string; // The user's uploaded product image
+  baseImageUri?: string;
 }
 
-export interface Strategy {
-  id: string;
-  type: 'FREE' | 'PAID';
-  title: string;
-  description: string;
-  
-  // Enhanced Strategy Details
-  lifespanWeeks: number;
-  targetAudience: string;
-  brandVoice: string; // e.g., "Professional", "Playful", "Urgent"
-  keyMessage: string;
-  
-  // Materials needed/generated
-  assets: CreativeAsset[];
-  
-  platforms: string[];
-  estimatedReach: string;
-  cost: string;
-  actions: string[]; // List of actions the bot will take
-}
+export type ConnectionState = 'IDLE' | 'CONNECTING_FACEBOOK' | 'SELECTING_PAGE' | 'SELECTING_AD_ACCOUNT' | 'COMPLETED';
+
+export { Strategy, CreativeAsset };

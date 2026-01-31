@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { View, Text, TextInput, TouchableOpacity, Alert, ActivityIndicator, KeyboardAvoidingView, Platform } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
+import Animated, { FadeInDown, FadeInUp } from 'react-native-reanimated';
 import { RootStackParamList } from '../types';
 import { supabase } from '../services/supabase';
 
@@ -32,58 +33,69 @@ export default function LoginScreen({ navigation }: Props) {
   return (
     <KeyboardAvoidingView 
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      className="flex-1 bg-white justify-center px-6"
+      className="flex-1 bg-adroom-dark justify-center px-6"
     >
-      <View className="items-center mb-10">
-        <Text className="text-3xl font-bold text-blue-800">AdRoom</Text>
-        <Text className="text-gray-500 mt-2">Sign in to manage your campaigns</Text>
-      </View>
+      <Animated.View 
+        entering={FadeInUp.duration(1000).springify()} 
+        className="items-center mb-12"
+      >
+        <Text className="text-5xl font-extrabold text-transparent bg-clip-text text-white" style={{ textShadowColor: '#00F0FF', textShadowOffset: { width: 0, height: 0 }, textShadowRadius: 20 }}>
+          ADROOM
+        </Text>
+        <Text className="text-adroom-text-muted mt-3 text-lg tracking-widest uppercase">
+          Autonomous Marketing
+        </Text>
+      </Animated.View>
 
-      <View>
-        <View className="mb-4">
-          <Text className="text-gray-700 mb-2 font-medium">Email</Text>
-          <TextInput
-            className="w-full bg-gray-50 border border-gray-200 rounded-lg p-4 text-gray-800"
-            placeholder="Enter your email"
-            value={email}
-            onChangeText={setEmail}
-            autoCapitalize="none"
-            keyboardType="email-address"
-          />
-        </View>
+      <Animated.View entering={FadeInDown.delay(200).duration(1000).springify()}>
+        <View className="mb-6 space-y-4">
+          <View>
+            <Text className="text-adroom-neon mb-2 font-bold uppercase text-xs tracking-wider">Email Interface</Text>
+            <TextInput
+              className="w-full bg-adroom-card border border-adroom-neon/30 focus:border-adroom-neon rounded-xl p-4 text-adroom-text placeholder:text-gray-600"
+              placeholder="Enter your email"
+              placeholderTextColor="#4B5563"
+              value={email}
+              onChangeText={setEmail}
+              autoCapitalize="none"
+              keyboardType="email-address"
+            />
+          </View>
 
-        <View className="mb-6">
-          <Text className="text-gray-700 mb-2 font-medium">Password</Text>
-          <TextInput
-            className="w-full bg-gray-50 border border-gray-200 rounded-lg p-4 text-gray-800"
-            placeholder="Enter your password"
-            value={password}
-            onChangeText={setPassword}
-            secureTextEntry
-          />
+          <View>
+            <Text className="text-adroom-neon mb-2 font-bold uppercase text-xs tracking-wider">Passcode</Text>
+            <TextInput
+              className="w-full bg-adroom-card border border-adroom-neon/30 focus:border-adroom-neon rounded-xl p-4 text-adroom-text placeholder:text-gray-600"
+              placeholder="Enter your password"
+              placeholderTextColor="#4B5563"
+              value={password}
+              onChangeText={setPassword}
+              secureTextEntry
+            />
+          </View>
         </View>
 
         <TouchableOpacity 
           onPress={handleLogin}
           disabled={loading}
-          className={`w-full bg-blue-800 p-4 rounded-lg items-center ${loading ? 'opacity-70' : ''}`}
+          className={`w-full bg-adroom-neon p-4 rounded-xl items-center shadow-lg shadow-adroom-neon/50 ${loading ? 'opacity-70' : ''}`}
         >
           {loading ? (
-            <ActivityIndicator color="white" />
+            <ActivityIndicator color="#0B0F19" />
           ) : (
-            <Text className="text-white font-bold text-lg">Sign In</Text>
+            <Text className="text-adroom-dark font-bold text-lg uppercase tracking-wider">Initialize Session</Text>
           )}
         </TouchableOpacity>
 
         <TouchableOpacity 
           onPress={() => navigation.navigate('Signup')}
-          className="items-center mt-6"
+          className="items-center mt-8"
         >
-          <Text className="text-gray-600">
-            Don't have an account? <Text className="text-blue-800 font-bold">Sign Up</Text>
+          <Text className="text-adroom-text-muted">
+            New User? <Text className="text-adroom-neon font-bold">Create Identity</Text>
           </Text>
         </TouchableOpacity>
-      </View>
+      </Animated.View>
     </KeyboardAvoidingView>
   );
 }

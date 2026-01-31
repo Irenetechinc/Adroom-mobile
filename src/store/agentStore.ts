@@ -1,7 +1,8 @@
 import { create } from 'zustand';
-import { ChatMessage, ProductDetails, Strategy, CreativeAsset } from '../types/agent';
+import { ChatMessage, ProductDetails, Strategy, CreativeAsset, ConnectionState } from '../types/agent';
 import { CreativeService } from '../services/creative';
 import { supabase } from '../services/supabase';
+import { FacebookService, FacebookPage, FacebookAdAccount } from '../services/facebook';
 
 // Helper to access OpenAI for chat analysis
 const analyzeChatIntent = async (messages: ChatMessage[], productDetails: ProductDetails): Promise<Partial<ProductDetails>> => {
@@ -47,8 +48,16 @@ interface AgentState {
   productDetails: ProductDetails;
   generatedStrategies: Strategy[];
   activeStrategy: Strategy | null;
+  connectionState: ConnectionState;
   
-  addMessage: (text: string, sender: 'user' | 'agent', imageUri?: string) => void;
+  // Facebook Flow Data
+  fbAccessToken: string | null;
+  fetchedPages: FacebookPage[];
+  fetchedAdAccounts: FacebookAdAccount[];
+  selectedPage: FacebookPage | null;
+  selectedAdAccount: FacebookAdAccount | null;
+
+  addMessage: (text: string, sender: 'user' | 'agent', imageUri?: string, uiType?: ChatMessage['uiType'], uiData?: any) => void;
   setTyping: (typing: boolean) => void;
   updateProductDetails: (details: Partial<ProductDetails>) => void;
   generateStrategies: () => Promise<void>;
@@ -57,6 +66,12 @@ interface AgentState {
   updateActiveStrategy: (strategy: Strategy) => Promise<void>;
   loadActiveStrategy: () => Promise<void>; // Load from DB on app start
   resetAgent: () => void;
+  
+  // Facebook Flow Actions
+  initiateFacebookConnection: () => void;
+  handleFacebookLogin: () => Promise<void>;
+  handlePageSelection: (page: FacebookPage) => void;
+  handleAdAccountSelection: (account: FacebookAdAccount) => Promise<void>;
 }
 
 export const useAgentStore = create<AgentState>((set, get) => ({
@@ -68,8 +83,14 @@ export const useAgentStore = create<AgentState>((set, get) => ({
   },
   generatedStrategies: [],
   activeStrategy: null,
+  connectionState: 'IDLE',
+  fbAccessToken: null,
+  fetchedPages: [],
+  fetchedAdAccounts: [],
+  selectedPage: null,
+  selectedAdAccount: null,
 
-  addMessage: (text, sender, imageUri) => {
+  addMessage: (text, sender, imageUri, uiType, uiData) => {
     set((state) => ({
       messages: [
         ...state.messages,
@@ -79,6 +100,8 @@ export const useAgentStore = create<AgentState>((set, get) => ({
           sender,
           timestamp: Date.now(),
           imageUri,
+          uiType,
+          uiData
         },
       ],
     }));
@@ -271,4 +294,105 @@ export const useAgentStore = create<AgentState>((set, get) => ({
     productDetails: { name: '', description: '' },
     generatedStrategies: []
   }),
+
+  // --- Facebook Flow Actions ---
+
+  initiateFacebookConnection: () => {
+    const { addMessage } = get();
+    set({ connectionState: 'CONNECTING_FACEBOOK' });
+    addMessage(
+      "To execute this strategy, I need permission to manage your Facebook Ads. Please connect your account below.",
+      'agent',
+      undefined,
+      'facebook_connect'
+    );
+  },
+
+  handleFacebookLogin: async () => {
+    const { addMessage } = get();
+    set({ isTyping: true });
+    
+    try {
+      const accessToken = await FacebookService.login();
+      if (accessToken) {
+        set({ fbAccessToken: accessToken });
+        
+        // Fetch Pages immediately
+        const pages = await FacebookService.getPages(accessToken);
+        set({ fetchedPages: pages, connectionState: 'SELECTING_PAGE', isTyping: false });
+        
+        addMessage(
+          "Connection successful! Which Facebook Page should we use for this campaign?",
+          'agent',
+          undefined,
+          'page_selection',
+          { pages }
+        );
+      } else {
+        set({ isTyping: false });
+        addMessage("Connection cancelled. Please try again to proceed.", 'agent');
+      }
+    } catch (error) {
+      console.error(error);
+      set({ isTyping: false });
+      addMessage("An error occurred during connection. Please try again.", 'agent');
+    }
+  },
+
+  handlePageSelection: async (page: FacebookPage) => {
+    const { addMessage, fbAccessToken } = get();
+    set({ selectedPage: page, isTyping: true });
+    
+    addMessage(`Selected page: ${page.name}`, 'user');
+
+    if (!fbAccessToken) return;
+
+    try {
+      const adAccounts = await FacebookService.getAdAccounts(fbAccessToken);
+      set({ fetchedAdAccounts: adAccounts, connectionState: 'SELECTING_AD_ACCOUNT', isTyping: false });
+      
+      addMessage(
+        "Great. Now, please select the Ad Account to use for billing and management.",
+        'agent',
+        undefined,
+        'ad_account_selection',
+        { adAccounts }
+      );
+    } catch (error) {
+      set({ isTyping: false });
+      addMessage("Failed to fetch ad accounts. Please ensure your permissions are correct.", 'agent');
+    }
+  },
+
+  handleAdAccountSelection: async (account: FacebookAdAccount) => {
+    const { addMessage, selectedPage, fbAccessToken } = get();
+    set({ selectedAdAccount: account, isTyping: true });
+    
+    addMessage(`Selected Ad Account: ${account.name} (${account.account_id})`, 'user');
+
+    if (selectedPage && fbAccessToken) {
+      try {
+        await FacebookService.saveConfig(selectedPage.id, selectedPage.name, account.account_id, fbAccessToken);
+        set({ connectionState: 'COMPLETED', isTyping: false });
+        
+        addMessage(
+          "Configuration complete! I have everything I need.",
+          'agent'
+        );
+        addMessage(
+            "I am now launching your campaign. You can monitor its performance in the Dashboard.",
+            'agent',
+            undefined,
+            'completion_card'
+        );
+
+        // Here we would trigger the actual AutonomousService.executeStrategy() 
+        // effectively finalizing the "Strategy Approval" process fully within chat
+      } catch (error) {
+        set({ isTyping: false });
+        addMessage("Failed to save configuration. Please try again.", 'agent');
+      }
+    }
+  }
+
 }));

@@ -46,23 +46,23 @@ export default function DashboardScreen() {
   }, [facebookConfig]);
 
   const MetricCard = ({ title, value, subtext }: { title: string, value: string, subtext?: string }) => (
-    <View className="bg-white p-4 rounded-xl border border-gray-100 flex-1 m-1 shadow-sm">
-      <Text className="text-gray-500 text-xs uppercase font-bold mb-1">{title}</Text>
-      <Text className="text-2xl font-bold text-gray-900">{value}</Text>
-      {subtext && <Text className="text-gray-400 text-xs mt-1">{subtext}</Text>}
+    <View className="bg-adroom-card p-4 rounded-xl border border-adroom-neon/20 flex-1 m-1 shadow-sm">
+      <Text className="text-adroom-neon text-xs uppercase font-bold mb-1">{title}</Text>
+      <Text className="text-2xl font-bold text-white">{value}</Text>
+      {subtext && <Text className="text-adroom-text-muted text-xs mt-1">{subtext}</Text>}
     </View>
   );
 
   const ActionItem = ({ action }: { action: OptimizationAction }) => (
-    <View className="flex-row items-center py-3 border-b border-gray-100">
-      <View className="w-2 h-2 rounded-full bg-blue-500 mr-3" />
+    <View className="flex-row items-center py-3 border-b border-adroom-neon/10">
+      <View className="w-2 h-2 rounded-full bg-adroom-purple mr-3" />
       <View className="flex-1">
-        <Text className="text-gray-800 text-sm font-medium">
+        <Text className="text-adroom-text text-sm font-medium">
           {action.type.replace('_', ' ')}
         </Text>
-        <Text className="text-gray-500 text-xs">{action.reason}</Text>
+        <Text className="text-adroom-text-muted text-xs">{action.reason}</Text>
       </View>
-      <Text className="text-gray-400 text-xs">
+      <Text className="text-adroom-text-muted text-xs">
         {new Date(action.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
       </Text>
     </View>
@@ -70,16 +70,16 @@ export default function DashboardScreen() {
 
   if (!facebookConfig) {
     return (
-      <View className="flex-1 items-center justify-center bg-white p-6">
-        <Text className="text-xl font-bold text-gray-900 mb-2">Welcome to AdRoom</Text>
-        <Text className="text-gray-500 text-center mb-6">
+      <View className="flex-1 items-center justify-center bg-adroom-dark p-6">
+        <Text className="text-xl font-bold text-white mb-2 uppercase tracking-wider">Welcome to AdRoom</Text>
+        <Text className="text-adroom-text-muted text-center mb-6">
           Connect your Facebook account to start autonomous marketing.
         </Text>
         <TouchableOpacity 
           onPress={() => navigation.navigate('FacebookConfig')}
-          className="bg-blue-800 px-6 py-3 rounded-lg"
+          className="bg-adroom-neon px-6 py-3 rounded-lg"
         >
-          <Text className="text-white font-bold">Connect Facebook</Text>
+          <Text className="text-adroom-dark font-bold uppercase">Connect Facebook</Text>
         </TouchableOpacity>
       </View>
     );
@@ -87,25 +87,25 @@ export default function DashboardScreen() {
 
   return (
     <ScrollView 
-      className="flex-1 bg-gray-50"
+      className="flex-1 bg-adroom-dark"
       refreshControl={
-        <RefreshControl refreshing={loading} onRefresh={fetchData} tintColor="#1E40AF" />
+        <RefreshControl refreshing={loading} onRefresh={fetchData} tintColor="#00F0FF" />
       }
     >
       {/* Header / Status */}
-      <View className="bg-blue-800 p-6 pt-12 pb-8 rounded-b-3xl shadow-md">
+      <View className="bg-adroom-card p-6 pt-12 pb-8 rounded-b-3xl shadow-lg shadow-adroom-neon/10 border-b border-adroom-neon/20">
         <View className="flex-row justify-between items-center mb-4">
-          <Text className="text-white text-2xl font-bold">AdRoom AI</Text>
-          <View className="bg-blue-700 px-3 py-1 rounded-full border border-blue-600">
-            <Text className="text-blue-100 text-xs font-bold uppercase tracking-wider">
+          <Text className="text-white text-2xl font-bold tracking-widest">AdRoom <Text className="text-adroom-neon">AI</Text></Text>
+          <View className="bg-adroom-neon/10 px-3 py-1 rounded-full border border-adroom-neon/50">
+            <Text className="text-adroom-neon text-xs font-bold uppercase tracking-wider">
               Autonomous
             </Text>
           </View>
         </View>
         
         <View className="flex-row items-center">
-          <View className={`w-3 h-3 rounded-full mr-2 ${loading ? 'bg-yellow-400' : 'bg-green-400'}`} />
-          <Text className="text-blue-100 font-medium">{botStatus}</Text>
+          <View className={`w-3 h-3 rounded-full mr-2 ${loading ? 'bg-yellow-400' : 'bg-green-400'} animate-pulse`} />
+          <Text className="text-adroom-text font-medium">{botStatus}</Text>
         </View>
       </View>
 
@@ -114,10 +114,10 @@ export default function DashboardScreen() {
         <View className="flex-row mb-4">
           <TouchableOpacity 
             onPress={() => navigation.navigate('AgentChat')}
-            className="flex-1 bg-white p-4 rounded-xl shadow-sm mr-2 flex-row items-center justify-center border border-gray-100"
+            className="flex-1 bg-adroom-card p-4 rounded-xl shadow-sm mr-2 flex-row items-center justify-center border border-adroom-neon/50"
           >
-            <Text className="text-blue-800 font-bold mr-2 text-lg">+</Text>
-            <Text className="text-gray-800 font-bold">New Campaign</Text>
+            <Text className="text-adroom-neon font-bold mr-2 text-lg">+</Text>
+            <Text className="text-white font-bold uppercase tracking-wide">New Campaign</Text>
           </TouchableOpacity>
         </View>
 
@@ -145,14 +145,14 @@ export default function DashboardScreen() {
         </View>
 
         {/* Recent Actions / Optimization Log */}
-        <View className="bg-white p-5 rounded-xl shadow-sm border border-gray-100 mb-6">
-          <Text className="text-gray-900 font-bold text-lg mb-4">Autonomous Actions</Text>
+        <View className="bg-adroom-card p-5 rounded-xl shadow-sm border border-adroom-neon/10 mb-6">
+          <Text className="text-white font-bold text-lg mb-4 uppercase tracking-wide">Autonomous Actions</Text>
           {actions.length > 0 ? (
             actions.map(action => <ActionItem key={action.id} action={action} />)
           ) : (
             <View className="py-4 items-center">
-              <Text className="text-gray-400 text-sm">No optimization actions taken yet.</Text>
-              <Text className="text-gray-300 text-xs mt-1">AI is monitoring performance...</Text>
+              <Text className="text-adroom-text-muted text-sm">No optimization actions taken yet.</Text>
+              <Text className="text-adroom-text-muted/50 text-xs mt-1">AI is monitoring performance...</Text>
             </View>
           )}
         </View>
