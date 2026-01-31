@@ -31,16 +31,24 @@ export const FacebookService = {
    */
   async login(): Promise<string | null> {
     try {
+      // Use useAuthRequest hook pattern or manual browser flow if startAsync is deprecated
+      // However, for Expo 50+, startAsync is still available in expo-auth-session but marked deprecated in some contexts
+      // We will suppress the TS error for now or use the WebBrowser directly if needed.
+      // Correct modern approach: useAuthRequest + makeRedirectUri
+      
       const redirectUri = AuthSession.makeRedirectUri({
         scheme: 'adroom'
       });
 
-      const response = await AuthSession.startAsync({
-        authUrl: `https://www.facebook.com/v18.0/dialog/oauth?client_id=${FB_APP_ID}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=token&scope=ads_management,ads_read,read_insights,pages_show_list,pages_read_engagement,pages_manage_posts,pages_manage_ads,pages_messaging,public_profile`,
-      });
+      // Using WebBrowser directly as a fallback for custom OAuth flows
+      const authUrl = `https://www.facebook.com/v18.0/dialog/oauth?client_id=${FB_APP_ID}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=token&scope=ads_management,ads_read,read_insights,pages_show_list,pages_read_engagement,pages_manage_posts,pages_manage_ads,pages_messaging,public_profile`;
+      
+      const result = await WebBrowser.openAuthSessionAsync(authUrl, redirectUri);
 
-      if (response.type === 'success') {
-        return response.params.access_token;
+      if (result.type === 'success' && result.url) {
+        // Parse token from URL fragment
+        const match = result.url.match(/access_token=([^&]+)/);
+        return match ? match[1] : null;
       }
       
       return null;

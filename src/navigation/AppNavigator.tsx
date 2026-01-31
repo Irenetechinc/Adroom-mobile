@@ -8,7 +8,7 @@ import { useAuthStore } from '../store/authStore';
 import LoginScreen from '../screens/LoginScreen';
 import SignupScreen from '../screens/SignupScreen';
 import TabNavigator from './TabNavigator';
-import FacebookConfigScreen from '../screens/FacebookConfigScreen';
+// FacebookConfigScreen removed in favor of AgentChat integration
 // AgentChatScreen is now in TabNavigator
 import StrategyApprovalScreen from '../screens/StrategyApprovalScreen';
 import { AuthLoadingSkeleton } from '../components/Skeleton';
