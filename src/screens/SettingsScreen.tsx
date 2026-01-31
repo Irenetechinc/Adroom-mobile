@@ -29,7 +29,7 @@ export default function SettingsScreen() {
       <View className="mb-6">
         <Text className="text-lg font-bold text-gray-800 mb-3">Integrations</Text>
         <TouchableOpacity 
-          onPress={() => navigation.navigate('FacebookConfig')}
+          onPress={() => navigation.navigate('AgentChat', { fromStrategyApproval: true })}
           className="bg-blue-50 p-4 rounded-lg flex-row justify-between items-center border border-blue-100"
         >
           <View>

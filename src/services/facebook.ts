@@ -83,6 +83,16 @@ export const FacebookService = {
   },
 
   /**
+   * Validate Credentials (Token)
+   */
+  async validateCredentials(input: any): Promise<boolean> {
+      // In a real implementation, we would call the debug_token endpoint
+      // For now, we assume if we have a token, it's valid enough to try saving
+      if (!input.access_token) return false;
+      return true;
+  },
+
+  /**
    * Save the complete configuration
    */
   async saveConfig(

@@ -37,7 +37,7 @@ export default function CampaignListScreen() {
       <View className="flex-row justify-between items-center mb-6 mt-2">
         <Text className="text-2xl font-bold text-blue-800">Campaigns</Text>
         <TouchableOpacity 
-          onPress={() => navigation.navigate('AgentChat')}
+          onPress={() => navigation.navigate('AgentChat', { fromStrategyApproval: false })}
           className="bg-blue-800 px-4 py-2 rounded-lg"
         >
           <Text className="text-white font-medium">+ New Campaign</Text>

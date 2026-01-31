@@ -108,7 +108,7 @@ export default function StrategyApprovalScreen({ navigation }: Props) {
         {/* Action Plan */}
         <View className="bg-adroom-card rounded-xl p-5 mb-4 shadow-sm border border-adroom-neon/10">
           <Text className="text-lg font-bold text-adroom-neon mb-3 uppercase tracking-wider">Execution Plan</Text>
-          {activeStrategy.actions.map((action, idx) => (
+          {activeStrategy.actions.map((action: string, idx: number) => (
             <View key={idx} className="flex-row items-center mb-2">
               <View className="w-6 h-6 rounded-full bg-green-500/20 items-center justify-center mr-3 border border-green-500/50">
                 <Text className="text-green-400 text-xs">✓</Text>

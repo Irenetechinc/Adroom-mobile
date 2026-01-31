@@ -1,4 +1,26 @@
-import { CreativeAsset, Strategy } from './agent';
+export interface CreativeAsset {
+  id: string;
+  type: 'IMAGE' | 'VIDEO' | 'TEXT';
+  url: string;
+  prompt: string;
+  purpose: 'AWARENESS' | 'CONVERSION' | 'RETARGETING';
+}
+
+export interface Strategy {
+  id: string;
+  type: 'FREE' | 'PAID';
+  title: string;
+  description: string;
+  targetAudience: string;
+  brandVoice: string;
+  lifespanWeeks: number;
+  keyMessage: string;
+  platforms: string[];
+  estimatedReach: string;
+  cost: string;
+  assets: CreativeAsset[];
+  actions: string[];
+}
 
 export interface ChatMessage {
   id: string;
@@ -21,5 +43,3 @@ export interface ProductDetails {
 }
 
 export type ConnectionState = 'IDLE' | 'CONNECTING_FACEBOOK' | 'SELECTING_PAGE' | 'SELECTING_AD_ACCOUNT' | 'COMPLETED';
-
-export { Strategy, CreativeAsset };
