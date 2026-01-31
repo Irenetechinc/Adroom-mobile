@@ -30,11 +30,14 @@ export const useSettingsStore = create<SettingsState>((set) => ({
   saveConfig: async (input: FacebookConfigInput) => {
     set({ isLoading: true, error: null });
     try {
-      // 1. Validate with Facebook first
       await FacebookService.validateCredentials(input);
-      
       // 2. Save to Supabase
-      const config = await FacebookService.saveConfig(input);
+      const config = await FacebookService.saveConfig(
+        input.page_id,
+        input.page_name || '',
+        input.ad_account_id,
+        input.access_token
+      );
       
       set({ facebookConfig: config, isLoading: false });
     } catch (error: any) {

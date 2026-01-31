@@ -25,9 +25,8 @@ export const OptimizationService = {
     const config = await FacebookService.getConfig();
 
     // 1. Run Engagement Service (Comments & Replies)
+    // Note: Engagement is now handled by the backend webhook, so we don't need to poll it here.
     if (config) {
-      await EngagementService.monitorAndReplyToComments(config.page_id);
-      
       // 2. Run Daily Scheduler (Organic Growth)
       // Passing a simple context derived from the first active campaign or generic
       // AND ensuring Strategy Alignment (logic inside SchedulerService)
