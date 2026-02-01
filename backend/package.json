@@ -1,6 +1,7 @@
 {
   "name": "adroom-backend",
   "version": "1.0.0",
+  "type": "module",
   "description": "Real-time backend for AdRoom automation and webhooks",
   "main": "dist/server.js",
   "scripts": {
