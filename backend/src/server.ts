@@ -1,7 +1,7 @@
 import express from 'express';
 import bodyParser from 'body-parser';
 import dotenv from 'dotenv';
-import { EngagementService } from './services/engagement';
+import { EngagementService } from './services/engagement.js'; // Note the .js extension for ESM
 
 dotenv.config();
 

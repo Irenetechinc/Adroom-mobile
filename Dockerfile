@@ -1,5 +1,5 @@
-# Use Node.js LTS
-FROM node:18-alpine
+# Use Node.js 20 LTS
+FROM node:20-alpine
 
 # Set working directory to backend
 WORKDIR /app
