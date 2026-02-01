@@ -1,7 +1,6 @@
 import { CampaignService } from './campaign';
 import { AnalyticsService } from './analytics';
 import { AdSetService } from './adSet';
-import { EngagementService } from './engagement';
 import { SchedulerService } from './scheduler';
 import { FacebookService } from './facebook';
 import { OptimizationAction } from '../types/analytics';

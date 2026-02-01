@@ -113,7 +113,7 @@ export default function DashboardScreen() {
         {/* Quick Actions */}
         <View className="flex-row mb-4">
           <TouchableOpacity 
-            onPress={() => navigation.navigate('AgentChat')}
+            onPress={() => navigation.navigate('AgentChat', { fromStrategyApproval: false })}
             className="flex-1 bg-adroom-card p-4 rounded-xl shadow-sm mr-2 flex-row items-center justify-center border border-adroom-neon/50"
           >
             <Text className="text-adroom-neon font-bold mr-2 text-lg">+</Text>
