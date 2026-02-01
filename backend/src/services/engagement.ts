@@ -11,9 +11,18 @@ const FB_GRAPH_URL = 'https://graph.facebook.com/v18.0';
 
 if (!SUPABASE_URL || !SUPABASE_SERVICE_KEY) {
   console.error('Missing Supabase credentials in EngagementService.');
+  console.error('SUPABASE_URL:', SUPABASE_URL ? 'Set' : 'Missing');
+  console.error('SUPABASE_SERVICE_KEY:', SUPABASE_SERVICE_KEY ? 'Set' : 'Missing');
 }
 
-const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
+// Lazy initialization to prevent crash on import if variables are missing
+// but still allows the server to start (even if this service won't work)
+const getSupabase = () => {
+  if (!SUPABASE_URL || !SUPABASE_SERVICE_KEY) {
+    throw new Error('Supabase credentials missing. Check your environment variables.');
+  }
+  return createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
+};
 
 export const EngagementService = {
 
@@ -22,6 +31,7 @@ export const EngagementService = {
    */
   async handleWebhookEvent(event: any) {
     if (event.object === 'page') {
+      const supabase = getSupabase();
       for (const entry of event.entry) {
         const pageId = entry.id;
         
