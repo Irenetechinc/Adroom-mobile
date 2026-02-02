@@ -27,7 +27,7 @@ export default function DashboardScreen() {
       const data = await AnalyticsService.getAccountInsights();
       setMetrics(data);
 
-      // 2. Run Optimization Loop (Simulated for dashboard view)
+      // 2. Run Optimization Loop
       setBotStatus('Analyzing Performance...');
       const optActions = await OptimizationService.runOptimizationLoop();
       setActions(optActions);

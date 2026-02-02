@@ -10,10 +10,11 @@ const OPENAI_API_KEY = process.env.OPENAI_API_KEY || '';
 const FB_GRAPH_URL = 'https://graph.facebook.com/v18.0';
 
 if (!SUPABASE_URL || !SUPABASE_SERVICE_KEY) {
-  console.error('Missing Supabase credentials in EngagementService.');
-  console.error('SUPABASE_URL:', SUPABASE_URL ? 'Set' : 'Missing');
-  console.error('SUPABASE_SERVICE_KEY:', SUPABASE_SERVICE_KEY ? 'Set' : 'Missing');
-}
+    console.warn('Warning: Supabase credentials missing. Engagement features will be disabled.');
+    // Do not log "Missing" errors here to avoid confusion if user is just setting up
+    // console.error('SUPABASE_URL:', SUPABASE_URL ? 'Set' : 'Missing');
+    // console.error('SUPABASE_SERVICE_KEY:', SUPABASE_SERVICE_KEY ? 'Set' : 'Missing');
+  }
 
 // Lazy initialization to prevent crash on import if variables are missing
 // but still allows the server to start (even if this service won't work)
