@@ -112,10 +112,7 @@ export const CreativeService = {
 
     } catch (error) {
       console.error('Copy generation error:', error);
-      return {
-        headline: `${productName} - Check it out`,
-        body: `Discover the features of ${productName} now. Available for a limited time.`
-      };
+      throw error;
     }
   }
 };
