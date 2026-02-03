@@ -5,6 +5,7 @@ import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../types';
 import { AnalyticsService } from '../services/analytics';
 import { OptimizationService } from '../services/optimization';
+import { AutonomousService } from '../services/autonomous';
 import { InsightMetrics, OptimizationAction } from '../types/analytics';
 import { useSettingsStore } from '../store/settingsStore';
 
@@ -16,6 +17,13 @@ export default function DashboardScreen() {
   const [actions, setActions] = useState<OptimizationAction[]>([]);
   const [loading, setLoading] = useState(false);
   const [botStatus, setBotStatus] = useState('Idle');
+
+  // Initialize Autonomous Real-time Listeners once
+  useEffect(() => {
+    if (facebookConfig) {
+      AutonomousService.startRealtimeListeners();
+    }
+  }, [facebookConfig]);
 
   const fetchData = async () => {
     if (!facebookConfig) return;
@@ -32,6 +40,9 @@ export default function DashboardScreen() {
       const optActions = await OptimizationService.runOptimizationLoop();
       setActions(optActions);
       
+      // 3. Run Autonomous Loop (Background tasks like lead follow-up)
+      await AutonomousService.runAutonomousLoop();
+
       setBotStatus('Monitoring Active Campaigns');
     } catch (error) {
       console.error('Dashboard fetch error:', error);

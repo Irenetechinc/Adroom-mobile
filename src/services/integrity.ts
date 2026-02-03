@@ -29,6 +29,7 @@ export const IntegrityService = {
   /**
    * Uses AI to validate and fix spelling/grammar/placeholders.
    * This ensures "Realtime Content Integrity" before anything is shown or posted.
+   * Now includes stronger Proofreading & Auto-correction capabilities.
    */
   async validateAndFixContent(text: string): Promise<IntegrityCheckResult> {
     // 1. Basic Placeholder Check (Fast Fail)
@@ -46,7 +47,7 @@ export const IntegrityService = {
     }
 
     try {
-      // 2. Deep Integrity Check via LLM
+      // 2. Deep Integrity Check & Proofreading via LLM
       const response = await fetch('https://api.openai.com/v1/chat/completions', {
         method: 'POST',
         headers: {
@@ -58,13 +59,17 @@ export const IntegrityService = {
           messages: [
             {
               role: "system",
-              content: `You are a Content Integrity Officer. Check the following text for:
-              1. Spelling/Grammar errors.
-              2. Placeholder text (e.g., "Insert name").
-              3. Nonsense/Hallucinations.
+              content: `You are AdRoom's Content Integrity & Proofreading Engine. 
+              Your job is to strictly analyze the user's input or generated content.
               
-              If VALID: Return JSON { "isValid": true, "cleanedText": "..." (fix spelling only) }
-              If INVALID/PLACEHOLDERS: Return JSON { "isValid": false, "issues": ["..."] }`
+              Tasks:
+              1. Correct ALL spelling and typo errors automatically.
+              2. Fix grammar issues.
+              3. Check for placeholders (e.g., "Insert name") - these are invalid.
+              4. Ensure professional tone.
+
+              If VALID (after auto-correction): Return JSON { "isValid": true, "cleanedText": "..." (The corrected version) }
+              If INVALID/IRREPARABLE (e.g. placeholders): Return JSON { "isValid": false, "issues": ["..."] }`
             },
             {
               role: "user",
