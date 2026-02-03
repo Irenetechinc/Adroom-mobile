@@ -62,6 +62,36 @@ app.post('/webhooks/facebook', async (req, res) => {
   }
 });
 
+/**
+ * Database Trigger Handler (Supabase)
+ * Receives INSERT events from comments/messages tables via Trigger -> Railway
+ */
+app.post('/webhooks/database', async (req, res) => {
+  const { type, table, record } = req.body;
+  console.log(`[DB Webhook] Received ${type} on ${table}`);
+
+  try {
+    if (table === 'comments' && type === 'INSERT') {
+       // Only process if it hasn't been handled yet (avoid double processing with FB webhook)
+       // But typically this trigger is for "App-originated" comments or "System-inserted" comments
+       // For "Autonomous Worker" logic, we usually want to catch things inserted by other means,
+       // OR if we want to ensure reliability.
+       // Given EngagementService handles FB Webhooks directly, this might be redundant for FB-origin comments.
+       // However, if we want to handle "Internal" comments or just use DB as source of truth:
+       await EngagementService.handleDatabaseComment(record);
+    } else if (table === 'messages' && type === 'INSERT') {
+       await EngagementService.handleDatabaseMessage(record);
+    } else if (type === 'SCHEDULED_TASK') {
+       // Handled by worker loop mostly, but can be triggered here too
+    }
+    
+    res.status(200).json({ received: true });
+  } catch (error) {
+    console.error('Error processing DB webhook:', error);
+    res.status(500).json({ error: 'Internal Server Error' });
+  }
+});
+
 app.listen(PORT, () => {
   console.log(`Server is running on port ${PORT}`);
 });
