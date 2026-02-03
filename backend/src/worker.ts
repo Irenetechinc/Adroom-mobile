@@ -60,7 +60,10 @@ async function runWorker() {
           // Task A: Daily Post Check
           await checkAndExecuteDailyPost(fbConfig, strategy);
           
-          // Task B: Optimization Check (Placeholder logic for worker)
+          // Task B: Lead Follow-up
+          await checkAndExecuteLeadFollowUp(supabase);
+
+          // Task C: Optimization Check (Placeholder logic for worker)
           // await optimizeCampaigns(fbConfig);
         }
       } catch (err) {
@@ -73,6 +76,31 @@ async function runWorker() {
 }
 
 // --- Simplified Service Logic for Worker Context ---
+
+async function checkAndExecuteLeadFollowUp(supabase: any) {
+  // Lead Follow-up Logic
+  const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+  
+  const { data: leads } = await supabase
+      .from('leads')
+      .select('*')
+      .eq('status', 'contacted')
+      .lt('last_interaction', yesterday)
+      .limit(10);
+
+  if (leads && leads.length > 0) {
+      for (const lead of leads) {
+          console.log(`[Worker] Following up lead: ${lead.id}`);
+          // In a real scenario, we'd send a message via the platform the lead came from
+          // For now, we update the status and log it
+          await supabase.from('leads').update({
+              status: 'follow_up_sent',
+              last_interaction: new Date().toISOString(),
+              notes: 'Auto follow-up sent via Backend Worker'
+          }).eq('id', lead.id);
+      }
+  }
+}
 
 async function checkAndExecuteDailyPost(config: any, strategy: any) {
   // Logic mirrored from SchedulerService but adapted for Node backend

@@ -3,6 +3,7 @@ import { ChatMessage, ProductDetails, Strategy, CreativeAsset, ConnectionState }
 import { CreativeService } from '../services/creative';
 import { supabase } from '../services/supabase';
 import { FacebookService, FacebookPage, FacebookAdAccount } from '../services/facebook';
+import { AutonomousService } from '../services/autonomous';
 
 // Helper to access OpenAI for chat analysis
 const analyzeChatIntent = async (messages: ChatMessage[], productDetails: ProductDetails): Promise<Partial<ProductDetails>> => {
@@ -45,6 +46,7 @@ const analyzeChatIntent = async (messages: ChatMessage[], productDetails: Produc
 interface AgentState {
   messages: ChatMessage[];
   isTyping: boolean;
+  isInputDisabled: boolean;
   productDetails: ProductDetails;
   generatedStrategies: Strategy[];
   activeStrategy: Strategy | null;
@@ -59,14 +61,19 @@ interface AgentState {
 
   addMessage: (text: string, sender: 'user' | 'agent', imageUri?: string, uiType?: ChatMessage['uiType'], uiData?: any) => void;
   setTyping: (typing: boolean) => void;
+  setInputDisabled: (disabled: boolean) => void;
   updateProductDetails: (details: Partial<ProductDetails>) => void;
   generateStrategies: () => Promise<void>;
   analyzeContext: () => Promise<void>; 
   setActiveStrategy: (strategy: Strategy) => Promise<void>;
   updateActiveStrategy: (strategy: Strategy) => Promise<void>;
   loadActiveStrategy: () => Promise<void>; // Load from DB on app start
+  loadMessages: () => Promise<void>; // Load chat history from DB
   resetAgent: () => void;
   
+  // Interaction Handlers
+  handleMarketingTypeSelection: (type: 'PRODUCT' | 'BRAND' | 'SERVICE' | 'BRAND_PRODUCT' | 'CUSTOM') => void;
+
   // Facebook Flow Actions
   initiateFacebookConnection: () => void;
   handleFacebookLogin: () => Promise<void>;
@@ -77,6 +84,7 @@ interface AgentState {
 export const useAgentStore = create<AgentState>((set, get) => ({
   messages: [],
   isTyping: false,
+  isInputDisabled: false,
   productDetails: {
     name: '',
     description: '',
@@ -91,23 +99,45 @@ export const useAgentStore = create<AgentState>((set, get) => ({
   selectedAdAccount: null,
 
   addMessage: (text, sender, imageUri, uiType, uiData) => {
+    const newMessage: ChatMessage = {
+        id: Date.now().toString(),
+        text,
+        sender,
+        timestamp: Date.now(),
+        imageUri,
+        uiType,
+        uiData
+    };
+
     set((state) => ({
       messages: [
         ...state.messages,
-        {
-          id: Date.now().toString(),
-          text,
-          sender,
-          timestamp: Date.now(),
-          imageUri,
-          uiType,
-          uiData
-        },
+        newMessage,
       ],
     }));
+
+    // Async persistence
+    (async () => {
+        try {
+            const { data: { user } } = await supabase.auth.getUser();
+            if (user) {
+                await supabase.from('chat_history').insert({
+                    user_id: user.id,
+                    text,
+                    sender,
+                    image_uri: imageUri,
+                    ui_type: uiType,
+                    ui_data: uiData
+                });
+            }
+        } catch (e) {
+            console.error('Failed to save message:', e);
+        }
+    })();
   },
 
   setTyping: (typing) => set({ isTyping: typing }),
+  setInputDisabled: (disabled) => set({ isInputDisabled: disabled }),
 
   updateProductDetails: (details) => {
     set((state) => ({
@@ -288,12 +318,56 @@ export const useAgentStore = create<AgentState>((set, get) => ({
     }
   },
 
+  loadMessages: async () => {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+
+    const { data } = await supabase
+      .from('chat_history')
+      .select('*')
+      .eq('user_id', user.id)
+      .order('created_at', { ascending: true });
+
+    if (data) {
+      const loadedMessages: ChatMessage[] = data.map((m: any) => ({
+        id: m.id,
+        text: m.text,
+        sender: m.sender as 'user' | 'agent',
+        timestamp: new Date(m.created_at).getTime(),
+        imageUri: m.image_uri,
+        uiType: m.ui_type,
+        uiData: m.ui_data
+      }));
+      set({ messages: loadedMessages });
+    }
+  },
+
   resetAgent: () => set({
     messages: [],
     isTyping: false,
     productDetails: { name: '', description: '' },
     generatedStrategies: []
   }),
+
+  // --- Interaction Handlers ---
+  handleMarketingTypeSelection: (type) => {
+    const { addMessage, updateProductDetails, setInputDisabled, setTyping } = get();
+    
+    if (type === 'CUSTOM') {
+      setInputDisabled(false);
+      addMessage("Understood. Please describe what we are marketing today.", 'agent');
+    } else {
+      updateProductDetails({ marketingType: type as any });
+      addMessage(`Selected: ${type.replace('_', ' + ')}`, 'user');
+      setInputDisabled(false);
+      
+      setTyping(true);
+      setTimeout(() => {
+        addMessage(`Excellent choice. To begin, please upload a photo of your ${type.toLowerCase().replace('_', ' and ')}.`, 'agent');
+        setTyping(false);
+      }, 1000);
+    }
+  },
 
   // --- Facebook Flow Actions ---
 
@@ -365,14 +439,20 @@ export const useAgentStore = create<AgentState>((set, get) => ({
   },
 
   handleAdAccountSelection: async (account: FacebookAdAccount) => {
-    const { addMessage, selectedPage, fbAccessToken } = get();
+    const { addMessage, selectedPage, fbAccessToken, activeStrategy, productDetails } = get();
     set({ selectedAdAccount: account, isTyping: true });
     
     addMessage(`Selected Ad Account: ${account.name} (${account.account_id})`, 'user');
 
-    if (selectedPage && fbAccessToken) {
+    if (selectedPage && fbAccessToken && activeStrategy) {
       try {
         await FacebookService.saveConfig(selectedPage.id, selectedPage.name, account.account_id, fbAccessToken);
+        
+        // Execute the strategy autonomously
+        addMessage("Configuration saved. Initializing autonomous execution protocols...", 'agent');
+        
+        await AutonomousService.executeStrategy(activeStrategy, productDetails.baseImageUri);
+
         set({ connectionState: 'COMPLETED', isTyping: false });
         
         addMessage(
@@ -380,18 +460,20 @@ export const useAgentStore = create<AgentState>((set, get) => ({
           'agent'
         );
         addMessage(
-            "I am now launching your campaign. You can monitor its performance in the Dashboard.",
+            "I have launched your campaign. You can monitor its performance in the Dashboard.",
             'agent',
             undefined,
             'completion_card'
         );
 
-        // Here we would trigger the actual AutonomousService.executeStrategy() 
-        // effectively finalizing the "Strategy Approval" process fully within chat
       } catch (error) {
+        console.error("Execution failed:", error);
         set({ isTyping: false });
-        addMessage("Failed to save configuration. Please try again.", 'agent');
+        addMessage("Failed to execute strategy. Please check your ad account permissions.", 'agent');
       }
+    } else {
+        set({ isTyping: false });
+        if (!activeStrategy) addMessage("Error: No active strategy found to execute.", 'agent');
     }
   }
 
