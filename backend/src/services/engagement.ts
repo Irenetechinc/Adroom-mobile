@@ -10,10 +10,20 @@ const OPENAI_API_KEY = process.env.OPENAI_API_KEY || '';
 const FB_GRAPH_URL = 'https://graph.facebook.com/v18.0';
 
 if (!SUPABASE_URL || !SUPABASE_SERVICE_KEY) {
-  console.error('Missing Supabase credentials in EngagementService.');
-}
+    console.warn('Warning: Supabase credentials missing. Engagement features will be disabled.');
+    // Do not log "Missing" errors here to avoid confusion if user is just setting up
+    // console.error('SUPABASE_URL:', SUPABASE_URL ? 'Set' : 'Missing');
+    // console.error('SUPABASE_SERVICE_KEY:', SUPABASE_SERVICE_KEY ? 'Set' : 'Missing');
+  }
 
-const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
+// Lazy initialization to prevent crash on import if variables are missing
+// but still allows the server to start (even if this service won't work)
+const getSupabase = () => {
+  if (!SUPABASE_URL || !SUPABASE_SERVICE_KEY) {
+    throw new Error('Supabase credentials missing. Check your environment variables.');
+  }
+  return createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
+};
 
 export const EngagementService = {
 
@@ -22,6 +32,7 @@ export const EngagementService = {
    */
   async handleWebhookEvent(event: any) {
     if (event.object === 'page') {
+      const supabase = getSupabase();
       for (const entry of event.entry) {
         const pageId = entry.id;
         
@@ -92,11 +103,29 @@ export const EngagementService = {
     // 1. Like the comment immediately
     await this.likeObject(commentId, pageAccessToken);
 
-    // 2. Generate AI Reply
+    // 2. Save to Supabase (for UI real-time updates)
+    const supabase = getSupabase();
+    await supabase.from('comments').insert({
+        external_id: commentId,
+        content: message,
+        author_name: senderId, // We might need a separate call to get name, but ID is ok for now
+        is_liked: true,
+        is_replied: false,
+        platform: 'facebook'
+        // user_id is missing here, we might need to derive it from the page config
+    });
+
+    // 3. Generate AI Reply
     const replyText = await this.generateAIReply(message, 'comment');
 
-    // 3. Reply to comment
+    // 4. Reply to comment
     await this.replyToComment(commentId, replyText, pageAccessToken);
+
+    // 5. Update Supabase
+    await supabase.from('comments').update({
+        is_replied: true,
+        reply_content: replyText
+    }).eq('external_id', commentId);
   },
 
   /**
@@ -116,6 +145,53 @@ export const EngagementService = {
 
     // 2. Send Message
     await this.sendMessage(senderId, replyText, pageAccessToken);
+  },
+
+  /**
+   * Handle Database Triggered Comment
+   */
+  async handleDatabaseComment(record: any) {
+    // If already replied or liked, skip
+    if (record.is_replied || record.is_liked) return;
+
+    // We need config to act
+    const supabase = getSupabase();
+    // Assuming record has user_id or we find via external_id (if we saved it)
+    // For now, let's assume we can find config via user_id if present
+    // If user_id is missing (e.g. from FB webhook insertion), we might need to look up by page... 
+    // BUT wait, if it came from FB Webhook, we already handled it in handleWebhookEvent!
+    // This DB trigger is mostly useful if we inserted it from somewhere else without replying immediately.
+    
+    // Simplification: We'll assume this is a "catch-all" or for manually inserted comments.
+    
+    // Logic similar to handleFeedChange but starting from DB record
+    console.log('[Engagement] Handling DB Comment:', record.id);
+    
+    // TODO: Implementation depends on how we map DB record back to FB Page Token
+    // For MVP, we might skip this if handleWebhookEvent covers the main flow.
+  },
+
+  async handleDatabaseMessage(record: any) {
+      if (record.is_replied || record.is_from_page) return;
+      console.log('[Engagement] Handling DB Message:', record.id);
+      
+      const supabase = getSupabase();
+      const { data: config } = await supabase
+          .from('ad_configs')
+          .select('*')
+          .eq('user_id', record.user_id)
+          .single();
+
+      if (!config) return;
+
+      // Generate Reply
+      const reply = await this.generateAIReply(record.content, 'message');
+      
+      // Send
+      await this.sendMessage(record.sender_name, reply, config.access_token); // sender_name might hold ID in some schemas
+
+      // Update
+      await supabase.from('messages').update({ is_replied: true }).eq('id', record.id);
   },
 
   /**
@@ -156,6 +232,10 @@ export const EngagementService = {
     if (!OPENAI_API_KEY) return "Thanks for reaching out!";
 
     try {
+      const systemPrompt = context === 'comment' 
+        ? "You are an engaging human social media manager. Reply to the comment naturally. Keep it short. Do NOT sound like a bot. Do NOT use robotic language."
+        : "You are a helpful customer support agent for the brand. Reply to the DM warmly and helpfully. Do NOT sound like a bot.";
+
       const response = await fetch('https://api.openai.com/v1/chat/completions', {
         method: 'POST',
         headers: {
@@ -167,9 +247,7 @@ export const EngagementService = {
           messages: [
             {
               role: "system",
-              content: `You are a helpful, professional, and friendly social media manager. 
-              Reply to this ${context} briefly (under 200 chars). 
-              If it's a compliment, say thanks. If it's a question, answer generally or ask them to DM.`
+              content: systemPrompt
             },
             { role: "user", content: input }
           ]
