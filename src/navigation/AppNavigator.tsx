@@ -7,11 +7,12 @@ import { useAuthStore } from '../store/authStore';
 
 import LoginScreen from '../screens/LoginScreen';
 import SignupScreen from '../screens/SignupScreen';
-import TabNavigator from './TabNavigator';
-// FacebookConfigScreen removed in favor of AgentChat integration
-// AgentChatScreen is now in TabNavigator
+import DrawerNavigator from './DrawerNavigator';
+// import TabNavigator from './TabNavigator'; // Deprecated
 import StrategyApprovalScreen from '../screens/StrategyApprovalScreen';
 import { AuthLoadingSkeleton } from '../components/Skeleton';
+
+import OnboardingScreen from '../screens/OnboardingScreen';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
@@ -45,6 +46,7 @@ export default function AppNavigator() {
       <Stack.Navigator screenOptions={{ headerShown: false }}>
         {!session ? (
           <>
+            <Stack.Screen name="Onboarding" component={OnboardingScreen} />
             <Stack.Screen name="Login" component={LoginScreen} />
             <Stack.Screen name="Signup" component={SignupScreen} />
           </>
