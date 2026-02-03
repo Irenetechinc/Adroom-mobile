@@ -2,8 +2,8 @@
 CREATE OR REPLACE FUNCTION trigger_autonomous_worker()
 RETURNS TRIGGER AS $$
 DECLARE
-  -- REPLACE THIS WITH YOUR DEPLOYED RAILWAY URL
-  project_url TEXT := 'https://your-railway-app-url.up.railway.app/webhook';
+  -- REPLACE THIS WITH YOUR DEPLOYED RAILWAY URL (pointing to the database trigger endpoint)
+  project_url TEXT := 'https://your-railway-app-url.up.railway.app/webhooks/database';
   service_key TEXT := 'YOUR_SERVICE_ROLE_KEY'; -- Use vault/secrets in production
   payload JSONB;
 BEGIN
@@ -48,7 +48,7 @@ SELECT cron.schedule(
   '0 * * * *', -- Every hour
   $$
   SELECT net.http_post(
-      url := 'https://your-railway-app-url.up.railway.app/webhook',
+      url := 'https://your-railway-app-url.up.railway.app/webhooks/database',
       headers := '{"Content-Type": "application/json"}'::jsonb,
       body := '{"type": "SCHEDULED_TASK"}'::jsonb
   );
