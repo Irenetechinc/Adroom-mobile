@@ -53,7 +53,19 @@ For your app to work with **any user** (not just you), you must request "Advance
 
 *Note: While in "Development Mode", these permissions work automatically for any account listed in "Roles" (Admin, Developer, Tester). You only need App Review to go "Live" for the general public.*
 
-## 6. Railway Environment Variables
+## 6. Railway Deployment Settings (CRITICAL)
+Since this project is a monorepo (Frontend + Backend), you **MUST** tell Railway to look in the `backend` folder.
+
+1.  Go to your **Railway Project Dashboard**.
+2.  Click on your service (AdRoom).
+3.  Go to **Settings**.
+4.  Find **Root Directory** (under "Service" or "Build" section).
+5.  Change it from `/` to `/backend`.
+6.  **Save** and let it redeploy.
+
+**Without this step, Railway tries to run the Mobile App instead of the Backend Server, and Facebook Webhooks will fail.**
+
+## 7. Railway Environment Variables
 Ensure your Railway project has these variables set:
 *   `FB_VERIFY_TOKEN`: `adroom_verify_token` (or whatever you chose)
 *   `OPENAI_API_KEY`: Your OpenAI Key

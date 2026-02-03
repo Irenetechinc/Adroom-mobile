@@ -12,6 +12,7 @@ export interface FacebookConfigInput {
   ad_account_id: string;
   access_token: string;
   page_id: string;
+  page_name?: string;
 }
 
 export interface FacebookPage {

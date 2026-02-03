@@ -5,6 +5,7 @@ import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../types';
 import { AnalyticsService } from '../services/analytics';
 import { OptimizationService } from '../services/optimization';
+import { AutonomousService } from '../services/autonomous';
 import { InsightMetrics, OptimizationAction } from '../types/analytics';
 import { useSettingsStore } from '../store/settingsStore';
 
@@ -17,6 +18,13 @@ export default function DashboardScreen() {
   const [loading, setLoading] = useState(false);
   const [botStatus, setBotStatus] = useState('Idle');
 
+  // Initialize Autonomous Real-time Listeners once
+  useEffect(() => {
+    if (facebookConfig) {
+      AutonomousService.startRealtimeListeners();
+    }
+  }, [facebookConfig]);
+
   const fetchData = async () => {
     if (!facebookConfig) return;
     
@@ -27,11 +35,14 @@ export default function DashboardScreen() {
       const data = await AnalyticsService.getAccountInsights();
       setMetrics(data);
 
-      // 2. Run Optimization Loop (Simulated for dashboard view)
+      // 2. Run Optimization Loop
       setBotStatus('Analyzing Performance...');
       const optActions = await OptimizationService.runOptimizationLoop();
       setActions(optActions);
       
+      // 3. Run Autonomous Loop (Background tasks like lead follow-up)
+      await AutonomousService.runAutonomousLoop();
+
       setBotStatus('Monitoring Active Campaigns');
     } catch (error) {
       console.error('Dashboard fetch error:', error);
@@ -113,7 +124,7 @@ export default function DashboardScreen() {
         {/* Quick Actions */}
         <View className="flex-row mb-4">
           <TouchableOpacity 
-            onPress={() => navigation.navigate('AgentChat')}
+            onPress={() => navigation.navigate('AgentChat', { fromStrategyApproval: false })}
             className="flex-1 bg-adroom-card p-4 rounded-xl shadow-sm mr-2 flex-row items-center justify-center border border-adroom-neon/50"
           >
             <Text className="text-adroom-neon font-bold mr-2 text-lg">+</Text>
