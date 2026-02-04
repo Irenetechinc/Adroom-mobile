@@ -44,6 +44,7 @@ app.get('/webhooks/facebook', (req, res) => {
  */
 app.post('/webhooks/facebook', async (req, res) => {
   const body = req.body;
+  console.log(`[FB Webhook] Received event: ${JSON.stringify(body.object)}`);
 
   // Check if this is an event from a Page subscription
   if (body.object === 'page') {

@@ -35,6 +35,7 @@ export const EngagementService = {
       const supabase = getSupabase();
       for (const entry of event.entry) {
         const pageId = entry.id;
+        console.log(`[Engagement] Processing event for Page ID: ${pageId}`);
         
         // Find the user config for this page to get the Page Access Token
         // We use the service key so we can query all configs
@@ -141,9 +142,12 @@ export const EngagementService = {
     console.log(`[Engagement] New message from ${senderId}: "${messageText}"`);
 
     // 1. Generate AI Reply
+    console.log(`[Engagement] Generating AI reply for DM: "${messageText}"`);
     const replyText = await this.generateAIReply(messageText, 'message');
+    console.log(`[Engagement] AI DM Reply Generated: "${replyText}"`);
 
     // 2. Send Message
+    console.log(`[Engagement] Sending DM to ${senderId}...`);
     await this.sendMessage(senderId, replyText, pageAccessToken);
   },
 
