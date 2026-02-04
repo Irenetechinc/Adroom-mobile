@@ -13,7 +13,7 @@ const Drawer = createDrawerNavigator<MainTabParamList>();
 export default function DrawerNavigator() {
   return (
     <Drawer.Navigator
-      drawerContent={(props) => <SideMenu {...props} />}
+      drawerContent={(props: any) => <SideMenu {...props} />}
       screenOptions={{
         headerShown: false,
         drawerType: 'slide',
