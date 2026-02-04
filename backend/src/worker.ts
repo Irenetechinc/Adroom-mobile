@@ -42,7 +42,7 @@ async function runWorker() {
 
   if (strategies) {
     for (const strategy of strategies) {
-      console.log(`[Worker] Processing strategy for User ${strategy.user_id}: ${strategy.title}`);
+      console.log(`[Worker] Processing strategy for User ${strategy.user_id}: ${strategy.title} (${strategy.type})`);
       
       try {
         // Fetch User's Facebook Config
