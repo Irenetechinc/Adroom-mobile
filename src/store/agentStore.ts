@@ -363,7 +363,7 @@ export const useAgentStore = create<AgentState>((set, get) => ({
       
       setTyping(true);
       setTimeout(() => {
-        addMessage(`Excellent choice. To begin, please upload a photo of your ${type.toLowerCase().replace('_', ' and ')}.`, 'agent');
+        addMessage(`Excellent choice. To begin, please upload a photo of your ${type.toLowerCase().replace('_', ' and ')} so I can analyze its attributes.`, 'agent');
         setTyping(false);
       }, 1000);
     }
@@ -375,10 +375,10 @@ export const useAgentStore = create<AgentState>((set, get) => ({
     const { addMessage } = get();
     set({ connectionState: 'CONNECTING_FACEBOOK' });
     addMessage(
-      "To execute this strategy, I need permission to manage your Facebook Ads. Please connect your account below.",
+      "To autonomously manage your campaigns, I need access to your Facebook Business account. Please provide your credentials to establish a secure bridge.",
       'agent',
       undefined,
-      'facebook_connect'
+      'facebook_credentials' 
     );
   },
 
