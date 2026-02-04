@@ -7,7 +7,7 @@ CREATE OR REPLACE FUNCTION trigger_autonomous_worker()
 RETURNS TRIGGER AS $$
 DECLARE
   project_url TEXT := 'https://YOUR_PROJECT_REF.supabase.co/functions/v1/autonomous-worker';
-  service_key TEXT := 'YOUR_SERVICE_ROLE_KEY'; -- In production, use vault or env vars if possible
+  service_key TEXT := 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1ycmdqdnJudGVubGt2c2xmdmZoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njk1NzIxMzgsImV4cCI6MjA4NTE0ODEzOH0.wIwrxgBTsYsx1jGSDDgNw3iPPHN0TZ8v7psen51Z9ks'; -- In production, use vault or env vars if possible
   payload JSONB;
 BEGIN
   -- Construct payload

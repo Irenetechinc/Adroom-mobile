@@ -7,6 +7,7 @@ import * as ImagePicker from 'expo-image-picker';
 import Animated, { FadeInUp, FadeInRight, FadeInLeft, Layout } from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuthStore } from '../store/authStore';
+import { IntegrityService } from '../services/integrity';
 import { Menu, Package, Briefcase, User, Zap } from 'lucide-react-native';
 import { DrawerActions } from '@react-navigation/native';
 
@@ -52,8 +53,8 @@ const SelectionList = ({ items, onSelect, type }: { items: any[], onSelect: (ite
   </View>
 );
 
-const MarketingTypeSelection = ({ onSelect }: { onSelect: (type: string) => void }) => {
-  const options = [
+const MarketingTypeSelection = ({ onSelect }: { onSelect: (type: "PRODUCT" | "BRAND" | "SERVICE" | "BRAND_PRODUCT" | "CUSTOM") => void }) => {
+  const options: { id: "PRODUCT" | "BRAND" | "SERVICE" | "BRAND_PRODUCT" | "CUSTOM"; label: string; icon: any }[] = [
     { id: 'PRODUCT', label: 'Product', icon: Package },
     { id: 'BRAND', label: 'Brand', icon: User },
     { id: 'SERVICE', label: 'Service', icon: Briefcase },
