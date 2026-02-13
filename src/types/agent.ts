@@ -30,7 +30,7 @@ export interface ChatMessage {
   timestamp: number;
   imageUri?: string;
   // Custom UI Types for Interactive Elements
-  uiType?: 'standard' | 'facebook_connect' | 'page_selection' | 'ad_account_selection' | 'completion_card' | 'marketing_type_selection' | 'facebook_credentials' | 'attribute_editor';
+  uiType?: 'standard' | 'facebook_connect' | 'page_selection' | 'ad_account_selection' | 'completion_card' | 'marketing_type_selection' | 'facebook_credentials' | 'attribute_editor' | 'session_restore';
   uiData?: any; // Data for the custom UI (e.g. list of pages)
 }
 
