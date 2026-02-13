@@ -3,6 +3,7 @@ const OPENAI_API_KEY = process.env.EXPO_PUBLIC_OPENAI_API_KEY || '';
 const RUNWAY_API_KEY = process.env.EXPO_PUBLIC_RUNWAY_API_KEY || '';
 
 import { IntegrityService } from './integrity';
+import { RemoteLogger } from './remoteLogger';
 
 export const CreativeService = {
   /**
@@ -122,8 +123,10 @@ export const CreativeService = {
    * NOW INTEGRATED WITH INTEGRITY CHECKS.
    */
   async generateCopy(productName: string, tone: string, purpose: string): Promise<{ headline: string, body: string }> {
+    RemoteLogger.log('CREATIVE', `Generating copy for: ${productName}, Tone: ${tone}`);
+    
     if (!OPENAI_API_KEY) {
-      console.warn('OpenAI API Key missing. Falling back to template.');
+      RemoteLogger.warn('CREATIVE', 'OpenAI API Key missing. Falling back to template.');
       return {
          headline: `Experience ${productName}`,
          body: `The best choice for your needs. Try ${productName} today.`
@@ -222,6 +225,60 @@ export const CreativeService = {
 
     } catch (error) {
         console.error('Reply generation error:', error);
+        return "Thanks for connecting with us!";
+      throw error;
+    }
+  },
+
+  /**
+   * Generates a conversational reply to a user comment.
+   */
+  async generateReply(comment: string, tone: string = "Friendly"): Promise<string> {
+    RemoteLogger.log('CREATIVE', `Generating reply to comment: "${comment}"`);
+    
+    if (!OPENAI_API_KEY) {
+        return "Thank you for your comment!";
+    }
+
+    try {
+        const response = await fetch('https://api.openai.com/v1/chat/completions', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${OPENAI_API_KEY}`
+            },
+            body: JSON.stringify({
+                model: "gpt-4o",
+                messages: [
+                    {
+                        role: "system",
+                        content: `You are an engaging human social media manager representing the brand. Reply to the user's comment in a ${tone}, natural, and human-like tone. 
+                        Encourage further engagement (ask a question or provide value). Keep it short (under 280 chars).
+                        CRITICAL: Do NOT mention that you are an AI, a bot, or automated. Do NOT say 'beep boop' or use robotic language. 
+                        Sound completely authentic, as if a real person is typing this.`
+                    },
+                    {
+                        role: "user",
+                        content: `Comment: "${comment}"`
+                    }
+                ]
+            })
+        });
+
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error?.message);
+
+        const reply = data.choices[0].message.content;
+        
+        // Integrity check
+        const check = await IntegrityService.validateAndFixContent(reply);
+        const finalReply = check.cleanedText || reply;
+        
+        RemoteLogger.log('CREATIVE', 'Reply generated', { reply: finalReply });
+        return finalReply;
+
+    } catch (error: any) {
+        RemoteLogger.error('CREATIVE', 'Reply generation error', error);
         return "Thanks for connecting with us!";
     }
   }

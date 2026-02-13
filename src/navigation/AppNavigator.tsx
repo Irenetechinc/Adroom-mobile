@@ -52,7 +52,7 @@ export default function AppNavigator() {
           </>
         ) : (
           <>
-            <Stack.Screen name="Main" component={TabNavigator} />
+            <Stack.Screen name="Main" component={DrawerNavigator} />
             <Stack.Screen 
               name="StrategyApproval" 
               component={StrategyApprovalScreen} 

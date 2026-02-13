@@ -9,12 +9,14 @@ if (!globalThis.fetch) {
   (globalThis as any).fetch = fetch;
 }
 
-const SUPABASE_URL = process.env.SUPABASE_URL || '';
-const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY || ''; // Must use Service Key for backend worker
+const SUPABASE_URL = process.env.SUPABASE_URL || process.env.EXPO_PUBLIC_SUPABASE_URL || '';
+const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_KEY || process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || ''; // Must use Service Key for backend worker
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY || '';
 
 if (!SUPABASE_URL || !SUPABASE_SERVICE_KEY) {
-  console.error('Missing Supabase credentials.');
+  console.error('CRITICAL ERROR: Supabase Environment Variables Missing in Worker');
+  console.error('Checked SUPABASE_URL, EXPO_PUBLIC_SUPABASE_URL:', SUPABASE_URL ? 'Found' : 'Missing');
+  console.error('Checked SUPABASE_SERVICE_KEY, SUPABASE_SERVICE_ROLE_KEY, SUPABASE_KEY, EXPO_PUBLIC_SUPABASE_ANON_KEY:', SUPABASE_SERVICE_KEY ? 'Found' : 'Missing');
   process.exit(1);
 }
 
@@ -42,7 +44,7 @@ async function runWorker() {
 
   if (strategies) {
     for (const strategy of strategies) {
-      console.log(`[Worker] Processing strategy for User ${strategy.user_id}: ${strategy.title}`);
+      console.log(`[Worker] Processing strategy for User ${strategy.user_id}: ${strategy.title} (${strategy.type})`);
       
       try {
         // Fetch User's Facebook Config
