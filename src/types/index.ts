@@ -20,5 +20,6 @@ export type MainTabParamList = {
   Dashboard: undefined;
   CampaignList: undefined;
   StrategyHistory: undefined;
+  Wallet: undefined;
   Settings: undefined;
 };

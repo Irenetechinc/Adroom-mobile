@@ -176,23 +176,24 @@ export const FacebookService = {
   },
 
   /**
-   * Send a private message to a conversation
+   * Send a private message to a user (via Page)
    */
-  async postMessage(conversationId: string, message: string, accessToken: string): Promise<string> {
+  async postMessage(recipientId: string, message: string, accessToken: string): Promise<string> {
     const response = await fetch(
-      `https://graph.facebook.com/v18.0/${conversationId}/messages`,
+      `https://graph.facebook.com/v18.0/me/messages`,
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          message_text: message,
+          recipient: { id: recipientId },
+          message: { text: message },
           access_token: accessToken
         })
       }
     );
     const data = await response.json();
     if (data.error) throw new Error(data.error.message);
-    return data.id;
+    return data.message_id || data.recipient_id;
   },
 
   /**

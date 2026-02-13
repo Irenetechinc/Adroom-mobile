@@ -1,3 +1,5 @@
+import { RemoteLogger } from './remoteLogger';
+
 // OpenAI Client Configuration
 const OPENAI_API_KEY = process.env.EXPO_PUBLIC_OPENAI_API_KEY || '';
 
@@ -14,10 +16,10 @@ export const VisionService = {
      * Analyzes an image using GPT-4o Vision to extract product attributes.
      */
     async analyzeProductImage(imageUri: string): Promise<VisualAttributes> {
-        console.log(`[VisionService] Analyzing image: ${imageUri}`);
+        RemoteLogger.log('VISION', `Starting analysis for image: ${imageUri}`);
         
         if (!OPENAI_API_KEY) {
-            console.warn('OpenAI API Key missing.');
+            RemoteLogger.warn('VISION', 'OpenAI API Key missing.');
             // Fallback for dev/demo if needed, but per requirements "No dummy data"
             // We should throw or return empty if we strictly follow "No dummy data"
             // However, to prevent app crash if key is missing, we might return empty structure.
@@ -93,10 +95,13 @@ export const VisionService = {
             const content = data.choices[0].message.content;
             // Clean markdown code blocks if present
             const cleanJson = content.replace(/```json/g, '').replace(/```/g, '').trim();
-            return JSON.parse(cleanJson);
+            const attributes = JSON.parse(cleanJson);
+            
+            RemoteLogger.log('VISION', 'Analysis complete', { attributes });
+            return attributes;
 
-        } catch (error) {
-            console.error('[VisionService] Analysis Error:', error);
+        } catch (error: any) {
+            RemoteLogger.error('VISION', 'Analysis Error', error);
             // Fallback for "No Dummy Data" requirement - we return error state or empty
             return {
                 name: "Analysis Error",

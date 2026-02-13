@@ -18,6 +18,7 @@ export interface Strategy {
   platforms: string[];
   estimatedReach: string;
   cost: string;
+  budget: number; // Numeric budget in NGN
   assets: CreativeAsset[];
   actions: string[];
 }
@@ -29,7 +30,7 @@ export interface ChatMessage {
   timestamp: number;
   imageUri?: string;
   // Custom UI Types for Interactive Elements
-  uiType?: 'standard' | 'facebook_connect' | 'page_selection' | 'ad_account_selection' | 'completion_card' | 'marketing_type_selection';
+  uiType?: 'standard' | 'facebook_connect' | 'page_selection' | 'ad_account_selection' | 'completion_card' | 'marketing_type_selection' | 'facebook_credentials' | 'attribute_editor';
   uiData?: any; // Data for the custom UI (e.g. list of pages)
 }
 
@@ -41,6 +42,8 @@ export interface ProductDetails {
   category?: string;
   baseImageUri?: string;
   marketingType?: 'PRODUCT' | 'BRAND' | 'SERVICE' | 'BRAND_PRODUCT';
+  dimensions?: string;
+  colorPalette?: string[];
 }
 
 export type ConnectionState = 'IDLE' | 'CONNECTING_FACEBOOK' | 'SELECTING_PAGE' | 'SELECTING_AD_ACCOUNT' | 'COMPLETED';

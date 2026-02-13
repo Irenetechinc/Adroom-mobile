@@ -4,8 +4,8 @@ import dotenv from 'dotenv';
 
 dotenv.config();
 
-const SUPABASE_URL = process.env.SUPABASE_URL || '';
-const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY || '';
+const SUPABASE_URL = process.env.SUPABASE_URL || process.env.EXPO_PUBLIC_SUPABASE_URL || '';
+const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_KEY || '';
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY || '';
 const FB_GRAPH_URL = 'https://graph.facebook.com/v18.0';
 
@@ -141,14 +141,32 @@ export const EngagementService = {
 
     console.log(`[Engagement] New message from ${senderId}: "${messageText}"`);
 
-    // 1. Generate AI Reply
+    // 1. Save to Supabase (for UI real-time updates)
+    const supabase = getSupabase();
+    await supabase.from('messages').insert({
+        external_id: value.id || `msg_${Date.now()}`, // Webhook message object might not have ID at top level, use timestamp if needed
+        sender_id: senderId,
+        content: messageText,
+        platform: 'facebook',
+        is_replied: true, // We are replying immediately below
+        reply_content: '', // Will update below
+        is_from_page: false,
+        conversation_id: senderId // For FB, senderId is effectively the conversation key for page-user chat
+    });
+
+    // 2. Generate AI Reply
     console.log(`[Engagement] Generating AI reply for DM: "${messageText}"`);
     const replyText = await this.generateAIReply(messageText, 'message');
     console.log(`[Engagement] AI DM Reply Generated: "${replyText}"`);
 
-    // 2. Send Message
+    // 3. Send Message
     console.log(`[Engagement] Sending DM to ${senderId}...`);
     await this.sendMessage(senderId, replyText, pageAccessToken);
+
+    // 4. Update Supabase with reply
+    await supabase.from('messages').update({
+        reply_content: replyText
+    }).match({ sender_id: senderId, content: messageText }); // Simple match to find the record we just added
   },
 
   /**

@@ -6,6 +6,7 @@ import CampaignListScreen from '../screens/CampaignListScreen';
 import StrategyHistoryScreen from '../screens/StrategyHistoryScreen';
 import SettingsScreen from '../screens/SettingsScreen';
 import AgentChatScreen from '../screens/AgentChatScreen';
+import WalletScreen from '../screens/WalletScreen';
 import SideMenu from '../components/SideMenu';
 
 const Drawer = createDrawerNavigator<MainTabParamList>();
@@ -22,9 +23,6 @@ export default function DrawerNavigator() {
           width: '80%',
         },
         overlayColor: 'rgba(0,0,0,0.7)',
-        sceneContainerStyle: {
-          backgroundColor: '#0B0F19',
-        },
       }}
     >
       <Drawer.Screen 
@@ -42,6 +40,10 @@ export default function DrawerNavigator() {
       <Drawer.Screen 
         name="StrategyHistory" 
         component={StrategyHistoryScreen} 
+      />
+      <Drawer.Screen 
+        name="Wallet" 
+        component={WalletScreen} 
       />
       <Drawer.Screen 
         name="Settings" 

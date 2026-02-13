@@ -3,6 +3,7 @@ const OPENAI_API_KEY = process.env.EXPO_PUBLIC_OPENAI_API_KEY || '';
 const RUNWAY_API_KEY = process.env.EXPO_PUBLIC_RUNWAY_API_KEY || '';
 
 import { IntegrityService } from './integrity';
+import { RemoteLogger } from './remoteLogger';
 
 export const CreativeService = {
   /**
@@ -122,8 +123,10 @@ export const CreativeService = {
    * NOW INTEGRATED WITH INTEGRITY CHECKS.
    */
   async generateCopy(productName: string, tone: string, purpose: string): Promise<{ headline: string, body: string }> {
+    RemoteLogger.log('CREATIVE', `Generating copy for: ${productName}, Tone: ${tone}`);
+    
     if (!OPENAI_API_KEY) {
-      console.warn('OpenAI API Key missing. Falling back to template.');
+      RemoteLogger.warn('CREATIVE', 'OpenAI API Key missing. Falling back to template.');
       return {
          headline: `Experience ${productName}`,
          body: `The best choice for your needs. Try ${productName} today.`
@@ -182,6 +185,8 @@ export const CreativeService = {
    * Generates a conversational reply to a user comment.
    */
   async generateReply(comment: string, tone: string = "Friendly"): Promise<string> {
+    RemoteLogger.log('CREATIVE', `Generating reply to comment: "${comment}"`);
+    
     if (!OPENAI_API_KEY) {
         return "Thank you for your comment!";
     }
@@ -218,10 +223,13 @@ export const CreativeService = {
         
         // Integrity check
         const check = await IntegrityService.validateAndFixContent(reply);
-        return check.cleanedText || reply;
+        const finalReply = check.cleanedText || reply;
+        
+        RemoteLogger.log('CREATIVE', 'Reply generated', { reply: finalReply });
+        return finalReply;
 
-    } catch (error) {
-        console.error('Reply generation error:', error);
+    } catch (error: any) {
+        RemoteLogger.error('CREATIVE', 'Reply generation error', error);
         return "Thanks for connecting with us!";
     }
   }
