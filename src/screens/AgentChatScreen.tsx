@@ -7,6 +7,9 @@ import * as ImagePicker from 'expo-image-picker';
 import Animated, { FadeInUp, FadeInRight, FadeInLeft, Layout } from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuthStore } from '../store/authStore';
+import { DrawerActions } from '@react-navigation/native';
+import { Menu, Edit2, Check } from 'lucide-react-native';
+import { IntegrityService } from '../services/integrity';
 
 // Typing Indicator Component
 const TypingIndicator = () => {
