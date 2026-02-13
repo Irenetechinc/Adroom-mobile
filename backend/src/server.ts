@@ -1,8 +1,12 @@
 import express from 'express';
 import bodyParser from 'body-parser';
 import dotenv from 'dotenv';
+<<<<<<< HEAD
+import { EngagementService } from './services/engagement.js'; // Note the .js extension for ESM
+=======
 import { EngagementService } from './services/engagement.js';
 import { WalletService } from './services/wallet.js';
+>>>>>>> adroom-mobile
 
 dotenv.config();
 
@@ -94,6 +98,8 @@ app.post('/webhooks/database', async (req, res) => {
   }
 });
 
+<<<<<<< HEAD
+=======
 /**
  * Wallet Endpoints
  */
@@ -210,6 +216,7 @@ app.post('/api/logs', (req, res) => {
 });
 
 
+>>>>>>> adroom-mobile
 app.listen(PORT, () => {
   console.log(`Server is running on port ${PORT}`);
 });

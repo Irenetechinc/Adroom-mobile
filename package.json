@@ -17,7 +17,11 @@
     "@supabase/supabase-js": "^2.93.2",
     "expo": "~54.0.33",
     "expo-auth-session": "~7.0.10",
+<<<<<<< HEAD
+    "expo-constants": "~17.0.3",
+=======
     "expo-constants": "~18.0.13",
+>>>>>>> adroom-mobile
     "expo-crypto": "~15.0.8",
     "expo-image-picker": "~17.0.10",
     "expo-secure-store": "~15.0.8",

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { View, Text, TextInput, TouchableOpacity, FlatList, KeyboardAvoidingView, Platform, Image, ScrollView, Modal, Alert } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, FlatList, KeyboardAvoidingView, Platform, Image, ActivityIndicator, Alert } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../types';
 import { useAgentStore } from '../store/agentStore';
@@ -7,11 +7,9 @@ import * as ImagePicker from 'expo-image-picker';
 import Animated, { FadeInUp, FadeInRight, FadeInLeft, Layout } from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuthStore } from '../store/authStore';
-import { IntegrityService } from '../services/integrity';
-import { VisionService } from '../services/vision';
-import { Menu, Package, Briefcase, User, Zap, Edit2, Check, X as XIcon } from 'lucide-react-native';
 import { DrawerActions } from '@react-navigation/native';
-import * as SecureStore from 'expo-secure-store';
+import { Menu, Edit2, Check } from 'lucide-react-native';
+import { IntegrityService } from '../services/integrity';
 
 // Typing Indicator Component
 const TypingIndicator = () => {
@@ -146,34 +144,6 @@ const SelectionList = ({ items, onSelect, type }: { items: any[], onSelect: (ite
   </View>
 );
 
-const MarketingTypeSelection = ({ onSelect }: { onSelect: (type: "PRODUCT" | "BRAND" | "SERVICE" | "BRAND_PRODUCT" | "CUSTOM") => void }) => {
-  const options: { id: "PRODUCT" | "BRAND" | "SERVICE" | "BRAND_PRODUCT" | "CUSTOM"; label: string; icon: any }[] = [
-    { id: 'PRODUCT', label: 'Product', icon: Package },
-    { id: 'BRAND', label: 'Brand', icon: User },
-    { id: 'SERVICE', label: 'Service', icon: Briefcase },
-    { id: 'BRAND_PRODUCT', label: 'Brand + Product', icon: Package },
-    { id: 'CUSTOM', label: 'Custom', icon: Zap },
-  ];
-
-  return (
-    <View className="flex-row flex-wrap justify-between mt-2">
-      {options.map((option) => {
-        const Icon = option.icon;
-        return (
-          <TouchableOpacity 
-            key={option.id}
-            onPress={() => onSelect(option.id)}
-            className="w-[48%] bg-adroom-card border border-adroom-neon/30 rounded-xl p-4 mb-3 items-center shadow-lg shadow-adroom-neon/10"
-          >
-            <Icon color="#00F0FF" size={24} className="mb-2" />
-            <Text className="text-white font-bold text-sm uppercase tracking-wide">{option.label}</Text>
-          </TouchableOpacity>
-        );
-      })}
-    </View>
-  );
-};
-
 const CompletionCard = ({ onDashboard }: { onDashboard: () => void }) => (
   <View className="mt-2 bg-adroom-card p-5 rounded-xl border border-green-500/50 items-center">
     <View className="w-12 h-12 bg-green-500/20 rounded-full items-center justify-center mb-3">
@@ -306,80 +276,13 @@ export default function AgentChatScreen({ navigation, route }: Props) {
       updateProductDetails({ baseImageUri: selectedImage });
       
       setTyping(true);
-      
-      // REAL-TIME VISION ANALYSIS
-      try {
-        const attributes = await VisionService.analyzeProductImage(selectedImage);
-        
-        updateProductDetails({
-            name: attributes.name,
-            description: attributes.description,
-            dimensions: attributes.dimensions,
-            price: attributes.estimatedPrice,
-            colorPalette: attributes.colorPalette
-        });
-
-        // Add a special "Attribute Editor" message
-        addMessage(
-            "Analysis complete. I've detected the following attributes. Please review and edit if necessary.", 
-            'agent', 
-            undefined, 
-            'attribute_editor',
-            attributes
-        );
-
-      } catch (e) {
-        addMessage("Visual analysis failed to extract details. Please enter them manually.", 'agent');
-      } finally {
-        setTyping(false);
-      }
-    }
-  };
-
-  const handleAttributeSave = (attributes: any) => {
-    updateProductDetails({
-        name: attributes.name,
-        dimensions: attributes.dimensions,
-        price: attributes.estimatedPrice
-    });
-    
-    // Trigger strategy generation automatically after confirmation
-    addMessage(`Attributes confirmed: ${attributes.name}. Generating comprehensive marketing strategies (Organic & Paid)...`, 'agent');
-    generateStrategies().then(() => {
-        navigation.navigate('StrategyApproval');
-    });
-  };
-
-  const handleFacebookCredentialSubmit = async (creds: any) => {
-    // Save credentials securely (simulated autonomous login)
-    try {
-        await SecureStore.setItemAsync('fb_email', creds.email);
-        await SecureStore.setItemAsync('fb_password', creds.password);
-        
-        addMessage("Credentials secured. Initiating autonomous connection sequence...", 'agent');
-        
-        // Simulate "Live Progress" of autonomous login
-        const steps = [
-            "Navigating to Facebook Business Manager...",
-            "Authenticating credentials...",
-            "Fetching Ad Accounts...",
-            "Connecting Pixel...",
-            "Establishing API Bridge..."
-        ];
-
-        for (const step of steps) {
-            await new Promise(r => setTimeout(r, 1500));
-            addMessage(`[AUTO] ${step}`, 'agent');
-        }
-
-        // Proceed to standard flow (or skip if we assume success)
-        // For "No Dummy Data" compliance, we actually trigger the real OAuth flow now
-        // but present it as the final step of the "automation" to get the token.
-        addMessage("Authentication verified. Finalizing token exchange...", 'agent');
-        handleFacebookLogin();
-
-    } catch (e) {
-        addMessage("Secure storage failed. Please try again.", 'agent');
+      setTimeout(() => {
+        addMessage("Visual data received. Scanning for product attributes...", 'agent');
+        setTimeout(() => {
+          addMessage("Analysis complete. High-fidelity product detected. Please identify the product name.", 'agent');
+          setTyping(false);
+        }, 2000);
+      }, 1000);
     }
   };
 
@@ -466,18 +369,6 @@ export default function AgentChatScreen({ navigation, route }: Props) {
         </Text>
 
         {/* Custom UI Rendering */}
-        {item.uiType === 'attribute_editor' && (
-            <AttributeEditor attributes={item.uiData} onSave={handleAttributeSave} />
-        )}
-
-        {item.uiType === 'marketing_type_selection' && (
-           <MarketingTypeSelection onSelect={handleMarketingTypeSelection} />
-        )}
-
-        {item.uiType === 'facebook_credentials' && (
-            <FacebookCredentialForm onSubmit={handleFacebookCredentialSubmit} />
-        )}
-
         {item.uiType === 'facebook_connect' && (
             <FacebookConnectButton onPress={handleFacebookLogin} />
         )}

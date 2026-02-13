@@ -30,7 +30,11 @@ export interface ChatMessage {
   timestamp: number;
   imageUri?: string;
   // Custom UI Types for Interactive Elements
+<<<<<<< HEAD
+  uiType?: 'standard' | 'facebook_connect' | 'page_selection' | 'ad_account_selection' | 'completion_card' | 'marketing_type_selection';
+=======
   uiType?: 'standard' | 'facebook_connect' | 'page_selection' | 'ad_account_selection' | 'completion_card' | 'marketing_type_selection' | 'facebook_credentials' | 'attribute_editor';
+>>>>>>> adroom-mobile
   uiData?: any; // Data for the custom UI (e.g. list of pages)
 }
 
@@ -42,8 +46,11 @@ export interface ProductDetails {
   category?: string;
   baseImageUri?: string;
   marketingType?: 'PRODUCT' | 'BRAND' | 'SERVICE' | 'BRAND_PRODUCT';
+<<<<<<< HEAD
+=======
   dimensions?: string;
   colorPalette?: string[];
+>>>>>>> adroom-mobile
 }
 
 export type ConnectionState = 'IDLE' | 'CONNECTING_FACEBOOK' | 'SELECTING_PAGE' | 'SELECTING_AD_ACCOUNT' | 'COMPLETED';
