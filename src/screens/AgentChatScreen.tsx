@@ -126,15 +126,6 @@ const FacebookCredentialForm = ({ onSubmit }: { onSubmit: (creds: any) => void }
     );
 };
 
-  <TouchableOpacity 
-    onPress={onPress}
-    className="bg-[#1877F2] py-3 px-6 rounded-xl flex-row items-center justify-center mt-2 shadow-lg"
-  >
-    <Text className="text-white font-bold text-base mr-2">f</Text>
-    <Text className="text-white font-bold text-base">Connect Facebook</Text>
-  </TouchableOpacity>
-);
-
 const SelectionList = ({ items, onSelect, type }: { items: any[], onSelect: (item: any) => void, type: 'page' | 'ad_account' }) => (
   <View className="mt-2 bg-adroom-card rounded-xl border border-adroom-neon/20 overflow-hidden">
     {items.map((item, index) => (
@@ -201,6 +192,14 @@ const CompletionCard = ({ onDashboard }: { onDashboard: () => void }) => (
 );
 
 const FacebookConnectButton = ({ onPress }: { onPress: () => void }) => (
+  <TouchableOpacity 
+    onPress={onPress}
+    className="bg-[#1877F2] py-3 px-6 rounded-xl flex-row items-center justify-center mt-2 shadow-lg"
+  >
+    <Text className="text-white font-bold text-base mr-2">f</Text>
+    <Text className="text-white font-bold text-base">Connect Facebook</Text>
+  </TouchableOpacity>
+);
 
 type Props = NativeStackScreenProps<RootStackParamList, 'AgentChat'>;
 
