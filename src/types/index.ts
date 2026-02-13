@@ -20,9 +20,6 @@ export type MainTabParamList = {
   Dashboard: undefined;
   CampaignList: undefined;
   StrategyHistory: undefined;
-<<<<<<< HEAD
-=======
   Wallet: undefined;
->>>>>>> adroom-mobile
   Settings: undefined;
 };
