@@ -278,7 +278,7 @@ export const AutonomousService = {
             const reply = await CreativeService.generateReply(msg.content, "Helpful"); // Reuse generateReply or make a new one for DM
             
             // Send DM
-            await FacebookService.postMessage(msg.conversation_id, reply, config.access_token);
+            await FacebookService.postMessage(msg.sender_id, reply, config.access_token);
 
             // Update DB
             await supabase.from('messages').update({

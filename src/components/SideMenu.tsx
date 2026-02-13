@@ -2,7 +2,7 @@ import React from 'react';
 import { View, Text, TouchableOpacity, Image, SafeAreaView } from 'react-native';
 import { DrawerContentComponentProps } from '@react-navigation/drawer';
 import { useNavigation } from '@react-navigation/native';
-import { Home, LayoutDashboard, List, Settings, LogOut, X, History } from 'lucide-react-native';
+import { Home, LayoutDashboard, List, Settings, LogOut, X, History, CreditCard } from 'lucide-react-native';
 import { useAuthStore } from '../store/authStore';
 
 export default function SideMenu(props: DrawerContentComponentProps) {
@@ -13,6 +13,7 @@ export default function SideMenu(props: DrawerContentComponentProps) {
     { label: 'Agent Center', icon: Home, route: 'AgentChat' },
     { label: 'Live Dashboard', icon: LayoutDashboard, route: 'Dashboard' },
     { label: 'Campaigns', icon: List, route: 'CampaignList' },
+    { label: 'Ad Wallet', icon: CreditCard, route: 'Wallet' },
     { label: 'Strategy History', icon: History, route: 'StrategyHistory' },
     { label: 'System Settings', icon: Settings, route: 'Settings' },
   ];
