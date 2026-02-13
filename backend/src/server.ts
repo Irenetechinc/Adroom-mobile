@@ -94,8 +94,6 @@ app.post('/webhooks/database', async (req, res) => {
   }
 });
 
-<<<<<<< HEAD
-=======
 /**
  * Wallet Endpoints
  */
