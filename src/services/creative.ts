@@ -185,55 +185,6 @@ export const CreativeService = {
    * Generates a conversational reply to a user comment.
    */
   async generateReply(comment: string, tone: string = "Friendly"): Promise<string> {
-    if (!OPENAI_API_KEY) {
-        return "Thank you for your comment!";
-    }
-
-    try {
-        const response = await fetch('https://api.openai.com/v1/chat/completions', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${OPENAI_API_KEY}`
-            },
-            body: JSON.stringify({
-                model: "gpt-4o",
-                messages: [
-                    {
-                        role: "system",
-                        content: `You are an engaging human social media manager representing the brand. Reply to the user's comment in a ${tone}, natural, and human-like tone. 
-                        Encourage further engagement (ask a question or provide value). Keep it short (under 280 chars).
-                        CRITICAL: Do NOT mention that you are an AI, a bot, or automated. Do NOT say 'beep boop' or use robotic language. 
-                        Sound completely authentic, as if a real person is typing this.`
-                    },
-                    {
-                        role: "user",
-                        content: `Comment: "${comment}"`
-                    }
-                ]
-            })
-        });
-
-        const data = await response.json();
-        if (!response.ok) throw new Error(data.error?.message);
-
-        const reply = data.choices[0].message.content;
-        
-        // Integrity check
-        const check = await IntegrityService.validateAndFixContent(reply);
-        return check.cleanedText || reply;
-
-    } catch (error) {
-        console.error('Reply generation error:', error);
-        return "Thanks for connecting with us!";
-      throw error;
-    }
-  },
-
-  /**
-   * Generates a conversational reply to a user comment.
-   */
-  async generateReply(comment: string, tone: string = "Friendly"): Promise<string> {
     RemoteLogger.log('CREATIVE', `Generating reply to comment: "${comment}"`);
     
     if (!OPENAI_API_KEY) {

@@ -217,53 +217,6 @@ export const EngagementService = {
   },
 
   /**
-   * Handle Database Triggered Comment
-   */
-  async handleDatabaseComment(record: any) {
-    // If already replied or liked, skip
-    if (record.is_replied || record.is_liked) return;
-
-    // We need config to act
-    const supabase = getSupabase();
-    // Assuming record has user_id or we find via external_id (if we saved it)
-    // For now, let's assume we can find config via user_id if present
-    // If user_id is missing (e.g. from FB webhook insertion), we might need to look up by page... 
-    // BUT wait, if it came from FB Webhook, we already handled it in handleWebhookEvent!
-    // This DB trigger is mostly useful if we inserted it from somewhere else without replying immediately.
-    
-    // Simplification: We'll assume this is a "catch-all" or for manually inserted comments.
-    
-    // Logic similar to handleFeedChange but starting from DB record
-    console.log('[Engagement] Handling DB Comment:', record.id);
-    
-    // TODO: Implementation depends on how we map DB record back to FB Page Token
-    // For MVP, we might skip this if handleWebhookEvent covers the main flow.
-  },
-
-  async handleDatabaseMessage(record: any) {
-      if (record.is_replied || record.is_from_page) return;
-      console.log('[Engagement] Handling DB Message:', record.id);
-      
-      const supabase = getSupabase();
-      const { data: config } = await supabase
-          .from('ad_configs')
-          .select('*')
-          .eq('user_id', record.user_id)
-          .single();
-
-      if (!config) return;
-
-      // Generate Reply
-      const reply = await this.generateAIReply(record.content, 'message');
-      
-      // Send
-      await this.sendMessage(record.sender_name, reply, config.access_token); // sender_name might hold ID in some schemas
-
-      // Update
-      await supabase.from('messages').update({ is_replied: true }).eq('id', record.id);
-  },
-
-  /**
    * Facebook API Wrappers
    */
   async replyToComment(commentId: string, message: string, token: string) {

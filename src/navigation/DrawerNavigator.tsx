@@ -6,10 +6,7 @@ import CampaignListScreen from '../screens/CampaignListScreen';
 import StrategyHistoryScreen from '../screens/StrategyHistoryScreen';
 import SettingsScreen from '../screens/SettingsScreen';
 import AgentChatScreen from '../screens/AgentChatScreen';
-<<<<<<< HEAD
-=======
 import WalletScreen from '../screens/WalletScreen';
->>>>>>> adroom-mobile
 import SideMenu from '../components/SideMenu';
 
 const Drawer = createDrawerNavigator<MainTabParamList>();
@@ -17,11 +14,7 @@ const Drawer = createDrawerNavigator<MainTabParamList>();
 export default function DrawerNavigator() {
   return (
     <Drawer.Navigator
-<<<<<<< HEAD
-      drawerContent={(props) => <SideMenu {...props} />}
-=======
       drawerContent={(props: any) => <SideMenu {...props} />}
->>>>>>> adroom-mobile
       screenOptions={{
         headerShown: false,
         drawerType: 'slide',
@@ -30,12 +23,6 @@ export default function DrawerNavigator() {
           width: '80%',
         },
         overlayColor: 'rgba(0,0,0,0.7)',
-<<<<<<< HEAD
-        sceneContainerStyle: {
-          backgroundColor: '#0B0F19',
-        },
-=======
->>>>>>> adroom-mobile
       }}
     >
       <Drawer.Screen 
@@ -55,13 +42,10 @@ export default function DrawerNavigator() {
         component={StrategyHistoryScreen} 
       />
       <Drawer.Screen 
-<<<<<<< HEAD
-=======
         name="Wallet" 
         component={WalletScreen} 
       />
       <Drawer.Screen 
->>>>>>> adroom-mobile
         name="Settings" 
         component={SettingsScreen} 
       />
