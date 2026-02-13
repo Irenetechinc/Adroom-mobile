@@ -386,10 +386,10 @@ export const useAgentStore = create<AgentState>((set, get) => ({
     const { addMessage } = get();
     set({ connectionState: 'CONNECTING_FACEBOOK' });
     addMessage(
-      "To autonomously manage your campaigns, I need access to your Facebook Business account. Please provide your credentials to establish a secure bridge.",
+      "To autonomously manage your campaigns, I need access to your Facebook Business account. Please click the button below to securely connect.",
       'agent',
       undefined,
-      'facebook_credentials' 
+      'facebook_connect' 
     );
   },
 

@@ -127,7 +127,7 @@ app.post('/api/wallet/deduct', async (req, res) => {
   try {
     const { userId, amount, description } = req.body;
     const result = await WalletService.deductFunds(userId, Number(amount), description);
-    res.json({ success: result });
+    res.json(result);
   } catch (error: any) {
     console.error('Error deducting funds:', error);
     res.status(400).json({ error: error.message }); // 400 for business logic error (insufficient funds)
