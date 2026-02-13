@@ -513,7 +513,7 @@ export const useAgentStore = create<AgentState>((set, get) => ({
             }
         }
 
-        await FacebookService.saveConfig(selectedPage.id, selectedPage.name, account.account_id, fbAccessToken);
+        await FacebookService.saveConfig(selectedPage.id, selectedPage.name, account.id, fbAccessToken);
         
         // Execute the strategy autonomously
         addMessage("Configuration saved. Initializing autonomous execution protocols...", 'agent');
