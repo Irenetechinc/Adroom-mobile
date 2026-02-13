@@ -4,10 +4,7 @@ import { CreativeService } from '../services/creative';
 import { supabase } from '../services/supabase';
 import { FacebookService, FacebookPage, FacebookAdAccount } from '../services/facebook';
 import { AutonomousService } from '../services/autonomous';
-<<<<<<< HEAD
-=======
 import { RemoteLogger } from '../services/remoteLogger';
->>>>>>> adroom-mobile
 
 // Helper to access OpenAI for chat analysis
 const analyzeChatIntent = async (messages: ChatMessage[], productDetails: ProductDetails): Promise<Partial<ProductDetails>> => {
@@ -377,11 +374,7 @@ export const useAgentStore = create<AgentState>((set, get) => ({
       
       setTyping(true);
       setTimeout(() => {
-<<<<<<< HEAD
-        addMessage(`Excellent choice. To begin, please upload a photo of your ${type.toLowerCase().replace('_', ' and ')}.`, 'agent');
-=======
         addMessage(`Excellent choice. To begin, please upload a photo of your ${type.toLowerCase().replace('_', ' and ')} so I can analyze its attributes.`, 'agent');
->>>>>>> adroom-mobile
         setTyping(false);
       }, 1000);
     }

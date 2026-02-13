@@ -59,16 +59,6 @@ export const IntegrityService = {
           messages: [
             {
               role: "system",
-<<<<<<< HEAD
-              content: `You are AdRoom's Content Integrity & Proofreading Engine. 
-              Your job is to strictly analyze the user's input or generated content.
-              
-              Tasks:
-              1. Correct ALL spelling and typo errors automatically.
-              2. Fix grammar issues.
-              3. Check for placeholders (e.g., "Insert name") - these are invalid.
-              4. Ensure professional tone.
-=======
               content: `You are AdRoom's Intelligent Spell Correction & Context Engine. 
               Your job is to strictly analyze the user's input for spelling and grammar errors.
               
@@ -78,7 +68,6 @@ export const IntegrityService = {
               3. Check for placeholders (e.g., "Insert name") - these are invalid.
               4. PRESERVE brand names, product terms, and stylized text (e.g. "iPhone", "WhatsApp", "AdRoom").
               5. Maintain context awareness. Do not change the meaning.
->>>>>>> adroom-mobile
 
               If VALID (after auto-correction): Return JSON { "isValid": true, "cleanedText": "..." (The corrected version) }
               If INVALID/IRREPARABLE (e.g. placeholders): Return JSON { "isValid": false, "issues": ["..."] }`
