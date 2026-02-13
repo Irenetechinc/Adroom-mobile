@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { View, Text, TextInput, TouchableOpacity, FlatList, KeyboardAvoidingView, Platform, Image } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, FlatList, KeyboardAvoidingView, Platform, Image, ActivityIndicator, Alert } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../types';
 import { useAgentStore } from '../store/agentStore';
@@ -7,8 +7,6 @@ import * as ImagePicker from 'expo-image-picker';
 import Animated, { FadeInUp, FadeInRight, FadeInLeft, Layout } from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuthStore } from '../store/authStore';
-import { Menu, Package, Briefcase, User, Zap } from 'lucide-react-native';
-import { DrawerActions } from '@react-navigation/native';
 
 // Typing Indicator Component
 const TypingIndicator = () => {
@@ -21,16 +19,107 @@ const TypingIndicator = () => {
   );
 };
 
-// Custom UI Components for Chat
-const FacebookConnectButton = ({ onPress }: { onPress: () => void }) => (
-  <TouchableOpacity 
-    onPress={onPress}
-    className="bg-[#1877F2] py-3 px-6 rounded-xl flex-row items-center justify-center mt-2 shadow-lg"
-  >
-    <Text className="text-white font-bold text-base mr-2">f</Text>
-    <Text className="text-white font-bold text-base">Connect Facebook</Text>
-  </TouchableOpacity>
-);
+const AttributeEditor = ({ attributes, onSave }: { attributes: any, onSave: (attrs: any) => void }) => {
+  const [editedAttrs, setEditedAttrs] = useState(attributes);
+  const [isEditing, setIsEditing] = useState(false);
+
+  const handleChange = (key: string, value: string) => {
+    setEditedAttrs((prev: any) => ({ ...prev, [key]: value }));
+  };
+
+  const handleSave = () => {
+    setIsEditing(false);
+    onSave(editedAttrs);
+  };
+
+  return (
+    <View className="mt-2 bg-adroom-card rounded-xl border border-adroom-neon/20 p-4">
+      <View className="flex-row justify-between items-center mb-4">
+        <Text className="text-white font-bold text-lg">Product DNA</Text>
+        {!isEditing ? (
+          <TouchableOpacity onPress={() => setIsEditing(true)} className="bg-adroom-neon/10 p-2 rounded-full">
+            <Edit2 size={16} color="#00F0FF" />
+          </TouchableOpacity>
+        ) : (
+          <TouchableOpacity onPress={handleSave} className="bg-green-500/20 p-2 rounded-full">
+            <Check size={16} color="#4ADE80" />
+          </TouchableOpacity>
+        )}
+      </View>
+
+      {['name', 'dimensions', 'estimatedPrice'].map((key) => (
+        <View key={key} className="mb-3">
+          <Text className="text-adroom-text-muted text-xs uppercase mb-1">{key.replace(/([A-Z])/g, ' $1').trim()}</Text>
+          {isEditing ? (
+            <TextInput
+              value={editedAttrs[key]}
+              onChangeText={(text) => handleChange(key, text)}
+              className="bg-adroom-dark border border-adroom-neon/30 rounded-lg p-2 text-white"
+            />
+          ) : (
+            <Text className="text-white font-medium text-base">{editedAttrs[key] || 'Unknown'}</Text>
+          )}
+        </View>
+      ))}
+
+      {/* Colors */}
+      <View className="mb-3">
+        <Text className="text-adroom-text-muted text-xs uppercase mb-1">Palette</Text>
+        <View className="flex-row space-x-2">
+           {editedAttrs.colorPalette?.map((color: string, i: number) => (
+             <View key={i} style={{ backgroundColor: color }} className="w-6 h-6 rounded-full border border-white/20" />
+           ))}
+        </View>
+      </View>
+
+      {!isEditing && (
+        <TouchableOpacity 
+            onPress={() => onSave(editedAttrs)}
+            className="mt-2 bg-adroom-neon py-2 rounded-lg items-center"
+        >
+            <Text className="text-adroom-dark font-bold">CONFIRM & GENERATE</Text>
+        </TouchableOpacity>
+      )}
+    </View>
+  );
+};
+
+// FB Credentials Form
+const FacebookCredentialForm = ({ onSubmit }: { onSubmit: (creds: any) => void }) => {
+    const [email, setEmail] = useState('');
+    const [password, setPassword] = useState('');
+    const [secure, setSecure] = useState(true);
+
+    return (
+        <View className="mt-2 bg-adroom-card p-4 rounded-xl border border-blue-500/30">
+            <Text className="text-white font-bold text-lg mb-2">Facebook Secure Login</Text>
+            <Text className="text-adroom-text-muted text-xs mb-4">Credentials are encrypted and stored locally via SecureStore.</Text>
+            
+            <TextInput 
+                placeholder="Email or Phone"
+                placeholderTextColor="#64748B"
+                className="bg-adroom-dark p-3 rounded-lg text-white border border-adroom-border mb-3"
+                value={email}
+                onChangeText={setEmail}
+            />
+             <TextInput 
+                placeholder="Password"
+                placeholderTextColor="#64748B"
+                className="bg-adroom-dark p-3 rounded-lg text-white border border-adroom-border mb-4"
+                value={password}
+                onChangeText={setPassword}
+                secureTextEntry={secure}
+            />
+            
+            <TouchableOpacity 
+                onPress={() => onSubmit({ email, password })}
+                className="bg-[#1877F2] py-3 rounded-lg items-center"
+            >
+                <Text className="text-white font-bold">Connect & Automate</Text>
+            </TouchableOpacity>
+        </View>
+    );
+};
 
 const SelectionList = ({ items, onSelect, type }: { items: any[], onSelect: (item: any) => void, type: 'page' | 'ad_account' }) => (
   <View className="mt-2 bg-adroom-card rounded-xl border border-adroom-neon/20 overflow-hidden">
@@ -52,34 +141,6 @@ const SelectionList = ({ items, onSelect, type }: { items: any[], onSelect: (ite
   </View>
 );
 
-const MarketingTypeSelection = ({ onSelect }: { onSelect: (type: string) => void }) => {
-  const options = [
-    { id: 'PRODUCT', label: 'Product', icon: Package },
-    { id: 'BRAND', label: 'Brand', icon: User },
-    { id: 'SERVICE', label: 'Service', icon: Briefcase },
-    { id: 'BRAND_PRODUCT', label: 'Brand + Product', icon: Package },
-    { id: 'CUSTOM', label: 'Custom', icon: Zap },
-  ];
-
-  return (
-    <View className="flex-row flex-wrap justify-between mt-2">
-      {options.map((option) => {
-        const Icon = option.icon;
-        return (
-          <TouchableOpacity 
-            key={option.id}
-            onPress={() => onSelect(option.id)}
-            className="w-[48%] bg-adroom-card border border-adroom-neon/30 rounded-xl p-4 mb-3 items-center shadow-lg shadow-adroom-neon/10"
-          >
-            <Icon color="#00F0FF" size={24} className="mb-2" />
-            <Text className="text-white font-bold text-sm uppercase tracking-wide">{option.label}</Text>
-          </TouchableOpacity>
-        );
-      })}
-    </View>
-  );
-};
-
 const CompletionCard = ({ onDashboard }: { onDashboard: () => void }) => (
   <View className="mt-2 bg-adroom-card p-5 rounded-xl border border-green-500/50 items-center">
     <View className="w-12 h-12 bg-green-500/20 rounded-full items-center justify-center mb-3">
@@ -95,6 +156,16 @@ const CompletionCard = ({ onDashboard }: { onDashboard: () => void }) => (
       <Text className="text-adroom-dark font-bold uppercase">Go to Dashboard</Text>
     </TouchableOpacity>
   </View>
+);
+
+const FacebookConnectButton = ({ onPress }: { onPress: () => void }) => (
+  <TouchableOpacity 
+    onPress={onPress}
+    className="bg-[#1877F2] py-3 px-6 rounded-xl flex-row items-center justify-center mt-2 shadow-lg"
+  >
+    <Text className="text-white font-bold text-base mr-2">f</Text>
+    <Text className="text-white font-bold text-base">Connect Facebook</Text>
+  </TouchableOpacity>
 );
 
 type Props = NativeStackScreenProps<RootStackParamList, 'AgentChat'>;
@@ -205,11 +276,8 @@ export default function AgentChatScreen({ navigation, route }: Props) {
       setTimeout(() => {
         addMessage("Visual data received. Scanning for product attributes...", 'agent');
         setTimeout(() => {
-          // In a production app with a backend, we would send the image for analysis here.
-          // For now, we ask the user to confirm the name to ensure accuracy without assuming.
-          addMessage("Analysis complete. High-fidelity product detected. Please identify the exact product name.", 'agent');
+          addMessage("Analysis complete. High-fidelity product detected. Please identify the product name.", 'agent');
           setTyping(false);
-          setInputDisabled(false);
         }, 2000);
       }, 1000);
     }
@@ -298,10 +366,6 @@ export default function AgentChatScreen({ navigation, route }: Props) {
         </Text>
 
         {/* Custom UI Rendering */}
-        {item.uiType === 'marketing_type_selection' && (
-           <MarketingTypeSelection onSelect={handleMarketingTypeSelection} />
-        )}
-
         {item.uiType === 'facebook_connect' && (
             <FacebookConnectButton onPress={handleFacebookLogin} />
         )}

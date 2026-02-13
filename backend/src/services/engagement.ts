@@ -4,8 +4,8 @@ import dotenv from 'dotenv';
 
 dotenv.config();
 
-const SUPABASE_URL = process.env.SUPABASE_URL || '';
-const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY || '';
+const SUPABASE_URL = process.env.SUPABASE_URL || process.env.EXPO_PUBLIC_SUPABASE_URL || '';
+const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_KEY || '';
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY || '';
 const FB_GRAPH_URL = 'https://graph.facebook.com/v18.0';
 
@@ -35,6 +35,7 @@ export const EngagementService = {
       const supabase = getSupabase();
       for (const entry of event.entry) {
         const pageId = entry.id;
+        console.log(`[Engagement] Processing event for Page ID: ${pageId}`);
         
         // Find the user config for this page to get the Page Access Token
         // We use the service key so we can query all configs
@@ -140,11 +141,79 @@ export const EngagementService = {
 
     console.log(`[Engagement] New message from ${senderId}: "${messageText}"`);
 
-    // 1. Generate AI Reply
-    const replyText = await this.generateAIReply(messageText, 'message');
+    // 1. Save to Supabase (for UI real-time updates)
+    const supabase = getSupabase();
+    await supabase.from('messages').insert({
+        external_id: value.id || `msg_${Date.now()}`, // Webhook message object might not have ID at top level, use timestamp if needed
+        sender_id: senderId,
+        content: messageText,
+        platform: 'facebook',
+        is_replied: true, // We are replying immediately below
+        reply_content: '', // Will update below
+        is_from_page: false,
+        conversation_id: senderId // For FB, senderId is effectively the conversation key for page-user chat
+    });
 
-    // 2. Send Message
+    // 2. Generate AI Reply
+    console.log(`[Engagement] Generating AI reply for DM: "${messageText}"`);
+    const replyText = await this.generateAIReply(messageText, 'message');
+    console.log(`[Engagement] AI DM Reply Generated: "${replyText}"`);
+
+    // 3. Send Message
+    console.log(`[Engagement] Sending DM to ${senderId}...`);
     await this.sendMessage(senderId, replyText, pageAccessToken);
+
+    // 4. Update Supabase with reply
+    await supabase.from('messages').update({
+        reply_content: replyText
+    }).match({ sender_id: senderId, content: messageText }); // Simple match to find the record we just added
+  },
+
+  /**
+   * Handle Database Triggered Comment
+   */
+  async handleDatabaseComment(record: any) {
+    // If already replied or liked, skip
+    if (record.is_replied || record.is_liked) return;
+
+    // We need config to act
+    const supabase = getSupabase();
+    // Assuming record has user_id or we find via external_id (if we saved it)
+    // For now, let's assume we can find config via user_id if present
+    // If user_id is missing (e.g. from FB webhook insertion), we might need to look up by page... 
+    // BUT wait, if it came from FB Webhook, we already handled it in handleWebhookEvent!
+    // This DB trigger is mostly useful if we inserted it from somewhere else without replying immediately.
+    
+    // Simplification: We'll assume this is a "catch-all" or for manually inserted comments.
+    
+    // Logic similar to handleFeedChange but starting from DB record
+    console.log('[Engagement] Handling DB Comment:', record.id);
+    
+    // TODO: Implementation depends on how we map DB record back to FB Page Token
+    // For MVP, we might skip this if handleWebhookEvent covers the main flow.
+  },
+
+  async handleDatabaseMessage(record: any) {
+      if (record.is_replied || record.is_from_page) return;
+      console.log('[Engagement] Handling DB Message:', record.id);
+      
+      const supabase = getSupabase();
+      const { data: config } = await supabase
+          .from('ad_configs')
+          .select('*')
+          .eq('user_id', record.user_id)
+          .single();
+
+      if (!config) return;
+
+      // Generate Reply
+      const reply = await this.generateAIReply(record.content, 'message');
+      
+      // Send
+      await this.sendMessage(record.sender_name, reply, config.access_token); // sender_name might hold ID in some schemas
+
+      // Update
+      await supabase.from('messages').update({ is_replied: true }).eq('id', record.id);
   },
 
   /**

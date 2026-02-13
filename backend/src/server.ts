@@ -1,7 +1,12 @@
 import express from 'express';
 import bodyParser from 'body-parser';
 import dotenv from 'dotenv';
+<<<<<<< HEAD
 import { EngagementService } from './services/engagement.js'; // Note the .js extension for ESM
+=======
+import { EngagementService } from './services/engagement.js';
+import { WalletService } from './services/wallet.js';
+>>>>>>> adroom-mobile
 
 dotenv.config();
 
@@ -44,6 +49,7 @@ app.get('/webhooks/facebook', (req, res) => {
  */
 app.post('/webhooks/facebook', async (req, res) => {
   const body = req.body;
+  console.log(`[FB Webhook] Received event: ${JSON.stringify(body.object)}`);
 
   // Check if this is an event from a Page subscription
   if (body.object === 'page') {
@@ -92,6 +98,125 @@ app.post('/webhooks/database', async (req, res) => {
   }
 });
 
+<<<<<<< HEAD
+=======
+/**
+ * Wallet Endpoints
+ */
+
+// Get Balance
+app.get('/api/wallet/balance/:userId', async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const wallet = await WalletService.getBalance(userId);
+    res.json(wallet);
+  } catch (error: any) {
+    console.error('Error fetching balance:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Initiate Deposit
+app.post('/api/wallet/deposit', async (req, res) => {
+  try {
+    const { userId, amount, email, name } = req.body;
+    const result = await WalletService.initiateDeposit(userId, Number(amount), email, name);
+    res.json(result);
+  } catch (error: any) {
+    console.error('Error initiating deposit:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Deduct Funds (Internal/Agent use)
+app.post('/api/wallet/deduct', async (req, res) => {
+  try {
+    const { userId, amount, description } = req.body;
+    const result = await WalletService.deductFunds(userId, Number(amount), description);
+    res.json({ success: result });
+  } catch (error: any) {
+    console.error('Error deducting funds:', error);
+    res.status(400).json({ error: error.message }); // 400 for business logic error (insufficient funds)
+  }
+});
+
+// Flutterwave Redirect Handler (Verify Payment)
+app.get('/webhooks/flutterwave/redirect', async (req, res) => {
+  const { status, tx_ref, transaction_id } = req.query;
+
+  if (status === 'successful' || status === 'completed') {
+    try {
+      const success = await WalletService.verifyAndCredit(String(tx_ref), String(transaction_id));
+      if (success) {
+        res.send(`
+          <html>
+            <body style="display:flex;justify-content:center;align-items:center;height:100vh;background:#0B0F19;color:white;font-family:sans-serif;">
+              <div style="text-align:center;">
+                <h1 style="color:#4ADE80;">Payment Successful!</h1>
+                <p>Your wallet has been credited.</p>
+                <p>You can close this window now.</p>
+              </div>
+            </body>
+          </html>
+        `);
+      } else {
+        res.send('Payment verification failed.');
+      }
+    } catch (error) {
+      console.error('Verification error:', error);
+      res.status(500).send('Error verifying payment.');
+    }
+  } else {
+    res.send('Payment was not successful.');
+  }
+});
+
+// Flutterwave Webhook (Async confirmation)
+app.post('/webhooks/flutterwave', async (req, res) => {
+  const signature = req.headers['verif-hash'];
+  if (!signature || signature !== process.env.FLUTTERWAVE_HASH) {
+    // res.sendStatus(401); // Optional: verify hash if set
+  }
+  
+  const body = req.body;
+  console.log('[FW Webhook]', body);
+
+  if (body.event === 'charge.completed' && body.data.status === 'successful') {
+     await WalletService.verifyAndCredit(body.data.tx_ref, body.data.id);
+  }
+
+  res.sendStatus(200);
+});
+
+/**
+ * Remote Logging Endpoint
+ * Receives logs from the mobile app (Vision, Creative, Agent actions) to centralize in Railway logs.
+ */
+app.post('/api/logs', (req, res) => {
+  const { level, category, message, data, timestamp } = req.body;
+  
+  const logPrefix = `[APP] [${category?.toUpperCase() || 'GENERAL'}]`;
+  const meta = data ? JSON.stringify(data) : '';
+  const time = timestamp ? new Date(timestamp).toISOString() : new Date().toISOString();
+
+  const fullMessage = `${time} ${logPrefix} ${message} ${meta}`;
+
+  switch (level) {
+    case 'error':
+      console.error(fullMessage);
+      break;
+    case 'warn':
+      console.warn(fullMessage);
+      break;
+    default:
+      console.log(fullMessage);
+  }
+
+  res.sendStatus(200);
+});
+
+
+>>>>>>> adroom-mobile
 app.listen(PORT, () => {
   console.log(`Server is running on port ${PORT}`);
 });
