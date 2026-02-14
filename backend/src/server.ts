@@ -211,6 +211,31 @@ app.post('/api/logs', (req, res) => {
 
 
 
+/**
+ * Auth Redirect Endpoint (Facebook OAuth)
+ * Handles the redirect from Facebook, extracts the code, and deep links back to the app.
+ */
+app.get('/auth/facebook/callback', (req, res) => {
+  const { code, state, error, error_description } = req.query;
+
+  if (error) {
+    console.error('[OAuth] Facebook Error:', error, error_description);
+    // Redirect back to app with error
+    return res.redirect(`adroom://auth/facebook/callback?error=${error}&error_description=${error_description}`);
+  }
+
+  if (code) {
+    console.log('[OAuth] Received code, redirecting to app...');
+    // Redirect back to app with code
+    // Note: We don't exchange token here; the app (Expo AuthSession) does that using the code.
+    // We just bridge the web -> app gap.
+    const appRedirect = `adroom://auth/facebook/callback?code=${code}${state ? `&state=${state}` : ''}`;
+    return res.redirect(appRedirect);
+  }
+
+  res.status(400).send('Invalid request: No code or error found.');
+});
+
 app.listen(PORT, () => {
   console.log(`Server is running on port ${PORT}`);
 });
