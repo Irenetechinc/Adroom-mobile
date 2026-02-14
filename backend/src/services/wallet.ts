@@ -295,7 +295,7 @@ export class WalletService {
   /**
    * Deduct Funds for Ad Execution and Provision Payment Method
    */
-  static async deductFunds(userId: string, amount: number, description: string, billingDetails: BillingDetails) {
+  static async deductFunds(userId: string, amount: number, description: string) {
     if (!supabase) throw new Error("Supabase client is not initialized.");
 
     console.log(`[Wallet] Attempting deduction of NGN ${amount} for ${userId}`);
