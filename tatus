@@ -1,0 +1,36 @@
+[33mcommit b95efdfc8cd0be5c16890aa431b8abc8367022b3[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mAdroom-mobile[m[33m, [m[1;31morigin/Adroom-mobile[m[33m)[m
+Merge: 06b8d0d d941d0f
+Author: Irenetechinc <ireneokpala617@gmail.com>
+Date:   Fri Feb 13 03:12:06 2026 +0100
+
+    Merge pull request #4 from Irenetechinc/main
+    
+    Duplicate files fixed
+
+[33mcommit d941d0f2f88dd2ad5c31b4c005857d96a642a143[m[33m ([m[1;31morigin/main[m[33m, [m[1;31morigin/HEAD[m[33m, [m[1;32mmain[m[33m)[m
+Author: irenetechinc <irenokpala617@gmail.com>
+Date:   Fri Feb 13 03:08:27 2026 +0100
+
+    Fix: Resolve TypeScript errors in DrawerNavigator and FacebookService
+
+[33mcommit 0b8f00542ef5f852eac092ccbb3ba5c9cff7caa2[m
+Author: irenetechinc <irenokpala617@gmail.com>
+Date:   Fri Feb 13 03:00:43 2026 +0100
+
+    Fix: Resolve merge conflicts and duplicates in multiple files
+
+[33mcommit 0a5aeb0a4ea4b7b1ebeee701bc626cfb10bb5ef6[m
+Merge: 9344de2 6237920
+Author: irenetechinc <irenokpala617@gmail.com>
+Date:   Fri Feb 13 02:55:49 2026 +0100
+
+    Fix: Resolve merge conflicts in creative.ts and duplicate variable declarations
+
+[33mcommit 06b8d0de525b29c6441697ed91c410e194248518[m
+Merge: ea5f8d9 6237920
+Author: Irenetechinc <ireneokpala617@gmail.com>
+Date:   Fri Feb 13 01:34:30 2026 +0100
+
+    Merge pull request #3 from Irenetechinc/adroom-mobile
+    
+    Fix: Robust Supabase env var handling and logging
