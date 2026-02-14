@@ -125,13 +125,8 @@ app.post('/api/wallet/deposit', async (req, res) => {
 // Deduct Funds (Internal/Agent use)
 app.post('/api/wallet/deduct', async (req, res) => {
   try {
-    const { userId, amount, description, billingDetails } = req.body;
-    
-    if (!billingDetails) {
-        throw new Error("Billing details are required for virtual card creation.");
-    }
-
-    const result = await WalletService.deductFunds(userId, Number(amount), description, billingDetails);
+    const { userId, amount, description } = req.body;
+    const result = await WalletService.deductFunds(userId, Number(amount), description);
     res.json(result);
   } catch (error: any) {
     console.error('Error deducting funds:', error);
