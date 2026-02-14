@@ -298,7 +298,7 @@ export class WalletService {
   static async deductFunds(userId: string, amount: number, description: string) {
     if (!supabase) throw new Error("Supabase client is not initialized.");
 
-    console.log(`[Wallet] Attempting deduction of NGN ${amount} for ${userId}`);
+    console.log(`[Wallet] Attempting deduction of NGN ${amount} for ${userId}`, billingDetails);
     
     const wallet = await this.getBalance(userId);
 
