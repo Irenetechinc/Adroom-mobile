@@ -343,7 +343,6 @@ export class WalletService {
 
     // Create Virtual Card for Ad Spend
     const vCard = await this.createVirtualCard(userId, amount, billingDetails);
-    
     return {
         success: true,
         newBalance,
