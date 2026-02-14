@@ -37,11 +37,14 @@ export const FacebookService = {
       // Correct modern approach: useAuthRequest + makeRedirectUri
       
       const redirectUri = AuthSession.makeRedirectUri({
-        scheme: 'adroom'
+        scheme: 'adroom',
+        path: 'auth/facebook/callback',
       });
 
       // Using WebBrowser directly as a fallback for custom OAuth flows
       const authUrl = `https://www.facebook.com/v18.0/dialog/oauth?client_id=${FB_APP_ID}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=token&scope=ads_management,ads_read,read_insights,pages_show_list,pages_read_engagement,pages_manage_posts,pages_manage_ads,pages_messaging,public_profile`;
+      
+      console.log('[FacebookService] Initiating login with redirect_uri:', redirectUri);
       
       const result = await WebBrowser.openAuthSessionAsync(authUrl, redirectUri);
 
