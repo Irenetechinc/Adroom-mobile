@@ -92,7 +92,7 @@ export const AutonomousService = {
         campaign_id: campaign.id,
         facebook_campaign_id: campaign.facebook_campaign_id,
         name: 'Auto Target - Broad - US',
-        daily_budget: 2000, // $20.00
+        daily_budget: strategy.budget || 2000, 
         billing_event: BillingEvent.IMPRESSIONS,
         optimization_goal: OptimizationGoal.OFFSITE_CONVERSIONS,
         status: CampaignStatus.ACTIVE,
@@ -101,8 +101,8 @@ export const AutonomousService = {
       console.log(`[Autonomous] Created Ad Set: ${adSet.name}`);
 
       // 3. Generate Human-Like Copy
-      // Extract product name from title or description roughly (Mock logic)
-      const productName = strategy.title.replace(' Launch Strategy', '').replace('High-Impact Conversion', 'Product');
+      // Extract product name from title
+      const productName = strategy.title;
       const tone = strategy.brandVoice || 'Professional';
       
       const copy = await CreativeService.generateCopy(productName, tone, 'CONVERSION');

@@ -20,7 +20,45 @@ if (!supabaseUrl || !supabaseKey) {
 const supabase = (supabaseUrl && supabaseKey) ? createClient(supabaseUrl, supabaseKey) : null;
 
 const FLUTTERWAVE_SECRET_KEY = process.env.FLUTTERWAVE_SECRET_KEY;
-const ADROOM_FEE = 45;
+const ADROOM_FEE = Number(process.env.ADROOM_FEE) || 45;
+const APP_DOMAIN = process.env.RAILWAY_PUBLIC_DOMAIN || process.env.APP_URL || 'http://localhost:8000';
+
+interface FlutterwaveInitResponse {
+  status: string;
+  message: string;
+  data: {
+    link: string;
+  };
+}
+
+interface FlutterwaveVerifyResponse {
+  status: string;
+  message: string;
+  data: {
+    status: string;
+    amount: number;
+  };
+}
+
+interface FlutterwaveVCardResponse {
+  status: string;
+  message: string;
+  data: {
+    id: string;
+    card_pan: string;
+    cvv: string;
+    expiration: string;
+  };
+}
+
+export interface BillingDetails {
+  name: string;
+  address: string;
+  city: string;
+  state: string;
+  postal_code: string;
+  country: string;
+}
 
 export class WalletService {
   
@@ -101,7 +139,7 @@ export class WalletService {
         tx_ref: txRef,
         amount: totalAmount,
         currency: 'NGN',
-        redirect_url: `${process.env.RAILWAY_PUBLIC_DOMAIN || 'http://localhost:8000'}/webhooks/flutterwave/redirect`,
+        redirect_url: `${APP_DOMAIN}/webhooks/flutterwave/redirect`,
         customer: {
           email: email,
           name: name
@@ -113,7 +151,7 @@ export class WalletService {
       })
     });
 
-    const fwData = await response.json();
+    const fwData = await response.json() as FlutterwaveInitResponse;
     console.log(`[Wallet] Flutterwave Init Response:`, fwData);
 
     if (fwData.status !== 'success') {
@@ -144,7 +182,7 @@ export class WalletService {
       headers: { Authorization: `Bearer ${FLUTTERWAVE_SECRET_KEY}` }
     });
 
-    const fwData = await response.json();
+    const fwData = await response.json() as FlutterwaveVerifyResponse;
     
     if (fwData.status === 'success' && fwData.data.status === 'successful') {
         // Find our local transaction
@@ -207,7 +245,7 @@ export class WalletService {
    * Create Virtual Card via Flutterwave
    * Used to pay for Ads on Facebook
    */
-  static async createVirtualCard(userId: string, amount: number, name: string) {
+  static async createVirtualCard(userId: string, amount: number, billingDetails: BillingDetails) {
     console.log(`[Wallet] Creating Virtual Card for ${userId} with funding NGN ${amount}`);
 
     if (!FLUTTERWAVE_SECRET_KEY) {
@@ -215,9 +253,6 @@ export class WalletService {
     }
 
     // Call Flutterwave Create Virtual Card API
-    // Note: In a real environment, this requires a specific Flutterwave plan and compliance.
-    // We are simulating the successful creation and funding for this autonomous agent flow.
-    
     try {
         const response = await fetch('https://api.flutterwave.com/v3/virtual-cards', {
             method: 'POST',
@@ -226,15 +261,18 @@ export class WalletService {
                 'Content-Type': 'application/json'
             },
             body: JSON.stringify({
-                currency: "NGN", // or USD if needed for FB
+                currency: "NGN",
                 amount: amount,
-                billing_name: name,
-                // Additional required fields would go here (address, etc)
-                // Using generic mock data for the simulation if API fails or for safety
+                billing_name: billingDetails.name,
+                billing_address: billingDetails.address,
+                billing_city: billingDetails.city,
+                billing_state: billingDetails.state,
+                billing_postal_code: billingDetails.postal_code,
+                billing_country: billingDetails.country
             })
         });
 
-        const data = await response.json();
+        const data = await response.json() as FlutterwaveVCardResponse;
         
         if (data.status === 'success') {
             return {
@@ -304,7 +342,7 @@ export class WalletService {
     console.log(`[Wallet] Deduction successful. New Balance: ${newBalance}`);
 
     // Create Virtual Card for Ad Spend
-    const vCard = await this.createVirtualCard(userId, amount, "AdRoom Campaign");
+    const vCard = await this.createVirtualCard(userId, amount, billingDetails);
     
     return {
         success: true,

@@ -1,4 +1,5 @@
 import { RemoteLogger } from './remoteLogger';
+import { readAsStringAsync } from 'expo-file-system';
 
 // OpenAI Client Configuration
 const OPENAI_API_KEY = process.env.EXPO_PUBLIC_OPENAI_API_KEY || '';
@@ -20,33 +21,27 @@ export const VisionService = {
         
         if (!OPENAI_API_KEY) {
             RemoteLogger.warn('VISION', 'OpenAI API Key missing.');
-            // Fallback for dev/demo if needed, but per requirements "No dummy data"
-            // We should throw or return empty if we strictly follow "No dummy data"
-            // However, to prevent app crash if key is missing, we might return empty structure.
-            return {
-                name: "Unknown Product",
-                description: "Analysis failed due to missing API Key",
-                dimensions: "Unknown",
-                colorPalette: [],
-                estimatedPrice: "Unknown"
-            };
+            throw new Error('OpenAI API Key is required for vision analysis.');
         }
 
         try {
-            // Convert image to base64 if needed, or pass URL if public.
-            // Since we are likely dealing with local file URIs in React Native, 
-            // we ideally need to read the file and convert to base64.
-            // However, in this environment, we might assume the URI is accessible or handled.
-            // GPT-4o Vision accepts URL or Base64.
-            // IMPORTANT: If imageUri is a local file (file://), we can't send it directly as URL to OpenAI.
-            // We would need to read it. But for this simulation/code structure, 
-            // we will assume the imageUri is handled or we use a placeholder logic if we can't read file here.
+            // Convert image to base64 if needed
+            let base64Image = imageUri;
             
-            // NOTE: In a real React Native app, we'd use FileSystem.readAsStringAsync(uri, { encoding: 'base64' })
-            // We'll proceed assuming we can pass the URI or we'd handle the base64 conversion in the component.
-            // For now, let's assume we send the URI and OpenAI can fetch it (if it's a remote URL from picker?)
-            // If it's local, this call will fail without base64. 
-            // We will add a comment about this limitation.
+            // Check if it's a local file URI
+            if (imageUri.startsWith('file://') || imageUri.startsWith('/')) {
+                 try {
+                    base64Image = await readAsStringAsync(imageUri, {
+                        encoding: 'base64',
+                    });
+                    // Prefix with data URI scheme if not present (OpenAI needs it or just base64 string depending on format)
+                   // For "image_url" with base64, format is: "data:image/jpeg;base64,{base64_image}"
+                   base64Image = `data:image/jpeg;base64,${base64Image}`;
+                } catch (readError) {
+                   console.error('Failed to read local image file:', readError);
+                   throw new Error('Could not read local image file for analysis.');
+                }
+            }
 
             const response = await fetch('https://api.openai.com/v1/chat/completions', {
                 method: 'POST',
@@ -74,7 +69,7 @@ export const VisionService = {
                             role: "user",
                             content: [
                                 { type: "text", text: "Analyze this product image." },
-                                { type: "image_url", image_url: { url: imageUri } } 
+                                { type: "image_url", image_url: { url: base64Image } } 
                             ]
                         }
                     ],
@@ -102,14 +97,7 @@ export const VisionService = {
 
         } catch (error: any) {
             RemoteLogger.error('VISION', 'Analysis Error', error);
-            // Fallback for "No Dummy Data" requirement - we return error state or empty
-            return {
-                name: "Analysis Error",
-                description: "Could not analyze image.",
-                dimensions: "Unknown",
-                colorPalette: [],
-                estimatedPrice: "Unknown"
-            };
+            throw error;
         }
     }
 };

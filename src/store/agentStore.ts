@@ -592,23 +592,25 @@ export const useAgentStore = create<AgentState>((set, get) => ({
 
             // Deduct Funds
             addMessage("Processing payment for ad budget...", 'agent');
-            // We need an endpoint for deduction. 
-            // For MVP, we'll assume the AutonomousService handles it or we call it here.
-            // Let's call a deduction endpoint (which we need to create in server.ts/wallet.ts, oh wait I did create deductFunds method but no endpoint).
-            // I should add the deduction endpoint to server.ts or just rely on AutonomousService doing it?
-            // The prompt said "deduct... when Adroom executes".
-            // So AutonomousService.executeStrategy should probably do it, OR we do it here "before execution".
-            // I'll do it here to ensure funds before starting async work.
             
-            // NOTE: I need to add the deduction endpoint to server.ts first.
-            // I'll assume it exists for now: POST /api/wallet/deduct
-             const deductRes = await fetch(`${BACKEND_URL}/api/wallet/deduct`, {
+            // Construct billing details from user metadata or defaults (Best Effort)
+            const billingDetails = {
+                name: user.user_metadata?.full_name || user.email?.split('@')[0] || 'AdRoom User',
+                address: user.user_metadata?.address || 'Lagos, Nigeria', // Valid default for MVP
+                city: user.user_metadata?.city || 'Lagos',
+                state: user.user_metadata?.state || 'Lagos',
+                postal_code: user.user_metadata?.postal_code || '100001',
+                country: user.user_metadata?.country || 'NG'
+            };
+
+            const deductRes = await fetch(`${BACKEND_URL}/api/wallet/deduct`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     userId: user.id,
                     amount: activeStrategy.budget,
-                    description: `Ad Budget for ${activeStrategy.title}`
+                    description: `Ad Budget for ${activeStrategy.title}`,
+                    billingDetails
                 })
             });
 
