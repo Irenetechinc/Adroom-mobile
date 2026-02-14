@@ -171,6 +171,40 @@ const FacebookConnectButton = ({ onPress }: { onPress: () => void }) => (
   </TouchableOpacity>
 );
 
+const SessionRestoreCard = ({ lastActivity, preview, onRestore, onNew }: any) => (
+  <View className="mt-2 bg-adroom-card p-5 rounded-xl border border-adroom-neon/50">
+    <View className="flex-row items-center mb-3">
+        <View className="w-10 h-10 bg-adroom-neon/20 rounded-full items-center justify-center mr-3">
+            <Text className="text-adroom-neon text-xl">↺</Text>
+        </View>
+        <View>
+            <Text className="text-white font-bold text-lg">Resume Session?</Text>
+            <Text className="text-adroom-text-muted text-xs">Last active: {lastActivity}</Text>
+        </View>
+    </View>
+    
+    <View className="bg-adroom-dark p-3 rounded-lg mb-4 border border-white/10">
+        <Text className="text-gray-400 italic text-sm">"{preview}"</Text>
+    </View>
+
+    <View className="flex-row space-x-3">
+        <TouchableOpacity 
+            onPress={onNew}
+            className="flex-1 bg-red-500/20 py-3 rounded-lg items-center border border-red-500/50"
+        >
+            <Text className="text-red-400 font-bold">Start Fresh</Text>
+        </TouchableOpacity>
+        
+        <TouchableOpacity 
+            onPress={onRestore}
+            className="flex-1 bg-adroom-neon py-3 rounded-lg items-center"
+        >
+            <Text className="text-adroom-dark font-bold">Continue</Text>
+        </TouchableOpacity>
+    </View>
+  </View>
+);
+
 type Props = NativeStackScreenProps<RootStackParamList, 'AgentChat'>;
 
 export default function AgentChatScreen({ navigation, route }: Props) {
@@ -178,7 +212,7 @@ export default function AgentChatScreen({ navigation, route }: Props) {
     messages, addMessage, isTyping, setTyping, isInputDisabled, setInputDisabled,
     generateStrategies, updateProductDetails, handleMarketingTypeSelection,
     initiateFacebookConnection, handleFacebookLogin, handlePageSelection, handleAdAccountSelection,
-    connectionState, loadMessages
+    connectionState, loadMessages, restoreSession, startNewSession
   } = useAgentStore();
   
   const { user } = useAuthStore();
@@ -199,17 +233,15 @@ export default function AgentChatScreen({ navigation, route }: Props) {
     }
   }, [route.params]);
 
+  // Initial Greeting only if NO messages loaded and history check done
+  // AND not showing restore prompt (which would be the only message if pending)
   useEffect(() => {
     if (historyLoaded && !init && messages.length === 0 && user) {
-      setInit(true);
-      setTyping(true);
-      const userName = user.email?.split('@')[0] || 'User';
-      
-      setTimeout(() => {
-        addMessage(`Hello ${userName}. I am AdRoom AI. What are we marketing today?`, 'agent', undefined, 'marketing_type_selection');
-        setTyping(false);
-        setInputDisabled(true); // Disable input until selection is made
-      }, 1500);
+       // Wait, loadMessages now handles the "New Session" logic itself if empty!
+       // So we don't need this manual trigger anymore, or we make it safe.
+       // The store logic: if empty -> startNewSession() -> adds greeting.
+       // So UI doesn't need to do it.
+       setInit(true);
     }
   }, [init, messages.length, user, historyLoaded]);
 
@@ -393,6 +425,14 @@ export default function AgentChatScreen({ navigation, route }: Props) {
             <CompletionCard onDashboard={() => navigation.navigate('Main')} />
         )}
 
+        {item.uiType === 'session_restore' && (
+            <SessionRestoreCard 
+                lastActivity={item.uiData?.lastActivity}
+                preview={item.uiData?.preview}
+                onRestore={restoreSession}
+                onNew={startNewSession}
+            />
+        )}
       </View>
     </Animated.View>
   );

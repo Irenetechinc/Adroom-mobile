@@ -4,10 +4,7 @@ import { CreativeService } from '../services/creative';
 import { supabase } from '../services/supabase';
 import { FacebookService, FacebookPage, FacebookAdAccount } from '../services/facebook';
 import { AutonomousService } from '../services/autonomous';
-<<<<<<< HEAD
-=======
 import { RemoteLogger } from '../services/remoteLogger';
->>>>>>> adroom-mobile
 
 // Helper to access OpenAI for chat analysis
 const analyzeChatIntent = async (messages: ChatMessage[], productDetails: ProductDetails): Promise<Partial<ProductDetails>> => {
@@ -83,6 +80,10 @@ interface AgentState {
   handleFacebookLogin: () => Promise<void>;
   handlePageSelection: (page: FacebookPage) => void;
   handleAdAccountSelection: (account: FacebookAdAccount) => Promise<void>;
+  
+  // Session Management
+  restoreSession: () => void;
+  startNewSession: () => void;
 }
 
 const BACKEND_URL = process.env.EXPO_PUBLIC_BACKEND_URL || 'https://adroom-mobile-production.up.railway.app';
@@ -342,6 +343,51 @@ export const useAgentStore = create<AgentState>((set, get) => ({
       .eq('user_id', user.id)
       .order('created_at', { ascending: true });
 
+    if (data && data.length > 0) {
+      // Analyze last state to determine if session is incomplete
+      const lastMessage = data[data.length - 1];
+      const isCompleted = lastMessage.ui_type === 'completion_card';
+      
+      if (!isCompleted) {
+        // Clear UI but prompt for restore
+        set({ messages: [], isTyping: false });
+        
+        // Use a timeout to ensure this renders after mount
+        setTimeout(() => {
+            get().addMessage(
+                "Welcome back! I noticed you have an incomplete session. Would you like to continue where you left off?",
+                'agent',
+                undefined,
+                'session_restore',
+                {
+                   lastActivity: new Date(lastMessage.created_at).toLocaleString(),
+                   preview: lastMessage.text.substring(0, 50) + '...'
+                }
+            );
+        }, 500);
+      } else {
+         // If completed, just start fresh silently or load history? 
+         // User requested "clear all previous chat history from UI when a user reopens... but check for incomplete"
+         // So if complete, we start fresh.
+         get().startNewSession();
+      }
+    } else {
+       get().startNewSession();
+    }
+  },
+
+  restoreSession: async () => {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+
+    set({ isTyping: true });
+
+    const { data } = await supabase
+      .from('chat_history')
+      .select('*')
+      .eq('user_id', user.id)
+      .order('created_at', { ascending: true });
+
     if (data) {
       const loadedMessages: ChatMessage[] = data.map((m: any) => ({
         id: m.id,
@@ -352,16 +398,60 @@ export const useAgentStore = create<AgentState>((set, get) => ({
         uiType: m.ui_type,
         uiData: m.ui_data
       }));
-      set({ messages: loadedMessages });
+      
+      set({ messages: loadedMessages, isTyping: false });
+      
+      // Load context
+      const { data: stratData } = await supabase
+        .from('strategies')
+        .select('*')
+        .eq('user_id', user.id)
+        .eq('is_active', true)
+        .single();
+        
+      if (stratData) {
+         get().loadActiveStrategy();
+      }
+      
+      get().addMessage("Session restored. Please continue.", 'agent');
     }
   },
 
-  resetAgent: () => set({
-    messages: [],
-    isTyping: false,
-    productDetails: { name: '', description: '' },
-    generatedStrategies: []
-  }),
+  startNewSession: async () => {
+    // Clear local state
+    set({
+        messages: [],
+        isTyping: false,
+        productDetails: { name: '', description: '' },
+        generatedStrategies: [],
+        activeStrategy: null,
+        connectionState: 'IDLE',
+        selectedPage: null,
+        selectedAdAccount: null
+    });
+
+    // Archive old messages in DB (Optional, or just ignore them by flag)
+    // For now, we just don't load them. But to prevent them from appearing on next load as "incomplete",
+    // we should probably mark them as archived or just delete them if we want "clean interface".
+    // Or we rely on a session_id.
+    // For simplicity/MVP: We'll delete old chat history for this user to ensure "Fresh" start truly means fresh in DB too.
+    const { data: { user } } = await supabase.auth.getUser();
+    if (user) {
+        await supabase.from('chat_history').delete().eq('user_id', user.id);
+    }
+
+    const { addMessage, setInputDisabled, setTyping } = get();
+    setTyping(true);
+    
+    setTimeout(() => {
+        const userName = user?.email?.split('@')[0] || 'User';
+        addMessage(`Hello ${userName}. I am AdRoom AI. What are we marketing today?`, 'agent', undefined, 'marketing_type_selection');
+        setTyping(false);
+        setInputDisabled(true);
+    }, 1000);
+  },
+
+  resetAgent: () => get().startNewSession(),
 
   // --- Interaction Handlers ---
   handleMarketingTypeSelection: (type) => {
@@ -377,11 +467,7 @@ export const useAgentStore = create<AgentState>((set, get) => ({
       
       setTyping(true);
       setTimeout(() => {
-<<<<<<< HEAD
-        addMessage(`Excellent choice. To begin, please upload a photo of your ${type.toLowerCase().replace('_', ' and ')}.`, 'agent');
-=======
         addMessage(`Excellent choice. To begin, please upload a photo of your ${type.toLowerCase().replace('_', ' and ')} so I can analyze its attributes.`, 'agent');
->>>>>>> adroom-mobile
         setTyping(false);
       }, 1000);
     }
@@ -393,10 +479,10 @@ export const useAgentStore = create<AgentState>((set, get) => ({
     const { addMessage } = get();
     set({ connectionState: 'CONNECTING_FACEBOOK' });
     addMessage(
-      "To autonomously manage your campaigns, I need access to your Facebook Business account. Please provide your credentials to establish a secure bridge.",
+      "To autonomously manage your campaigns, I need access to your Facebook Business account. Please click the button below to securely connect.",
       'agent',
       undefined,
-      'facebook_credentials' 
+      'facebook_connect' 
     );
   },
 
@@ -405,7 +491,29 @@ export const useAgentStore = create<AgentState>((set, get) => ({
     set({ isTyping: true });
     
     try {
-      const accessToken = await FacebookService.login();
+      // Check if we already have a valid token (e.g., from previous session or stored config)
+      const { data: { user } } = await supabase.auth.getUser();
+      let accessToken = null;
+      
+      // Try to get existing config first
+      if (user) {
+          const { data: config } = await supabase
+              .from('ad_configs')
+              .select('access_token')
+              .eq('user_id', user.id)
+              .maybeSingle(); // Changed from single() to maybeSingle() to avoid errors if no config exists
+          
+          if (config?.access_token) {
+              // In a real app, validate token expiration here
+              accessToken = config.access_token;
+          }
+      }
+
+      // If no valid token found, login
+      if (!accessToken) {
+          accessToken = await FacebookService.login();
+      }
+
       if (accessToken) {
         set({ fbAccessToken: accessToken });
         
@@ -484,23 +592,25 @@ export const useAgentStore = create<AgentState>((set, get) => ({
 
             // Deduct Funds
             addMessage("Processing payment for ad budget...", 'agent');
-            // We need an endpoint for deduction. 
-            // For MVP, we'll assume the AutonomousService handles it or we call it here.
-            // Let's call a deduction endpoint (which we need to create in server.ts/wallet.ts, oh wait I did create deductFunds method but no endpoint).
-            // I should add the deduction endpoint to server.ts or just rely on AutonomousService doing it?
-            // The prompt said "deduct... when Adroom executes".
-            // So AutonomousService.executeStrategy should probably do it, OR we do it here "before execution".
-            // I'll do it here to ensure funds before starting async work.
             
-            // NOTE: I need to add the deduction endpoint to server.ts first.
-            // I'll assume it exists for now: POST /api/wallet/deduct
-             const deductRes = await fetch(`${BACKEND_URL}/api/wallet/deduct`, {
+            // Construct billing details from user metadata or defaults (Best Effort)
+            const billingDetails = {
+                name: user.user_metadata?.full_name || user.email?.split('@')[0] || 'AdRoom User',
+                address: user.user_metadata?.address || 'Lagos, Nigeria', // Valid default for MVP
+                city: user.user_metadata?.city || 'Lagos',
+                state: user.user_metadata?.state || 'Lagos',
+                postal_code: user.user_metadata?.postal_code || '100001',
+                country: user.user_metadata?.country || 'NG'
+            };
+
+            const deductRes = await fetch(`${BACKEND_URL}/api/wallet/deduct`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     userId: user.id,
                     amount: activeStrategy.budget,
-                    description: `Ad Budget for ${activeStrategy.title}`
+                    description: `Ad Budget for ${activeStrategy.title}`,
+                    billingDetails
                 })
             });
 
@@ -520,7 +630,7 @@ export const useAgentStore = create<AgentState>((set, get) => ({
             }
         }
 
-        await FacebookService.saveConfig(selectedPage.id, selectedPage.name, account.account_id, fbAccessToken);
+        await FacebookService.saveConfig(selectedPage.id, selectedPage.name, account.id, fbAccessToken);
         
         // Execute the strategy autonomously
         addMessage("Configuration saved. Initializing autonomous execution protocols...", 'agent');

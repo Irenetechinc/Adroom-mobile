@@ -56,17 +56,11 @@ async function runWorker() {
 
         if (fbConfig) {
           // Perform Autonomous Tasks
-          // Note: In a real implementation, we would import the Service classes here.
-          // For this MVP file structure, we'll simulate the call or reimplement the core check.
-          
           // Task A: Daily Post Check
           await checkAndExecuteDailyPost(fbConfig, strategy);
           
           // Task B: Lead Follow-up
-          await checkAndExecuteLeadFollowUp(supabase);
-
-          // Task C: Optimization Check (Placeholder logic for worker)
-          // await optimizeCampaigns(fbConfig);
+          await checkAndExecuteLeadFollowUp(supabase, fbConfig);
         }
       } catch (err) {
         console.error(`[Worker] Error processing user ${strategy.user_id}:`, err);
@@ -79,7 +73,7 @@ async function runWorker() {
 
 // --- Simplified Service Logic for Worker Context ---
 
-async function checkAndExecuteLeadFollowUp(supabase: any) {
+async function checkAndExecuteLeadFollowUp(supabase: any, config: any) {
   // Lead Follow-up Logic
   const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
   
@@ -87,19 +81,37 @@ async function checkAndExecuteLeadFollowUp(supabase: any) {
       .from('leads')
       .select('*')
       .eq('status', 'contacted')
+      .eq('user_id', config.user_id)
       .lt('last_interaction', yesterday)
       .limit(10);
 
   if (leads && leads.length > 0) {
       for (const lead of leads) {
           console.log(`[Worker] Following up lead: ${lead.id}`);
-          // In a real scenario, we'd send a message via the platform the lead came from
-          // For now, we update the status and log it
-          await supabase.from('leads').update({
-              status: 'follow_up_sent',
-              last_interaction: new Date().toISOString(),
-              notes: 'Auto follow-up sent via Backend Worker'
-          }).eq('id', lead.id);
+          
+          if (lead.platform === 'facebook' && lead.sender_id) {
+             try {
+                 // Send follow-up message via Facebook API
+                 await fetch(`https://graph.facebook.com/v18.0/me/messages`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        recipient: { id: lead.sender_id },
+                        message: { text: "Hi! Just checking in to see if you have any questions about our products." },
+                        access_token: config.access_token
+                    })
+                 });
+
+                 await supabase.from('leads').update({
+                    status: 'follow_up_sent',
+                    last_interaction: new Date().toISOString(),
+                    notes: 'Auto follow-up sent via Backend Worker'
+                 }).eq('id', lead.id);
+                 
+             } catch (e) {
+                 console.error(`[Worker] Failed to message lead ${lead.id}`, e);
+             }
+          }
       }
   }
 }
@@ -177,5 +189,5 @@ async function generateContent(tone: string, topic: string): Promise<string> {
 // Run immediately on start
 runWorker();
 
-// Then run every hour (in production)
-// setInterval(runWorker, 60 * 60 * 1000);
+// Then run every 15 minutes (in production)
+setInterval(runWorker, 15 * 60 * 1000);

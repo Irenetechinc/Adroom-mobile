@@ -14,10 +14,8 @@ export const CreativeService = {
     console.log(`[CreativeService] Generating image with prompt: "${prompt}" in style: "${style}"`);
     
     if (!OPENAI_API_KEY) {
-      console.warn('OpenAI API Key missing. Falling back to placeholder.');
-      // Fallback only if key is missing (dev mode safety)
-      const uniqueId = Math.random().toString(36).substring(7);
-      return `https://placehold.co/1080x1080/1e40af/ffffff.png?text=${encodeURIComponent(style + ' Creative')}&id=${uniqueId}`;
+      console.error('OpenAI API Key missing. Cannot generate creative.');
+      throw new Error('OpenAI API Key is required for creative generation.');
     }
 
     try {
@@ -126,11 +124,8 @@ export const CreativeService = {
     RemoteLogger.log('CREATIVE', `Generating copy for: ${productName}, Tone: ${tone}`);
     
     if (!OPENAI_API_KEY) {
-      RemoteLogger.warn('CREATIVE', 'OpenAI API Key missing. Falling back to template.');
-      return {
-         headline: `Experience ${productName}`,
-         body: `The best choice for your needs. Try ${productName} today.`
-      };
+      RemoteLogger.error('CREATIVE', 'OpenAI API Key missing.');
+      throw new Error('OpenAI API Key is required for copy generation.');
     }
 
     try {
@@ -188,7 +183,7 @@ export const CreativeService = {
     RemoteLogger.log('CREATIVE', `Generating reply to comment: "${comment}"`);
     
     if (!OPENAI_API_KEY) {
-        return "Thank you for your comment!";
+        throw new Error('OpenAI API Key is required for reply generation.');
     }
 
     try {
@@ -230,7 +225,7 @@ export const CreativeService = {
 
     } catch (error: any) {
         RemoteLogger.error('CREATIVE', 'Reply generation error', error);
-        return "Thanks for connecting with us!";
+        throw error;
     }
   }
 };

@@ -25,6 +25,7 @@ describe('AutonomousService', () => {
     platforms: ['Facebook'],
     estimatedReach: '1000',
     cost: '$10',
+    budget: 2000,
     actions: [],
     // New fields
     lifespanWeeks: 4,

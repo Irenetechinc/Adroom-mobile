@@ -10,13 +10,8 @@ CREATE OR REPLACE FUNCTION trigger_autonomous_worker()
 RETURNS TRIGGER AS $$
 DECLARE
   -- REPLACE THIS WITH YOUR DEPLOYED RAILWAY URL (pointing to the database trigger endpoint)
-<<<<<<< HEAD
-  project_url TEXT := 'https://your-railway-app-url.up.railway.app/webhooks/database';
-  service_key TEXT := 'YOUR_SERVICE_ROLE_KEY'; -- Use vault/secrets in production
-=======
   project_url TEXT := 'https://adroom-mobile-production.up.railway.app/webhooks/database';
   service_key TEXT := 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1ycmdqdnJudGVubGt2c2xmdmZoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njk1NzIxMzgsImV4cCI6MjA4NTE0ODEzOH0.wIwrxgBTsYsx1jGSDDgNw3iPPHN0TZ8v7psen51Z9ks'; -- Use vault/secrets in production
->>>>>>> adroom-mobile
   payload JSONB;
 BEGIN
   -- Construct payload

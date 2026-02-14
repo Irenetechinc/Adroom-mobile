@@ -1,12 +1,8 @@
 import express from 'express';
 import bodyParser from 'body-parser';
 import dotenv from 'dotenv';
-<<<<<<< HEAD
-import { EngagementService } from './services/engagement.js'; // Note the .js extension for ESM
-=======
 import { EngagementService } from './services/engagement.js';
 import { WalletService } from './services/wallet.js';
->>>>>>> adroom-mobile
 
 dotenv.config();
 
@@ -78,19 +74,19 @@ app.post('/webhooks/database', async (req, res) => {
 
   try {
     if (table === 'comments' && type === 'INSERT') {
-       // Only process if it hasn't been handled yet (avoid double processing with FB webhook)
-       // But typically this trigger is for "App-originated" comments or "System-inserted" comments
-       // For "Autonomous Worker" logic, we usually want to catch things inserted by other means,
-       // OR if we want to ensure reliability.
-       // Given EngagementService handles FB Webhooks directly, this might be redundant for FB-origin comments.
-       // However, if we want to handle "Internal" comments or just use DB as source of truth:
-       await EngagementService.handleDatabaseComment(record);
+      // Only process if it hasn't been handled yet (avoid double processing with FB webhook)
+      // But typically this trigger is for "App-originated" comments or "System-inserted" comments
+      // For "Autonomous Worker" logic, we usually want to catch things inserted by other means,
+      // OR if we want to ensure reliability.
+      // Given EngagementService handles FB Webhooks directly, this might be redundant for FB-origin comments.
+      // However, if we want to handle "Internal" comments or just use DB as source of truth:
+      await EngagementService.handleDatabaseComment(record);
     } else if (table === 'messages' && type === 'INSERT') {
-       await EngagementService.handleDatabaseMessage(record);
+      await EngagementService.handleDatabaseMessage(record);
     } else if (type === 'SCHEDULED_TASK') {
-       // Handled by worker loop mostly, but can be triggered here too
+      // Handled by worker loop mostly, but can be triggered here too
     }
-    
+
     res.status(200).json({ received: true });
   } catch (error) {
     console.error('Error processing DB webhook:', error);
@@ -98,8 +94,6 @@ app.post('/webhooks/database', async (req, res) => {
   }
 });
 
-<<<<<<< HEAD
-=======
 /**
  * Wallet Endpoints
  */
@@ -131,9 +125,14 @@ app.post('/api/wallet/deposit', async (req, res) => {
 // Deduct Funds (Internal/Agent use)
 app.post('/api/wallet/deduct', async (req, res) => {
   try {
-    const { userId, amount, description } = req.body;
-    const result = await WalletService.deductFunds(userId, Number(amount), description);
-    res.json({ success: result });
+    const { userId, amount, description, billingDetails } = req.body;
+    
+    if (!billingDetails) {
+        throw new Error("Billing details are required for virtual card creation.");
+    }
+
+    const result = await WalletService.deductFunds(userId, Number(amount), description, billingDetails);
+    res.json(result);
   } catch (error: any) {
     console.error('Error deducting funds:', error);
     res.status(400).json({ error: error.message }); // 400 for business logic error (insufficient funds)
@@ -216,7 +215,32 @@ app.post('/api/logs', (req, res) => {
 });
 
 
->>>>>>> adroom-mobile
-app.listen(PORT, () => {
+
+/**
+ * Auth Redirect Endpoint (Facebook OAuth)
+ * Handles the redirect from Facebook, extracts the code, and deep links back to the app.
+ */
+app.get('/auth/facebook/callback', (req, res) => {
+  const { code, state, error, error_description } = req.query;
+
+  if (error) {
+    console.error('[OAuth] Facebook Error:', error, error_description);
+    // Redirect back to app with error
+    return res.redirect(`adroom://auth/facebook/callback?error=${error}&error_description=${error_description}`);
+  }
+
+  if (code) {
+    console.log('[OAuth] Received code, redirecting to app...');
+    // Redirect back to app with code
+    // Note: We don't exchange token here; the app (Expo AuthSession) does that using the code.
+    // We just bridge the web -> app gap.
+    const appRedirect = `adroom://auth/facebook/callback?code=${code}${state ? `&state=${state}` : ''}`;
+    return res.redirect(appRedirect);
+  }
+
+  res.status(400).send('Invalid request: No code or error found.');
+});
+
+app.listen(Number(PORT), '0.0.0.0', () => {
   console.log(`Server is running on port ${PORT}`);
 });
