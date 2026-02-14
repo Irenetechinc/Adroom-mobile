@@ -236,6 +236,6 @@ app.get('/auth/facebook/callback', (req, res) => {
   res.status(400).send('Invalid request: No code or error found.');
 });
 
-app.listen(PORT, () => {
+app.listen(Number(PORT), '0.0.0.0', () => {
   console.log(`Server is running on port ${PORT}`);
 });

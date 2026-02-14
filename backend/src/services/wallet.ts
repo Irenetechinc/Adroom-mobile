@@ -1,5 +1,4 @@
 
-import fetch from 'node-fetch';
 import { createClient } from '@supabase/supabase-js';
 import dotenv from 'dotenv';
 
@@ -13,11 +12,12 @@ if (!supabaseUrl || !supabaseKey) {
   console.error('Checked SUPABASE_URL, EXPO_PUBLIC_SUPABASE_URL:', supabaseUrl ? 'Found' : 'Missing');
   console.error('Checked SUPABASE_SERVICE_ROLE_KEY, SUPABASE_SERVICE_KEY, SUPABASE_KEY, EXPO_PUBLIC_SUPABASE_ANON_KEY:', supabaseKey ? 'Found' : 'Missing');
   
-  // Throw a clear error that will show up in logs
-  throw new Error(`Supabase Configuration Missing. URL: ${supabaseUrl ? 'OK' : 'MISSING'}, Key: ${supabaseKey ? 'OK' : 'MISSING'}`);
+  // Do not throw here to prevent crash on start. 
+  // Instead, let the service methods fail if called.
+  console.warn('WalletService will be disabled until configuration is fixed.');
 }
 
-const supabase = createClient(supabaseUrl, supabaseKey);
+const supabase = (supabaseUrl && supabaseKey) ? createClient(supabaseUrl, supabaseKey) : null;
 
 const FLUTTERWAVE_SECRET_KEY = process.env.FLUTTERWAVE_SECRET_KEY;
 const ADROOM_FEE = 45;
@@ -28,6 +28,8 @@ export class WalletService {
    * Get User Wallet Balance
    */
   static async getBalance(userId: string) {
+    if (!supabase) throw new Error("Supabase client is not initialized.");
+    
     console.log(`[Wallet] Fetching balance for user: ${userId}`);
     
     // Ensure wallet exists
@@ -59,6 +61,8 @@ export class WalletService {
    * Initiate Deposit Transaction
    */
   static async initiateDeposit(userId: string, amount: number, email: string, name: string) {
+    if (!supabase) throw new Error("Supabase client is not initialized.");
+
     console.log(`[Wallet] Initiating deposit for ${userId}: NGN ${amount}`);
 
     if (!FLUTTERWAVE_SECRET_KEY) {
@@ -131,6 +135,8 @@ export class WalletService {
    * Verify and Credit Deposit (Webhook Handler)
    */
   static async verifyAndCredit(txRef: string, transactionId: string) {
+    if (!supabase) throw new Error("Supabase client is not initialized.");
+
     console.log(`[Wallet] Verifying transaction: ${txRef}`);
 
     // Verify with Flutterwave
@@ -252,6 +258,8 @@ export class WalletService {
    * Deduct Funds for Ad Execution and Provision Payment Method
    */
   static async deductFunds(userId: string, amount: number, description: string) {
+    if (!supabase) throw new Error("Supabase client is not initialized.");
+
     console.log(`[Wallet] Attempting deduction of NGN ${amount} for ${userId}`);
     
     const wallet = await this.getBalance(userId);
