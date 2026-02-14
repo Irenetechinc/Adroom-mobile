@@ -74,19 +74,19 @@ app.post('/webhooks/database', async (req, res) => {
 
   try {
     if (table === 'comments' && type === 'INSERT') {
-       // Only process if it hasn't been handled yet (avoid double processing with FB webhook)
-       // But typically this trigger is for "App-originated" comments or "System-inserted" comments
-       // For "Autonomous Worker" logic, we usually want to catch things inserted by other means,
-       // OR if we want to ensure reliability.
-       // Given EngagementService handles FB Webhooks directly, this might be redundant for FB-origin comments.
-       // However, if we want to handle "Internal" comments or just use DB as source of truth:
-       await EngagementService.handleDatabaseComment(record);
+      // Only process if it hasn't been handled yet (avoid double processing with FB webhook)
+      // But typically this trigger is for "App-originated" comments or "System-inserted" comments
+      // For "Autonomous Worker" logic, we usually want to catch things inserted by other means,
+      // OR if we want to ensure reliability.
+      // Given EngagementService handles FB Webhooks directly, this might be redundant for FB-origin comments.
+      // However, if we want to handle "Internal" comments or just use DB as source of truth:
+      await EngagementService.handleDatabaseComment(record);
     } else if (table === 'messages' && type === 'INSERT') {
-       await EngagementService.handleDatabaseMessage(record);
+      await EngagementService.handleDatabaseMessage(record);
     } else if (type === 'SCHEDULED_TASK') {
-       // Handled by worker loop mostly, but can be triggered here too
+      // Handled by worker loop mostly, but can be triggered here too
     }
-    
+
     res.status(200).json({ received: true });
   } catch (error) {
     console.error('Error processing DB webhook:', error);
