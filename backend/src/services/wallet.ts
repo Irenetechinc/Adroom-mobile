@@ -298,7 +298,7 @@ export class WalletService {
   static async deductFunds(userId: string, amount: number, description: string, billingDetails: BillingDetails) {
     if (!supabase) throw new Error("Supabase client is not initialized.");
 
-    console.log(`[Wallet] Attempting deduction of NGN ${amount} for ${userId}`, billingDetails);
+    console.log(`[Wallet] Attempting deduction of NGN ${amount} for ${userId}`);
     
     const wallet = await this.getBalance(userId);
 
@@ -343,6 +343,7 @@ export class WalletService {
 
     // Create Virtual Card for Ad Spend
     const vCard = await this.createVirtualCard(userId, amount, billingDetails);
+    
     return {
         success: true,
         newBalance,
