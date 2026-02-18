@@ -41,10 +41,14 @@ export const FacebookService = {
         path: 'auth/facebook/callback',
       });
 
+      // Use configured backend URL or fallback to production
+      const BACKEND_URL = process.env.EXPO_PUBLIC_BACKEND_URL || 'https://adroom-mobile-production.up.railway.app';
+      const callbackUrl = `${BACKEND_URL}/auth/facebook/callback`;
+
       // Using WebBrowser directly as a fallback for custom OAuth flows
-      const authUrl = `https://www.facebook.com/v18.0/dialog/oauth?client_id=${FB_APP_ID}&redirect_uri=${encodeURIComponent('https://adroom-mobile-production.up.railway.app/auth/facebook/callback')}&response_type=token&scope=ads_management,ads_read,read_insights,pages_show_list,pages_read_engagement,pages_manage_posts,pages_manage_ads,pages_messaging,public_profile`;
+      const authUrl = `https://www.facebook.com/v18.0/dialog/oauth?client_id=${FB_APP_ID}&redirect_uri=${encodeURIComponent(callbackUrl)}&response_type=token&scope=ads_management,ads_read,read_insights,pages_show_list,pages_read_engagement,pages_manage_posts,pages_manage_ads,pages_messaging,public_profile`;
       
-      console.log('[FacebookService] Initiating login with redirect_uri:', 'https://adroom-mobile-production.up.railway.app/auth/facebook/callback');
+      console.log('[FacebookService] Initiating login with redirect_uri:', callbackUrl);
       
       const result = await WebBrowser.openAuthSessionAsync(authUrl, redirectUri);
 
