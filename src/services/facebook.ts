@@ -42,7 +42,7 @@ export const FacebookService = {
       });
 
       // Use configured backend URL or fallback to production
-      const BACKEND_URL = process.env.EXPO_PUBLIC_BACKEND_URL || 'https://adroom-mobile-production.up.railway.app';
+      const BACKEND_URL = process.env.EXPO_PUBLIC_BACKEND_URL || 'https://adroom-mobile-production-35f8.up.railway.app';
       const callbackUrl = `${BACKEND_URL}/auth/facebook/callback`;
 
       // Using WebBrowser directly as a fallback for custom OAuth flows
@@ -93,10 +93,27 @@ export const FacebookService = {
    * Validate Credentials (Token)
    */
   async validateCredentials(input: any): Promise<boolean> {
-      // In a real implementation, we would call the debug_token endpoint
-      // For now, we assume if we have a token, it's valid enough to try saving
       if (!input.access_token) return false;
-      return true;
+      
+      try {
+        const response = await fetch(
+          `https://graph.facebook.com/v18.0/debug_token?input_token=${input.access_token}&access_token=${FB_APP_ID}|${process.env.EXPO_PUBLIC_FACEBOOK_APP_SECRET || ''}`
+        );
+        const data = await response.json();
+        
+        // If app secret is not available in frontend env (security best practice),
+        // we can try a simple /me call to verify.
+        if (data.error && data.error.code === 100) {
+             // Fallback: Verify by fetching user profile
+             const meRes = await fetch(`https://graph.facebook.com/v18.0/me?access_token=${input.access_token}`);
+             return meRes.ok;
+        }
+
+        return data.data && data.data.is_valid;
+      } catch (e) {
+        console.error('Token validation failed:', e);
+        return false;
+      }
   },
 
   /**
