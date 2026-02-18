@@ -1,5 +1,5 @@
 
-const BACKEND_URL = process.env.EXPO_PUBLIC_BACKEND_URL || 'https://adroom-mobile-production.up.railway.app';
+const BACKEND_URL = process.env.EXPO_PUBLIC_BACKEND_URL || 'https://adroom-mobile-production-35f8.up.railway.app';
 
 export const RemoteLogger = {
   log: (category: string, message: string, data?: any) => {

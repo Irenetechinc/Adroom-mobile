@@ -16,7 +16,7 @@ const formatCurrency = (amount: number) => {
   }).format(amount);
 };
 
-const BACKEND_URL = process.env.EXPO_PUBLIC_BACKEND_URL || 'https://adroom-mobile-production.up.railway.app'; 
+const BACKEND_URL = process.env.EXPO_PUBLIC_BACKEND_URL || 'https://adroom-mobile-production-35f8.up.railway.app'; 
 
 export default function WalletScreen({ navigation }: any) {
   const { user } = useAuthStore();
