@@ -86,7 +86,7 @@ interface AgentState {
   startNewSession: () => void;
 }
 
-const BACKEND_URL = process.env.EXPO_PUBLIC_BACKEND_URL || 'https://adroom-mobile-production.up.railway.app';
+const BACKEND_URL = process.env.EXPO_PUBLIC_BACKEND_URL || 'https://adroom-mobile-production-35f8.up.railway.app';
 
 export const useAgentStore = create<AgentState>((set, get) => ({
   messages: [],
