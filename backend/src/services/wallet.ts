@@ -151,7 +151,7 @@ export class WalletService {
       })
     });
 
-    const fwData = await response.json() as FlutterwaveInitResponse;
+    const fwData = (await response.json()) as FlutterwaveInitResponse;
     console.log(`[Wallet] Flutterwave Init Response:`, fwData);
 
     if (fwData.status !== 'success') {
@@ -182,7 +182,7 @@ export class WalletService {
       headers: { Authorization: `Bearer ${FLUTTERWAVE_SECRET_KEY}` }
     });
 
-    const fwData = await response.json() as FlutterwaveVerifyResponse;
+    const fwData = (await response.json()) as FlutterwaveVerifyResponse;
     
     if (fwData.status === 'success' && fwData.data.status === 'successful') {
         // Find our local transaction
@@ -272,7 +272,7 @@ export class WalletService {
             })
         });
 
-        const data = await response.json() as FlutterwaveVCardResponse;
+        const data = (await response.json()) as FlutterwaveVCardResponse;
         
         if (data.status === 'success') {
             return {
