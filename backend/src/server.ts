@@ -225,20 +225,70 @@ app.get('/auth/facebook/callback', (req, res) => {
 
   if (error) {
     console.error('[OAuth] Facebook Error:', error, error_description);
-    // Redirect back to app with error
-    return res.redirect(`adroom://auth/facebook/callback?error=${error}&error_description=${error_description}`);
+    return res.send(`
+      <html>
+        <body style="background:#0B0F19;color:white;font-family:sans-serif;text-align:center;padding:20px;">
+          <h2 style="color:#ef4444;">Connection Failed</h2>
+          <p>${error_description || 'Unknown error occurred.'}</p>
+          <a href="adroom://auth/facebook/callback?error=${error}" style="color:#4ADE80;text-decoration:none;border:1px solid #4ADE80;padding:10px 20px;border-radius:5px;">Return to App</a>
+        </body>
+      </html>
+    `);
   }
 
   if (code) {
     console.log('[OAuth] Received code, redirecting to app...');
-    // Redirect back to app with code
-    // Note: We don't exchange token here; the app (Expo AuthSession) does that using the code.
-    // We just bridge the web -> app gap.
     const appRedirect = `adroom://auth/facebook/callback?code=${code}${state ? `&state=${state}` : ''}`;
-    return res.redirect(appRedirect);
+    
+    // Serve an auto-redirect page for better UX and fallback
+    return res.send(`
+      <html>
+        <head>
+            <meta http-equiv="refresh" content="0;url=${appRedirect}">
+        </head>
+        <body style="background:#0B0F19;color:white;font-family:sans-serif;text-align:center;padding:20px;display:flex;flex-direction:column;align-items:center;justify-content:center;height:100vh;">
+          <h2 style="color:#4ADE80;">Connection Successful!</h2>
+          <p>Redirecting you back to AdRoom...</p>
+          <p style="font-size:12px;color:#888;">If you are not redirected automatically, click below:</p>
+          <a href="${appRedirect}" style="color:#0B0F19;background:#4ADE80;text-decoration:none;padding:12px 24px;border-radius:8px;font-weight:bold;margin-top:20px;">Open AdRoom App</a>
+          <script>
+            setTimeout(function() { window.location.href = "${appRedirect}"; }, 100);
+          </script>
+        </body>
+      </html>
+    `);
   }
 
   res.status(400).send('Invalid request: No code or error found.');
+});
+
+/**
+ * Exchange Code for Token (Backend to Facebook)
+ */
+app.post('/api/auth/facebook/exchange', async (req, res) => {
+    const { code, redirectUri } = req.body;
+    const FB_APP_ID = process.env.FB_APP_ID;
+    const FB_APP_SECRET = process.env.FB_APP_SECRET; // Ensure this is set in Railway vars
+
+    if (!code || !redirectUri) {
+        return res.status(400).json({ error: 'Missing code or redirectUri' });
+    }
+
+    try {
+        const tokenUrl = `https://graph.facebook.com/v18.0/oauth/access_token?client_id=${FB_APP_ID}&redirect_uri=${encodeURIComponent(redirectUri)}&client_secret=${FB_APP_SECRET}&code=${code}`;
+        const response = await fetch(tokenUrl);
+        const data: any = await response.json();
+
+        if (data.error) {
+            console.error('Facebook Token Exchange Error:', data.error);
+            return res.status(400).json({ error: data.error.message });
+        }
+
+        res.json(data);
+    } catch (error) {
+        console.error('Exchange endpoint error:', error);
+        res.status(500).json({ error: 'Internal Server Error during token exchange' });
+    }
 });
 
 app.listen(Number(PORT), '0.0.0.0', () => {
