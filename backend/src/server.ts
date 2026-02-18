@@ -267,11 +267,20 @@ app.get('/auth/facebook/callback', (req, res) => {
  */
 app.post('/api/auth/facebook/exchange', async (req, res) => {
     const { code, redirectUri } = req.body;
+    // Explicitly use process.env and provide a fallback or error if missing
+    // In Railway, these must be defined in the Service Variables
     const FB_APP_ID = process.env.FB_APP_ID;
-    const FB_APP_SECRET = process.env.FB_APP_SECRET; // Ensure this is set in Railway vars
+    const FB_APP_SECRET = process.env.FB_APP_SECRET; 
+
+    console.log(`[Token Exchange] Attempting exchange with App ID: ${FB_APP_ID ? 'Present' : 'MISSING'}, Secret: ${FB_APP_SECRET ? 'Present' : 'MISSING'}`);
 
     if (!code || !redirectUri) {
         return res.status(400).json({ error: 'Missing code or redirectUri' });
+    }
+
+    if (!FB_APP_ID || !FB_APP_SECRET) {
+        console.error('[Token Exchange] Critical Error: FB_APP_ID or FB_APP_SECRET is not set in environment variables.');
+        return res.status(500).json({ error: 'Server configuration error: Missing App Credentials' });
     }
 
     try {
