@@ -46,16 +46,34 @@ export const FacebookService = {
       const callbackUrl = `${BACKEND_URL}/auth/facebook/callback`;
 
       // Using WebBrowser directly as a fallback for custom OAuth flows
-      const authUrl = `https://www.facebook.com/v18.0/dialog/oauth?client_id=${FB_APP_ID}&redirect_uri=${encodeURIComponent(callbackUrl)}&response_type=token&scope=ads_management,ads_read,read_insights,pages_show_list,pages_read_engagement,pages_manage_posts,pages_manage_ads,pages_messaging,public_profile`;
+      // SWITCHING TO RESPONSE_TYPE=CODE for backend exchange
+      const authUrl = `https://www.facebook.com/v18.0/dialog/oauth?client_id=${FB_APP_ID}&redirect_uri=${encodeURIComponent(callbackUrl)}&response_type=code&scope=ads_management,ads_read,read_insights,pages_show_list,pages_read_engagement,pages_manage_posts,pages_manage_ads,pages_messaging,public_profile`;
       
       console.log('[FacebookService] Initiating login with redirect_uri:', callbackUrl);
       
       const result = await WebBrowser.openAuthSessionAsync(authUrl, redirectUri);
 
       if (result.type === 'success' && result.url) {
-        // Parse token from URL fragment
-        const match = result.url.match(/access_token=([^&]+)/);
-        return match ? match[1] : null;
+        // Parse code from URL query params
+        // Result URL will be like: adroom://auth/facebook/callback?code=...
+        const match = result.url.match(/code=([^&]+)/);
+        const code = match ? match[1] : null;
+
+        if (code) {
+            // Exchange code for token via backend
+            const exchangeRes = await fetch(`${BACKEND_URL}/api/auth/facebook/exchange`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ code, redirectUri: callbackUrl })
+            });
+            
+            const exchangeData = await exchangeRes.json();
+            if (exchangeData.access_token) {
+                return exchangeData.access_token;
+            } else {
+                throw new Error('Failed to exchange code for token: ' + (exchangeData.error || 'Unknown error'));
+            }
+        }
       }
       
       return null;
@@ -145,7 +163,6 @@ export const FacebookService = {
     return data;
   },
 
-  // ... keep existing methods if compatible or refactor ...
   async getConfig(): Promise<FacebookConfig | null> {
       const { data, error } = await supabase
         .from('ad_configs')
