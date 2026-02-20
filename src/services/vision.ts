@@ -1,8 +1,7 @@
+
 import { RemoteLogger } from './remoteLogger';
 import { readAsStringAsync } from 'expo-file-system';
-
-// OpenAI Client Configuration
-const OPENAI_API_KEY = process.env.EXPO_PUBLIC_OPENAI_API_KEY || '';
+import { supabase } from './supabase';
 
 export interface VisualAttributes {
     name: string;
@@ -10,20 +9,23 @@ export interface VisualAttributes {
     dimensions: string; // e.g. "10x5x2 inches"
     colorPalette: string[];
     estimatedPrice: string;
+    // Add other fields returned by Gemini
+    brand?: string;
+    category?: string;
+    product_type?: string;
+    material?: string;
+    condition?: string;
+    suggested_target_audience?: string;
+    features?: string[];
 }
 
 export const VisionService = {
     /**
-     * Analyzes an image using GPT-4o Vision to extract product attributes.
+     * Analyzes an image using the AdRoom AI Brain (Gemini 2.5 Pro via Supabase Edge Function).
      */
     async analyzeProductImage(imageUri: string): Promise<VisualAttributes> {
         RemoteLogger.log('VISION', `Starting analysis for image: ${imageUri}`);
         
-        if (!OPENAI_API_KEY) {
-            RemoteLogger.warn('VISION', 'OpenAI API Key missing.');
-            throw new Error('OpenAI API Key is required for vision analysis.');
-        }
-
         try {
             // Convert image to base64 if needed
             let base64Image = imageUri;
@@ -34,66 +36,54 @@ export const VisionService = {
                     base64Image = await readAsStringAsync(imageUri, {
                         encoding: 'base64',
                     });
-                    // Prefix with data URI scheme if not present (OpenAI needs it or just base64 string depending on format)
-                   // For "image_url" with base64, format is: "data:image/jpeg;base64,{base64_image}"
-                   base64Image = `data:image/jpeg;base64,${base64Image}`;
+                    // Format for the edge function (it expects raw base64 usually, but let's check our function)
+                    // Our function: const imagePart = { inlineData: { data: imageBase64, mimeType: "image/jpeg" } };
+                    // So we just send the base64 string.
                 } catch (readError) {
                    console.error('Failed to read local image file:', readError);
                    throw new Error('Could not read local image file for analysis.');
                 }
+            } else if (imageUri.startsWith('data:image')) {
+                // Strip the data:image/jpeg;base64, prefix if present
+                base64Image = imageUri.split(',')[1];
             }
 
-            const response = await fetch('https://api.openai.com/v1/chat/completions', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${OPENAI_API_KEY}`
-                },
-                body: JSON.stringify({
-                    model: "gpt-4o",
-                    messages: [
-                        {
-                            role: "system",
-                            content: `You are AdRoom's Advanced Computer Vision Engine. 
-                            Analyze the product image provided.
-                            Extract the following details in strict JSON format:
-                            1. name: Specific product name (e.g. "Nike Air Max 90").
-                            2. description: Brief visual description.
-                            3. dimensions: Estimated physical dimensions (Height x Width x Depth) if discernible.
-                            4. colorPalette: Array of dominant hex codes or color names.
-                            5. estimatedPrice: Estimated market price range in USD based on product identification.
-                            
-                            Return JSON: { "name": "...", "description": "...", "dimensions": "...", "colorPalette": ["..."], "estimatedPrice": "..." }`
-                        },
-                        {
-                            role: "user",
-                            content: [
-                                { type: "text", text: "Analyze this product image." },
-                                { type: "image_url", image_url: { url: base64Image } } 
-                            ]
-                        }
-                    ],
-                    max_tokens: 500
-                })
+            const { data, error } = await supabase.functions.invoke('ai-brain', {
+                body: {
+                    action: 'scan_product',
+                    payload: {
+                        imageBase64: base64Image
+                    }
+                }
             });
 
-            const data = await response.json();
-            
-            if (!response.ok) {
-                // If it fails (likely due to local file URI not being accessible by OpenAI),
-                // we might need to handle it.
-                // For this environment, we might fallback to a text-based analysis if image fails?
-                // Or just throw.
-                throw new Error(data.error?.message || 'Vision API Failed');
+            if (error) {
+                console.error('AI Brain Error:', error);
+                throw new Error(error.message || 'AI Brain Scan Failed');
             }
 
-            const content = data.choices[0].message.content;
-            // Clean markdown code blocks if present
-            const cleanJson = content.replace(/```json/g, '').replace(/```/g, '').trim();
-            const attributes = JSON.parse(cleanJson);
+            if (!data) {
+                throw new Error('No data returned from AI Brain');
+            }
             
-            RemoteLogger.log('VISION', 'Analysis complete', { attributes });
-            return attributes;
+            RemoteLogger.log('VISION', 'Analysis complete', { attributes: data });
+            
+            // Map the AI response to our VisualAttributes interface
+            // The AI returns snake_case mostly, we might need to map or just use it as is if we update the interface
+            return {
+                name: data.product_name || data.name || 'Unknown Product',
+                description: data.description || '',
+                dimensions: data.estimated_size || data.dimensions || '',
+                colorPalette: data.color ? [data.color] : [], // AI returns string or array? Prompt says "color (primary and secondary)"
+                estimatedPrice: data.suggested_price_range || data.estimatedPrice || '',
+                brand: data.brand,
+                category: data.category,
+                product_type: data.product_type,
+                material: data.material,
+                condition: data.condition,
+                suggested_target_audience: data.suggested_target_audience,
+                features: data.visible_features
+            };
 
         } catch (error: any) {
             RemoteLogger.error('VISION', 'Analysis Error', error);
