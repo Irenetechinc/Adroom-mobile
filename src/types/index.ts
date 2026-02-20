@@ -1,3 +1,4 @@
+
 export type RootStackParamList = {
   Onboarding: undefined;
   Login: undefined;
@@ -6,6 +7,12 @@ export type RootStackParamList = {
   // AgentChat moved to MainTab
   StrategyApproval: undefined;
   AgentChat: { fromStrategyApproval?: boolean }; // Allow direct navigation to Chat with params
+  
+  // Strategy Creation Wizard
+  StrategyWizard_ProductIntake: undefined;
+  StrategyWizard_GoalSelection: undefined;
+  StrategyWizard_DurationSelection: undefined;
+  StrategyWizard_Comparison: undefined;
 };
 
 export type DrawerParamList = {

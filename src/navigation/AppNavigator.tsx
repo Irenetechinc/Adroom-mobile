@@ -1,3 +1,4 @@
+
 import React, { useEffect } from 'react';
 import { View } from 'react-native';
 import { NavigationContainer, DarkTheme } from '@react-navigation/native';
@@ -8,11 +9,12 @@ import { useAuthStore } from '../store/authStore';
 import LoginScreen from '../screens/LoginScreen';
 import SignupScreen from '../screens/SignupScreen';
 import DrawerNavigator from './DrawerNavigator';
-// import TabNavigator from './TabNavigator'; // Deprecated
 import StrategyApprovalScreen from '../screens/StrategyApprovalScreen';
 import { AuthLoadingSkeleton } from '../components/Skeleton';
-
 import OnboardingScreen from '../screens/OnboardingScreen';
+
+// Agent Chat handles the entire strategy wizard flow now
+import AgentChatScreen from '../screens/AgentChatScreen';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
@@ -58,6 +60,7 @@ export default function AppNavigator() {
               component={StrategyApprovalScreen} 
               options={{ title: 'Approve Strategy', headerShown: true }}
             />
+            <Stack.Screen name="AgentChat" component={AgentChatScreen} />
           </>
         )}
       </Stack.Navigator>
