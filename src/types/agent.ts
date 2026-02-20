@@ -1,3 +1,4 @@
+
 export interface CreativeAsset {
   id: string;
   type: 'IMAGE' | 'VIDEO' | 'TEXT';
@@ -30,8 +31,22 @@ export interface ChatMessage {
   timestamp: number;
   imageUri?: string;
   // Custom UI Types for Interactive Elements
-  uiType?: 'standard' | 'facebook_connect' | 'page_selection' | 'ad_account_selection' | 'completion_card' | 'marketing_type_selection' | 'facebook_credentials' | 'attribute_editor' | 'session_restore';
-  uiData?: any; // Data for the custom UI (e.g. list of pages)
+  uiType?: 
+    | 'standard' 
+    | 'facebook_connect' 
+    | 'page_selection' 
+    | 'ad_account_selection' 
+    | 'completion_card' 
+    | 'marketing_type_selection' 
+    | 'facebook_credentials' 
+    | 'attribute_editor' 
+    | 'session_restore'
+    // New Strategy Wizard Flow Types
+    | 'product_intake_form'
+    | 'goal_selection'
+    | 'duration_selection'
+    | 'strategy_comparison';
+  uiData?: any; // Data for the custom UI
 }
 
 export interface ProductDetails {
@@ -44,6 +59,10 @@ export interface ProductDetails {
   marketingType?: 'PRODUCT' | 'BRAND' | 'SERVICE' | 'BRAND_PRODUCT';
   dimensions?: string;
   colorPalette?: string[];
+  // New fields
+  scanResult?: any;
 }
 
 export type ConnectionState = 'IDLE' | 'CONNECTING_FACEBOOK' | 'SELECTING_PAGE' | 'SELECTING_AD_ACCOUNT' | 'COMPLETED';
+
+export type FlowState = 'IDLE' | 'PRODUCT_INTAKE' | 'GOAL_SELECTION' | 'DURATION_SELECTION' | 'STRATEGY_GENERATION' | 'COMPARISON' | 'EXECUTION';

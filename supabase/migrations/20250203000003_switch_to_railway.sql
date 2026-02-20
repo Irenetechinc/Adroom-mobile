@@ -53,15 +53,13 @@ CREATE TRIGGER on_message_created
 SELECT cron.schedule(
   'autonomous-lead-followup',
   '0 * * * *', -- Every hour
-  $$
+ 
   SELECT net.http_post(
-<<<<<<< HEAD
-      url := 'https://your-railway-app-url.up.railway.app/webhooks/database',
-=======
+
       url := 'adroom-mobile-production.up.railway.app/webhooks/database',
->>>>>>> adroom-mobile
+
       headers := '{"Content-Type": "application/json"}'::jsonb,
       body := '{"type": "SCHEDULED_TASK"}'::jsonb
   );
-  $$
+ 
 );
