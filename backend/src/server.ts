@@ -3,6 +3,11 @@ import bodyParser from 'body-parser';
 import dotenv from 'dotenv';
 import { EngagementService } from './services/engagement.js';
 import { WalletService } from './services/wallet.js';
+import { CreativeService } from './services/creativeService.js';
+import { getSupabaseClient } from './config/supabase.js';
+import { MemoryRetriever } from './services/memoryRetriever.js';
+import { DecisionEngine, GeneratedStrategies } from './services/decisionEngine.js';
+import { AIEngine } from './config/ai-models.js';
 
 dotenv.config();
 
@@ -11,10 +16,10 @@ const PORT = process.env.PORT || 8000;
 const VERIFY_TOKEN = process.env.FB_VERIFY_TOKEN || 'adroom_verify_token';
 
 // Middleware to parse JSON bodies
-app.use(bodyParser.json());
+app.use(bodyParser.json({ limit: '10mb' }));
 
 // Root endpoint
-app.get('/', (req, res) => {
+app.get('/', (_req, res) => {
   res.send('AdRoom Backend is running.');
 });
 
@@ -188,35 +193,6 @@ app.post('/webhooks/flutterwave', async (req, res) => {
 });
 
 /**
- * Remote Logging Endpoint
- * Receives logs from the mobile app (Vision, Creative, Agent actions) to centralize in Railway logs.
- */
-app.post('/api/logs', (req, res) => {
-  const { level, category, message, data, timestamp } = req.body;
-  
-  const logPrefix = `[APP] [${category?.toUpperCase() || 'GENERAL'}]`;
-  const meta = data ? JSON.stringify(data) : '';
-  const time = timestamp ? new Date(timestamp).toISOString() : new Date().toISOString();
-
-  const fullMessage = `${time} ${logPrefix} ${message} ${meta}`;
-
-  switch (level) {
-    case 'error':
-      console.error(fullMessage);
-      break;
-    case 'warn':
-      console.warn(fullMessage);
-      break;
-    default:
-      console.log(fullMessage);
-  }
-
-  res.sendStatus(200);
-});
-
-
-
-/**
  * Auth Redirect Endpoint (Facebook OAuth)
  * Handles the redirect from Facebook, extracts the code, and deep links back to the app.
  */
@@ -298,6 +274,180 @@ app.post('/api/auth/facebook/exchange', async (req, res) => {
         console.error('Exchange endpoint error:', error);
         res.status(500).json({ error: 'Internal Server Error during token exchange' });
     }
+});
+
+/**
+ * Creative API (Image / Copy / Reply)
+ */
+const creativeService = new CreativeService();
+
+app.post('/api/creative/generate-image', async (req, res) => {
+  try {
+    const { prompt, style } = req.body;
+
+    if (!prompt || !style) {
+      return res.status(400).json({ error: 'prompt and style are required' });
+    }
+
+    const result = await creativeService.generateImage(prompt, style);
+
+    if (!result.url && result.raw_response) {
+      return res.status(500).json({
+        error: 'Model returned text instead of image',
+        details: result.raw_response,
+      });
+    }
+
+    return res.json({ url: result.url });
+  } catch (error: any) {
+    console.error('Generate Image Error:', error);
+    return res.status(500).json({ error: error.message || 'Internal Server Error' });
+  }
+});
+
+app.post('/api/creative/generate-copy', async (req, res) => {
+  try {
+    const { productName, tone, purpose } = req.body;
+
+    if (!productName || !tone || !purpose) {
+      return res.status(400).json({ error: 'productName, tone and purpose are required' });
+    }
+
+    const copy = await creativeService.generateCopy(productName, tone, purpose);
+    return res.json(copy);
+  } catch (error: any) {
+    console.error('Generate Copy Error:', error);
+    return res.status(500).json({ error: error.message || 'Internal Server Error' });
+  }
+});
+
+app.post('/api/creative/generate-reply', async (req, res) => {
+  try {
+    const { comment, tone } = req.body;
+
+    if (!comment) {
+      return res.status(400).json({ error: 'comment is required' });
+    }
+
+    const replyResult = await creativeService.generateReply(comment, tone || 'Friendly');
+    return res.json({ reply: replyResult.reply });
+  } catch (error: any) {
+    console.error('Generate Reply Error:', error);
+    return res.status(500).json({ error: error.message || 'Internal Server Error' });
+  }
+});
+
+/**
+ * AI Brain Endpoints (Strategy + Vision Scan)
+ */
+const decisionEngine = new DecisionEngine();
+const aiEngine = AIEngine.getInstance();
+
+app.post('/api/ai/generate-strategy', async (req, res) => {
+  try {
+    const { productId, goal, duration, contextType } = req.body;
+
+    if (!productId || !goal || !duration) {
+      return res.status(400).json({ error: 'productId, goal and duration are required' });
+    }
+
+    const supabase = getSupabaseClient(req);
+    const { data: { user }, error } = await supabase.auth.getUser();
+
+    if (error || !user) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    const memoryRetriever = new MemoryRetriever(supabase);
+    const memoryContext = await memoryRetriever.getAllContext(
+      user.id,
+      productId,
+      contextType || 'product',
+    );
+
+    const strategies: GeneratedStrategies = await decisionEngine.generateStrategy(memoryContext, goal, duration);
+
+    return res.json({
+      free: strategies.free_strategy,
+      paid: strategies.paid_strategy,
+      comparison: strategies.comparison,
+    });
+  } catch (error: any) {
+    console.error('Generate Strategy Error:', error);
+    return res.status(500).json({ error: error.message || 'Internal Server Error' });
+  }
+});
+
+app.post('/api/ai/scan-product', async (req, res) => {
+  try {
+    const { imageBase64 } = req.body;
+
+    if (!imageBase64) {
+      return res.status(400).json({ error: 'imageBase64 is required' });
+    }
+
+    const supabase = getSupabaseClient(req);
+    const { data: { user }, error } = await supabase.auth.getUser();
+
+    if (error || !user) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    const scanPrompt = `
+      Analyze this product image in extreme detail.
+      Extract every possible piece of information.
+      Return JSON with:
+      - product_type
+      - brand
+      - color
+      - visible_features
+      - product_name
+      - estimated_size
+      - category
+      - material
+      - condition
+      - packaging
+      - text_detected
+      - suggested_target_audience
+      - suggested_price_range
+      - quality_score
+    `;
+
+    const scanResult = await aiEngine.analyzeImage(imageBase64, scanPrompt);
+    const payload = scanResult.parsedJson || { text: scanResult.text };
+
+    return res.json(payload);
+  } catch (error: any) {
+    console.error('Scan Product Error:', error);
+    return res.status(500).json({ error: error.message || 'Internal Server Error' });
+  }
+});
+
+/**
+ * Remote Logging Endpoint
+ * Receives logs from the mobile app (Vision, Creative, Agent actions) to centralize in Railway logs.
+ */
+app.post('/api/logs', (req, res) => {
+  const { level, category, message, data, timestamp } = req.body;
+
+  const logPrefix = `[APP] [${category?.toUpperCase() || 'GENERAL'}]`;
+  const meta = data ? JSON.stringify(data) : '';
+  const time = timestamp ? new Date(timestamp).toISOString() : new Date().toISOString();
+
+  const fullMessage = `${time} ${logPrefix} ${message} ${meta}`;
+
+  switch (level) {
+    case 'error':
+      console.error(fullMessage);
+      break;
+    case 'warn':
+      console.warn(fullMessage);
+      break;
+    default:
+      console.log(fullMessage);
+  }
+
+  res.sendStatus(200);
 });
 
 app.listen(Number(PORT), '0.0.0.0', () => {

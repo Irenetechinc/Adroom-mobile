@@ -1,4 +1,4 @@
-
+// @ts-nocheck
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { getSupabaseClient } from '../_shared/supabase-client.ts';
 import { AIEngine } from '../_shared/ai-models.ts';

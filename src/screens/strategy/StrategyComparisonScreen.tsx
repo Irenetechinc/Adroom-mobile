@@ -1,12 +1,10 @@
 
 import React, { useState } from 'react';
-import { View, Text, TouchableOpacity, ScrollView, Alert, Dimensions } from 'react-native';
+import { View, Text, TouchableOpacity, ScrollView, Alert } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { useStrategyCreationStore } from '../../store/strategyCreationStore';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { ArrowLeft, Check, TrendingUp, DollarSign, Clock, Target, AlertTriangle, ShieldCheck, Rocket } from 'lucide-react-native';
-
-const { width } = Dimensions.get('window');
+import { ArrowLeft, Target, Rocket } from 'lucide-react-native';
 
 export default function StrategyComparisonScreen() {
   const navigation = useNavigation<any>();
@@ -174,5 +172,3 @@ export default function StrategyComparisonScreen() {
     </SafeAreaView>
   );
 }
-
-import { Rocket } from 'lucide-react-native';

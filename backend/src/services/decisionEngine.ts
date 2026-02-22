@@ -10,6 +10,12 @@ export interface StrategyDecision {
   reasoning: string;
 }
 
+export interface GeneratedStrategies {
+  free_strategy: any;
+  paid_strategy: any;
+  comparison: any;
+}
+
 export class DecisionEngine {
   private ai: AIEngine;
 
@@ -17,10 +23,7 @@ export class DecisionEngine {
     this.ai = AIEngine.getInstance();
   }
 
-  /**
-   * Generates a complete strategy based on comprehensive memory context
-   */
-  async generateStrategy(memory: MemoryContext, goal: string, duration: number): Promise<StrategyDecision> {
+  async generateStrategy(memory: MemoryContext, goal: string, duration: number): Promise<GeneratedStrategies> {
     console.log('Generating strategy with goal:', goal);
 
     // Construct the prompt for the AI Brain

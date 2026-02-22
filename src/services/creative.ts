@@ -3,6 +3,8 @@ import { supabase } from './supabase';
 import { RemoteLogger } from './remoteLogger';
 import { IntegrityService } from './integrity';
 
+const BACKEND_URL = process.env.EXPO_PUBLIC_API_URL;
+
 export const CreativeService = {
   /**
    * Generates a graphic design or reimagined product image using Gemini 3 Pro (Nano Banana).
@@ -12,14 +14,33 @@ export const CreativeService = {
     RemoteLogger.log('CREATIVE', `Generating image with prompt: "${prompt}" in style: "${style}"`);
     
     try {
-      const { data, error } = await supabase.functions.invoke('creative-engine', {
-          body: {
-              action: 'generate_image',
-              payload: { prompt, style }
-          }
+      if (!BACKEND_URL) {
+        throw new Error('Backend URL is not configured');
+      }
+
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+
+      const accessToken = session?.access_token;
+      if (!accessToken) {
+        throw new Error('User not authenticated');
+      }
+
+      const response = await fetch(`${BACKEND_URL}/api/creative/generate-image`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${accessToken}`,
+        },
+        body: JSON.stringify({ prompt, style }),
       });
 
-      if (error) throw new Error(error.message || 'Creative Engine Error');
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Creative Engine Error');
+      }
       
       // If we got a raw response (likely text) but no URL, it means the model returned text instead of an image.
       // This can happen if the model is chat-optimized or if we didn't parse the multi-modal response correctly on backend.
@@ -64,14 +85,33 @@ export const CreativeService = {
     RemoteLogger.log('CREATIVE', `Generating copy for: ${productName}, Tone: ${tone}`);
     
     try {
-      const { data, error } = await supabase.functions.invoke('creative-engine', {
-          body: {
-              action: 'generate_copy',
-              payload: { productName, tone, purpose }
-          }
+      if (!BACKEND_URL) {
+        throw new Error('Backend URL is not configured');
+      }
+
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+
+      const accessToken = session?.access_token;
+      if (!accessToken) {
+        throw new Error('User not authenticated');
+      }
+
+      const response = await fetch(`${BACKEND_URL}/api/creative/generate-copy`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${accessToken}`,
+        },
+        body: JSON.stringify({ productName, tone, purpose }),
       });
 
-      if (error) throw new Error(error.message || 'Copy Generation Error');
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Copy Generation Error');
+      }
 
       // INTEGRITY CHECK: Validate generated text on client side as a double-check
       const headlineCheck = await IntegrityService.validateAndFixContent(data.headline);
@@ -95,14 +135,33 @@ export const CreativeService = {
     RemoteLogger.log('CREATIVE', `Generating reply to comment: "${comment}"`);
     
     try {
-        const { data, error } = await supabase.functions.invoke('creative-engine', {
-            body: {
-                action: 'generate_reply',
-                payload: { comment, tone }
-            }
+        if (!BACKEND_URL) {
+          throw new Error('Backend URL is not configured');
+        }
+
+        const {
+          data: { session },
+        } = await supabase.auth.getSession();
+
+        const accessToken = session?.access_token;
+        if (!accessToken) {
+          throw new Error('User not authenticated');
+        }
+
+        const response = await fetch(`${BACKEND_URL}/api/creative/generate-reply`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${accessToken}`,
+          },
+          body: JSON.stringify({ comment, tone }),
         });
 
-        if (error) throw new Error(error.message || 'Reply Generation Error');
+        const data = await response.json();
+
+        if (!response.ok) {
+          throw new Error(data.error || 'Reply Generation Error');
+        }
         
         // Integrity check
         const check = await IntegrityService.validateAndFixContent(data.reply);

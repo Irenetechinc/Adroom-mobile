@@ -172,24 +172,43 @@ export const EngagementService = {
    * Handle Database Triggered Comment
    */
   async handleDatabaseComment(record: any) {
-    // If already replied or liked, skip
     if (record.is_replied || record.is_liked) return;
 
-    // We need config to act
-    const supabase = getSupabase();
-    // Assuming record has user_id or we find via external_id (if we saved it)
-    // For now, let's assume we can find config via user_id if present
-    // If user_id is missing (e.g. from FB webhook insertion), we might need to look up by page... 
-    // BUT wait, if it came from FB Webhook, we already handled it in handleWebhookEvent!
-    // This DB trigger is mostly useful if we inserted it from somewhere else without replying immediately.
-    
-    // Simplification: We'll assume this is a "catch-all" or for manually inserted comments.
-    
-    // Logic similar to handleFeedChange but starting from DB record
     console.log('[Engagement] Handling DB Comment:', record.id);
-    
-    // TODO: Implementation depends on how we map DB record back to FB Page Token
-    // For MVP, we might skip this if handleWebhookEvent covers the main flow.
+
+    if (!record.user_id) {
+      console.warn('[Engagement] DB Comment missing user_id, skipping.');
+      return;
+    }
+
+    const supabase = getSupabase();
+
+    const { data: config, error: configError } = await supabase
+      .from('ad_configs')
+      .select('*')
+      .eq('user_id', record.user_id)
+      .single();
+
+    if (configError || !config) {
+      console.warn('[Engagement] No ad config found for user while handling DB comment:', record.user_id);
+      return;
+    }
+
+    const pageAccessToken = await this.getPageAccessToken(config.access_token, config.page_id);
+
+    const replyText = await this.generateAIReply(record.content, 'comment');
+
+    await this.replyToComment(record.external_id, replyText, pageAccessToken);
+    await this.likeObject(record.external_id, pageAccessToken);
+
+    await supabase
+      .from('comments')
+      .update({
+        is_replied: true,
+        is_liked: true,
+        reply_content: replyText
+      })
+      .eq('id', record.id);
   },
 
   async handleDatabaseMessage(record: any) {

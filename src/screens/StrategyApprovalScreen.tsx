@@ -1,20 +1,22 @@
 import React, { useState } from 'react';
-import { View, Text, TouchableOpacity, ScrollView, Alert, Image, Dimensions } from 'react-native';
+import { View, Text, TouchableOpacity, ScrollView, Alert, Image } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../types';
 import { useAgentStore } from '../store/agentStore';
-import { Strategy, CreativeAsset } from '../types/agent';
-import { AutonomousService } from '../services/autonomous';
+import { CreativeAsset } from '../types/agent';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'StrategyApproval'>;
-
-const { width } = Dimensions.get('window');
 
 export default function StrategyApprovalScreen({ navigation }: Props) {
   const { generatedStrategies, setActiveStrategy } = useAgentStore();
   const [selectedTab, setSelectedTab] = useState<'FREE' | 'PAID'>('PAID');
 
-  const activeStrategy = generatedStrategies.find(s => s.type === selectedTab) || generatedStrategies[0];
+  if (!generatedStrategies) {
+    return <View className="flex-1 bg-adroom-dark" />;
+  }
+
+  const activeStrategy: any =
+    selectedTab === 'FREE' ? generatedStrategies.free : generatedStrategies.paid;
 
   const handleApprove = async () => {
     if (!activeStrategy) return;

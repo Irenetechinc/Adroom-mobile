@@ -3,6 +3,8 @@ import { RemoteLogger } from './remoteLogger';
 import { readAsStringAsync } from 'expo-file-system';
 import { supabase } from './supabase';
 
+const BACKEND_URL = process.env.EXPO_PUBLIC_API_URL;
+
 export interface VisualAttributes {
     name: string;
     description: string;
@@ -48,22 +50,35 @@ export const VisionService = {
                 base64Image = imageUri.split(',')[1];
             }
 
-            const { data, error } = await supabase.functions.invoke('ai-brain', {
-                body: {
-                    action: 'scan_product',
-                    payload: {
-                        imageBase64: base64Image
-                    }
-                }
-            });
-
-            if (error) {
-                console.error('AI Brain Error:', error);
-                throw new Error(error.message || 'AI Brain Scan Failed');
+            if (!BACKEND_URL) {
+                throw new Error('Backend URL is not configured');
             }
 
-            if (!data) {
-                throw new Error('No data returned from AI Brain');
+            const {
+                data: { session },
+            } = await supabase.auth.getSession();
+
+            const accessToken = session?.access_token;
+            if (!accessToken) {
+                throw new Error('User not authenticated');
+            }
+
+            const response = await fetch(`${BACKEND_URL}/api/ai/scan-product`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    Authorization: `Bearer ${accessToken}`,
+                },
+                body: JSON.stringify({
+                    imageBase64: base64Image,
+                }),
+            });
+
+            const data = await response.json();
+
+            if (!response.ok) {
+                console.error('AI Brain Error:', data);
+                throw new Error(data.error || 'AI Brain Scan Failed');
             }
             
             RemoteLogger.log('VISION', 'Analysis complete', { attributes: data });

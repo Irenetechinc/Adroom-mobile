@@ -1,4 +1,4 @@
-
+// @ts-nocheck
 import { GoogleGenerativeAI } from 'https://esm.sh/@google/generative-ai';
 import OpenAI from 'https://esm.sh/openai';
 

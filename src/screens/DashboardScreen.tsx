@@ -1,6 +1,6 @@
 
 import React, { useEffect, useState } from 'react';
-import { View, Text, ScrollView, RefreshControl, TouchableOpacity, ActivityIndicator } from 'react-native';
+import { View, Text, ScrollView, RefreshControl, TouchableOpacity } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../types';
@@ -132,7 +132,12 @@ export default function DashboardScreen() {
       <View className="p-6">
         {/* Quick Actions */}
         <TouchableOpacity 
-          onPress={() => navigation.navigate('AgentChat')}
+          onPress={() =>
+            navigation.navigate({
+              name: 'AgentChat',
+              params: { fromStrategyApproval: false },
+            })
+          }
           className="bg-cyan-500 p-4 rounded-xl flex-row items-center justify-center mb-8 shadow-lg shadow-cyan-500/20"
         >
           <Plus size={24} color="#020617" />
