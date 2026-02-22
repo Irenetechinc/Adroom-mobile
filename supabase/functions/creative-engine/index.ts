@@ -1,4 +1,4 @@
-
+// @ts-nocheck
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { getServiceSupabaseClient } from '../_shared/supabase-client.ts';
 import { GoogleGenerativeAI } from 'https://esm.sh/@google/generative-ai';

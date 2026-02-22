@@ -16,7 +16,7 @@ const formatCurrency = (amount: number) => {
   }).format(amount);
 };
 
-const BACKEND_URL = process.env.EXPO_PUBLIC_BACKEND_URL || 'https://adroom-mobile-production-35f8.up.railway.app'; 
+const BACKEND_URL = process.env.EXPO_PUBLIC_API_URL; 
 
 export default function WalletScreen({ navigation }: any) {
   const { user } = useAuthStore();
@@ -27,7 +27,12 @@ export default function WalletScreen({ navigation }: any) {
   const [refreshing, setRefreshing] = useState(false);
 
   const fetchWalletData = async () => {
-    if (!user) return;
+    if (!user || !BACKEND_URL) {
+      if (!BACKEND_URL) {
+        Alert.alert('Configuration Error', 'Backend URL is not configured.');
+      }
+      return;
+    }
     setLoading(true);
     try {
       // Fetch Balance
@@ -73,6 +78,11 @@ export default function WalletScreen({ navigation }: any) {
 
     setLoading(true);
     try {
+      if (!BACKEND_URL) {
+        Alert.alert('Configuration Error', 'Backend URL is not configured.');
+        return;
+      }
+
       const response = await fetch(`${BACKEND_URL}/api/wallet/deposit`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

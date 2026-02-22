@@ -41,8 +41,10 @@ export const FacebookService = {
         path: 'auth/facebook/callback',
       });
 
-      // Use configured backend URL or fallback to production
-      const BACKEND_URL = process.env.EXPO_PUBLIC_BACKEND_URL || 'https://adroom-mobile-production-35f8.up.railway.app';
+      const BACKEND_URL = process.env.EXPO_PUBLIC_API_URL;
+      if (!BACKEND_URL) {
+        throw new Error('EXPO_PUBLIC_API_URL is not configured');
+      }
       const callbackUrl = `${BACKEND_URL}/auth/facebook/callback`;
 
       // Using WebBrowser directly as a fallback for custom OAuth flows

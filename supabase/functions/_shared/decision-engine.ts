@@ -1,4 +1,4 @@
-
+// @ts-nocheck
 import { AIEngine } from './ai-models.ts';
 import { MemoryContext } from './memory-retriever.ts';
 

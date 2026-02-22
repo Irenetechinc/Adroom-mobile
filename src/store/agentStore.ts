@@ -10,21 +10,22 @@ import { ProductService } from '../services/product';
 import { StrategyService, GeneratedStrategy } from '../services/strategy';
 import { VisionService } from '../services/vision';
 
+type ExtendedProductDetails = ProductDetails & {
+  id?: string;
+  selectedGoal?: string;
+  selectedDuration?: number;
+};
+
 interface AgentState {
   messages: ChatMessage[];
   isTyping: boolean;
   isInputDisabled: boolean;
   
-  // Flow State
   flowState: FlowState;
-  productDetails: ProductDetails & { 
-    id?: string; // Product ID from DB
-    selectedGoal?: string;
-    selectedDuration?: number;
-  };
+  productDetails: ExtendedProductDetails;
   
-  generatedStrategies: GeneratedStrategy | null; // Changed to match StrategyService output
-  activeStrategy: any | null; // Flexible for now
+  generatedStrategies: GeneratedStrategy | null;
+  activeStrategy: any | null;
   connectionState: ConnectionState;
   
   // Facebook Flow Data
@@ -37,7 +38,7 @@ interface AgentState {
   addMessage: (text: string, sender: 'user' | 'agent', imageUri?: string, uiType?: ChatMessage['uiType'], uiData?: any) => void;
   setTyping: (typing: boolean) => void;
   setInputDisabled: (disabled: boolean) => void;
-  updateProductDetails: (details: Partial<ProductDetails>) => void;
+  updateProductDetails: (details: Partial<ExtendedProductDetails>) => void;
   
   // Flow Actions
   startStrategyFlow: () => void;
@@ -45,6 +46,8 @@ interface AgentState {
   handleGoalSelection: (goal: string) => void;
   handleDurationSelection: (duration: number) => Promise<void>;
   handleStrategySelection: (type: 'free' | 'paid') => Promise<void>;
+  setActiveStrategy: (strategy: any) => Promise<void>;
+  updateActiveStrategy: (strategy: any) => Promise<void>;
   
   // Standard Actions
   loadActiveStrategy: () => Promise<void>;
@@ -59,9 +62,11 @@ interface AgentState {
   handlePageSelection: (page: FacebookPage) => void;
   handleAdAccountSelection: (account: FacebookAdAccount) => Promise<void>;
   disconnectFacebook: () => Promise<void>;
+  handleMarketingTypeSelection: () => void;
+  analyzeContext: () => Promise<void>;
 }
 
-const BACKEND_URL = process.env.EXPO_PUBLIC_BACKEND_URL || 'https://adroom-mobile-production-35f8.up.railway.app';
+const BACKEND_URL = process.env.EXPO_PUBLIC_API_URL;
 
 export const useAgentStore = create<AgentState>((set, get) => ({
   messages: [],
@@ -249,13 +254,12 @@ export const useAgentStore = create<AgentState>((set, get) => ({
 
   // --- Standard Actions ---
 
-  setActiveStrategy: async (strategy) => {
-    // Legacy support or direct set
+  setActiveStrategy: async (strategy: any) => {
     set({ activeStrategy: strategy });
   },
 
-  updateActiveStrategy: async (strategy) => {
-      // Stub
+  updateActiveStrategy: async (strategy: any) => {
+    set({ activeStrategy: strategy });
   },
 
   loadActiveStrategy: async () => {

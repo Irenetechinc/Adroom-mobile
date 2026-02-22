@@ -1,5 +1,5 @@
 
-const BACKEND_URL = process.env.EXPO_PUBLIC_BACKEND_URL || 'https://adroom-mobile-production-35f8.up.railway.app';
+const BACKEND_URL = process.env.EXPO_PUBLIC_API_URL;
 
 export const RemoteLogger = {
   log: (category: string, message: string, data?: any) => {
@@ -18,6 +18,9 @@ export const RemoteLogger = {
   },
 
   send: async (level: 'info' | 'warn' | 'error', category: string, message: string, data?: any) => {
+    if (!BACKEND_URL) {
+      return;
+    }
     try {
       await fetch(`${BACKEND_URL}/api/logs`, {
         method: 'POST',
