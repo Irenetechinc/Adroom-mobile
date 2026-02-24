@@ -15,7 +15,7 @@ export class CreativeService {
 
     // Use "Nano Banana" (Gemini 3 Pro Image) via Google Generative AI
     const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
-    const model = genAI.getGenerativeModel({ model: "gemini-1.5-pro-latest" }); // Using best available model
+    const model = genAI.getGenerativeModel({ model: "gemini-3-flash-preview" }); // Using best available model
     
     const fullPrompt = `Generate a professional advertisement image. Style: ${style}. Description: ${prompt}. High fidelity, photorealistic.`;
     
@@ -55,7 +55,7 @@ export class CreativeService {
             'Authorization': `Bearer ${OPENAI_API_KEY}`
         },
         body: JSON.stringify({
-            model: "gpt-4o",
+            model: "gpt-5.2",
             messages: [
                 {
                     role: "system",
@@ -83,7 +83,7 @@ export class CreativeService {
             'Authorization': `Bearer ${OPENAI_API_KEY}`
         },
         body: JSON.stringify({
-            model: "gpt-4o",
+            model: "gpt-5.2",
             messages: [
                 {
                     role: "system",

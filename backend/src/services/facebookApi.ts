@@ -66,5 +66,40 @@ export const FacebookAdsApi = {
       }
 
       return await response.json();
+  },
+
+  async updateAdSet(accessToken: string, adSetId: string, updates: any) {
+      const url = `${this.baseUrl}/${adSetId}`;
+      
+      const body: any = {
+          access_token: accessToken,
+          ...updates
+      };
+
+      const response = await fetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body)
+      });
+
+      if (!response.ok) {
+          const error = await response.json();
+          throw new Error(`FB AdSet Update Error: ${error.error?.message}`);
+      }
+
+      return await response.json();
+  },
+
+  async getAdSets(accessToken: string, campaignId: string) {
+      const url = `${this.baseUrl}/${campaignId}/adsets?fields=id,name,daily_budget,lifetime_budget,status&access_token=${accessToken}`;
+      
+      const response = await fetch(url);
+      if (!response.ok) {
+          const error = await response.json();
+          throw new Error(`FB Get AdSets Error: ${error.error?.message}`);
+      }
+
+      const data = await response.json();
+      return data.data || [];
   }
 };

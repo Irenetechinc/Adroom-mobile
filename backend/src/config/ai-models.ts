@@ -34,7 +34,7 @@ export class AIEngine {
   async analyzeImage(imageBase64: string, prompt: string): Promise<AIResponse> {
     try {
       // Use the latest vision-capable model available via the SDK
-      const model = genAI.getGenerativeModel({ model: "gemini-1.5-pro-latest" });
+      const model = genAI.getGenerativeModel({ model: "gemini-3-flash-preview" });
       
       const imagePart = {
         inlineData: {
@@ -79,7 +79,7 @@ export class AIEngine {
           { role: "system", content: "You are the AdRoom AI Core Brain. You are an expert marketing strategist capable of generating comprehensive, data-driven marketing strategies." },
           { role: "user", content: `Context: ${JSON.stringify(context)}\n\nTask: ${prompt}` }
         ],
-        model: "gpt-4o", // Use GPT-4o for best reasoning/speed balance
+        model: "gpt-5.2", // Use GPT-5.2 for best reasoning/speed balance
         response_format: { type: "json_object" },
       });
 
@@ -103,7 +103,7 @@ export class AIEngine {
    */
   async generateText(prompt: string): Promise<string> {
     try {
-      const model = genAI.getGenerativeModel({ model: "gemini-1.5-pro-latest" });
+      const model = genAI.getGenerativeModel({ model: "gemini-3-flash-preview" });
       const result = await model.generateContent(prompt);
       const response = await result.response;
       return response.text();

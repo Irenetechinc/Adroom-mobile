@@ -9,6 +9,7 @@ import { RemoteLogger } from '../services/remoteLogger';
 import { ProductService } from '../services/product';
 import { StrategyService, GeneratedStrategy } from '../services/strategy';
 import { VisionService } from '../services/vision';
+import { IntegrityService } from '../services/integrity';
 
 type ExtendedProductDetails = ProductDetails & {
   id?: string;
@@ -46,6 +47,9 @@ interface AgentState {
   handleGoalSelection: (goal: string) => void;
   handleDurationSelection: (duration: number) => Promise<void>;
   handleStrategySelection: (type: 'free' | 'paid') => Promise<void>;
+  handleServiceIntake: (data: any) => Promise<void>;
+  handleBrandIntake: (data: any) => Promise<void>;
+  handleStrategyTypeSelection: (type: string) => void;
   setActiveStrategy: (strategy: any) => Promise<void>;
   updateActiveStrategy: (strategy: any) => Promise<void>;
   
@@ -131,40 +135,84 @@ export const useAgentStore = create<AgentState>((set, get) => ({
 
   startStrategyFlow: () => {
     const { addMessage, setInputDisabled, setTyping } = get();
-    set({ flowState: 'PRODUCT_INTAKE', isInputDisabled: true });
+    set({ flowState: 'STRATEGY_TYPE_SELECTION', isInputDisabled: true });
     
     setTyping(true);
     setTimeout(() => {
         addMessage(
-            "Let's get started. Please provide the product details. You can upload an image for AI analysis or enter details manually.",
+            "Great! Let's create a new marketing strategy. 🚀\n\nWhat would you like to create a strategy for?",
             'agent',
             undefined,
-            'product_intake_form'
+            'strategy_type_selection'
         );
         setTyping(false);
     }, 1000);
   },
 
+  handleStrategyTypeSelection: (type: string) => {
+    const { addMessage, setTyping } = get();
+    set({ flowState: type.toUpperCase() === 'PRODUCT' ? 'PRODUCT_INTAKE' : 'SERVICE_INTAKE', isInputDisabled: true });
+    
+    addMessage(`${type.toUpperCase()} Strategy`, 'user');
+    setTyping(true);
+    
+    setTimeout(() => {
+        if (type === 'product') {
+            addMessage(
+                `You've selected PRODUCT strategy. Let me help you set up your product.\n\nPlease upload a clear image (for scan) or enter details manually.`,
+                'agent',
+                undefined,
+                'product_intake_form'
+            );
+        } else if (type === 'service') {
+            addMessage(
+                `You've selected SERVICE strategy. Let me help you set up your service.\n\nPlease describe your service, its category, and pricing model.`,
+                'agent',
+                undefined,
+                'service_intake_form'
+            );
+        } else if (type === 'brand') {
+             addMessage(
+                `You've selected BRAND strategy. Let me help you build your brand identity.\n\nPlease provide your brand name, mission, and values.`,
+                'agent',
+                undefined,
+                'brand_intake_form'
+            );
+        }
+        setTyping(false);
+    }, 1000);
+  },
+
   handleProductIntake: async (data: ProductDetails) => {
-    const { addMessage, setTyping, updateProductDetails } = get();
+    const { addMessage, setTyping, updateProductDetails, setInputDisabled } = get();
     set({ isTyping: true });
     
+    addMessage("Analyzing product details...", 'user');
+
     try {
-        // 1. Save Product to DB
-        const productId = await ProductService.saveProduct(data);
-        
-        // 2. Update Store
-        updateProductDetails({ ...data, id: productId });
-        
-        // 3. Move to Goal Selection
-        set({ flowState: 'GOAL_SELECTION' });
-        
-        addMessage("Product details secured. Analyzing market fit...", 'agent');
+        // Integrity Check
+        const integrity = await IntegrityService.validateAndFixContent(data.name + " " + data.description);
+        if (!integrity.isValid) {
+            set({ isTyping: false });
+            addMessage(`Content rejected: ${integrity.issues.join(', ')}`, 'agent');
+            return;
+        }
+
+        // Use cleaned text if available
+        const validatedData = {
+            ...data,
+            name: integrity.cleanedText?.split(' ')[0] || data.name, // Rough extraction or just use original name
+            description: integrity.cleanedText || data.description
+        };
+
+        const productId = await ProductService.saveProduct(validatedData);
+        updateProductDetails({ ...validatedData, id: productId });
+        set({ flowState: 'GOAL_SELECTION', isInputDisabled: true });
         
         setTimeout(() => {
             setTyping(false);
             addMessage(
-                "What is the primary objective for this campaign?",
+                "Product saved. What is the primary objective for this campaign?",
                 'agent',
                 undefined,
                 'goal_selection'
@@ -173,24 +221,126 @@ export const useAgentStore = create<AgentState>((set, get) => ({
         
     } catch (error: any) {
         set({ isTyping: false });
-        addMessage(`Error saving product: ${error.message}. Please try again.`, 'agent');
+        addMessage(`Error: ${error.message}`, 'agent');
+    }
+  },
+
+  handleServiceIntake: async (data: any) => {
+    const { addMessage, setTyping, updateProductDetails, setInputDisabled } = get();
+    set({ isTyping: true });
+    
+    addMessage(`Service: ${data.name}`, 'user');
+
+    try {
+        // Integrity Check
+        const integrity = await IntegrityService.validateAndFixContent(data.name + " " + (data.description || ""));
+        if (!integrity.isValid) {
+            set({ isTyping: false });
+            addMessage(`Content rejected: ${integrity.issues.join(', ')}`, 'agent');
+            return;
+        }
+
+        // Use cleaned text if available
+        const validatedData = {
+            ...data,
+            description: integrity.cleanedText || data.description
+        };
+
+        // Services use Product table for now or a dedicated one
+        const serviceId = await ProductService.saveProduct({
+            ...validatedData,
+            baseImageUri: '' // Services might not have images initially
+        });
+        updateProductDetails({ ...validatedData, id: serviceId });
+        set({ flowState: 'GOAL_SELECTION', isInputDisabled: true });
+        
+        setTimeout(() => {
+            setTyping(false);
+            addMessage(
+                "Service registered. What is your campaign goal?",
+                'agent',
+                undefined,
+                'goal_selection'
+            );
+        }, 1500);
+    } catch (error: any) {
+        set({ isTyping: false });
+        addMessage(`Error: ${error.message}`, 'agent');
+    }
+  },
+
+  handleBrandIntake: async (data: any) => {
+    const { addMessage, setTyping, updateProductDetails, setInputDisabled } = get();
+    set({ isTyping: true });
+    
+    addMessage(`Brand: ${data.name}`, 'user');
+
+    try {
+        // Integrity Check
+        const integrity = await IntegrityService.validateAndFixContent(data.name + " " + (data.mission || ""));
+        if (!integrity.isValid) {
+            set({ isTyping: false });
+            addMessage(`Content rejected: ${integrity.issues.join(', ')}`, 'agent');
+            return;
+        }
+
+        // Use cleaned text if available
+        const validatedData = {
+            ...data,
+            mission: integrity.cleanedText || data.mission
+        };
+
+        // Save brand identity
+        const brandId = await ProductService.saveProduct({
+            ...validatedData,
+            name: data.name,
+            description: `${validatedData.mission}\n\nValues: ${data.values}`,
+            baseImageUri: ''
+        });
+        updateProductDetails({ ...validatedData, id: brandId });
+        set({ flowState: 'GOAL_SELECTION', isInputDisabled: true });
+        
+        setTimeout(() => {
+            setTyping(false);
+            addMessage(
+                "Brand identity established. Select your campaign goal:",
+                'agent',
+                undefined,
+                'goal_selection'
+            );
+        }, 1500);
+    } catch (error: any) {
+        set({ isTyping: false });
+        addMessage(`Error: ${error.message}`, 'agent');
     }
   },
 
   handleGoalSelection: (goal: string) => {
-      const { addMessage, setTyping, updateProductDetails } = get();
+      const { addMessage, setTyping, updateProductDetails, productDetails } = get();
       updateProductDetails({ selectedGoal: goal });
-      set({ flowState: 'DURATION_SELECTION', isTyping: true });
+      set({ flowState: 'DURATION_SELECTION', isTyping: true, isInputDisabled: true });
       
-      addMessage(`Goal set: ${goal.replace('_', ' ')}`, 'user');
+      addMessage(`${goal.replace('_', ' ')}`, 'user');
       
+      // Calculate Recommendation based on PDF Section 6 Step 4
+      const price = parseFloat(productDetails.price || '0');
+      let rec = 21; // Default
+      if (goal === 'sales') rec = 21;
+      else if (goal === 'awareness') rec = 30;
+      else if (goal === 'promotional') rec = 14;
+      else if (goal === 'launch') rec = 30;
+
+      if (price > 100) rec += 7;
+      if (price < 20) rec -= 3;
+
       setTimeout(() => {
           setTyping(false);
           addMessage(
-              "How long should this campaign run?",
+              `Goal set. Based on your product price of $${price}, I recommend a ${rec}-day duration.`,
               'agent',
               undefined,
-              'duration_selection'
+              'duration_selection',
+              { recommended: rec }
           );
       }, 1000);
   },
@@ -198,7 +348,7 @@ export const useAgentStore = create<AgentState>((set, get) => ({
   handleDurationSelection: async (duration: number) => {
       const { addMessage, setTyping, updateProductDetails, productDetails } = get();
       updateProductDetails({ selectedDuration: duration });
-      set({ flowState: 'STRATEGY_GENERATION', isTyping: true });
+      set({ flowState: 'STRATEGY_GENERATION', isTyping: true, isInputDisabled: true });
       
       addMessage(`${duration} days`, 'user');
       addMessage("Analyzing historical data and global trends to generate optimal strategies...", 'agent');
@@ -235,12 +385,12 @@ export const useAgentStore = create<AgentState>((set, get) => ({
   },
 
   handleStrategySelection: async (type: 'free' | 'paid') => {
-      const { addMessage, generatedStrategies, productDetails, initiateFacebookConnection } = get();
+      const { addMessage, generatedStrategies, initiateFacebookConnection } = get();
       
       if (!generatedStrategies) return;
       
       const strategy = type === 'free' ? generatedStrategies.free : generatedStrategies.paid;
-      set({ activeStrategy: strategy, flowState: 'EXECUTION' });
+      set({ activeStrategy: strategy, flowState: 'EXECUTION', isInputDisabled: true });
       
       addMessage(`I choose the ${type.toUpperCase()} strategy.`, 'user');
       addMessage(`Excellent choice. Locking in ${type.toUpperCase()} strategy parameters.`, 'agent');
@@ -284,13 +434,15 @@ export const useAgentStore = create<AgentState>((set, get) => ({
         set({ messages: [], isTyping: false });
         setTimeout(() => {
             get().addMessage(
-                "Welcome back! Incomplete session detected.",
+                "Welcome back! Incomplete session detected. Would you like to resume where we left off?",
                 'agent',
                 undefined,
                 'session_restore',
                 {
                    lastActivity: new Date(lastMessage.created_at).toLocaleString(),
-                   preview: lastMessage.text.substring(0, 50) + '...'
+                   preview: lastMessage.text.substring(0, 50) + '...',
+                   lastUiType: lastMessage.ui_type,
+                   lastUiData: lastMessage.ui_data
                 }
             );
         }, 500);
@@ -322,8 +474,18 @@ export const useAgentStore = create<AgentState>((set, get) => ({
         uiType: m.ui_type,
         uiData: m.ui_data
       }));
-      set({ messages: loadedMessages, isTyping: false });
-      get().addMessage("Session restored.", 'agent');
+      
+      // Determine if we need to disable input based on last UI state
+      const lastMsg = data[data.length - 1];
+      const needsDisabled = ['strategy_type_selection', 'product_intake_form', 'service_intake_form', 'brand_intake_form', 'goal_selection', 'duration_selection', 'strategy_comparison', 'facebook_connect', 'page_selection', 'ad_account_selection'].includes(lastMsg.ui_type);
+
+      set({ messages: loadedMessages, isTyping: false, isInputDisabled: needsDisabled });
+      get().addMessage("Session restored. Ready to continue.", 'agent');
+      
+      // If the last message was a prompt, re-prompt it if it requires selection
+      if (needsDisabled) {
+          get().addMessage("Please complete the action above to proceed.", 'agent');
+      }
     }
   },
 
@@ -368,7 +530,7 @@ export const useAgentStore = create<AgentState>((set, get) => ({
         // Trigger execution logic here if needed
         return;
     }
-    set({ connectionState: 'CONNECTING_FACEBOOK' });
+    set({ connectionState: 'CONNECTING_FACEBOOK', isInputDisabled: true });
     addMessage(
       "I need access to your Facebook Business account to execute this strategy.",
       'agent',
@@ -380,7 +542,7 @@ export const useAgentStore = create<AgentState>((set, get) => ({
   handleFacebookLogin: async () => {
       // Reusing previous logic but simplified for this update
       const { addMessage } = get();
-      set({ isTyping: true });
+      set({ isTyping: true, isInputDisabled: true });
       try {
           const accessToken = await FacebookService.login();
           if (accessToken) {
@@ -400,7 +562,7 @@ export const useAgentStore = create<AgentState>((set, get) => ({
 
   handlePageSelection: async (page) => {
       const { addMessage, fbAccessToken } = get();
-      set({ selectedPage: page, isTyping: true });
+      set({ selectedPage: page, isTyping: true, isInputDisabled: true });
       addMessage(`Selected Page: ${page.name}`, 'user');
       
       if (fbAccessToken) {
@@ -411,8 +573,8 @@ export const useAgentStore = create<AgentState>((set, get) => ({
   },
 
   handleAdAccountSelection: async (account) => {
-      const { addMessage, selectedPage, fbAccessToken, activeStrategy } = get();
-      set({ selectedAdAccount: account, isTyping: true });
+      const { addMessage, selectedPage, fbAccessToken } = get();
+      set({ selectedAdAccount: account, isTyping: true, isInputDisabled: true });
       addMessage(`Selected Account: ${account.name}`, 'user');
       
       // Save Config
@@ -420,7 +582,7 @@ export const useAgentStore = create<AgentState>((set, get) => ({
           await FacebookService.saveConfig(selectedPage.id, selectedPage.name, account.id, fbAccessToken);
       }
       
-      set({ connectionState: 'COMPLETED', isTyping: false });
+      set({ connectionState: 'COMPLETED', isTyping: false, isInputDisabled: true });
       
       // Final Execution Step
       addMessage("Configuration saved. Launching campaign...", 'agent');
