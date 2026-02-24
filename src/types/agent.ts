@@ -43,6 +43,9 @@ export interface ChatMessage {
     | 'session_restore'
     // New Strategy Wizard Flow Types
     | 'product_intake_form'
+    | 'service_intake_form'
+    | 'brand_intake_form'
+    | 'strategy_type_selection'
     | 'goal_selection'
     | 'duration_selection'
     | 'strategy_comparison';
@@ -65,4 +68,14 @@ export interface ProductDetails {
 
 export type ConnectionState = 'IDLE' | 'CONNECTING_FACEBOOK' | 'SELECTING_PAGE' | 'SELECTING_AD_ACCOUNT' | 'COMPLETED';
 
-export type FlowState = 'IDLE' | 'PRODUCT_INTAKE' | 'GOAL_SELECTION' | 'DURATION_SELECTION' | 'STRATEGY_GENERATION' | 'COMPARISON' | 'EXECUTION';
+export type FlowState = 
+  | 'IDLE' 
+  | 'STRATEGY_TYPE_SELECTION' 
+  | 'PRODUCT_INTAKE' 
+  | 'SERVICE_INTAKE' 
+  | 'BRAND_INTAKE' 
+  | 'GOAL_SELECTION' 
+  | 'DURATION_SELECTION' 
+  | 'STRATEGY_GENERATION' 
+  | 'COMPARISON' 
+  | 'EXECUTION';

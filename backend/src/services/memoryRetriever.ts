@@ -8,6 +8,7 @@ export interface MemoryContext {
   history: any[];
   platformStatus: any;
   globalTrends: any;
+  ipeIntelligence: any[];
 }
 
 export class MemoryRetriever {
@@ -75,12 +76,22 @@ export class MemoryRetriever {
 
     if (globalError) console.error('Error fetching global trends:', globalError);
 
+    // 6. Fetch Recent IPE Intelligence (Algorithm shifts, Trends, Opportunities)
+    const { data: ipeIntelligence, error: ipeError } = await this.supabase
+      .from('ipe_intelligence_log')
+      .select('*')
+      .order('created_at', { ascending: false })
+      .limit(15);
+
+    if (ipeError) console.error('Error fetching IPE intelligence:', ipeError);
+
     return {
       user: userMemory || {},
       [contextType]: contextData,
       history: history || [],
       platformStatus: platformData || [],
-      globalTrends: globalTrends || []
+      globalTrends: globalTrends || [],
+      ipeIntelligence: ipeIntelligence || []
     };
   }
 }

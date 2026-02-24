@@ -70,10 +70,52 @@ const DURATIONS = [
   { days: 30, label: '30 Days', icon: TrendingUp },
 ];
 
-const DurationSelectionCard = ({ onSelect }: { onSelect: (days: number) => void }) => (
+const STRATEGY_TYPES = [
+  { id: 'product', name: 'Product', icon: Tag, description: 'Promote a specific item' },
+  { id: 'service', name: 'Service', icon: Users, description: 'Promote a professional service' },
+  { id: 'brand', name: 'Brand', icon: Rocket, description: 'Build awareness and authority' },
+];
+
+const StrategyTypeSelectionCard = ({ onSelect }: { onSelect: (type: string) => void }) => (
+  <View className="mt-2 space-y-3">
+    {STRATEGY_TYPES.map((type) => (
+      <TouchableOpacity 
+        key={type.id}
+        onPress={() => onSelect(type.id)}
+        className="bg-adroom-card p-4 rounded-xl border border-adroom-neon/20 flex-row items-center"
+      >
+        <View className="w-10 h-10 rounded-full bg-adroom-neon/10 items-center justify-center mr-4">
+           <type.icon size={20} color="#00F0FF" />
+        </View>
+        <View className="flex-1">
+          <Text className="text-white font-bold">{type.name}</Text>
+          <Text className="text-adroom-text-muted text-xs">{type.description}</Text>
+        </View>
+      </TouchableOpacity>
+    ))}
+  </View>
+);
+
+const DurationSelectionCard = ({ onSelect, recommended }: { onSelect: (days: number) => void, recommended?: number }) => (
   <View className="mt-2 bg-adroom-card rounded-xl border border-adroom-neon/20 overflow-hidden">
+    {recommended && (
+        <TouchableOpacity 
+            onPress={() => onSelect(recommended)}
+            className="p-4 flex-row items-center justify-between border-b border-cyan-500/30 bg-cyan-500/5"
+        >
+            <View className="flex-row items-center">
+                <Zap size={20} color="#00F0FF" />
+                <View className="ml-3">
+                    <Text className="text-cyan-400 font-bold">Recommended: {recommended} Days</Text>
+                    <Text className="text-cyan-400/60 text-xs">Optimized for your goal and price</Text>
+                </View>
+            </View>
+            <Text className="text-cyan-400 font-bold">Select ›</Text>
+        </TouchableOpacity>
+    )}
     {DURATIONS.map((d, i) => {
       const Icon = d.icon;
+      if (d.days === recommended) return null; // Don't duplicate
       return (
         <TouchableOpacity 
           key={d.days}
@@ -129,7 +171,7 @@ const StrategyComparisonCard = ({ strategies, onSelect }: { strategies: any, onS
 
          <View className="bg-adroom-dark/50 p-3 rounded-lg mb-4">
              <Text className="text-slate-300 text-sm leading-5">
-                {active.content_plan?.summary || "AI-driven content strategy focusing on high engagement and conversion optimization."}
+                {active.content_plan?.summary || "strategy focusing on high engagement and conversion optimization."}
              </Text>
          </View>
          
@@ -180,7 +222,7 @@ const CompletionCard = ({ onDashboard }: { onDashboard: () => void }) => (
       <Text className="text-green-400 text-2xl">✓</Text>
     </View>
     <Text className="text-white font-bold text-lg mb-1">Campaign Launched</Text>
-    <Text className="text-adroom-text-muted text-center mb-4">Your strategy is now active and running autonomously.</Text>
+    <Text className="text-adroom-text-muted text-center mb-4">Your strategy is now active and running autonomously by Adroom .</Text>
     
     <TouchableOpacity 
       onPress={onDashboard}
@@ -190,6 +232,92 @@ const CompletionCard = ({ onDashboard }: { onDashboard: () => void }) => (
     </TouchableOpacity>
   </View>
 );
+
+const ServiceIntakeCard = ({ onSubmit }: { onSubmit: (data: any) => void }) => {
+  const [name, setName] = useState('');
+  const [category, setCategory] = useState('');
+  const [price, setPrice] = useState('');
+  const [description, setDescription] = useState('');
+
+  return (
+    <View className="mt-2 bg-adroom-card p-4 rounded-xl border border-adroom-neon/20">
+      <TextInput 
+        placeholder="Service Name" 
+        placeholderTextColor="#64748B"
+        className="bg-adroom-dark p-3 rounded-lg text-white mb-3 border border-white/5"
+        value={name}
+        onChangeText={setName}
+      />
+      <TextInput 
+        placeholder="Category (e.g. Consulting)" 
+        placeholderTextColor="#64748B"
+        className="bg-adroom-dark p-3 rounded-lg text-white mb-3 border border-white/5"
+        value={category}
+        onChangeText={setCategory}
+      />
+      <TextInput 
+        placeholder="Pricing Model (e.g. $100/hr)" 
+        placeholderTextColor="#64748B"
+        className="bg-adroom-dark p-3 rounded-lg text-white mb-3 border border-white/5"
+        value={price}
+        onChangeText={setPrice}
+      />
+      <TextInput 
+        placeholder="Service Description" 
+        placeholderTextColor="#64748B"
+        multiline
+        className="bg-adroom-dark p-3 rounded-lg text-white mb-4 border border-white/5 h-20"
+        value={description}
+        onChangeText={setDescription}
+      />
+      <TouchableOpacity 
+        onPress={() => onSubmit({ name, category, price, description })}
+        className="bg-adroom-neon py-3 rounded-lg items-center"
+      >
+        <Text className="text-adroom-dark font-bold">SAVE SERVICE</Text>
+      </TouchableOpacity>
+    </View>
+  );
+};
+
+const BrandIntakeCard = ({ onSubmit }: { onSubmit: (data: any) => void }) => {
+  const [name, setName] = useState('');
+  const [mission, setMission] = useState('');
+  const [values, setValues] = useState('');
+
+  return (
+    <View className="mt-2 bg-adroom-card p-4 rounded-xl border border-adroom-neon/20">
+      <TextInput 
+        placeholder="Brand Name" 
+        placeholderTextColor="#64748B"
+        className="bg-adroom-dark p-3 rounded-lg text-white mb-3 border border-white/5"
+        value={name}
+        onChangeText={setName}
+      />
+      <TextInput 
+        placeholder="Mission Statement" 
+        placeholderTextColor="#64748B"
+        className="bg-adroom-dark p-3 rounded-lg text-white mb-3 border border-white/5"
+        value={mission}
+        onChangeText={setMission}
+      />
+      <TextInput 
+        placeholder="Core Values" 
+        placeholderTextColor="#64748B"
+        multiline
+        className="bg-adroom-dark p-3 rounded-lg text-white mb-4 border border-white/5 h-20"
+        value={values}
+        onChangeText={setValues}
+      />
+      <TouchableOpacity 
+        onPress={() => onSubmit({ name, mission, values })}
+        className="bg-adroom-neon py-3 rounded-lg items-center"
+      >
+        <Text className="text-adroom-dark font-bold">SAVE BRAND</Text>
+      </TouchableOpacity>
+    </View>
+  );
+};
 
 const FacebookConnectButton = ({ onPress, isConnected, onDisconnect }: { onPress: () => void, isConnected: boolean, onDisconnect: () => void }) => (
   <TouchableOpacity 
@@ -243,7 +371,8 @@ export default function AgentChatScreen({ navigation, route }: Props) {
     messages, addMessage, isTyping, setTyping, isInputDisabled, setInputDisabled,
     flowState, handleProductIntake, handleGoalSelection, handleDurationSelection, handleStrategySelection,
     initiateFacebookConnection, handleFacebookLogin, handlePageSelection, handleAdAccountSelection,
-    connectionState, loadMessages, restoreSession, startNewSession, fbAccessToken, disconnectFacebook
+    connectionState, loadMessages, restoreSession, startNewSession, fbAccessToken, disconnectFacebook,
+    handleStrategyTypeSelection, handleServiceIntake, handleBrandIntake
   } = useAgentStore();
   
   const { user } = useAuthStore();
@@ -332,11 +461,9 @@ export default function AgentChatScreen({ navigation, route }: Props) {
   };
   
   const handleManualEntry = () => {
-      // For now, simple prompt. In future, could be a modal form.
       setInputDisabled(false);
       addMessage("Manual Entry", 'user');
-      addMessage("Please type the product name and description.", 'agent');
-      // Logic to capture next text input as product details would go here
+      addMessage("Please describe your product/service details here.", 'agent');
   };
 
   const renderMessage = ({ item }: { item: any }) => (
@@ -347,7 +474,7 @@ export default function AgentChatScreen({ navigation, route }: Props) {
     >
       {item.sender === 'agent' && (
         <View className="w-8 h-8 rounded-full bg-adroom-card border border-adroom-neon items-center justify-center mr-2 shadow-lg shadow-adroom-neon/50">
-          <Text className="text-xs font-bold text-adroom-neon">AI</Text>
+          <Text className="text-xs font-bold text-adroom-neon">AD</Text>
         </View>
       )}
       <View 
@@ -374,13 +501,28 @@ export default function AgentChatScreen({ navigation, route }: Props) {
         {item.uiType === 'product_intake_form' && (
             <ProductIntakeCard onUpload={handleImageUpload} onManual={handleManualEntry} />
         )}
+
+        {item.uiType === 'service_intake_form' && (
+            <ServiceIntakeCard onSubmit={handleServiceIntake} />
+        )}
+
+        {item.uiType === 'brand_intake_form' && (
+            <BrandIntakeCard onSubmit={handleBrandIntake} />
+        )}
+
+        {item.uiType === 'strategy_type_selection' && (
+            <StrategyTypeSelectionCard onSelect={handleStrategyTypeSelection} />
+        )}
         
         {item.uiType === 'goal_selection' && (
             <GoalSelectionCard onSelect={handleGoalSelection} />
         )}
         
         {item.uiType === 'duration_selection' && (
-            <DurationSelectionCard onSelect={handleDurationSelection} />
+            <DurationSelectionCard 
+                onSelect={handleDurationSelection} 
+                recommended={item.uiData?.recommended}
+            />
         )}
         
         {item.uiType === 'strategy_comparison' && item.uiData?.strategies && (

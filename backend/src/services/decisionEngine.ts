@@ -26,9 +26,36 @@ export class DecisionEngine {
   async generateStrategy(memory: MemoryContext, goal: string, duration: number): Promise<GeneratedStrategies> {
     console.log('Generating strategy with goal:', goal);
 
+    // AI Brain Step-by-Step Thinking Process (PDF Section 3)
+    const thinkingProcess = `
+      Step 1: GATHER CONTEXT
+      "What am I being asked right now?
+      Who is this user? (pull full user memory)
+      What have they done before?
+      What's currently active?
+      What's the platform landscape right now?
+      What global patterns apply?"
+
+      Step 2: RETRIEVE RELEVANT MEMORY
+      "Has this user done something similar before?
+      What were the results?
+      What does global data say about this product type?
+      What platforms are favoring what right now?"
+
+      Step 3: GENERATE POSSIBILITIES
+      "Based on all this, what are 3-5 possible approaches?"
+
+      Step 4: EVALUATE AND SELECT
+      "Select the optimal approach for this user and product."
+
+      Step 5: CREATE DETAILED PLAN
+      "Generate complete execution plan: Content, Timing, Budget, Targeting."
+    `;
+
     // Construct the prompt for the AI Brain
     const prompt = `
-      You are the AdRoom AI Core Brain. Your task is to generate a comprehensive marketing strategy based on the following context.
+      You are the AdRoom AI Core Brain. Follow this thinking process:
+      ${thinkingProcess}
       
       USER CONTEXT:
       - Profile: ${JSON.stringify(memory.user)}
@@ -40,35 +67,44 @@ export class DecisionEngine {
       GLOBAL INTELLIGENCE:
       - Platform Status: ${JSON.stringify(memory.platformStatus)}
       - Global Trends: ${JSON.stringify(memory.globalTrends)}
+      - IPE ALGORITHM SHIFTS (CRITICAL): ${JSON.stringify(memory.ipeIntelligence)}
       
       CAMPAIGN GOAL: ${goal}
       DURATION: ${duration} days
       
       TASK:
-      Generate TWO detailed strategies:
-      1. A FREE (Organic) Strategy: Focus on content, community, and viral growth. No ad spend.
-      2. A PAID (Ads) Strategy: Focus on ROAS, targeting, and scaling. Include budget recommendations.
+      Generate TWO detailed strategies (FREE and PAID).
       
-      For each strategy, provide:
-      - Platform selection (Why these platforms?)
-      - Content pillars and schedule
-      - Engagement tactics
-      - Expected outcomes (Reach, Engagement, Conversions)
-      - Key risks and mitigation
+      FREE Strategy Requirements:
+      - Focus on 3 Content Pillars: 
+        1. Educational/Problem-Solving
+        2. Entertainment/Engagement
+        3. Social Proof/Trust Building
+      - Exact posting schedule (date/time per platform)
+      - Community building tactics
+      
+      PAID Strategy Requirements:
+      - ROAS focus, specific targeting parameters
+      - Budget allocation recommendations
+      - A/B test configurations
       
       Output ONLY valid JSON in the following format:
       {
         "free_strategy": {
           "platforms": ["..."],
-          "content_plan": { ... },
-          "engagement_plan": { ... },
-          "expected_outcomes": { ... }
+          "content_plan": { 
+             "pillars": [{"title": "...", "description": "...", "examples": []}],
+             "schedule": [{"day": number, "platform": "...", "time": "...", "content_type": "...", "topic": "..."}]
+          },
+          "engagement_plan": { "tactics": [] },
+          "expected_outcomes": { "reach": "...", "engagement": "...", "conversions": "..." }
         },
         "paid_strategy": {
           "platforms": ["..."],
           "budget_recommendation": number,
-          "campaign_structure": { ... },
-          "expected_outcomes": { ... }
+          "targeting": { "audience": "...", "interests": [], "demographics": {} },
+          "campaign_structure": { "ad_sets": [], "creatives": [] },
+          "expected_outcomes": { "roas": "...", "conversions": "...", "cpa": "..." }
         },
         "comparison": {
            "summary": "...",

@@ -231,25 +231,62 @@ export class PlatformIntelligenceEngine {
           details: item,
           priority: item.impact_score >= 8 ? 1 : item.impact_score >= 5 ? 2 : 3,
           recommended_actions: [item.recommended_action],
-          expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString() // Expires in 7 days
+          expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(), // Expires in 7 days
+          status: 'applied_automatically' // IPE Engine executes autonomously
         })
         .select()
         .single();
 
       if (error) console.error('Error logging intelligence:', error);
 
-      // 2. If Urgent (Priority 1), trigger notifications via Communication Service
+      // 2. Autonomous Execution: Apply optimizations to active strategies
+      if (item.recommended_action && inserted) {
+          console.log(`IPE Autonomous Action: ${item.summary}`);
+          await this.applyAutonomousOptimization(item);
+      }
+
+      // 3. If Urgent (Priority 1), trigger notifications via Communication Service
       if (item.impact_score >= 8 && inserted) {
           console.log(`URGENT INTELLIGENCE DETECTED: ${item.summary}`);
           
           try {
-             // Direct Call to Communication Service
              await this.communicationService.generateAlertMessage(inserted.id);
-             // In a real system, we'd then push this to FCM/APNS or save to a 'notifications' table
           } catch (commError) {
              console.error("Failed to trigger communication service:", commError);
           }
       }
+    }
+  }
+
+  /**
+   * Applies optimizations autonomously to all active strategies affected by the platform change
+   */
+  private async applyAutonomousOptimization(intelligence: any) {
+    // Fetch all active strategies for the affected platform
+    const { data: strategies } = await this.supabase
+        .from('strategies')
+        .select('*')
+        .eq('is_active', true);
+
+    if (!strategies) return;
+
+    for (const strategy of strategies) {
+        // If the strategy uses the platform mentioned in intelligence
+        if (strategy.platforms && strategy.platforms.includes(intelligence.platform.toLowerCase())) {
+            console.log(`[IPE Autonomy] Applying optimization to Strategy ${strategy.id} for ${intelligence.platform}`);
+            
+            // Log the optimization in strategy history
+            await this.supabase.from('strategy_optimizations').insert({
+                strategy_id: strategy.id,
+                intelligence_id: intelligence.id,
+                action_taken: intelligence.recommended_action,
+                reason: intelligence.summary,
+                applied_at: new Date().toISOString(),
+                status: 'applied_automatically'
+            });
+
+            console.log(`[IPE Autonomy] Optimization queued for Worker execution: ${intelligence.recommended_action}`);
+        }
     }
   }
 }
