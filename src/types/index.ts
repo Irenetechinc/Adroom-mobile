@@ -5,8 +5,9 @@ export type RootStackParamList = {
   Signup: undefined;
   Main: undefined;
   // AgentChat moved to MainTab
-  StrategyApproval: undefined;
-  AgentChat: { fromStrategyApproval?: boolean }; // Allow direct navigation to Chat with params
+  StrategyApproval: { strategy: any };
+  AgentChat: { fromStrategyApproval?: boolean };
+  ConnectedAccounts: undefined;
   
   // Strategy Creation Wizard
   StrategyWizard_ProductIntake: undefined;
@@ -20,6 +21,7 @@ export type DrawerParamList = {
   Dashboard: undefined;
   CampaignList: undefined;
   Settings: undefined;
+  ConnectedAccounts: undefined;
 };
 
 export type MainTabParamList = {

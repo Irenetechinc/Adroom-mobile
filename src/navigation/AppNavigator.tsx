@@ -15,6 +15,7 @@ import OnboardingScreen from '../screens/OnboardingScreen';
 
 // Agent Chat handles the entire strategy wizard flow now
 import AgentChatScreen from '../screens/AgentChatScreen';
+import ConnectedAccountsScreen from '../screens/ConnectedAccountsScreen';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
@@ -61,6 +62,11 @@ export default function AppNavigator() {
               options={{ title: 'Approve Strategy', headerShown: true }}
             />
             <Stack.Screen name="AgentChat" component={AgentChatScreen} />
+            <Stack.Screen 
+              name="ConnectedAccounts" 
+              component={ConnectedAccountsScreen} 
+              options={{ title: 'Connected Accounts', headerShown: false }}
+            />
           </>
         )}
       </Stack.Navigator>

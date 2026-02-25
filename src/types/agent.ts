@@ -45,10 +45,12 @@ export interface ChatMessage {
     | 'product_intake_form'
     | 'service_intake_form'
     | 'brand_intake_form'
+    | 'product_manual_form'
     | 'strategy_type_selection'
     | 'goal_selection'
     | 'duration_selection'
-    | 'strategy_comparison';
+    | 'strategy_comparison'
+    | 'retry_action';
   uiData?: any; // Data for the custom UI
 }
 

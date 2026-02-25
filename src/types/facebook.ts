@@ -4,6 +4,7 @@ export interface FacebookConfig {
   ad_account_id: string;
   access_token: string;
   page_id: string;
+  page_name?: string;
   created_at: string;
   updated_at: string;
 }

@@ -75,20 +75,25 @@ export class WalletService {
       .from('wallets')
       .select('*')
       .eq('user_id', userId)
-      .single();
+      .maybeSingle();
 
-    if (error && error.code === 'PGRST116') {
+    if (!wallet && !error) {
       console.log(`[Wallet] Wallet not found for ${userId}, creating one...`);
       // Create wallet if not exists (fallback if trigger failed)
+      // Note: Backend uses service role key so this should bypass RLS for creation
       const { data: newWallet, error: createError } = await supabase
         .from('wallets')
         .insert({ user_id: userId, balance: 0.00 })
         .select()
         .single();
       
-      if (createError) throw createError;
+      if (createError) {
+          console.error(`[Wallet] Creation Failed for ${userId}:`, createError);
+          throw createError;
+      }
       wallet = newWallet;
     } else if (error) {
+      console.error(`[Wallet] Fetch Error for ${userId}:`, error);
       throw error;
     }
 

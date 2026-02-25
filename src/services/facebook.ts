@@ -86,6 +86,21 @@ export const FacebookService = {
   },
 
   /**
+   * Fetch Active Config from Supabase
+   */
+  async getConfig(): Promise<FacebookConfig | null> {
+    const { data, error } = await supabase
+      .from('ad_configs')
+      .select('*')
+      .maybeSingle();
+    
+    if (error) {
+        throw error;
+    }
+    return data;
+  },
+
+  /**
    * Fetch User's Pages
    */
   async getPages(userAccessToken: string): Promise<FacebookPage[]> {
@@ -163,20 +178,6 @@ export const FacebookService = {
 
     if (error) throw error;
     return data;
-  },
-
-  async getConfig(): Promise<FacebookConfig | null> {
-      const { data, error } = await supabase
-        .from('ad_configs')
-        .select('*')
-        .single();
-  
-      if (error) {
-        if (error.code === 'PGRST116') return null; // No rows found
-        throw error;
-      }
-  
-      return data;
   },
 
   /**
