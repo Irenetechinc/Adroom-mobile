@@ -49,8 +49,31 @@ interface AgentState {
   handleStrategySelection: (type: 'free' | 'paid') => Promise<void>;
   handleServiceIntake: (data: any) => Promise<void>;
   handleBrandIntake: (data: any) => Promise<void>;
+  handleRetry: (action: string, data: any) => Promise<void>;
+  handleManualProductSubmit: (data: any) => Promise<void>;
   handleStrategyTypeSelection: (type: string) => void;
-  setActiveStrategy: (strategy: any) => Promise<void>;
+  handleImageUpload: async (uri: string) => {
+    const { addMessage, setTyping, handleProductIntake } = get();
+    set({ isTyping: true });
+    
+    try {
+        const attributes = await VisionService.analyzeProductImage(uri);
+        
+        await handleProductIntake({
+            name: attributes.name,
+            description: attributes.description,
+            baseImageUri: uri,
+            scanResult: attributes,
+            targetAudience: attributes.suggested_target_audience,
+            price: attributes.estimatedPrice,
+            category: attributes.category
+        });
+        
+    } catch (error: any) {
+        set({ isTyping: false });
+        addMessage(`Analysis failed: ${error.message}. Would you like to try uploading again?`, 'agent', undefined, 'retry_action', { action: 'IMAGE_UPLOAD', data: uri });
+    }
+  },
   updateActiveStrategy: (strategy: any) => Promise<void>;
   
   // Standard Actions
@@ -187,21 +210,20 @@ export const useAgentStore = create<AgentState>((set, get) => ({
     const { addMessage, setTyping, updateProductDetails, setInputDisabled } = get();
     set({ isTyping: true });
     
-    addMessage("Analyzing product details...", 'user');
+    addMessage(data.baseImageUri ? "Analyzing product image..." : "Saving product details...", 'user');
 
     try {
         // Integrity Check
-        const integrity = await IntegrityService.validateAndFixContent(data.name + " " + data.description);
+        const integrity = await IntegrityService.validateAndFixContent(data.name + " " + (data.description || ""));
         if (!integrity.isValid) {
             set({ isTyping: false });
-            addMessage(`Content rejected: ${integrity.issues.join(', ')}`, 'agent');
+            addMessage(`Content rejected: ${integrity.issues.join(', ')}`, 'agent', undefined, 'retry_action', { action: 'PRODUCT_INTAKE', data });
             return;
         }
 
-        // Use cleaned text if available
         const validatedData = {
             ...data,
-            name: integrity.cleanedText?.split(' ')[0] || data.name, // Rough extraction or just use original name
+            name: integrity.cleanedText?.split(' ')[0] || data.name,
             description: integrity.cleanedText || data.description
         };
 
@@ -221,7 +243,7 @@ export const useAgentStore = create<AgentState>((set, get) => ({
         
     } catch (error: any) {
         set({ isTyping: false });
-        addMessage(`Error: ${error.message}`, 'agent');
+        addMessage(`Error: ${error.message}`, 'agent', undefined, 'retry_action', { action: 'PRODUCT_INTAKE', data });
     }
   },
 
@@ -236,11 +258,10 @@ export const useAgentStore = create<AgentState>((set, get) => ({
         const integrity = await IntegrityService.validateAndFixContent(data.name + " " + (data.description || ""));
         if (!integrity.isValid) {
             set({ isTyping: false });
-            addMessage(`Content rejected: ${integrity.issues.join(', ')}`, 'agent');
+            addMessage(`Content rejected: ${integrity.issues.join(', ')}`, 'agent', undefined, 'retry_action', { action: 'SERVICE_INTAKE', data });
             return;
         }
 
-        // Use cleaned text if available
         const validatedData = {
             ...data,
             description: integrity.cleanedText || data.description
@@ -249,7 +270,7 @@ export const useAgentStore = create<AgentState>((set, get) => ({
         // Services use Product table for now or a dedicated one
         const serviceId = await ProductService.saveProduct({
             ...validatedData,
-            baseImageUri: '' // Services might not have images initially
+            baseImageUri: '' 
         });
         updateProductDetails({ ...validatedData, id: serviceId });
         set({ flowState: 'GOAL_SELECTION', isInputDisabled: true });
@@ -265,7 +286,7 @@ export const useAgentStore = create<AgentState>((set, get) => ({
         }, 1500);
     } catch (error: any) {
         set({ isTyping: false });
-        addMessage(`Error: ${error.message}`, 'agent');
+        addMessage(`Error: ${error.message}`, 'agent', undefined, 'retry_action', { action: 'SERVICE_INTAKE', data });
     }
   },
 
@@ -280,7 +301,7 @@ export const useAgentStore = create<AgentState>((set, get) => ({
         const integrity = await IntegrityService.validateAndFixContent(data.name + " " + (data.mission || ""));
         if (!integrity.isValid) {
             set({ isTyping: false });
-            addMessage(`Content rejected: ${integrity.issues.join(', ')}`, 'agent');
+            addMessage(`Content rejected: ${integrity.issues.join(', ')}`, 'agent', undefined, 'retry_action', { action: 'BRAND_INTAKE', data });
             return;
         }
 
@@ -311,7 +332,29 @@ export const useAgentStore = create<AgentState>((set, get) => ({
         }, 1500);
     } catch (error: any) {
         set({ isTyping: false });
-        addMessage(`Error: ${error.message}`, 'agent');
+        addMessage(`Error: ${error.message}`, 'agent', undefined, 'retry_action', { action: 'BRAND_INTAKE', data });
+    }
+  },
+
+  handleManualProductSubmit: async (data: any) => {
+    const { addMessage, setTyping, handleProductIntake } = get();
+    addMessage(`Product: ${data.name}`, 'user');
+    await handleProductIntake(data);
+  },
+
+  handleRetry: async (action: string, data: any) => {
+    const { handleProductIntake, handleServiceIntake, handleBrandIntake, handleManualProductSubmit, handleImageUpload, handlePageSelection, handleFacebookLogin, addMessage } = get();
+    addMessage("Retrying last action...", 'agent');
+    
+    switch(action) {
+        case 'PRODUCT_INTAKE': await handleProductIntake(data); break;
+        case 'SERVICE_INTAKE': await handleServiceIntake(data); break;
+        case 'BRAND_INTAKE': await handleBrandIntake(data); break;
+        case 'PRODUCT_MANUAL': await handleManualProductSubmit(data); break;
+        case 'IMAGE_UPLOAD': await handleImageUpload(data); break;
+        case 'PAGE_SELECTION': await handlePageSelection(data); break;
+        case 'FB_LOGIN': await handleFacebookLogin(); break;
+        default: addMessage("I'm not sure what to retry. Let's try starting over.", 'agent');
     }
   },
 
@@ -434,7 +477,7 @@ export const useAgentStore = create<AgentState>((set, get) => ({
         set({ messages: [], isTyping: false });
         setTimeout(() => {
             get().addMessage(
-                "Welcome back! Incomplete session detected. Would you like to resume where we left off?",
+                "Welcome back! You have an incomplete session. Would you like to resume your last action?",
                 'agent',
                 undefined,
                 'session_restore',
@@ -458,13 +501,14 @@ export const useAgentStore = create<AgentState>((set, get) => ({
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
     set({ isTyping: true });
+    
     const { data } = await supabase
       .from('chat_history')
       .select('*')
       .eq('user_id', user.id)
       .order('created_at', { ascending: true });
 
-    if (data) {
+    if (data && data.length > 0) {
       const loadedMessages: ChatMessage[] = data.map((m: any) => ({
         id: m.id,
         text: m.text,
@@ -475,16 +519,27 @@ export const useAgentStore = create<AgentState>((set, get) => ({
         uiData: m.ui_data
       }));
       
-      // Determine if we need to disable input based on last UI state
       const lastMsg = data[data.length - 1];
-      const needsDisabled = ['strategy_type_selection', 'product_intake_form', 'service_intake_form', 'brand_intake_form', 'goal_selection', 'duration_selection', 'strategy_comparison', 'facebook_connect', 'page_selection', 'ad_account_selection'].includes(lastMsg.ui_type);
+      const needsDisabled = ['strategy_type_selection', 'product_intake_form', 'product_manual_form', 'service_intake_form', 'brand_intake_form', 'goal_selection', 'duration_selection', 'strategy_comparison', 'facebook_connect', 'page_selection', 'ad_account_selection', 'retry_action'].includes(lastMsg.ui_type);
 
-      set({ messages: loadedMessages, isTyping: false, isInputDisabled: needsDisabled });
-      get().addMessage("Session restored. Ready to continue.", 'agent');
+      set({ 
+        messages: loadedMessages, 
+        isTyping: false, 
+        isInputDisabled: needsDisabled,
+        // Sync flow state if possible (requires more logic, but this is a start)
+      });
+
+      addMessage("Session restored. We were right here:", 'agent');
       
-      // If the last message was a prompt, re-prompt it if it requires selection
+      // If the last message was a prompt, re-prompt it to the front
       if (needsDisabled) {
-          get().addMessage("Please complete the action above to proceed.", 'agent');
+          addMessage(
+              `Please complete this step to continue:`, 
+              'agent', 
+              undefined, 
+              lastMsg.ui_type, 
+              lastMsg.ui_data
+          );
       }
     }
   },
@@ -524,51 +579,88 @@ export const useAgentStore = create<AgentState>((set, get) => ({
   // --- Facebook Flow (Simplified for brevity, reusing existing logic structure) ---
   
   initiateFacebookConnection: (fromFlow = false) => {
-    const { addMessage, fbAccessToken } = get();
+    const { addMessage, fbAccessToken, activeStrategy } = get();
+    
+    // Check if connected
     if (fbAccessToken) {
-        addMessage("Facebook account connected. Proceeding to execution.", 'agent');
-        // Trigger execution logic here if needed
+        if (activeStrategy) {
+            addMessage("Facebook is already connected. Proceeding with your strategy execution...", 'agent');
+            // Continue flow
+        } else {
+            addMessage("Facebook is connected. Since you don't have an active strategy yet, let's create one!", 'agent');
+            get().startStrategyFlow();
+        }
         return;
     }
+
     set({ connectionState: 'CONNECTING_FACEBOOK', isInputDisabled: true });
-    addMessage(
-      "I need access to your Facebook Business account to execute this strategy.",
-      'agent',
-      undefined,
-      'facebook_connect' 
-    );
+    
+    // If we're coming from system settings, the message should be generic.
+    // If from strategy flow, it should be context-aware.
+    const msg = fromFlow 
+        ? "To launch this strategy, I need to connect to your Facebook Business account."
+        : "Let's connect your Facebook account so I can manage your ads autonomously.";
+
+    addMessage(msg, 'agent', undefined, 'facebook_connect');
   },
 
   handleFacebookLogin: async () => {
-      // Reusing previous logic but simplified for this update
-      const { addMessage } = get();
+      const { addMessage, fetchPages, handlePageSelection } = get();
       set({ isTyping: true, isInputDisabled: true });
       try {
-          const accessToken = await FacebookService.login();
-          if (accessToken) {
-              set({ fbAccessToken: accessToken });
-              const pages = await FacebookService.getPages(accessToken);
-              set({ fetchedPages: pages, connectionState: 'SELECTING_PAGE', isTyping: false });
-              addMessage("Connection successful! Select a Page:", 'agent', undefined, 'page_selection', { pages });
-          } else {
-              set({ isTyping: false });
-              addMessage("Connection cancelled.", 'agent');
+          const token = await FacebookService.login();
+          if (token) {
+              set({ fbAccessToken: token, connectionState: 'SELECTING_PAGE' });
+              const pages = await FacebookService.getPages(token);
+              set({ fetchedPages: pages, isTyping: false });
+              
+              if (pages.length === 1) {
+                  // Auto-select if only one page
+                  addMessage(`Connected! Found 1 page: ${pages[0].name}. Selecting it automatically...`, 'agent');
+                  await handlePageSelection(pages[0]);
+              } else if (pages.length > 1) {
+                  addMessage(
+                      "Successfully connected to Facebook! Please select the page you want to use for this strategy:",
+                      'agent',
+                      undefined,
+                      'page_selection',
+                      { pages }
+                  );
+              } else {
+                  addMessage("Successfully connected, but no Facebook pages were found. Please ensure you are an admin of at least one page.", 'agent');
+              }
           }
-      } catch (e) {
+      } catch (error: any) {
           set({ isTyping: false });
-          addMessage("Connection failed.", 'agent');
+          addMessage(`Facebook connection failed: ${error.message}`, 'agent', undefined, 'retry_action', { action: 'FB_LOGIN', data: null });
       }
   },
 
   handlePageSelection: async (page) => {
-      const { addMessage, fbAccessToken } = get();
+      const { addMessage, fbAccessToken, flowState } = get();
       set({ selectedPage: page, isTyping: true, isInputDisabled: true });
       addMessage(`Selected Page: ${page.name}`, 'user');
       
       if (fbAccessToken) {
-          const adAccounts = await FacebookService.getAdAccounts(fbAccessToken);
-          set({ fetchedAdAccounts: adAccounts, connectionState: 'SELECTING_AD_ACCOUNT', isTyping: false });
-          addMessage("Select Ad Account:", 'agent', undefined, 'ad_account_selection', { adAccounts });
+          try {
+              const accounts = await FacebookService.getAdAccounts(fbAccessToken);
+              set({ fetchedAdAccounts: accounts, connectionState: 'SELECTING_AD_ACCOUNT', isTyping: false });
+              
+              if (accounts.length > 0) {
+                  addMessage(
+                      `Great. Now select the Ad Account for ${page.name}:`,
+                      'agent',
+                      undefined,
+                      'ad_account_selection',
+                      { adAccounts: accounts }
+                  );
+              } else {
+                  addMessage("No Ad Accounts found. Please ensure you have an active Ad Account linked to your Business Manager.", 'agent');
+              }
+          } catch (error: any) {
+              set({ isTyping: false });
+              addMessage(`Error fetching accounts: ${error.message}`, 'agent', undefined, 'retry_action', { action: 'PAGE_SELECTION', data: page });
+          }
       }
   },
 

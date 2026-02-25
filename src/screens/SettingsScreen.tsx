@@ -29,12 +29,12 @@ export default function SettingsScreen() {
       <View className="mb-6">
         <Text className="text-lg font-bold text-gray-800 mb-3">Integrations</Text>
         <TouchableOpacity 
-          onPress={() => navigation.navigate('AgentChat', { fromStrategyApproval: true })}
+          onPress={() => navigation.navigate('ConnectedAccounts')}
           className="bg-blue-50 p-4 rounded-lg flex-row justify-between items-center border border-blue-100"
         >
           <View>
-            <Text className="text-blue-900 font-medium">Facebook Ads</Text>
-            <Text className="text-blue-600 text-xs mt-1">Configure Ad Account & Page</Text>
+            <Text className="text-blue-900 font-medium">Connected Accounts</Text>
+            <Text className="text-blue-600 text-xs mt-1">Manage Facebook & other platforms</Text>
           </View>
           <Text className="text-blue-800 font-bold">→</Text>
         </TouchableOpacity>

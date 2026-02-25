@@ -216,6 +216,84 @@ const SelectionList = ({ items, onSelect, type }: { items: any[], onSelect: (ite
   </View>
 );
 
+const ProductManualIntakeCard = ({ onSubmit }: { onSubmit: (data: any) => void }) => {
+  const [name, setName] = useState('');
+  const [category, setCategory] = useState('');
+  const [price, setPrice] = useState('');
+  const [description, setDescription] = useState('');
+
+  return (
+    <View className="mt-2 bg-adroom-card p-4 rounded-xl border border-adroom-neon/20">
+      <TextInput 
+        placeholder="Product Name" 
+        placeholderTextColor="#64748B"
+        className="bg-adroom-dark p-3 rounded-lg text-white mb-3 border border-white/5"
+        value={name}
+        onChangeText={setName}
+      />
+      <TextInput 
+        placeholder="Category (e.g. Fashion)" 
+        placeholderTextColor="#64748B"
+        className="bg-adroom-dark p-3 rounded-lg text-white mb-3 border border-white/5"
+        value={category}
+        onChangeText={setCategory}
+      />
+      <TextInput 
+        placeholder="Price (e.g. 5000)" 
+        placeholderTextColor="#64748B"
+        keyboardType="numeric"
+        className="bg-adroom-dark p-3 rounded-lg text-white mb-3 border border-white/5"
+        value={price}
+        onChangeText={setPrice}
+      />
+      <TextInput 
+        placeholder="Product Description" 
+        placeholderTextColor="#64748B"
+        multiline
+        className="bg-adroom-dark p-3 rounded-lg text-white mb-4 border border-white/5 h-20"
+        value={description}
+        onChangeText={setDescription}
+      />
+      <TouchableOpacity 
+        onPress={() => onSubmit({ name, category, price, description, imageUri: '' })}
+        className="bg-adroom-neon py-3 rounded-lg items-center"
+      >
+        <Text className="text-adroom-dark font-bold uppercase">Save Product</Text>
+      </TouchableOpacity>
+    </View>
+  );
+};
+
+const RetryActionCard = ({ onRetry, onCancel, actionName }: { onRetry: () => void, onCancel: () => void, actionName: string }) => (
+  <View className="mt-2 bg-adroom-card p-5 rounded-xl border border-red-500/50">
+    <View className="flex-row items-center mb-3">
+        <View className="w-10 h-10 bg-red-500/20 rounded-full items-center justify-center mr-3">
+            <Text className="text-red-500 text-xl">⚠</Text>
+        </View>
+        <View>
+            <Text className="text-white font-bold text-lg">{actionName} Failed</Text>
+            <Text className="text-adroom-text-muted text-xs">Would you like to try again?</Text>
+        </View>
+    </View>
+    
+    <View className="flex-row space-x-3 mt-2">
+        <TouchableOpacity 
+            onPress={onCancel}
+            className="flex-1 bg-slate-800 py-3 rounded-lg items-center border border-slate-700"
+        >
+            <Text className="text-slate-400 font-bold uppercase">No, Skip</Text>
+        </TouchableOpacity>
+        
+        <TouchableOpacity 
+            onPress={onRetry}
+            className="flex-1 bg-adroom-neon py-3 rounded-lg items-center"
+        >
+            <Text className="text-adroom-dark font-bold uppercase">Retry Now</Text>
+        </TouchableOpacity>
+    </View>
+  </View>
+);
+
 const CompletionCard = ({ onDashboard }: { onDashboard: () => void }) => (
   <View className="mt-2 bg-adroom-card p-5 rounded-xl border border-green-500/50 items-center">
     <View className="w-12 h-12 bg-green-500/20 rounded-full items-center justify-center mb-3">
@@ -372,7 +450,8 @@ export default function AgentChatScreen({ navigation, route }: Props) {
     flowState, handleProductIntake, handleGoalSelection, handleDurationSelection, handleStrategySelection,
     initiateFacebookConnection, handleFacebookLogin, handlePageSelection, handleAdAccountSelection,
     connectionState, loadMessages, restoreSession, startNewSession, fbAccessToken, disconnectFacebook,
-    handleStrategyTypeSelection, handleServiceIntake, handleBrandIntake
+    handleStrategyTypeSelection, handleServiceIntake, handleBrandIntake, handleManualProductSubmit,
+    handleRetry
   } = useAgentStore();
   
   const { user } = useAuthStore();
@@ -433,27 +512,13 @@ export default function AgentChatScreen({ navigation, route }: Props) {
 
     if (!result.canceled && result.assets && result.assets.length > 0) {
       const selectedImage = result.assets[0].uri;
-      const base64 = result.assets[0].base64; // Store might need this, or VisionService can read from URI if local
+      const base64 = result.assets[0].base64; 
       
       setUploading(true);
       addMessage('Uploading product image...', 'user', selectedImage);
       
       try {
-          // Analyze immediately
-          const attributes = await VisionService.analyzeProductImage(selectedImage); // Or base64 if modified service
-          
-          await handleProductIntake({
-              name: attributes.name,
-              description: attributes.description,
-              baseImageUri: selectedImage,
-              scanResult: attributes,
-              targetAudience: attributes.suggested_target_audience,
-              price: attributes.estimatedPrice,
-              category: attributes.category
-          });
-          
-      } catch (error) {
-          addMessage("Analysis failed. Please enter details manually.", 'agent');
+          await useAgentStore.getState().handleImageUpload(selectedImage);
       } finally {
           setUploading(false);
       }
@@ -461,9 +526,9 @@ export default function AgentChatScreen({ navigation, route }: Props) {
   };
   
   const handleManualEntry = () => {
-      setInputDisabled(false);
+      setInputDisabled(true);
       addMessage("Manual Entry", 'user');
-      addMessage("Please describe your product/service details here.", 'agent');
+      addMessage("Please provide your product details below.", 'agent', undefined, 'product_manual_form');
   };
 
   const renderMessage = ({ item }: { item: any }) => (
@@ -502,6 +567,10 @@ export default function AgentChatScreen({ navigation, route }: Props) {
             <ProductIntakeCard onUpload={handleImageUpload} onManual={handleManualEntry} />
         )}
 
+        {item.uiType === 'product_manual_form' && (
+            <ProductManualIntakeCard onSubmit={handleManualProductSubmit} />
+        )}
+
         {item.uiType === 'service_intake_form' && (
             <ServiceIntakeCard onSubmit={handleServiceIntake} />
         )}
@@ -527,6 +596,14 @@ export default function AgentChatScreen({ navigation, route }: Props) {
         
         {item.uiType === 'strategy_comparison' && item.uiData?.strategies && (
             <StrategyComparisonCard strategies={item.uiData.strategies} onSelect={handleStrategySelection} />
+        )}
+
+        {item.uiType === 'retry_action' && (
+            <RetryActionCard 
+                actionName={item.uiData?.action} 
+                onRetry={() => handleRetry(item.uiData?.action, item.uiData?.data)}
+                onCancel={() => addMessage("I'll help you with something else then. What would you like to do?", 'agent')}
+            />
         )}
 
         {/* Previous UI Types */}
