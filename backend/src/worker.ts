@@ -64,7 +64,7 @@ async function runWorker() {
           .from('ad_configs')
           .select('*')
           .eq('user_id', strategy.user_id)
-          .single();
+          .maybeSingle();
 
         // Fetch all unreplied comments or comments needing a follow-up
         await checkAndHandleConversations(supabase, strategy, fbConfig);
@@ -110,7 +110,7 @@ async function applyPendingOptimizations(supabase: any, config: any, strategy: a
             .select('*')
             .eq('user_id', config.user_id)
             .limit(1)
-            .single();
+            .maybeSingle();
 
           if (!campaign) {
             console.warn(`[Worker] No campaign found for user ${config.user_id} to optimize.`);
