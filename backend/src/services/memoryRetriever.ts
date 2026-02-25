@@ -29,7 +29,7 @@ export class MemoryRetriever {
       .from('user_memory')
       .select('*')
       .eq('user_id', userId)
-      .single();
+      .maybeSingle();
 
     if (userError) console.error('Error fetching user memory:', userError);
 
@@ -44,7 +44,7 @@ export class MemoryRetriever {
         .from(table)
         .select('*')
         .eq(idField, contextId)
-        .single();
+        .maybeSingle();
         
       if (error) console.error(`Error fetching ${contextType} memory:`, error);
       contextData = data;
@@ -53,7 +53,7 @@ export class MemoryRetriever {
     // 3. Fetch Strategy History (Last 5 relevant strategies)
     const { data: history, error: historyError } = await this.supabase
       .from('strategy_memory')
-      .select('strategy_id, goal, status, roas, total_spend, platform_data, outcomes')
+      .select('strategy_id, goal, status, roas, total_spend, platform_data, expected_outcomes')
       .eq('user_id', userId)
       .order('created_at', { ascending: false })
       .limit(5);
@@ -80,7 +80,7 @@ export class MemoryRetriever {
     const { data: ipeIntelligence, error: ipeError } = await this.supabase
       .from('ipe_intelligence_log')
       .select('*')
-      .order('created_at', { ascending: false })
+      .order('timestamp', { ascending: false })
       .limit(15);
 
     if (ipeError) console.error('Error fetching IPE intelligence:', ipeError);
