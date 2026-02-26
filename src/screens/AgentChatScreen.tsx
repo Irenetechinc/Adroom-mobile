@@ -451,7 +451,7 @@ export default function AgentChatScreen({ navigation, route }: Props) {
     initiateFacebookConnection, handleFacebookLogin, handlePageSelection, handleAdAccountSelection,
     connectionState, loadMessages, restoreSession, startNewSession, fbAccessToken, disconnectFacebook,
     handleStrategyTypeSelection, handleServiceIntake, handleBrandIntake, handleManualProductSubmit,
-    handleRetry
+    handleRetry, handleImageUpload: handleImageUploadStore
   } = useAgentStore();
   
   const { user } = useAuthStore();
@@ -518,7 +518,7 @@ export default function AgentChatScreen({ navigation, route }: Props) {
       addMessage('Uploading product image...', 'user', selectedImage);
       
       try {
-          await useAgentStore.getState().handleImageUpload(selectedImage);
+          await handleImageUploadStore(selectedImage);
       } finally {
           setUploading(false);
       }
