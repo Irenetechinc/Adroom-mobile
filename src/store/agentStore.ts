@@ -1,11 +1,7 @@
-
 import { create } from 'zustand';
-import { ChatMessage, ProductDetails, Strategy, CreativeAsset, ConnectionState, FlowState } from '../types/agent';
-import { CreativeService } from '../services/creative';
+import { ChatMessage, ProductDetails, ConnectionState, FlowState } from '../types/agent';
 import { supabase } from '../services/supabase';
 import { FacebookService, FacebookPage, FacebookAdAccount } from '../services/facebook';
-import { AutonomousService } from '../services/autonomous';
-import { RemoteLogger } from '../services/remoteLogger';
 import { ProductService } from '../services/product';
 import { StrategyService, GeneratedStrategy } from '../services/strategy';
 import { VisionService } from '../services/vision';
@@ -52,48 +48,27 @@ interface AgentState {
   handleRetry: (action: string, data: any) => Promise<void>;
   handleManualProductSubmit: (data: any) => Promise<void>;
   handleStrategyTypeSelection: (type: string) => void;
-  handleImageUpload: async (uri: string) => {
-    const { addMessage, setTyping, handleProductIntake } = get();
-    set({ isTyping: true });
-    
-    try {
-        const attributes = await VisionService.analyzeProductImage(uri);
-        
-        await handleProductIntake({
-            name: attributes.name,
-            description: attributes.description,
-            baseImageUri: uri,
-            scanResult: attributes,
-            targetAudience: attributes.suggested_target_audience,
-            price: attributes.estimatedPrice,
-            category: attributes.category
-        });
-        
-    } catch (error: any) {
-        set({ isTyping: false });
-        addMessage(`Analysis failed: ${error.message}. Would you like to try uploading again?`, 'agent', undefined, 'retry_action', { action: 'IMAGE_UPLOAD', data: uri });
-    }
-  },
-  updateActiveStrategy: (strategy: any) => Promise<void>;
+  handleImageUpload: (uri: string) => Promise<void>;
   
   // Standard Actions
+  setActiveStrategy: (strategy: any) => Promise<void>;
+  updateActiveStrategy: (strategy: any) => Promise<void>;
   loadActiveStrategy: () => Promise<void>;
   loadMessages: () => Promise<void>;
   resetAgent: () => void;
-  restoreSession: () => void;
-  startNewSession: () => void;
+  restoreSession: () => Promise<void>;
+  startNewSession: () => Promise<void>;
   
   // Facebook
   initiateFacebookConnection: (fromFlow?: boolean) => void;
   handleFacebookLogin: () => Promise<void>;
-  handlePageSelection: (page: FacebookPage) => void;
+  fetchPages: () => Promise<void>;
+  handlePageSelection: (page: FacebookPage) => Promise<void>;
   handleAdAccountSelection: (account: FacebookAdAccount) => Promise<void>;
   disconnectFacebook: () => Promise<void>;
   handleMarketingTypeSelection: () => void;
   analyzeContext: () => Promise<void>;
 }
-
-const BACKEND_URL = process.env.EXPO_PUBLIC_API_URL;
 
 export const useAgentStore = create<AgentState>((set, get) => ({
   messages: [],
@@ -157,7 +132,7 @@ export const useAgentStore = create<AgentState>((set, get) => ({
   },
 
   startStrategyFlow: () => {
-    const { addMessage, setInputDisabled, setTyping } = get();
+    const { addMessage, setTyping } = get();
     set({ flowState: 'STRATEGY_TYPE_SELECTION', isInputDisabled: true });
     
     setTyping(true);
@@ -174,7 +149,7 @@ export const useAgentStore = create<AgentState>((set, get) => ({
 
   handleStrategyTypeSelection: (type: string) => {
     const { addMessage, setTyping } = get();
-    set({ flowState: type.toUpperCase() === 'PRODUCT' ? 'PRODUCT_INTAKE' : 'SERVICE_INTAKE', isInputDisabled: true });
+    set({ flowState: type.toUpperCase() === 'PRODUCT' ? 'PRODUCT_INTAKE' : 'SERVICE_INTAKE' as any, isInputDisabled: true });
     
     addMessage(`${type.toUpperCase()} Strategy`, 'user');
     setTyping(true);
@@ -207,7 +182,7 @@ export const useAgentStore = create<AgentState>((set, get) => ({
   },
 
   handleProductIntake: async (data: ProductDetails) => {
-    const { addMessage, setTyping, updateProductDetails, setInputDisabled } = get();
+    const { addMessage, setTyping, updateProductDetails } = get();
     set({ isTyping: true });
     
     addMessage(data.baseImageUri ? "Analyzing product image..." : "Saving product details...", 'user');
@@ -248,7 +223,7 @@ export const useAgentStore = create<AgentState>((set, get) => ({
   },
 
   handleServiceIntake: async (data: any) => {
-    const { addMessage, setTyping, updateProductDetails, setInputDisabled } = get();
+    const { addMessage, setTyping, updateProductDetails } = get();
     set({ isTyping: true });
     
     addMessage(`Service: ${data.name}`, 'user');
@@ -291,7 +266,7 @@ export const useAgentStore = create<AgentState>((set, get) => ({
   },
 
   handleBrandIntake: async (data: any) => {
-    const { addMessage, setTyping, updateProductDetails, setInputDisabled } = get();
+    const { addMessage, setTyping, updateProductDetails } = get();
     set({ isTyping: true });
     
     addMessage(`Brand: ${data.name}`, 'user');
@@ -337,7 +312,7 @@ export const useAgentStore = create<AgentState>((set, get) => ({
   },
 
   handleManualProductSubmit: async (data: any) => {
-    const { addMessage, setTyping, handleProductIntake } = get();
+    const { addMessage, handleProductIntake } = get();
     addMessage(`Product: ${data.name}`, 'user');
     await handleProductIntake(data);
   },
@@ -389,7 +364,7 @@ export const useAgentStore = create<AgentState>((set, get) => ({
   },
 
   handleDurationSelection: async (duration: number) => {
-      const { addMessage, setTyping, updateProductDetails, productDetails } = get();
+      const { addMessage, updateProductDetails, productDetails } = get();
       updateProductDetails({ selectedDuration: duration });
       set({ flowState: 'STRATEGY_GENERATION', isTyping: true, isInputDisabled: true });
       
@@ -445,6 +420,29 @@ export const useAgentStore = create<AgentState>((set, get) => ({
       }, 1000);
   },
 
+  handleImageUpload: async (uri: string) => {
+    const { addMessage, setTyping, handleProductIntake } = get();
+    set({ isTyping: true });
+    
+    try {
+        const attributes = await VisionService.analyzeProductImage(uri);
+        
+        await handleProductIntake({
+            name: attributes.name,
+            description: attributes.description,
+            baseImageUri: uri,
+            scanResult: attributes,
+            targetAudience: attributes.suggested_target_audience,
+            price: attributes.estimatedPrice,
+            category: attributes.category
+        });
+        
+    } catch (error: any) {
+        set({ isTyping: false });
+        addMessage(`Analysis failed: ${error.message}. Would you like to try uploading again?`, 'agent', undefined, 'retry_action', { action: 'IMAGE_UPLOAD', data: uri });
+    }
+  },
+
   // --- Standard Actions ---
 
   setActiveStrategy: async (strategy: any) => {
@@ -490,10 +488,10 @@ export const useAgentStore = create<AgentState>((set, get) => ({
             );
         }, 500);
       } else {
-         get().startNewSession();
+         await get().startNewSession();
       }
     } else {
-       get().startNewSession();
+       await get().startNewSession();
     }
   },
 
@@ -529,11 +527,11 @@ export const useAgentStore = create<AgentState>((set, get) => ({
         // Sync flow state if possible (requires more logic, but this is a start)
       });
 
-      addMessage("Session restored. We were right here:", 'agent');
+      get().addMessage("Session restored. We were right here:", 'agent');
       
       // If the last message was a prompt, re-prompt it to the front
       if (needsDisabled) {
-          addMessage(
+          get().addMessage(
               `Please complete this step to continue:`, 
               'agent', 
               undefined, 
@@ -562,7 +560,7 @@ export const useAgentStore = create<AgentState>((set, get) => ({
         await supabase.from('chat_history').delete().eq('user_id', user.id);
     }
 
-    const { addMessage, setInputDisabled, setTyping, startStrategyFlow } = get();
+    const { addMessage, setTyping, startStrategyFlow } = get();
     setTyping(true);
     
     setTimeout(() => {
@@ -576,7 +574,7 @@ export const useAgentStore = create<AgentState>((set, get) => ({
 
   resetAgent: () => get().startNewSession(),
   
-  // --- Facebook Flow (Simplified for brevity, reusing existing logic structure) ---
+  // --- Facebook Flow ---
   
   initiateFacebookConnection: (fromFlow = false) => {
     const { addMessage, fbAccessToken, activeStrategy } = get();
@@ -595,8 +593,6 @@ export const useAgentStore = create<AgentState>((set, get) => ({
 
     set({ connectionState: 'CONNECTING_FACEBOOK', isInputDisabled: true });
     
-    // If we're coming from system settings, the message should be generic.
-    // If from strategy flow, it should be context-aware.
     const msg = fromFlow 
         ? "To launch this strategy, I need to connect to your Facebook Business account."
         : "Let's connect your Facebook account so I can manage your ads autonomously.";
@@ -605,7 +601,7 @@ export const useAgentStore = create<AgentState>((set, get) => ({
   },
 
   handleFacebookLogin: async () => {
-      const { addMessage, fetchPages, handlePageSelection } = get();
+      const { addMessage, handlePageSelection } = get();
       set({ isTyping: true, isInputDisabled: true });
       try {
           const token = await FacebookService.login();
@@ -636,8 +632,16 @@ export const useAgentStore = create<AgentState>((set, get) => ({
       }
   },
 
-  handlePageSelection: async (page) => {
-      const { addMessage, fbAccessToken, flowState } = get();
+  fetchPages: async () => {
+      const { fbAccessToken } = get();
+      if (fbAccessToken) {
+          const pages = await FacebookService.getPages(fbAccessToken);
+          set({ fetchedPages: pages });
+      }
+  },
+
+  handlePageSelection: async (page: FacebookPage) => {
+      const { addMessage, fbAccessToken } = get();
       set({ selectedPage: page, isTyping: true, isInputDisabled: true });
       addMessage(`Selected Page: ${page.name}`, 'user');
       
@@ -664,7 +668,7 @@ export const useAgentStore = create<AgentState>((set, get) => ({
       }
   },
 
-  handleAdAccountSelection: async (account) => {
+  handleAdAccountSelection: async (account: FacebookAdAccount) => {
       const { addMessage, selectedPage, fbAccessToken } = get();
       set({ selectedAdAccount: account, isTyping: true, isInputDisabled: true });
       addMessage(`Selected Account: ${account.name}`, 'user');
@@ -689,7 +693,6 @@ export const useAgentStore = create<AgentState>((set, get) => ({
       set({ fbAccessToken: null });
   },
 
-  // Stub for missing method from interface
   handleMarketingTypeSelection: () => {},
   analyzeContext: async () => {}
 
