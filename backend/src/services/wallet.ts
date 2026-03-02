@@ -1,8 +1,13 @@
 
-import dotenv from 'dotenv';
-import { createClient } from '@supabase/supabase-js';
+
 import dotenv from 'dotenv';
 import { getServiceSupabaseClient } from '../config/supabase';
+
+dotenv.config();
+
+const supabase = getServiceSupabaseClient();
+
+const FLUTTERWAVE_SECRET_KEY = process.env.FLUTTERWAVE_SECRET_KEY;
 
 dotenv.config();
 
