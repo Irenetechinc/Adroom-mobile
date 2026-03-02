@@ -3,8 +3,6 @@ import { createClient } from '@supabase/supabase-js';
 import { Request } from 'express';
 import dotenv from 'dotenv';
 
-dotenv.config();
-
 export const getSupabaseClient = (req: Request) => {
   const supabaseUrl = process.env.SUPABASE_URL || '';
   const supabaseAnonKey = process.env.SUPABASE_ANON_KEY || '';
