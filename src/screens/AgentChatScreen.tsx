@@ -12,6 +12,7 @@ import { DrawerActions } from '@react-navigation/native';
 import { Menu, Edit2, Check, Upload, DollarSign, Eye, Tag, Rocket, MapPin, RefreshCw, Users, Zap, Calendar, TrendingUp } from 'lucide-react-native';
 import { IntegrityService } from '../services/integrity';
 import { VisionService } from '../services/vision';
+import ImageUploadComponent from '../components/ImageUploadComponent';
 
 // --- Interactive Cards ---
 
@@ -221,6 +222,7 @@ const ProductManualIntakeCard = ({ onSubmit }: { onSubmit: (data: any) => void }
   const [category, setCategory] = useState('');
   const [price, setPrice] = useState('');
   const [description, setDescription] = useState('');
+  const [images, setImages] = useState<{ uri: string; base64: string | null }[]>([]);
 
   return (
     <View className="mt-2 bg-adroom-card p-4 rounded-xl border border-adroom-neon/20">
@@ -254,9 +256,10 @@ const ProductManualIntakeCard = ({ onSubmit }: { onSubmit: (data: any) => void }
         value={description}
         onChangeText={setDescription}
       />
+      <ImageUploadComponent onImagesSelected={setImages} maxImages={5} />
       <TouchableOpacity 
-        onPress={() => onSubmit({ name, category, price, description, imageUri: '' })}
-        className="bg-adroom-neon py-3 rounded-lg items-center"
+        onPress={() => onSubmit({ name, category, price, description, images })}
+        className="bg-adroom-neon py-3 rounded-lg items-center mt-4"
       >
         <Text className="text-adroom-dark font-bold uppercase">Save Product</Text>
       </TouchableOpacity>
@@ -316,6 +319,7 @@ const ServiceIntakeCard = ({ onSubmit }: { onSubmit: (data: any) => void }) => {
   const [category, setCategory] = useState('');
   const [price, setPrice] = useState('');
   const [description, setDescription] = useState('');
+  const [images, setImages] = useState<{ uri: string; base64: string | null }[]>([]);
 
   return (
     <View className="mt-2 bg-adroom-card p-4 rounded-xl border border-adroom-neon/20">
@@ -348,9 +352,10 @@ const ServiceIntakeCard = ({ onSubmit }: { onSubmit: (data: any) => void }) => {
         value={description}
         onChangeText={setDescription}
       />
+      <ImageUploadComponent onImagesSelected={setImages} maxImages={5} />
       <TouchableOpacity 
-        onPress={() => onSubmit({ name, category, price, description })}
-        className="bg-adroom-neon py-3 rounded-lg items-center"
+        onPress={() => onSubmit({ name, category, price, description, images })}
+        className="bg-adroom-neon py-3 rounded-lg items-center mt-4"
       >
         <Text className="text-adroom-dark font-bold">SAVE SERVICE</Text>
       </TouchableOpacity>
@@ -362,6 +367,7 @@ const BrandIntakeCard = ({ onSubmit }: { onSubmit: (data: any) => void }) => {
   const [name, setName] = useState('');
   const [mission, setMission] = useState('');
   const [values, setValues] = useState('');
+  const [images, setImages] = useState<{ uri: string; base64: string | null }[]>([]);
 
   return (
     <View className="mt-2 bg-adroom-card p-4 rounded-xl border border-adroom-neon/20">
@@ -387,9 +393,10 @@ const BrandIntakeCard = ({ onSubmit }: { onSubmit: (data: any) => void }) => {
         value={values}
         onChangeText={setValues}
       />
+      <ImageUploadComponent onImagesSelected={setImages} maxImages={5} />
       <TouchableOpacity 
-        onPress={() => onSubmit({ name, mission, values })}
-        className="bg-adroom-neon py-3 rounded-lg items-center"
+        onPress={() => onSubmit({ name, mission, values, images })}
+        className="bg-adroom-neon py-3 rounded-lg items-center mt-4"
       >
         <Text className="text-adroom-dark font-bold">SAVE BRAND</Text>
       </TouchableOpacity>
@@ -518,7 +525,7 @@ export default function AgentChatScreen({ navigation, route }: Props) {
       addMessage('Uploading product image...', 'user', selectedImage);
       
       try {
-          await handleImageUploadStore(selectedImage);
+          await handleImageUploadStore(selectedImage, base64);
       } finally {
           setUploading(false);
       }

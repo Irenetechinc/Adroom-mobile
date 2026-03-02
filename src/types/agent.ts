@@ -66,6 +66,7 @@ export interface ProductDetails {
   colorPalette?: string[];
   // New fields
   scanResult?: any;
+  images?: { uri: string; base64: string | null }[];
 }
 
 export type ConnectionState = 'IDLE' | 'CONNECTING_FACEBOOK' | 'SELECTING_PAGE' | 'SELECTING_AD_ACCOUNT' | 'COMPLETED';

@@ -31,7 +31,15 @@
     },
     "plugins": [
       "expo-secure-store",
-      "expo-web-browser"
+      "expo-web-browser",
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "gradleVersion": "8.10.2"
+          }
+        }
+      ]
     ],
     "extra": {
       "eas": {

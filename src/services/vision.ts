@@ -23,31 +23,16 @@ export interface VisualAttributes {
 
 export const VisionService = {
     /**
-     * Analyzes an image using the AdRoom AI Brain (Gemini 2.5 Pro via Supabase Edge Function).
+     * Analyzes an image using the AdRoom AI Brain (Gemini 2.5 Pro via railway).
      */
-    async analyzeProductImage(imageUri: string): Promise<VisualAttributes> {
-        RemoteLogger.log('VISION', `Starting analysis for image: ${imageUri}`);
+    async analyzeProductImage(base64Image: string): Promise<VisualAttributes> {
+        RemoteLogger.log('VISION', `Starting analysis for image`);
         
         try {
-            // Convert image to base64 if needed
-            let base64Image = imageUri;
-            
-            // Check if it's a local file URI
-            if (imageUri.startsWith('file://') || imageUri.startsWith('/')) {
-                 try {
-                    base64Image = await readAsStringAsync(imageUri, {
-                        encoding: 'base64',
-                    });
-                    // Format for the edge function (it expects raw base64 usually, but let's check our function)
-                    // Our function: const imagePart = { inlineData: { data: imageBase64, mimeType: "image/jpeg" } };
-                    // So we just send the base64 string.
-                } catch (readError) {
-                   console.error('Failed to read local image file:', readError);
-                   throw new Error('Could not read local image file for analysis.');
-                }
-            } else if (imageUri.startsWith('data:image')) {
-                // Strip the data:image/jpeg;base64, prefix if present
-                base64Image = imageUri.split(',')[1];
+            // The image is already base64, no conversion needed here.
+            // Strip the data:image/jpeg;base64, prefix if present
+            if (base64Image.startsWith('data:image')) {
+                base64Image = base64Image.split(',')[1];
             }
 
             if (!BACKEND_URL) {
