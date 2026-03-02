@@ -26,6 +26,7 @@ export const getServiceSupabaseClient = () => {
   
   console.log('DEBUG: SUPABASE_URL:', supabaseUrl ? 'Configured' : 'MISSING');
   console.log('DEBUG: SUPABASE_SERVICE_ROLE_KEY:', supabaseServiceRoleKey ? 'Configured' : 'MISSING');
+  console.log('DEBUG: TEST_RAILWAY_KEY:', process.env.TEST_RAILWAY_KEY ? 'Configured' : 'MISSING');
 
   if (!supabaseServiceRoleKey) {
       console.warn('SUPABASE_SERVICE_ROLE_KEY is missing!');
