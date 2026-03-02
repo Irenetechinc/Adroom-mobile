@@ -1,6 +1,8 @@
 
+import dotenv from 'dotenv';
 import { createClient } from '@supabase/supabase-js';
 import dotenv from 'dotenv';
+import { getServiceSupabaseClient } from '../config/supabase';
 
 dotenv.config();
 
@@ -17,7 +19,7 @@ if (!supabaseUrl || !supabaseKey) {
   console.warn('WalletService will be disabled until configuration is fixed.');
 }
 
-const supabase = (supabaseUrl && supabaseKey) ? createClient(supabaseUrl, supabaseKey) : null;
+const supabase = getServiceSupabaseClient();
 
 const FLUTTERWAVE_SECRET_KEY = process.env.FLUTTERWAVE_SECRET_KEY;
 const ADROOM_FEE = Number(process.env.ADROOM_FEE) || 45;
@@ -77,21 +79,8 @@ export class WalletService {
       .eq('user_id', userId)
       .maybeSingle();
 
-    if (!wallet && !error) {
-      console.log(`[Wallet] Wallet not found for ${userId}, creating one...`);
-      // Create wallet if not exists (fallback if trigger failed)
-      // Note: Backend uses service role key so this should bypass RLS for creation
-      const { data: newWallet, error: createError } = await supabase
-        .from('wallets')
-        .insert({ user_id: userId, balance: 0.00 })
-        .select()
-        .single();
-      
-      if (createError) {
-          console.error(`[Wallet] Creation Failed for ${userId}:`, createError);
-          throw createError;
-      }
-      wallet = newWallet;
+    if (!wallet) {
+      throw new Error(`Wallet not found for user: ${userId}`);
     } else if (error) {
       console.error(`[Wallet] Fetch Error for ${userId}:`, error);
       throw error;
