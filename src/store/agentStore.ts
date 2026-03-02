@@ -245,6 +245,7 @@ export const useAgentStore = create<AgentState>((set, get) => ({
         // Services use Product table for now or a dedicated one
         const serviceId = await ProductService.saveProduct({
             ...validatedData,
+            images: data.images || [],
             baseImageUri: '' 
         });
         updateProductDetails({ ...validatedData, id: serviceId });
@@ -291,6 +292,7 @@ export const useAgentStore = create<AgentState>((set, get) => ({
             ...validatedData,
             name: data.name,
             description: `${validatedData.mission}\n\nValues: ${data.values}`,
+            images: data.images || [],
             baseImageUri: ''
         });
         updateProductDetails({ ...validatedData, id: brandId });
@@ -314,7 +316,7 @@ export const useAgentStore = create<AgentState>((set, get) => ({
   handleManualProductSubmit: async (data: any) => {
     const { addMessage, handleProductIntake } = get();
     addMessage(`Product: ${data.name}`, 'user');
-    await handleProductIntake(data);
+    await handleProductIntake({ ...data, images: data.images || [] });
   },
 
   handleRetry: async (action: string, data: any) => {
@@ -322,13 +324,27 @@ export const useAgentStore = create<AgentState>((set, get) => ({
     addMessage("Retrying last action...", 'agent');
     
     switch(action) {
-        case 'PRODUCT_INTAKE': await handleProductIntake(data); break;
-        case 'SERVICE_INTAKE': await handleServiceIntake(data); break;
-        case 'BRAND_INTAKE': await handleBrandIntake(data); break;
-        case 'PRODUCT_MANUAL': await handleManualProductSubmit(data); break;
-        case 'IMAGE_UPLOAD': await handleImageUpload(data); break;
-        case 'PAGE_SELECTION': await handlePageSelection(data); break;
-        case 'FB_LOGIN': await handleFacebookLogin(); break;
+        case 'PRODUCT_INTAKE': 
+            addMessage("Please re-enter product details:", 'agent', undefined, 'product_intake_form', data);
+            break;
+        case 'SERVICE_INTAKE': 
+            addMessage("Please re-enter service details:", 'agent', undefined, 'service_intake_form', data);
+            break;
+        case 'BRAND_INTAKE': 
+            addMessage("Please re-enter brand details:", 'agent', undefined, 'brand_intake_form', data);
+            break;
+        case 'PRODUCT_MANUAL': 
+            addMessage("Please re-enter product details manually:", 'agent', undefined, 'product_manual_form', data);
+            break;
+        case 'IMAGE_UPLOAD': 
+            addMessage("Please re-upload image:", 'agent', undefined, 'product_intake_form', data);
+            break;
+        case 'PAGE_SELECTION': 
+            addMessage("Please re-select your Facebook page:", 'agent', undefined, 'page_selection', { pages: data });
+            break;
+        case 'FB_LOGIN': 
+            addMessage("Please try connecting to Facebook again:", 'agent', undefined, 'facebook_connect');
+            break;
         default: addMessage("I'm not sure what to retry. Let's try starting over.", 'agent');
     }
   },
@@ -420,12 +436,12 @@ export const useAgentStore = create<AgentState>((set, get) => ({
       }, 1000);
   },
 
-  handleImageUpload: async (uri: string) => {
+  handleImageUpload: async (uri: string, base64: string) => {
     const { addMessage, setTyping, handleProductIntake } = get();
     set({ isTyping: true });
     
     try {
-        const attributes = await VisionService.analyzeProductImage(uri);
+        const attributes = await VisionService.analyzeProductImage(base64);
         
         await handleProductIntake({
             name: attributes.name,
@@ -439,7 +455,7 @@ export const useAgentStore = create<AgentState>((set, get) => ({
         
     } catch (error: any) {
         set({ isTyping: false });
-        addMessage(`Analysis failed: ${error.message}. Would you like to try uploading again?`, 'agent', undefined, 'retry_action', { action: 'IMAGE_UPLOAD', data: uri });
+        addMessage(`Analysis failed: ${error.message}. Would you like to try uploading again?`, 'agent', undefined, 'retry_action', { action: 'IMAGE_UPLOAD', data: { uri, base64 } });
     }
   },
 
@@ -524,21 +540,16 @@ export const useAgentStore = create<AgentState>((set, get) => ({
         messages: loadedMessages, 
         isTyping: false, 
         isInputDisabled: needsDisabled,
-        // Sync flow state if possible (requires more logic, but this is a start)
+        flowState: lastMsg.ui_type === 'completion_card' ? 'IDLE' : lastMsg.ui_type.toUpperCase().replace('_FORM', '_INTAKE').replace('_SELECTION', '_SELECTION') as FlowState,
       });
 
-      get().addMessage("Session restored. We were right here:", 'agent');
-      
-      // If the last message was a prompt, re-prompt it to the front
-      if (needsDisabled) {
-          get().addMessage(
-              `Please complete this step to continue:`, 
-              'agent', 
-              undefined, 
-              lastMsg.ui_type, 
-              lastMsg.ui_data
-          );
-      }
+      get().addMessage(
+          `Welcome back! We were right here:`, 
+          'agent', 
+          undefined, 
+          lastMsg.ui_type, 
+          lastMsg.ui_data
+      );
     }
   },
 
@@ -674,19 +685,28 @@ export const useAgentStore = create<AgentState>((set, get) => ({
       addMessage(`Selected Account: ${account.name}`, 'user');
       
       // Save Config
-      if (selectedPage && fbAccessToken) {
-          await FacebookService.saveConfig(selectedPage.id, selectedPage.name, account.id, fbAccessToken);
+      if (selectedPage && selectedPage.access_token) { // Use selectedPage.access_token
+          await FacebookService.saveConfig(selectedPage.id, selectedPage.name, account.id, selectedPage.access_token);
       }
       
       set({ connectionState: 'COMPLETED', isTyping: false, isInputDisabled: true });
       
-      // Final Execution Step
       addMessage("Configuration saved. Launching campaign...", 'agent');
       
-      // Simulate execution call
-      setTimeout(() => {
-          addMessage("Campaign Active! Monitoring performance.", 'agent', undefined, 'completion_card');
-      }, 2000);
+      const { activeStrategy, generatedStrategies, setActiveStrategy, updateActiveStrategy } = get();
+
+      if (activeStrategy) {
+          // If there's an active strategy, update it
+          await updateActiveStrategy(activeStrategy);
+      } else if (generatedStrategies) {
+          // If a strategy was just generated, set it as active
+          const strategyToActivate = generatedStrategies.free || generatedStrategies.paid; // Assuming one is selected
+          if (strategyToActivate) {
+              await setActiveStrategy(strategyToActivate);
+          }
+      }
+      
+      addMessage("Campaign Active! Monitoring performance.", 'agent', undefined, 'completion_card');
   },
 
   disconnectFacebook: async () => {

@@ -23,7 +23,7 @@ export const ProductService = {
           category: productData.category,
           target_audience: productData.targetAudience,
           original_scan_data: productData.scanResult,
-          images: productData.imageUri ? [productData.imageUri] : [],
+          images: productData.images ? productData.images.map((img: { uri: string }) => img.uri) : (productData.baseImageUri ? [productData.baseImageUri] : []),
           // Other fields map directly or are optional
         })
         .select('product_id')
