@@ -1,5 +1,3 @@
-
-
 import dotenv from 'dotenv';
 import { getServiceSupabaseClient } from '../config/supabase';
 
@@ -7,24 +5,10 @@ dotenv.config();
 
 const supabase = getServiceSupabaseClient();
 
-const FLUTTERWAVE_SECRET_KEY = process.env.FLUTTERWAVE_SECRET_KEY;
-
-dotenv.config();
-
-const supabaseUrl = process.env.SUPABASE_URL || process.env.EXPO_PUBLIC_SUPABASE_URL;
-const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_KEY || process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
-
-if (!supabaseUrl || !supabaseKey) {
-  console.error('CRITICAL ERROR: Supabase Environment Variables Missing');
-  console.error('Checked SUPABASE_URL, EXPO_PUBLIC_SUPABASE_URL:', supabaseUrl ? 'Found' : 'Missing');
-  console.error('Checked SUPABASE_SERVICE_ROLE_KEY, SUPABASE_SERVICE_KEY, SUPABASE_KEY, EXPO_PUBLIC_SUPABASE_ANON_KEY:', supabaseKey ? 'Found' : 'Missing');
-  
-  // Do not throw here to prevent crash on start. 
-  // Instead, let the service methods fail if called.
+if (!supabase) {
+  console.error('CRITICAL ERROR: Supabase Service Role Client is not initialized.');
   console.warn('WalletService will be disabled until configuration is fixed.');
 }
-
-const supabase = getServiceSupabaseClient();
 
 const FLUTTERWAVE_SECRET_KEY = process.env.FLUTTERWAVE_SECRET_KEY;
 const ADROOM_FEE = Number(process.env.ADROOM_FEE) || 45;
