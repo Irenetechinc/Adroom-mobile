@@ -21,14 +21,11 @@ export const getSupabaseClient = (req: Request) => {
 };
 
 export const getServiceSupabaseClient = () => {
-  const supabaseUrl = process.env.SUPABASE_URL || '';
-  const supabaseServiceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
-  
-  console.log('DEBUG: SUPABASE_URL:', supabaseUrl ? 'Configured' : 'MISSING');
-  console.log('DEBUG: SUPABASE_SERVICE_ROLE_KEY:', supabaseServiceRoleKey ? 'Configured' : 'MISSING');
+  const supabaseUrl = process.env.SUPABASE_URL;
+  const supabaseServiceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
-  if (!supabaseServiceRoleKey) {
-      console.warn('SUPABASE_SERVICE_ROLE_KEY is missing!');
+  if (!supabaseUrl || !supabaseServiceRoleKey) {
+    throw new Error('Missing Supabase environment variables. Please check SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY in your Railway project settings.');
   }
 
   const client = createClient(supabaseUrl, supabaseServiceRoleKey);
