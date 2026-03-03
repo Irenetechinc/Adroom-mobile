@@ -1,14 +1,23 @@
+
+import { createClient } from '@supabase/supabase-js';
 import dotenv from 'dotenv';
-import { getServiceSupabaseClient } from '../config/supabase';
 
 dotenv.config();
 
-const supabase = getServiceSupabaseClient();
+const supabaseUrl = process.env.SUPABASE_URL || process.env.EXPO_PUBLIC_SUPABASE_URL;
+const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_KEY || process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
 
-if (!supabase) {
-  console.error('CRITICAL ERROR: Supabase Service Role Client is not initialized.');
+if (!supabaseUrl || !supabaseKey) {
+  console.error('CRITICAL ERROR: Supabase Environment Variables Missing');
+  console.error('Checked SUPABASE_URL, EXPO_PUBLIC_SUPABASE_URL:', supabaseUrl ? 'Found' : 'Missing');
+  console.error('Checked SUPABASE_SERVICE_ROLE_KEY, SUPABASE_SERVICE_KEY, SUPABASE_KEY, EXPO_PUBLIC_SUPABASE_ANON_KEY:', supabaseKey ? 'Found' : 'Missing');
+  
+  // Do not throw here to prevent crash on start. 
+  // Instead, let the service methods fail if called.
   console.warn('WalletService will be disabled until configuration is fixed.');
 }
+
+const supabase = (supabaseUrl && supabaseKey) ? createClient(supabaseUrl, supabaseKey) : null;
 
 const FLUTTERWAVE_SECRET_KEY = process.env.FLUTTERWAVE_SECRET_KEY;
 const ADROOM_FEE = Number(process.env.ADROOM_FEE) || 45;
@@ -68,8 +77,21 @@ export class WalletService {
       .eq('user_id', userId)
       .maybeSingle();
 
-    if (!wallet) {
-      throw new Error(`Wallet not found for user: ${userId}`);
+    if (!wallet && !error) {
+      console.log(`[Wallet] Wallet not found for ${userId}, creating one...`);
+      // Create wallet if not exists (fallback if trigger failed)
+      // Note: Backend uses service role key so this should bypass RLS for creation
+      const { data: newWallet, error: createError } = await supabase
+        .from('wallets')
+        .insert({ user_id: userId, balance: 0.00 })
+        .select()
+        .single();
+      
+      if (createError) {
+          console.error(`[Wallet] Creation Failed for ${userId}:`, createError);
+          throw createError;
+      }
+      wallet = newWallet;
     } else if (error) {
       console.error(`[Wallet] Fetch Error for ${userId}:`, error);
       throw error;
