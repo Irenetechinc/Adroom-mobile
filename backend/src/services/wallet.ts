@@ -1,4 +1,7 @@
+import dotenv from 'dotenv';
 import { getServiceSupabaseClient } from '../config/supabase';
+
+dotenv.config();
 
 const supabase = getServiceSupabaseClient();
 

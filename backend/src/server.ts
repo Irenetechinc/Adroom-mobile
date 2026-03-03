@@ -9,7 +9,7 @@ import { MemoryRetriever } from './services/memoryRetriever.js';
 import { DecisionEngine, GeneratedStrategies } from './services/decisionEngine.js';
 import { AIEngine } from './config/ai-models.js';
 
-dotenv.config();
+
 
 const app = express();
 const PORT = process.env.PORT || 8000;
