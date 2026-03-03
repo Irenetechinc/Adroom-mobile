@@ -9,10 +9,9 @@ import { MemoryRetriever } from './services/memoryRetriever.js';
 import { DecisionEngine, GeneratedStrategies } from './services/decisionEngine.js';
 import { AIEngine } from './config/ai-models.js';
 
-
+dotenv.config();
 
 const app = express();
-console.log('All Environment Variables:', process.env);
 const PORT = process.env.PORT || 8000;
 const VERIFY_TOKEN = process.env.FB_VERIFY_TOKEN || 'adroom_verify_token';
 

@@ -3,6 +3,8 @@ import { createClient } from '@supabase/supabase-js';
 import { Request } from 'express';
 import dotenv from 'dotenv';
 
+dotenv.config();
+
 export const getSupabaseClient = (req: Request) => {
   const supabaseUrl = process.env.SUPABASE_URL || '';
   const supabaseAnonKey = process.env.SUPABASE_ANON_KEY || '';
@@ -21,11 +23,11 @@ export const getSupabaseClient = (req: Request) => {
 };
 
 export const getServiceSupabaseClient = () => {
-  const supabaseUrl = process.env.SUPABASE_URL;
-  const supabaseServiceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-
-  if (!supabaseUrl || !supabaseServiceRoleKey) {
-    throw new Error('Missing Supabase environment variables. Please check SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY in your Railway project settings.');
+  const supabaseUrl = process.env.SUPABASE_URL || '';
+  const supabaseServiceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
+  
+  if (!supabaseServiceRoleKey) {
+      console.warn('SUPABASE_SERVICE_ROLE_KEY is missing!');
   }
 
   const client = createClient(supabaseUrl, supabaseServiceRoleKey);
