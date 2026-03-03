@@ -11,7 +11,7 @@ import { AIEngine } from './config/ai-models.js';
 
 
 
-const app = express();
+console.log('All Environment Variables:', process.env);
 const PORT = process.env.PORT || 8000;
 const VERIFY_TOKEN = process.env.FB_VERIFY_TOKEN || 'adroom_verify_token';
 
