@@ -70,31 +70,24 @@ export class WalletService {
     
     console.log(`[Wallet] Fetching balance for user: ${userId}`);
     
-    // Ensure wallet exists
-    let { data: wallet, error } = await supabase
+    const { data: wallet, error } = await supabase
       .from('wallets')
       .select('*')
       .eq('user_id', userId)
-      .maybeSingle();
+      .single(); // Use single() to enforce that a wallet must exist.
 
-    if (!wallet && !error) {
-      console.log(`[Wallet] Wallet not found for ${userId}, creating one...`);
-      // Create wallet if not exists (fallback if trigger failed)
-      // Note: Backend uses service role key so this should bypass RLS for creation
-      const { data: newWallet, error: createError } = await supabase
-        .from('wallets')
-        .insert({ user_id: userId, balance: 0.00 })
-        .select()
-        .single();
-      
-      if (createError) {
-          console.error(`[Wallet] Creation Failed for ${userId}:`, createError);
-          throw createError;
-      }
-      wallet = newWallet;
-    } else if (error) {
+    if (error) {
       console.error(`[Wallet] Fetch Error for ${userId}:`, error);
+      // If the error is because no rows were found, provide a more specific message.
+      if (error.code === 'PGRST116') { 
+        throw new Error(`Wallet not found for user ${userId}. This should not happen if registration flow is correct.`);
+      }
       throw error;
+    }
+
+    if (!wallet) {
+        // This case should ideally not be reached if single() is used, but as a safeguard:
+        throw new Error(`Wallet not found for user ${userId}, and no error was thrown. Investigation needed.`);
     }
 
     return wallet;
@@ -359,5 +352,43 @@ export class WalletService {
         newBalance,
         virtualCard: vCard
     };
+  }
+
+  /**
+   * Verify Wallet Creation for a new user
+   */
+  static async verifyWalletCreation(userId: string) {
+    if (!supabase) throw new Error("Supabase client is not initialized.");
+    
+    console.log(`[Wallet] Verifying wallet for new user: ${userId}`);
+    
+    let { data: wallet, error } = await supabase
+      .from('wallets')
+      .select('*')
+      .eq('user_id', userId)
+      .maybeSingle();
+
+    if (!wallet && !error) {
+      console.log(`[Wallet] Wallet not found for ${userId}, creating one as a verification step...`);
+      const { data: newWallet, error: createError } = await supabase
+        .from('wallets')
+        .insert({ user_id: userId, balance: 0.00 })
+        .select()
+        .single();
+      
+      if (createError) {
+          console.error(`[Wallet] Verification-based creation failed for ${userId}:`, createError);
+          throw createError;
+      }
+      wallet = newWallet;
+      console.log(`[Wallet] Wallet created successfully during verification for ${userId}.`);
+    } else if (error) {
+      console.error(`[Wallet] Fetch Error during verification for ${userId}:`, error);
+      throw error;
+    } else {
+      console.log(`[Wallet] Wallet already exists for ${userId}. Verification successful.`);
+    }
+
+    return wallet;
   }
 }

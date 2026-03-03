@@ -7,6 +7,8 @@ import { supabase } from '../services/supabase';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Signup'>;
 
+const BACKEND_URL = process.env.EXPO_PUBLIC_API_URL;
+
 export default function SignupScreen({ navigation }: Props) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -19,15 +21,26 @@ export default function SignupScreen({ navigation }: Props) {
     }
 
     setLoading(true);
-    const { error } = await supabase.auth.signUp({
+    const { data, error } = await supabase.auth.signUp({
       email,
       password,
     });
 
-    setLoading(false);
     if (error) {
+      setLoading(false);
       Alert.alert('Signup Failed', error.message);
-    } else {
+    } else if (data.user) {
+      try {
+        await fetch(`${BACKEND_URL}/api/wallet/verify-creation`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ userId: data.user.id }),
+        });
+      } catch (verificationError: any) {
+        // Log the error, but don't block the user
+        console.error('Wallet verification failed:', verificationError.message);
+      }
+      setLoading(false);
       Alert.alert('Success', 'Please check your email for verification!');
       navigation.navigate('Login');
     }
