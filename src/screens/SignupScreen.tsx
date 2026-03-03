@@ -29,19 +29,33 @@ export default function SignupScreen({ navigation }: Props) {
     if (error) {
       setLoading(false);
       Alert.alert('Signup Failed', error.message);
-    } else if (data.user) {
-      try {
-        await fetch(`${BACKEND_URL}/api/wallet/verify-creation`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ userId: data.user.id }),
-        });
-      } catch (verificationError: any) {
-        // Log the error, but don't block the user
-        console.error('Wallet verification failed:', verificationError.message);
+      return;
+    }
+
+    if (data.user) {
+      // Poll for wallet creation
+      let walletExists = false;
+      for (let i = 0; i < 5; i++) { // Poll for 5 seconds
+        const { data: wallet, error: walletError } = await supabase
+          .from('wallets')
+          .select('id')
+          .eq('user_id', data.user.id)
+          .maybeSingle();
+
+        if (wallet) {
+          walletExists = true;
+          break;
+        }
+        await new Promise(resolve => setTimeout(resolve, 1000)); // Wait 1 second
       }
+
       setLoading(false);
-      Alert.alert('Success', 'Please check your email for verification!');
+
+      if (!walletExists) {
+        Alert.alert('Account Created', 'There was a delay creating your wallet. Please log in again.');
+      } else {
+        Alert.alert('Success', 'Please check your email for verification!');
+      }
       navigation.navigate('Login');
     }
   };

@@ -144,20 +144,7 @@ app.post('/api/wallet/deduct', async (req, res) => {
   }
 });
 
-// Verify Wallet Creation
-app.post('/api/wallet/verify-creation', async (req, res) => {
-  try {
-    const { userId } = req.body;
-    if (!userId) {
-      return res.status(400).json({ error: 'User ID is required' });
-    }
-    const wallet = await WalletService.verifyWalletCreation(userId);
-    res.json(wallet);
-  } catch (error: any) {
-    console.error('Error verifying wallet creation:', error);
-    res.status(500).json({ error: error.message });
-  }
-});
+
 
 // Flutterwave Redirect Handler (Verify Payment)
 app.get('/webhooks/flutterwave/redirect', async (req, res) => {
