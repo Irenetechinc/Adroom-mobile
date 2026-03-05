@@ -1,27 +1,29 @@
 
-import { createClient } from '@supabase/supabase-js';
 import dotenv from 'dotenv';
+import { getServiceSupabaseClient } from '../config/supabase.js';
 
 dotenv.config();
 
-const supabaseUrl = process.env.SUPABASE_URL || process.env.EXPO_PUBLIC_SUPABASE_URL;
-const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_KEY || process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
+const getRequiredEnv = (name: string) => {
+  const value = process.env[name];
+  if (!value) {
+    throw new Error(`${name} is missing in server config`);
+  }
+  return value;
+};
 
-if (!supabaseUrl || !supabaseKey) {
-  console.error('CRITICAL ERROR: Supabase Environment Variables Missing');
-  console.error('Checked SUPABASE_URL, EXPO_PUBLIC_SUPABASE_URL:', supabaseUrl ? 'Found' : 'Missing');
-  console.error('Checked SUPABASE_SERVICE_ROLE_KEY, SUPABASE_SERVICE_KEY, SUPABASE_KEY, EXPO_PUBLIC_SUPABASE_ANON_KEY:', supabaseKey ? 'Found' : 'Missing');
-  
-  // Do not throw here to prevent crash on start. 
-  // Instead, let the service methods fail if called.
-  console.warn('WalletService will be disabled until configuration is fixed.');
-}
+const getRequiredNumberEnv = (name: string) => {
+  const raw = getRequiredEnv(name);
+  const value = Number(raw);
+  if (!Number.isFinite(value)) {
+    throw new Error(`${name} must be a valid number`);
+  }
+  return value;
+};
 
-const supabase = (supabaseUrl && supabaseKey) ? createClient(supabaseUrl, supabaseKey) : null;
-
-const FLUTTERWAVE_SECRET_KEY = process.env.FLUTTERWAVE_SECRET_KEY;
-const ADROOM_FEE = Number(process.env.ADROOM_FEE) || 45;
-const APP_DOMAIN = process.env.RAILWAY_PUBLIC_DOMAIN || process.env.APP_URL || 'http://localhost:8000';
+const getFlutterwaveSecretKey = () => getRequiredEnv('FLUTTERWAVE_SECRET_KEY');
+const getAdroomFee = () => getRequiredNumberEnv('ADROOM_FEE');
+const getAppUrl = () => getRequiredEnv('APP_URL');
 
 interface FlutterwaveInitResponse {
   status: string;
@@ -61,55 +63,53 @@ export interface BillingDetails {
 }
 
 export class WalletService {
+
+  private static getSupabase() {
+    return getServiceSupabaseClient();
+  }
+
+  private static async ensureWalletExists(userId: string) {
+    const supabase = this.getSupabase();
+
+    const { data: wallet, error } = await supabase
+      .from('wallets')
+      .upsert({ user_id: userId }, { onConflict: 'user_id' })
+      .select('*')
+      .single();
+
+    if (error) {
+      throw error;
+    }
+
+    return wallet;
+  }
   
   /**
    * Get User Wallet Balance
    */
   static async getBalance(userId: string) {
-    if (!supabase) throw new Error("Supabase client is not initialized.");
-    
     console.log(`[Wallet] Fetching balance for user: ${userId}`);
-    
-    const { data: wallet, error } = await supabase
-      .from('wallets')
-      .select('*')
-      .eq('user_id', userId)
-      .single(); // Use single() to enforce that a wallet must exist.
 
-    if (error) {
-      console.error(`[Wallet] Fetch Error for ${userId}:`, error);
-      // If the error is because no rows were found, provide a more specific message.
-      if (error.code === 'PGRST116') { 
-        throw new Error(`Wallet not found for user ${userId}. This should not happen if registration flow is correct.`);
-      }
-      throw error;
-    }
-
-    if (!wallet) {
-        // This case should ideally not be reached if single() is used, but as a safeguard:
-        throw new Error(`Wallet not found for user ${userId}, and no error was thrown. Investigation needed.`);
-    }
-
-    return wallet;
+    return this.ensureWalletExists(userId);
   }
 
   /**
    * Initiate Deposit Transaction
    */
   static async initiateDeposit(userId: string, amount: number, email: string, name: string) {
-    if (!supabase) throw new Error("Supabase client is not initialized.");
+    const supabase = this.getSupabase();
 
-    console.log(`[Wallet] Initiating deposit for ${userId}: NGN ${amount}`);
-
-    if (!FLUTTERWAVE_SECRET_KEY) {
-      throw new Error("Flutterwave Secret Key is missing in server config");
-    }
+    const ADROOM_FEE = getAdroomFee();
+    const APP_URL = getAppUrl();
+    const FLUTTERWAVE_SECRET_KEY = getFlutterwaveSecretKey();
 
     const txRef = `TX-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
     const totalAmount = amount + ADROOM_FEE; // User pays Amount + Fee
 
     // 1. Create Transaction Record (Pending)
-    const wallet = await this.getBalance(userId);
+    const wallet = await this.ensureWalletExists(userId);
+
+    console.log(`[Wallet] Initiating deposit for ${userId}: ${wallet.currency} ${amount}`);
     
     const { error: txError } = await supabase
       .from('transactions')
@@ -136,15 +136,15 @@ export class WalletService {
       body: JSON.stringify({
         tx_ref: txRef,
         amount: totalAmount,
-        currency: 'NGN',
-        redirect_url: `${APP_DOMAIN}/webhooks/flutterwave/redirect`,
+        currency: wallet.currency,
+        redirect_url: `${APP_URL}/webhooks/flutterwave/redirect`,
         customer: {
           email: email,
           name: name
         },
         customizations: {
           title: "AdRoom Wallet Deposit",
-          description: `Deposit NGN ${amount} + NGN ${ADROOM_FEE} Fee`
+          description: `Deposit ${wallet.currency} ${amount} + ${wallet.currency} ${ADROOM_FEE} Fee`
         }
       })
     });
@@ -171,7 +171,9 @@ export class WalletService {
    * Verify and Credit Deposit (Webhook Handler)
    */
   static async verifyAndCredit(txRef: string, transactionId: string) {
-    if (!supabase) throw new Error("Supabase client is not initialized.");
+    const supabase = this.getSupabase();
+
+    const FLUTTERWAVE_SECRET_KEY = getFlutterwaveSecretKey();
 
     console.log(`[Wallet] Verifying transaction: ${txRef}`);
 
@@ -244,11 +246,10 @@ export class WalletService {
    * Used to pay for Ads on Facebook
    */
   static async createVirtualCard(userId: string, amount: number, billingDetails: BillingDetails) {
-    console.log(`[Wallet] Creating Virtual Card for ${userId} with funding NGN ${amount}`);
+    const wallet = await this.ensureWalletExists(userId);
+    console.log(`[Wallet] Creating Virtual Card for ${userId} with funding ${wallet.currency} ${amount}`);
 
-    if (!FLUTTERWAVE_SECRET_KEY) {
-      throw new Error("Flutterwave Secret Key is missing");
-    }
+    const FLUTTERWAVE_SECRET_KEY = getFlutterwaveSecretKey();
 
     // Call Flutterwave Create Virtual Card API
     try {
@@ -259,7 +260,7 @@ export class WalletService {
                 'Content-Type': 'application/json'
             },
             body: JSON.stringify({
-                currency: "NGN",
+                currency: wallet.currency,
                 amount: amount,
                 billing_name: billingDetails.name,
                 billing_address: billingDetails.address,
@@ -294,16 +295,16 @@ export class WalletService {
    * Deduct Funds for Ad Execution and Provision Payment Method
    */
   static async deductFunds(userId: string, amount: number, description: string, billingDetails: BillingDetails) {
-    if (!supabase) throw new Error("Supabase client is not initialized.");
+    const supabase = this.getSupabase();
     
     // Validate Billing Details early
     if (!billingDetails) {
         throw new Error("Billing details are required to create a virtual card.");
     }
 
-    console.log(`[Wallet] Attempting deduction of NGN ${amount} for ${userId}`);
-    
-    const wallet = await this.getBalance(userId);
+    const wallet = await this.ensureWalletExists(userId);
+
+    console.log(`[Wallet] Attempting deduction of ${wallet.currency} ${amount} for ${userId}`);
 
     if (wallet.balance < amount) {
         console.warn(`[Wallet] Insufficient funds. Balance: ${wallet.balance}, Required: ${amount}`);

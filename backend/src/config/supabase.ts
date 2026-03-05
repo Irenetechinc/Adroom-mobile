@@ -6,9 +6,17 @@ import dotenv from 'dotenv';
 dotenv.config();
 
 export const getSupabaseClient = (req: Request) => {
-  const supabaseUrl = process.env.SUPABASE_URL || '';
-  const supabaseAnonKey = process.env.SUPABASE_ANON_KEY || '';
+  const supabaseUrl = process.env.SUPABASE_URL;
+  const supabaseAnonKey = process.env.SUPABASE_ANON_KEY;
   const authHeader = req.headers.authorization;
+
+  if (!supabaseUrl) {
+    throw new Error('SUPABASE_URL is missing');
+  }
+
+  if (!supabaseAnonKey) {
+    throw new Error('SUPABASE_ANON_KEY is missing');
+  }
 
   if (!authHeader) {
       throw new Error('Missing Authorization header');
@@ -23,14 +31,16 @@ export const getSupabaseClient = (req: Request) => {
 };
 
 export const getServiceSupabaseClient = () => {
-  const supabaseUrl = process.env.SUPABASE_URL || '';
-  const supabaseServiceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
-  
-  if (!supabaseServiceRoleKey) {
-      console.warn('SUPABASE_SERVICE_ROLE_KEY is missing!');
+  const supabaseUrl = process.env.SUPABASE_URL;
+  const supabaseServiceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+  if (!supabaseUrl) {
+    throw new Error('SUPABASE_URL is missing');
   }
 
-  const client = createClient(supabaseUrl, supabaseServiceRoleKey);
-  
-  return client;
+  if (!supabaseServiceRoleKey) {
+    throw new Error('SUPABASE_SERVICE_ROLE_KEY is missing');
+  }
+
+  return createClient(supabaseUrl, supabaseServiceRoleKey);
 };

@@ -1,4 +1,4 @@
-import express from 'express';
+import express, { type Request } from 'express';
 import bodyParser from 'body-parser';
 import dotenv from 'dotenv';
 import { EngagementService } from './services/engagement.js';
@@ -104,43 +104,72 @@ app.post('/webhooks/database', async (req, res) => {
  */
 
 // Get Balance
-app.get('/api/wallet/balance/:userId', async (req, res) => {
+const getAuthedUser = async (req: Request) => {
+  const client = getSupabaseClient(req);
+  const { data, error } = await client.auth.getUser();
+  if (error || !data.user) {
+    throw new Error('Unauthorized');
+  }
+  return data.user;
+};
+
+app.get('/api/wallet/balance', async (req, res) => {
   try {
-    const { userId } = req.params;
-    const wallet = await WalletService.getBalance(userId);
+    const user = await getAuthedUser(req);
+    const wallet = await WalletService.getBalance(user.id);
     res.json(wallet);
   } catch (error: any) {
     console.error('Error fetching balance:', error);
-    res.status(500).json({ error: error.message });
+    res.status(error.message === 'Unauthorized' ? 401 : 500).json({ error: error.message });
+  }
+});
+
+app.get('/api/wallet/balance/:userId', async (req, res) => {
+  try {
+    const user = await getAuthedUser(req);
+    const wallet = await WalletService.getBalance(user.id);
+    res.json(wallet);
+  } catch (error: any) {
+    console.error('Error fetching balance:', error);
+    res.status(error.message === 'Unauthorized' ? 401 : 500).json({ error: error.message });
   }
 });
 
 // Initiate Deposit
 app.post('/api/wallet/deposit', async (req, res) => {
   try {
-    const { userId, amount, email, name } = req.body;
-    const result = await WalletService.initiateDeposit(userId, Number(amount), email, name);
+    const user = await getAuthedUser(req);
+    const { amount } = req.body;
+    const email = user.email || req.body.email;
+    const name = req.body.name || user.user_metadata?.full_name || user.user_metadata?.name || email;
+
+    if (!email) {
+      throw new Error('User email is required');
+    }
+
+    const result = await WalletService.initiateDeposit(user.id, Number(amount), email, name);
     res.json(result);
   } catch (error: any) {
     console.error('Error initiating deposit:', error);
-    res.status(500).json({ error: error.message });
+    res.status(error.message === 'Unauthorized' ? 401 : 500).json({ error: error.message });
   }
 });
 
 // Deduct Funds (Internal/Agent use)
 app.post('/api/wallet/deduct', async (req, res) => {
   try {
-    const { userId, amount, description, billingDetails } = req.body;
+    const user = await getAuthedUser(req);
+    const { amount, description, billingDetails } = req.body;
     
     if (!billingDetails) {
         throw new Error("Billing details are required for virtual card creation.");
     }
 
-    const result = await WalletService.deductFunds(userId, Number(amount), description, billingDetails);
+    const result = await WalletService.deductFunds(user.id, Number(amount), description, billingDetails);
     res.json(result);
   } catch (error: any) {
     console.error('Error deducting funds:', error);
-    res.status(400).json({ error: error.message }); // 400 for business logic error (insufficient funds)
+    res.status(error.message === 'Unauthorized' ? 401 : 400).json({ error: error.message }); // 400 for business logic error (insufficient funds)
   }
 });
 

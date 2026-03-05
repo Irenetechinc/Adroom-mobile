@@ -1,12 +1,10 @@
 import React from 'react';
 import { View, Text, TouchableOpacity, Image, SafeAreaView } from 'react-native';
 import { DrawerContentComponentProps } from '@react-navigation/drawer';
-import { useNavigation } from '@react-navigation/native';
 import { Home, LayoutDashboard, List, Settings, LogOut, X, History, CreditCard } from 'lucide-react-native';
 import { useAuthStore } from '../store/authStore';
 
 export default function SideMenu(props: DrawerContentComponentProps) {
-  const navigation = useNavigation();
   const { signOut, user } = useAuthStore();
 
   const menuItems = [
@@ -42,8 +40,9 @@ export default function SideMenu(props: DrawerContentComponentProps) {
 
         {/* Menu Items */}
         <View className="flex-1 px-4 space-y-2">
-          {menuItems.map((item, index) => {
-            const isFocused = props.state.index === index;
+          {menuItems.map((item) => {
+            const activeRouteName = props.state.routes[props.state.index]?.name;
+            const isFocused = activeRouteName === item.route;
             const Icon = item.icon;
             
             return (

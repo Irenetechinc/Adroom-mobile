@@ -2,10 +2,14 @@ import { useAgentStore } from '../agentStore';
 import { Strategy } from '../../types/agent';
 
 // Mock CreativeService since it's used in generateStrategies
-jest.mock('../../services/creative', () => ({
-  CreativeService: {
-    generateCreative: jest.fn().mockResolvedValue('https://mock-creative.com/image.png')
-  }
+jest.mock('../../services/strategy', () => ({
+  StrategyService: {
+    generateStrategies: jest.fn().mockResolvedValue({
+      free: { type: 'FREE', assets: [], lifespanWeeks: 4 },
+      paid: { type: 'PAID', assets: [], lifespanWeeks: 4 },
+      comparison: {},
+    }),
+  },
 }));
 
 describe('useAgentStore', () => {
@@ -13,8 +17,8 @@ describe('useAgentStore', () => {
     useAgentStore.setState({
       messages: [],
       isTyping: false,
-      productDetails: { name: '', description: '' },
-      generatedStrategies: [],
+      productDetails: { name: '', description: '', id: 'prod_1', selectedGoal: 'sales' },
+      generatedStrategies: null,
     });
   });
 
@@ -39,15 +43,14 @@ describe('useAgentStore', () => {
   });
 
   it('should generate strategies', async () => {
-    const { generateStrategies } = useAgentStore.getState();
-    await generateStrategies();
+    const { handleDurationSelection } = useAgentStore.getState();
+    await handleDurationSelection(7);
     
     const { generatedStrategies } = useAgentStore.getState();
-    expect(generatedStrategies).toHaveLength(2);
-    expect(generatedStrategies[0].type).toBe('FREE');
-    expect(generatedStrategies[1].type).toBe('PAID');
-    // Verify enhanced fields
-    expect(generatedStrategies[0].assets).toBeDefined();
-    expect(generatedStrategies[0].lifespanWeeks).toBeDefined();
+    expect(generatedStrategies).toBeTruthy();
+    expect(generatedStrategies!.free.type).toBe('FREE');
+    expect(generatedStrategies!.paid.type).toBe('PAID');
+    expect(generatedStrategies!.free.assets).toBeDefined();
+    expect(generatedStrategies!.free.lifespanWeeks).toBeDefined();
   });
 });
