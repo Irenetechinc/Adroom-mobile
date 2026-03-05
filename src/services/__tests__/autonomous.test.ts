@@ -9,6 +9,12 @@ import { Strategy } from '../../types/agent';
 jest.mock('../campaign');
 jest.mock('../adSet');
 jest.mock('../ad');
+jest.mock('../facebook', () => ({
+  FacebookService: {
+    getConfig: jest.fn().mockResolvedValue(null),
+    createPost: jest.fn().mockResolvedValue(true),
+  },
+}));
 jest.mock('../creative', () => ({
   CreativeService: {
     generateCopy: jest.fn().mockResolvedValue({ headline: 'Test Headline', body: 'Test Body' }),

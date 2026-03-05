@@ -8,26 +8,35 @@ import * as WebBrowser from 'expo-web-browser';
 import { useAuthStore } from '../store/authStore';
 import { supabase } from '../services/supabase';
 
-// Helper to format currency
-const formatCurrency = (amount: number) => {
-  return new Intl.NumberFormat('en-NG', {
+const formatCurrency = (amount: number, currency: string | null) => {
+  if (!currency) {
+    return new Intl.NumberFormat(undefined, {
+      maximumFractionDigits: 2,
+      minimumFractionDigits: 2,
+    }).format(amount);
+  }
+
+  return new Intl.NumberFormat(undefined, {
     style: 'currency',
-    currency: 'NGN',
+    currency,
   }).format(amount);
 };
 
 const BACKEND_URL = process.env.EXPO_PUBLIC_API_URL; 
+const MIN_DEPOSIT_RAW = process.env.EXPO_PUBLIC_MIN_DEPOSIT;
+const ADROOM_FEE_RAW = process.env.EXPO_PUBLIC_ADROOM_FEE;
 
 export default function WalletScreen({ navigation }: any) {
-  const { user } = useAuthStore();
+  const { user, session } = useAuthStore();
   const [balance, setBalance] = useState(0);
+  const [currency, setCurrency] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [depositAmount, setDepositAmount] = useState('');
   const [transactions, setTransactions] = useState<any[]>([]);
   const [refreshing, setRefreshing] = useState(false);
 
   const fetchWalletData = async () => {
-    if (!user || !BACKEND_URL) {
+    if (!user || !session || !BACKEND_URL) {
       if (!BACKEND_URL) {
         Alert.alert('Configuration Error', 'Backend URL is not configured.');
       }
@@ -36,10 +45,21 @@ export default function WalletScreen({ navigation }: any) {
     setLoading(true);
     try {
       // Fetch Balance
-      const response = await fetch(`${BACKEND_URL}/api/wallet/balance/${user.id}`);
+      const response = await fetch(`${BACKEND_URL}/api/wallet/balance`, {
+        headers: { Authorization: `Bearer ${session.access_token}` },
+      });
       const wallet = await response.json();
+
+      if (!response.ok) {
+        throw new Error(wallet?.error || 'Failed to fetch wallet');
+      }
+
       if (wallet && wallet.balance !== undefined) {
         setBalance(Number(wallet.balance));
+      }
+
+      if (wallet?.currency) {
+        setCurrency(String(wallet.currency));
       }
 
       // Fetch Transactions
@@ -71,30 +91,41 @@ export default function WalletScreen({ navigation }: any) {
   };
 
   const handleDeposit = async () => {
-    if (!depositAmount || isNaN(Number(depositAmount)) || Number(depositAmount) < 100) {
-      Alert.alert('Invalid Amount', 'Please enter a valid amount (Min NGN 100)');
+    const minDeposit = MIN_DEPOSIT_RAW ? Number(MIN_DEPOSIT_RAW) : null;
+    if (!minDeposit || !Number.isFinite(minDeposit)) {
+      Alert.alert('Configuration Error', 'Minimum deposit is not configured.');
+      return;
+    }
+
+    if (!depositAmount || isNaN(Number(depositAmount)) || Number(depositAmount) < minDeposit) {
+      Alert.alert('Invalid Amount', `Please enter a valid amount (Min ${minDeposit})`);
       return;
     }
 
     setLoading(true);
     try {
-      if (!BACKEND_URL) {
+      if (!BACKEND_URL || !session) {
         Alert.alert('Configuration Error', 'Backend URL is not configured.');
         return;
       }
 
       const response = await fetch(`${BACKEND_URL}/api/wallet/deposit`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${session.access_token}`,
+        },
         body: JSON.stringify({
-          userId: user?.id,
           amount: Number(depositAmount),
-          email: user?.email,
-          name: user?.user_metadata?.full_name || 'AdRoom User'
+          name: user?.user_metadata?.full_name || user?.user_metadata?.name
         })
       });
 
       const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data?.error || 'Could not initiate payment');
+      }
 
       if (data.paymentLink) {
         // Open WebBrowser
@@ -143,7 +174,7 @@ export default function WalletScreen({ navigation }: any) {
             </View>
             
             <Text className="text-adroom-text-muted mb-1 font-medium uppercase tracking-widest text-xs">Available Balance</Text>
-            <Text className="text-white text-4xl font-bold mb-4">{formatCurrency(balance)}</Text>
+            <Text className="text-white text-4xl font-bold mb-4">{formatCurrency(balance, currency)}</Text>
             
             <View className="flex-row items-center space-x-2">
                 <View className="bg-green-500/20 px-3 py-1 rounded-full border border-green-500/30">
@@ -160,7 +191,7 @@ export default function WalletScreen({ navigation }: any) {
                 <View className="flex-1">
                     <TextInput 
                         className="bg-adroom-card border border-gray-700 rounded-xl px-4 py-3 text-white font-bold text-lg"
-                        placeholder="Amount (NGN)"
+                        placeholder={currency ? `Amount (${currency})` : 'Amount'}
                         placeholderTextColor="#64748B"
                         keyboardType="numeric"
                         value={depositAmount}
@@ -179,9 +210,11 @@ export default function WalletScreen({ navigation }: any) {
                     )}
                 </TouchableOpacity>
             </View>
-            <Text className="text-gray-500 text-xs mt-2 ml-1">
-                <AlertCircle size={10} color="#64748B" /> Note: A transaction fee of NGN 45 applies.
-            </Text>
+            {!!ADROOM_FEE_RAW && Number.isFinite(Number(ADROOM_FEE_RAW)) && (
+              <Text className="text-gray-500 text-xs mt-2 ml-1">
+                <AlertCircle size={10} color="#64748B" /> Note: A transaction fee of {formatCurrency(Number(ADROOM_FEE_RAW), currency)} applies.
+              </Text>
+            )}
         </View>
 
         {/* Transaction History */}
@@ -203,7 +236,7 @@ export default function WalletScreen({ navigation }: any) {
                     </View>
                     <View className="items-end">
                         <Text className={`font-bold text-base ${tx.type === 'DEPOSIT' ? 'text-green-400' : 'text-red-400'}`}>
-                            {tx.type === 'DEPOSIT' ? '+' : '-'}{formatCurrency(tx.amount)}
+                            {tx.type === 'DEPOSIT' ? '+' : '-'}{formatCurrency(tx.amount, currency)}
                         </Text>
                         <Text className={`text-xs ${
                             tx.status === 'SUCCESS' ? 'text-green-500' : 
