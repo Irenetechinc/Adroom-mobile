@@ -5,7 +5,8 @@ import { getServiceSupabaseClient } from '../config/supabase.js';
 dotenv.config();
 
 const getRequiredEnv = (name: string) => {
-  const value = process.env[name];
+  const raw = process.env[name];
+  const value = raw?.trim();
   if (!value) {
     throw new Error(`${name} is missing in server config`);
   }
