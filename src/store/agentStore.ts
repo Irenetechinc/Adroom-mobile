@@ -48,7 +48,7 @@ interface AgentState {
   handleRetry: (action: string, data: any) => Promise<void>;
   handleManualProductSubmit: (data: any) => Promise<void>;
   handleStrategyTypeSelection: (type: string) => void;
-  handleImageUpload: (uri: string) => Promise<void>;
+  handleImageUpload: (uri: string, base64: string) => Promise<void>;
   
   // Standard Actions
   setActiveStrategy: (strategy: any) => Promise<void>;
