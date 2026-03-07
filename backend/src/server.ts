@@ -291,6 +291,7 @@ app.post('/api/auth/facebook/exchange', async (req, res) => {
     }
 
     try {
+        // 1. Exchange Code for Short-Lived Token
         const tokenUrl = `https://graph.facebook.com/v18.0/oauth/access_token?client_id=${FB_APP_ID}&redirect_uri=${encodeURIComponent(redirectUri)}&client_secret=${FB_APP_SECRET}&code=${code}`;
         const response = await fetch(tokenUrl);
         const data: any = await response.json();
@@ -300,12 +301,33 @@ app.post('/api/auth/facebook/exchange', async (req, res) => {
             return res.status(400).json({ error: data.error.message });
         }
 
-        res.json(data);
-    } catch (error) {
-        console.error('Exchange endpoint error:', error);
-        res.status(500).json({ error: 'Internal Server Error during token exchange' });
+        const shortLivedToken = data.access_token;
+
+        // 2. Exchange Short-Lived Token for Long-Lived Token
+        console.log('[Token Exchange] Exchanging for Long-Lived Token...');
+        const longLivedUrl = `https://graph.facebook.com/v18.0/oauth/access_token?grant_type=fb_exchange_token&client_id=${FB_APP_ID}&client_secret=${FB_APP_SECRET}&fb_exchange_token=${shortLivedToken}`;
+        
+        const longLivedResponse = await fetch(longLivedUrl);
+        const longLivedData: any = await longLivedResponse.json();
+
+        if (longLivedData.error) {
+            console.warn('[Token Exchange] Failed to get long-lived token, falling back to short-lived:', longLivedData.error);
+            // Fallback to short-lived token if exchange fails
+            return res.json({ access_token: shortLivedToken, expires_in: data.expires_in });
+        }
+
+        console.log('[Token Exchange] Successfully obtained Long-Lived Token');
+        return res.json({ 
+            access_token: longLivedData.access_token, 
+            expires_in: longLivedData.expires_in 
+        });
+
+    } catch (error: any) {
+        console.error('Server Error during Token Exchange:', error);
+        return res.status(500).json({ error: 'Internal Server Error during token exchange' });
     }
 });
+
 
 /**
  * Creative API (Image / Copy / Reply)

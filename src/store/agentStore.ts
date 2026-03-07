@@ -684,29 +684,36 @@ export const useAgentStore = create<AgentState>((set, get) => ({
       set({ selectedAdAccount: account, isTyping: true, isInputDisabled: true });
       addMessage(`Selected Account: ${account.name}`, 'user');
       
-      // Save Config
-      if (selectedPage && selectedPage.access_token) { // Use selectedPage.access_token
-          await FacebookService.saveConfig(selectedPage.id, selectedPage.name, account.id, selectedPage.access_token);
-      }
-      
-      set({ connectionState: 'COMPLETED', isTyping: false, isInputDisabled: true });
-      
-      addMessage("Configuration saved. Launching campaign...", 'agent');
-      
-      const { activeStrategy, generatedStrategies, setActiveStrategy, updateActiveStrategy } = get();
+      try {
+        // Save Config
+        if (selectedPage && selectedPage.access_token) { // Use selectedPage.access_token
+            await FacebookService.saveConfig(selectedPage.id, selectedPage.name, account.id, selectedPage.access_token);
+        } else {
+             console.warn('Page Access Token missing during selection. Configuration might be incomplete.');
+        }
+        
+        set({ connectionState: 'COMPLETED', isTyping: false, isInputDisabled: true });
+        
+        addMessage("Configuration saved. Launching campaign...", 'agent');
+        
+        const { activeStrategy, generatedStrategies, setActiveStrategy, updateActiveStrategy } = get();
 
-      if (activeStrategy) {
-          // If there's an active strategy, update it
-          await updateActiveStrategy(activeStrategy);
-      } else if (generatedStrategies) {
-          // If a strategy was just generated, set it as active
-          const strategyToActivate = generatedStrategies.free || generatedStrategies.paid; // Assuming one is selected
-          if (strategyToActivate) {
-              await setActiveStrategy(strategyToActivate);
-          }
+        if (activeStrategy) {
+            await updateActiveStrategy(activeStrategy);
+        } else if (generatedStrategies) {
+            // If a strategy was just generated, set it as active
+            const strategyToActivate = generatedStrategies.free || generatedStrategies.paid; // Assuming one is selected
+            if (strategyToActivate) {
+                await setActiveStrategy(strategyToActivate);
+            }
+        }
+        
+        addMessage("Campaign Active! Monitoring performance.", 'agent', undefined, 'completion_card');
+      } catch (error: any) {
+          console.error('Error saving Facebook config:', error);
+          set({ isTyping: false, isInputDisabled: false }); // Re-enable input so user can retry or chat
+          addMessage(`Failed to save configuration: ${error.message}. Please try again.`, 'agent', undefined, 'retry_action', { action: 'AD_ACCOUNT_SELECTION', data: account });
       }
-      
-      addMessage("Campaign Active! Monitoring performance.", 'agent', undefined, 'completion_card');
   },
 
   disconnectFacebook: async () => {
