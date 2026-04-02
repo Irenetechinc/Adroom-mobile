@@ -1,7 +1,7 @@
 // @ts-nocheck
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { getSupabaseClient, getServiceSupabaseClient } from '../_shared/supabase-client.ts';
-import { FacebookAdsApi } from '../_shared/facebook-api.ts';
+import { FacebookApi } from '../_shared/facebook-api.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -62,7 +62,7 @@ serve(async (req) => {
           try {
             if (post.platform.includes('facebook') && fbToken && pageId) {
                 // Real API Call
-                const result = await FacebookAdsApi.postContent(fbToken, pageId, post.content, post.imageUrl);
+                const result = await FacebookApi.postContent(fbToken, pageId, post.content, post.imageUrl);
                 post.platform_post_id = result.id;
                 results.push({ strategyId: strategy.strategy_id, postId: post.id, status: 'executed', platformId: result.id });
             } else {
@@ -81,61 +81,12 @@ serve(async (req) => {
         }
       }
 
-      // --- BUDGET & METRICS INGESTION (For PAID Strategies) ---
-      let metricsUpdated = false;
-      let newTotalSpend = strategy.total_spend || 0;
-      let currentROAS = strategy.roas || 0;
-
-      if (strategy.strategy_version === 'paid' && strategy.budget_daily > 0) {
-        if (fbToken && adAccountId) {
-            try {
-                // Real API Fetch
-                const insights = await FacebookAdsApi.getCampaignInsights(fbToken, adAccountId, strategy.platform_campaign_id);
-                
-                if (insights) {
-                    const spend = parseFloat(insights.spend || '0');
-                    const revenue = parseFloat(insights.action_values?.[0]?.value || '0'); // Simplified revenue check
-                    
-                    newTotalSpend = spend; // Update with ACTUAL total spend from platform
-                    currentROAS = spend > 0 ? revenue / spend : 0;
-                    
-                    metricsUpdated = true;
-                    results.push({ strategyId: strategy.strategy_id, type: 'metrics_update', spend, roas: currentROAS });
-                }
-            } catch (apiError) {
-                console.error(`Failed to fetch metrics for ${strategy.strategy_id}:`, apiError);
-                // Do NOT fallback to random data. Keep existing values.
-            }
-        } else {
-             console.warn(`Skipping metrics fetch for ${strategy.strategy_id}: No Ad Config`);
-        }
-        
-        // Budget Guardrails (using Real or Last Known Spend)
-        if (newTotalSpend >= strategy.budget_total) {
-            console.log(`Budget Exhausted for ${strategy.strategy_name}. Pausing.`);
-            await supabase.from('strategy_memory')
-                .update({ status: 'paused', notes: (strategy.notes || '') + '\n[System] Paused due to budget exhaustion.' })
-                .eq('strategy_id', strategy.strategy_id);
-                
-            await supabase.from('ipe_intelligence_log').insert({
-                 intelligence_type: 'budget_exhausted',
-                 priority: 1,
-                 platform: 'system',
-                 summary: `Strategy Paused: ${strategy.strategy_name} reached budget limit.`,
-                 details: { strategy_id: strategy.strategy_id },
-                 affected_strategies: [strategy.strategy_id]
-             });
-             continue;
-        }
-      }
+      // No paid budget or ROAS ingestion in organic-only system
 
       // --- SAVE UPDATES ---
       const updates: any = {};
       if (calendarUpdated) updates.content_calendar = calendar;
-      if (metricsUpdated) {
-          updates.total_spend = newTotalSpend;
-          updates.roas = currentROAS;
-      }
+      // No spend/ROAS updates in organic-only system
       
       if (Object.keys(updates).length > 0) {
         const { error: updateError } = await supabase

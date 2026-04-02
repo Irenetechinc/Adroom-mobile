@@ -2,11 +2,9 @@ import React from 'react';
 import { createDrawerNavigator } from '@react-navigation/drawer';
 import { MainTabParamList } from '../types';
 import DashboardScreen from '../screens/DashboardScreen';
-import CampaignListScreen from '../screens/CampaignListScreen';
 import StrategyHistoryScreen from '../screens/StrategyHistoryScreen';
 import SettingsScreen from '../screens/SettingsScreen';
 import AgentChatScreen from '../screens/AgentChatScreen';
-import WalletScreen from '../screens/WalletScreen';
 import SideMenu from '../components/SideMenu';
 
 const Drawer = createDrawerNavigator<MainTabParamList>();
@@ -34,16 +32,8 @@ export default function DrawerNavigator() {
         component={DashboardScreen} 
       />
       <Drawer.Screen 
-        name="CampaignList" 
-        component={CampaignListScreen} 
-      />
-      <Drawer.Screen 
         name="StrategyHistory" 
         component={StrategyHistoryScreen} 
-      />
-      <Drawer.Screen 
-        name="Wallet" 
-        component={WalletScreen} 
       />
       <Drawer.Screen 
         name="Settings" 

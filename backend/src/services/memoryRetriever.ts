@@ -8,7 +8,10 @@ export interface MemoryContext {
   history: any[];
   platformStatus: any;
   globalTrends: any;
-  ipeIntelligence: any[];
+  platformIntelligence: any[];
+  socialListening: any[];
+  emotionalIntelligence: any[];
+  geoNarrative: any[];
 }
 
 export class MemoryRetriever {
@@ -25,73 +28,80 @@ export class MemoryRetriever {
     console.log(`Retrieving memory for user: ${userId}, context: ${contextType} ${contextId}`);
 
     // 1. Fetch User Memory
-    const { data: userMemory, error: userError } = await this.supabase
-      .from('user_memory')
+    const { data: userMemory } = await this.supabase
+      .from('users') // Changed from user_memory to users as per spec (users table exists)
       .select('*')
-      .eq('user_id', userId)
+      .eq('id', userId)
       .maybeSingle();
-
-    if (userError) console.error('Error fetching user memory:', userError);
 
     // 2. Fetch Context (Product/Service/Brand)
     let contextData = null;
+    let category = null;
     if (contextId) {
-      const table = contextType === 'product' ? 'product_memory' : 
-                    contextType === 'service' ? 'service_memory' : 'brand_memory';
-      const idField = `${contextType}_id`;
+      const table = contextType === 'product' ? 'products' : 'strategies'; // Simplified mapping
       
-      const { data, error } = await this.supabase
+      const { data } = await this.supabase
         .from(table)
         .select('*')
-        .eq(idField, contextId)
+        .eq('id', contextId)
         .maybeSingle();
         
-      if (error) console.error(`Error fetching ${contextType} memory:`, error);
       contextData = data;
+      category = data?.category;
     }
 
     // 3. Fetch Strategy History (Last 5 relevant strategies)
-    const { data: history, error: historyError } = await this.supabase
-      .from('strategy_memory')
-      .select('strategy_id, goal, status, roas, total_spend, platform_data, expected_outcomes')
+    const { data: history } = await this.supabase
+      .from('strategies')
+      .select('*')
       .eq('user_id', userId)
       .order('created_at', { ascending: false })
       .limit(5);
 
-    if (historyError) console.error('Error fetching strategy history:', historyError);
-
-    // 4. Fetch Platform Memory (Global Intelligence)
-    const { data: platformData, error: platformError } = await this.supabase
-      .from('platform_memory')
-      .select('*');
-
-    if (platformError) console.error('Error fetching platform memory:', platformError);
-
-    // 5. Fetch Global Strategy Trends (Aggregated)
-    let globalQuery = this.supabase.from('global_strategy_memory').select('*');
-    if (contextData?.category) {
-        globalQuery = globalQuery.eq('category', contextData.category);
-    }
-    const { data: globalTrends, error: globalError } = await globalQuery.limit(10);
-
-    if (globalError) console.error('Error fetching global trends:', globalError);
-
-    // 6. Fetch Recent IPE Intelligence (Algorithm shifts, Trends, Opportunities)
-    const { data: ipeIntelligence, error: ipeError } = await this.supabase
-      .from('ipe_intelligence_log')
+    // 4. Fetch Platform Intelligence (Real-time)
+    const { data: platformIntelligence } = await this.supabase
+      .from('platform_intelligence')
       .select('*')
-      .order('timestamp', { ascending: false })
-      .limit(15);
+      .order('captured_at', { ascending: false })
+      .limit(5);
 
-    if (ipeError) console.error('Error fetching IPE intelligence:', ipeError);
+    // 5. Fetch Social Listening (Last 24h or recent)
+    let socialQuery = this.supabase.from('social_conversations').select('*').order('collected_at', { ascending: false }).limit(20);
+    if (category) {
+        socialQuery = socialQuery.eq('category', category);
+    }
+    const { data: socialListening } = await socialQuery;
 
+    // 6. Fetch Emotional Intelligence
+    let emotionalQuery = this.supabase.from('emotional_ownership').select('*').order('detected_at', { ascending: false }).limit(10);
+    if (category) {
+        emotionalQuery = emotionalQuery.eq('category', category);
+    }
+    const { data: emotionalIntelligence } = await emotionalQuery;
+
+    // 7. Fetch GEO Narrative (Narrative Snapshots)
+    // Assuming brand_id links to user_id or product
+    const { data: geoNarrative } = await this.supabase
+        .from('narrative_snapshots')
+        .select('*')
+        // .eq('brand_id', userId) // optional filter
+        .order('captured_at', { ascending: false })
+        .limit(5);
+
+    // 8. Global Trends (Keep existing if table exists, otherwise skip)
+    // The spec doesn't mention removing global_strategy_memory, so we keep it if useful, 
+    // but the new engines provide better data.
+    
     return {
       user: userMemory || {},
       [contextType]: contextData,
       history: history || [],
-      platformStatus: platformData || [],
-      globalTrends: globalTrends || [],
-      ipeIntelligence: ipeIntelligence || []
+      platformStatus: [], // Deprecated in favor of platformIntelligence
+      globalTrends: [], // Deprecated
+      platformIntelligence: platformIntelligence || [],
+      socialListening: socialListening || [],
+      emotionalIntelligence: emotionalIntelligence || [],
+      geoNarrative: geoNarrative || []
     };
   }
 }

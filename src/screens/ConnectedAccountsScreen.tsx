@@ -1,65 +1,135 @@
-import React, { useState, useEffect } from 'react';
-import { View, Text, ScrollView, TouchableOpacity, ActivityIndicator, Alert, Image } from 'react-native';
+import React, { useCallback, useEffect, useState } from 'react';
+import { Alert, ActivityIndicator, ScrollView, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { ChevronLeft, Facebook, LogOut, Instagram, Linkedin, Twitter, Video } from 'lucide-react-native';
 import { RootStackParamList } from '../types';
-import { FacebookService } from '../services/facebook';
-import { FacebookConfig } from '../types/facebook';
-import { ChevronLeft, Facebook, Settings, RefreshCw, LogOut, CheckCircle2, ShieldCheck } from 'lucide-react-native';
+import { supabase } from '../services/supabase';
 
 export default function ConnectedAccountsScreen() {
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const [loading, setLoading] = useState(true);
-  const [config, setConfig] = useState<FacebookConfig | null>(null);
   const [refreshing, setRefreshing] = useState(false);
+  const [configs, setConfigs] = useState<Record<string, any>>({});
 
-  const loadConfig = async () => {
+  const loadConfigs = useCallback(async () => {
     try {
-      const data = await FacebookService.getConfig();
-      setConfig(data);
-    } catch (error) {
-      console.error('Failed to load FB config:', error);
+      const { data: { user }, error: userError } = await supabase.auth.getUser();
+      if (userError) throw userError;
+      if (!user) {
+        setConfigs({});
+        return;
+      }
+
+      const { data, error } = await supabase
+        .from('ad_configs')
+        .select('*')
+        .eq('user_id', user.id);
+
+      if (error) throw error;
+      
+      const configMap: Record<string, any> = {};
+      data?.forEach(c => {
+          configMap[c.platform || 'facebook'] = c;
+      });
+      setConfigs(configMap);
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
-  };
-
-  useEffect(() => {
-    loadConfig();
   }, []);
 
-  const handleDisconnect = () => {
+  useEffect(() => {
+    loadConfigs();
+  }, [loadConfigs]);
+
+  const handleConnect = (platform: string) => {
+    const routeParams: any = {};
+    if (platform === 'facebook') routeParams.connectFacebook = true;
+    if (platform === 'instagram') routeParams.connectInstagram = true;
+    if (platform === 'tiktok') routeParams.connectTikTok = true;
+    if (platform === 'linkedin') routeParams.connectLinkedIn = true;
+    if (platform === 'twitter') routeParams.connectTwitter = true;
+    
+    navigation.navigate('AgentChat', routeParams);
+  };
+
+  const handleDisconnect = (platform: string) => {
     Alert.alert(
-      "Disconnect Facebook",
-      "This will stop all active autonomous campaigns. Are you sure?",
+      `Disconnect ${platform.charAt(0).toUpperCase() + platform.slice(1)}`,
+      `This will stop publishing and engagement automation for this ${platform === 'facebook' ? 'Page' : 'Account'}.`,
       [
-        { text: "Cancel", style: "cancel" },
-        { 
-          text: "Disconnect", 
-          style: "destructive", 
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Disconnect',
+          style: 'destructive',
           onPress: async () => {
             setLoading(true);
             try {
-              // Implementation would call FacebookService.deleteConfig()
-              // For now, we'll just mock the UI update after alert
-              Alert.alert("Success", "Facebook account disconnected.");
-              navigation.goBack();
-            } catch (e) {
-              Alert.alert("Error", "Failed to disconnect.");
+              const { data: { user }, error: userError } = await supabase.auth.getUser();
+              if (userError) throw userError;
+              if (!user) return;
+              const { error } = await supabase.from('ad_configs').delete().match({ user_id: user.id, platform: platform });
+              if (error) throw error;
+              await loadConfigs();
+            } catch (e: any) {
+              Alert.alert('Error', e.message || 'Failed to disconnect.');
             } finally {
               setLoading(false);
             }
-          } 
-        }
-      ]
+          },
+        },
+      ],
+    );
+  };
+
+  const PlatformCard = ({ platform, icon: Icon, color, label }: any) => {
+    const config = configs[platform];
+    return (
+      <View className="bg-adroom-card rounded-2xl border border-adroom-neon/20 overflow-hidden mb-6">
+        <View className="p-4 flex-row items-center justify-between border-b border-adroom-neon/5" style={{ backgroundColor: `${color}10` }}>
+          <View className="flex-row items-center">
+            <Icon color={color} size={24} fill={color} />
+            <Text className="text-white font-bold ml-3 text-lg">{label}</Text>
+          </View>
+          <View className={`px-3 py-1 rounded-full ${config ? 'bg-green-500/20' : 'bg-slate-700'}`}>
+            <Text className={`text-xs font-bold ${config ? 'text-green-400' : 'text-slate-400'}`}>
+              {config ? 'CONNECTED' : 'NOT LINKED'}
+            </Text>
+          </View>
+        </View>
+
+        {config ? (
+          <View className="p-5">
+            <Text className="text-white font-bold text-base">{config.page_name || `${label} Account`}</Text>
+            <Text className="text-adroom-text-muted text-xs mt-1">ID: {config.page_id || config.ad_account_id}</Text>
+            <TouchableOpacity
+              onPress={() => handleDisconnect(platform)}
+              className="mt-5 bg-red-500/10 border border-red-500/30 px-4 py-3 rounded-xl items-center flex-row justify-center"
+            >
+              <LogOut color="#EF4444" size={16} />
+              <Text className="text-red-400 font-bold ml-2">Disconnect</Text>
+            </TouchableOpacity>
+          </View>
+        ) : (
+          <View className="p-5 items-center">
+            <TouchableOpacity
+              onPress={() => handleConnect(platform)}
+              className="w-full py-3 rounded-xl flex-row items-center justify-center"
+              style={{ backgroundColor: color }}
+              disabled={refreshing}
+            >
+              <Text className="text-white font-bold">CONNECT {platform.toUpperCase()}</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+      </View>
     );
   };
 
   return (
     <SafeAreaView className="flex-1 bg-adroom-dark">
-      {/* Header */}
       <View className="px-4 py-4 border-b border-adroom-neon/10 flex-row items-center">
         <TouchableOpacity onPress={() => navigation.goBack()} className="mr-4">
           <ChevronLeft color="#00F0FF" size={28} />
@@ -68,96 +138,19 @@ export default function ConnectedAccountsScreen() {
       </View>
 
       <ScrollView className="flex-1 p-4">
-        <Text className="text-adroom-text-muted mb-6">
-          Manage your external platform connections for autonomous execution.
-        </Text>
-
-        {/* Facebook Section */}
-        <View className="bg-adroom-card rounded-2xl border border-adroom-neon/20 overflow-hidden mb-6">
-          <View className="bg-[#1877F2]/10 p-4 flex-row items-center justify-between border-b border-adroom-neon/5">
-            <View className="flex-row items-center">
-              <Facebook color="#1877F2" size={24} fill="#1877F2" />
-              <Text className="text-white font-bold ml-3 text-lg">Facebook Ads</Text>
-            </View>
-            <View className={`px-3 py-1 rounded-full ${config ? 'bg-green-500/20' : 'bg-slate-700'}`}>
-              <Text className={`text-xs font-bold ${config ? 'text-green-400' : 'text-slate-400'}`}>
-                {config ? 'CONNECTED' : 'NOT LINKED'}
-              </Text>
-            </View>
+        {loading ? (
+          <View className="mt-12 items-center">
+            <ActivityIndicator size="large" color="#00F0FF" />
           </View>
-
-          {loading ? (
-            <View className="p-10 items-center">
-              <ActivityIndicator color="#00F0FF" />
-            </View>
-          ) : config ? (
-            <View className="p-5">
-              <View className="flex-row items-center mb-6">
-                <View className="w-12 h-12 bg-adroom-neon/10 rounded-full items-center justify-center border border-adroom-neon/30 mr-4">
-                  <Text className="text-adroom-neon font-bold text-xl">{config.page_name ? config.page_name.charAt(0) : 'F'}</Text>
-                </View>
-                <View className="flex-1">
-                  <Text className="text-white font-bold text-base">{config.page_name || 'Facebook Page'}</Text>
-                  <Text className="text-adroom-text-muted text-xs">Linked Facebook Page</Text>
-                </View>
-                <CheckCircle2 color="#10B981" size={20} />
-              </View>
-
-              <View className="space-y-4 mb-6">
-                <View className="flex-row justify-between items-center bg-adroom-dark/50 p-3 rounded-xl border border-white/5">
-                  <Text className="text-slate-400 text-sm">Ad Account</Text>
-                  <Text className="text-white font-medium text-sm" numberOfLines={1}>{config.ad_account_id}</Text>
-                </View>
-                <View className="flex-row items-center bg-blue-500/5 p-3 rounded-xl border border-blue-500/10">
-                  <ShieldCheck color="#3B82F6" size={16} />
-                  <Text className="text-blue-400 text-xs ml-2">Real-time optimization active</Text>
-                </View>
-              </View>
-
-              <View className="flex-row space-x-3">
-                <TouchableOpacity 
-                  onPress={() => navigation.navigate('AgentChat', { fromStrategyApproval: true })}
-                  className="flex-1 bg-adroom-neon/10 border border-adroom-neon/30 py-3 rounded-xl items-center"
-                >
-                  <Text className="text-adroom-neon font-bold">RECONFIGURE</Text>
-                </TouchableOpacity>
-                <TouchableOpacity 
-                  onPress={handleDisconnect}
-                  className="bg-red-500/10 border border-red-500/30 px-4 py-3 rounded-xl items-center"
-                >
-                  <LogOut color="#EF4444" size={20} />
-                </TouchableOpacity>
-              </View>
-            </View>
-          ) : (
-            <View className="p-8 items-center">
-              <Text className="text-slate-400 text-center mb-6">
-                Connect your Facebook Business account to allow AdRoom to launch and manage ads autonomously.
-              </Text>
-              <TouchableOpacity 
-                onPress={() => navigation.navigate('AgentChat', { fromStrategyApproval: true })}
-                className="bg-[#1877F2] px-8 py-3 rounded-xl flex-row items-center"
-              >
-                <Facebook color="white" size={20} fill="white" />
-                <Text className="text-white font-bold ml-3">CONNECT FACEBOOK</Text>
-              </TouchableOpacity>
-            </View>
-          )}
-        </View>
-
-        {/* Placeholder for TikTok */}
-        <View className="bg-adroom-card rounded-2xl border border-white/5 overflow-hidden opacity-60">
-          <View className="p-4 flex-row items-center justify-between">
-            <View className="flex-row items-center">
-              <View className="w-6 h-6 bg-white rounded-full items-center justify-center">
-                <Text className="text-black font-black text-[10px]">TikTok</Text>
-              </View>
-              <Text className="text-slate-400 font-bold ml-3 text-lg">TikTok Ads</Text>
-            </View>
-            <Text className="text-xs font-bold text-slate-500">COMING SOON</Text>
-          </View>
-        </View>
-
+        ) : (
+          <>
+            <PlatformCard platform="facebook" icon={Facebook} color="#1877F2" label="Facebook Page" />
+            <PlatformCard platform="instagram" icon={Instagram} color="#E4405F" label="Instagram Account" />
+            <PlatformCard platform="tiktok" icon={Video} color="#000000" label="TikTok Account" />
+            <PlatformCard platform="linkedin" icon={Linkedin} color="#0A66C2" label="LinkedIn Page" />
+            <PlatformCard platform="twitter" icon={Twitter} color="#1DA1F2" label="X (Twitter) Account" />
+          </>
+        )}
       </ScrollView>
     </SafeAreaView>
   );

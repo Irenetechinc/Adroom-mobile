@@ -9,7 +9,6 @@ import { ArrowLeft, Target, Rocket } from 'lucide-react-native';
 export default function StrategyComparisonScreen() {
   const navigation = useNavigation<any>();
   const { generatedStrategies } = useStrategyCreationStore();
-  const [activeTab, setActiveTab] = useState<'free' | 'paid'>('free');
 
   if (!generatedStrategies) {
     return (
@@ -22,8 +21,7 @@ export default function StrategyComparisonScreen() {
     );
   }
 
-  const strategy = activeTab === 'free' ? generatedStrategies.free : generatedStrategies.paid;
-  const comparison = generatedStrategies.comparison;
+  const strategy = (generatedStrategies as any)?.strategy;
 
   const handleSelect = (type: 'free' | 'paid') => {
     Alert.alert(
@@ -53,42 +51,23 @@ export default function StrategyComparisonScreen() {
         <View style={{ width: 24 }} />
       </View>
 
-      {/* Tabs */}
-      <View className="flex-row mx-6 mt-6 bg-slate-900 rounded-xl p-1">
-        <TouchableOpacity 
-          onPress={() => setActiveTab('free')}
-          className={`flex-1 py-3 rounded-lg items-center ${activeTab === 'free' ? 'bg-cyan-500/20' : ''}`}
-        >
-          <Text className={`font-bold ${activeTab === 'free' ? 'text-cyan-400' : 'text-slate-500'}`}>FREE (Organic)</Text>
-        </TouchableOpacity>
-        <TouchableOpacity 
-          onPress={() => setActiveTab('paid')}
-          className={`flex-1 py-3 rounded-lg items-center ${activeTab === 'paid' ? 'bg-cyan-500/20' : ''}`}
-        >
-          <Text className={`font-bold ${activeTab === 'paid' ? 'text-cyan-400' : 'text-slate-500'}`}>PAID (Ads)</Text>
-        </TouchableOpacity>
+      <View className="mx-6 mt-6 bg-slate-900 rounded-xl p-3 items-center">
+        <Text className="text-cyan-400 font-bold">Organic Strategy (Single Best Option)</Text>
       </View>
 
       <ScrollView className="flex-1 px-6 mt-6">
-        {/* Comparison Summary */}
+        {/* Summary */}
         <View className="bg-slate-900 rounded-xl p-4 mb-6 border border-slate-800">
           <View className="flex-row items-center mb-2">
             <Target size={20} color="#F59E0B" />
-            <Text className="text-amber-500 font-bold ml-2">AI Recommendation</Text>
+            <Text className="text-amber-500 font-bold ml-2">AI Rationale</Text>
           </View>
-          <Text className="text-slate-300 leading-6">{comparison?.recommendation || "Both strategies have strong potential."}</Text>
+          <Text className="text-slate-300 leading-6">{strategy?.rationale || "Optimized based on current intelligence."}</Text>
         </View>
 
         {/* Strategy Details */}
         <View className="mb-24">
-          <View className="flex-row justify-between items-center mb-4">
-            <Text className="text-2xl font-bold text-white capitalize">{activeTab} Strategy</Text>
-            <View className={`px-3 py-1 rounded-full ${activeTab === 'free' ? 'bg-green-500/20' : 'bg-purple-500/20'}`}>
-              <Text className={`${activeTab === 'free' ? 'text-green-400' : 'text-purple-400'} font-bold text-xs uppercase`}>
-                {activeTab === 'free' ? 'Zero Cost' : 'Accelerated'}
-              </Text>
-            </View>
-          </View>
+          <Text className="text-2xl font-bold text-white mb-4">Organic Strategy</Text>
 
           {/* Stats Grid */}
           <View className="flex-row flex-wrap justify-between mb-6">
@@ -106,10 +85,7 @@ export default function StrategyComparisonScreen() {
                 {strategy?.risk || 'Low'}
               </Text>
             </View>
-            <View className="w-[48%] bg-slate-900 p-4 rounded-xl mb-4 border border-slate-800">
-              <Text className="text-slate-500 text-xs mb-1">Budget</Text>
-              <Text className="text-white font-bold text-lg">{activeTab === 'free' ? '$0' : `$${strategy?.budget_recommendation || 0}`}</Text>
-            </View>
+            <View />
           </View>
 
           {/* Platforms */}
@@ -137,19 +113,11 @@ export default function StrategyComparisonScreen() {
           {/* Key Actions */}
            <Text className="text-white font-bold text-lg mb-3">Key Actions</Text>
             <View className="bg-slate-900 rounded-xl p-4 border border-slate-800 mb-6">
-                {activeTab === 'free' ? (
-                    <Text className="text-slate-400">
-                        • Daily engagement (15 mins){'\n'}
-                        • Community building in groups{'\n'}
-                        • Consistent posting schedule
-                    </Text>
-                ) : (
-                    <Text className="text-slate-400">
-                        • Ad creative testing (A/B){'\n'}
-                        • Audience targeting refinement{'\n'}
-                        • Budget scaling based on ROAS
-                    </Text>
-                )}
+                <Text className="text-slate-400">
+                    • Daily engagement (15 mins){'\n'}
+                    • Community building in groups{'\n'}
+                    • Consistent posting schedule
+                </Text>
             </View>
 
         </View>
@@ -158,13 +126,11 @@ export default function StrategyComparisonScreen() {
       {/* Footer */}
       <View className="absolute bottom-0 left-0 right-0 p-6 border-t border-slate-900 bg-slate-950/95">
         <TouchableOpacity 
-          onPress={() => handleSelect(activeTab)}
-          className={`py-4 rounded-xl flex-row justify-center items-center ${
-            activeTab === 'free' ? 'bg-green-500 shadow-lg shadow-green-500/20' : 'bg-cyan-500 shadow-lg shadow-cyan-500/20'
-          }`}
+          onPress={() => handleSelect('free')}
+          className="py-4 rounded-xl flex-row justify-center items-center bg-green-500 shadow-lg shadow-green-500/20"
         >
           <Text className="text-slate-950 font-bold text-lg mr-2">
-            Launch {activeTab === 'free' ? 'Free' : 'Paid'} Strategy
+            Launch Organic Strategy
           </Text>
           <Rocket size={20} color="#020617" />
         </TouchableOpacity>
