@@ -26,7 +26,7 @@ const creativeService = new CreativeService();
 const decisionEngine = new DecisionEngine();
 
 if (!VERIFY_TOKEN) {
-  throw new Error('FB_VERIFY_TOKEN is required.');
+  console.warn('[Server] WARNING: FB_VERIFY_TOKEN not set — Facebook webhook verification disabled.');
 }
 
 function buildDeepLink(platform: 'facebook' | 'instagram' | 'twitter' | 'linkedin', query: Record<string, string | undefined>) {
@@ -281,6 +281,28 @@ app.post('/webhooks/database', async (req, res) => {
   }
 });
 
+/**
+ * Remote Logging — receives logs from the Expo app and prints them to Railway terminal
+ */
+app.post('/api/logs', (req, res) => {
+  const { level = 'INFO', message, context, timestamp } = req.body;
+  const ts = timestamp || new Date().toISOString();
+  const ctx = context ? ` [${context}]` : '';
+  const logLine = `[APP:${level.toUpperCase()}]${ctx} [${ts}] ${message}`;
+
+  if (level === 'error') {
+    console.error(logLine);
+  } else if (level === 'warn') {
+    console.warn(logLine);
+  } else {
+    console.log(logLine);
+  }
+
+  res.status(200).json({ ok: true });
+});
+
 app.listen(PORT, () => {
-  console.log(`Server is running on port ${PORT}`);
+  console.log(`[AdRoom Server] Running on port ${PORT} — ${new Date().toISOString()}`);
+  console.log(`[AdRoom Server] AI Engines: GPT-4o (strategy) | Gemini 1.5 Flash (text) | Imagen 3 (creative)`);
+  console.log(`[AdRoom Server] Features: Web Scraping | GEO Monitoring | Social Listening | Emotional Intelligence`);
 });

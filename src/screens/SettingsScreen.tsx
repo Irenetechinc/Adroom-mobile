@@ -9,13 +9,14 @@ import {
   Menu, Link, LogOut, User, Shield, ChevronRight,
   Bell, HelpCircle, Info, Settings as SettingsIcon,
 } from 'lucide-react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import Animated, { FadeInDown } from 'react-native-reanimated';
 
 export default function SettingsScreen() {
   const { signOut, user } = useAuthStore();
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const [signingOut, setSigningOut] = useState(false);
+  const insets = useSafeAreaInsets();
 
   const handleSignOut = async () => {
     Alert.alert('Sign Out', 'Are you sure you want to sign out?', [
@@ -108,7 +109,7 @@ export default function SettingsScreen() {
         </View>
       </View>
 
-      <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={false} contentContainerStyle={styles.scroll}>
+      <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={false} contentContainerStyle={[styles.scroll, { paddingBottom: Math.max(40, insets.bottom + 20) }]}>
         {/* Profile Card */}
         <Animated.View entering={FadeInDown.delay(100).springify()} style={styles.profileCard}>
           <View style={styles.avatar}>
