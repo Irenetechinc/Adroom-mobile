@@ -5,7 +5,7 @@ import { View, Text, ScrollView, TouchableOpacity, ActivityIndicator, Alert, Sty
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { ChevronLeft, Facebook, LogOut, Instagram, Linkedin, Twitter, Video } from 'lucide-react-native';
+import {Facebook, LogOut, Instagram, Linkedin, Twitter, Video } from 'lucide-react-native';
 import { RootStackParamList } from '../types';
 
 import { FacebookService } from '../services/facebook';
