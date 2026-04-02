@@ -1,90 +1,145 @@
 import React from 'react';
-import { View, Text, TouchableOpacity, Image, SafeAreaView } from 'react-native';
+import { View, Text, TouchableOpacity, Platform } from 'react-native';
 import { DrawerContentComponentProps } from '@react-navigation/drawer';
-import { useNavigation } from '@react-navigation/native';
-import { Home, LayoutDashboard, List, Settings, LogOut, X, History, CreditCard } from 'lucide-react-native';
 import { useAuthStore } from '../store/authStore';
+import { Bot, LayoutDashboard, List, Settings, LogOut, X, History, CreditCard, ChevronRight } from 'lucide-react-native';
+import Animated, { FadeInLeft } from 'react-native-reanimated';
+import { SafeAreaView } from 'react-native-safe-area-context';
+
+const menuItems = [
+  { label: 'Agent', icon: Bot, route: 'AgentChat', description: 'AI Campaign Assistant' },
+  { label: 'Dashboard', icon: LayoutDashboard, route: 'Dashboard', description: 'Performance Overview' },
+  { label: 'Campaigns', icon: List, route: 'CampaignList', description: 'Active Campaigns' },
+  { label: 'Ad Wallet', icon: CreditCard, route: 'Wallet', description: 'Balance & Payments' },
+  { label: 'Strategy History', icon: History, route: 'StrategyHistory', description: 'Past Strategies' },
+  { label: 'Settings', icon: Settings, route: 'Settings', description: 'App Preferences' },
+];
 
 export default function SideMenu(props: DrawerContentComponentProps) {
-  const navigation = useNavigation();
   const { signOut, user } = useAuthStore();
 
-  const menuItems = [
-    { label: 'Agent Center', icon: Home, route: 'AgentChat' },
-    { label: 'Live Dashboard', icon: LayoutDashboard, route: 'Dashboard' },
-    { label: 'Campaigns', icon: List, route: 'CampaignList' },
-    { label: 'Ad Wallet', icon: CreditCard, route: 'Wallet' },
-    { label: 'Strategy History', icon: History, route: 'StrategyHistory' },
-    { label: 'System Settings', icon: Settings, route: 'Settings' },
-  ];
+  const userInitial = user?.email ? user.email.charAt(0).toUpperCase() : 'U';
+  const userEmail = user?.email || '';
 
   return (
-    <View className="flex-1 bg-[#050B14]">
-      <SafeAreaView className="flex-1">
-        {/* Header Profile Section */}
-        <View className="px-6 py-8 border-b border-adroom-neon/10 mb-6">
-          <View className="flex-row items-center justify-between mb-6">
-            <View className="w-10 h-10 rounded-full bg-adroom-neon/10 items-center justify-center border border-adroom-neon">
-              <Text className="text-adroom-neon font-bold text-lg">AI</Text>
+    <View style={{ flex: 1, backgroundColor: '#050B14' }}>
+      <SafeAreaView style={{ flex: 1 }}>
+        {/* Header */}
+        <View style={{ paddingHorizontal: 20, paddingTop: 20, paddingBottom: 24, borderBottomWidth: 1, borderBottomColor: 'rgba(0,240,255,0.08)', marginBottom: 8 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+              <View style={{
+                width: 40, height: 40, borderRadius: 20,
+                backgroundColor: 'rgba(0,240,255,0.12)',
+                borderWidth: 1.5, borderColor: '#00F0FF',
+                alignItems: 'center', justifyContent: 'center',
+              }}>
+                <Text style={{ color: '#00F0FF', fontWeight: '800', fontSize: 16 }}>{userInitial}</Text>
+              </View>
+              <View style={{ marginLeft: 12 }}>
+                <Text style={{ color: '#FFFFFF', fontWeight: '700', fontSize: 14 }} numberOfLines={1}>
+                  {userEmail.split('@')[0]}
+                </Text>
+                <Text style={{ color: '#64748B', fontSize: 11, marginTop: 1 }} numberOfLines={1}>
+                  {userEmail}
+                </Text>
+              </View>
             </View>
-            <TouchableOpacity onPress={() => props.navigation.closeDrawer()}>
-                <X color="#64748B" size={24} />
+            <TouchableOpacity
+              onPress={() => props.navigation.closeDrawer()}
+              style={{ padding: 4 }}
+            >
+              <X color="#64748B" size={20} />
             </TouchableOpacity>
           </View>
-          
-          <Text className="text-white text-xl font-bold tracking-wider mb-1">
-            AdRoom <Text className="text-adroom-neon">OS</Text>
-          </Text>
-          <Text className="text-adroom-text-muted text-xs uppercase tracking-widest">
-            Autonomous Marketing
-          </Text>
+
+          {/* Brand */}
+          <View style={{
+            backgroundColor: 'rgba(0,240,255,0.06)',
+            borderWidth: 1, borderColor: 'rgba(0,240,255,0.15)',
+            borderRadius: 12, paddingHorizontal: 14, paddingVertical: 10,
+          }}>
+            <Text style={{ color: '#FFFFFF', fontSize: 18, fontWeight: '800', letterSpacing: 1 }}>
+              AdRoom <Text style={{ color: '#00F0FF' }}>AI</Text>
+            </Text>
+            <Text style={{ color: '#64748B', fontSize: 10, letterSpacing: 2, textTransform: 'uppercase', marginTop: 2 }}>
+              Autonomous Marketing
+            </Text>
+          </View>
         </View>
 
-        {/* Menu Items */}
-        <View className="flex-1 px-4 space-y-2">
+        {/* Nav Items */}
+        <View style={{ flex: 1, paddingHorizontal: 12, paddingTop: 4 }}>
           {menuItems.map((item, index) => {
             const isFocused = props.state.index === index;
             const Icon = item.icon;
-            
+
             return (
-              <TouchableOpacity
-                key={item.route}
-                onPress={() => props.navigation.navigate(item.route)}
-                className={`flex-row items-center p-4 rounded-xl mb-2 ${
-                  isFocused 
-                    ? 'bg-adroom-neon/10 border-l-4 border-adroom-neon' 
-                    : 'opacity-70'
-                }`}
-              >
-                <Icon 
-                  color={isFocused ? '#00F0FF' : '#94A3B8'} 
-                  size={22} 
-                  strokeWidth={isFocused ? 2.5 : 2}
-                />
-                <Text className={`ml-4 text-base ${
-                  isFocused 
-                    ? 'text-white font-bold tracking-wide' 
-                    : 'text-adroom-text-muted font-medium'
-                }`}>
-                  {item.label}
-                </Text>
-              </TouchableOpacity>
+              <Animated.View key={item.route} entering={FadeInLeft.delay(index * 60).springify()}>
+                <TouchableOpacity
+                  onPress={() => props.navigation.navigate(item.route)}
+                  style={{
+                    flexDirection: 'row', alignItems: 'center',
+                    paddingHorizontal: 14, paddingVertical: 13,
+                    borderRadius: 14, marginBottom: 4,
+                    backgroundColor: isFocused ? 'rgba(0,240,255,0.08)' : 'transparent',
+                    borderWidth: isFocused ? 1 : 0,
+                    borderColor: isFocused ? 'rgba(0,240,255,0.25)' : 'transparent',
+                    borderLeftWidth: isFocused ? 3 : 0,
+                    borderLeftColor: isFocused ? '#00F0FF' : 'transparent',
+                  }}
+                  activeOpacity={0.7}
+                >
+                  <View style={{
+                    width: 36, height: 36, borderRadius: 10,
+                    backgroundColor: isFocused ? 'rgba(0,240,255,0.12)' : 'rgba(148,163,184,0.06)',
+                    alignItems: 'center', justifyContent: 'center',
+                  }}>
+                    <Icon color={isFocused ? '#00F0FF' : '#64748B'} size={18} strokeWidth={isFocused ? 2.5 : 2} />
+                  </View>
+                  <View style={{ flex: 1, marginLeft: 12 }}>
+                    <Text style={{
+                      color: isFocused ? '#FFFFFF' : '#94A3B8',
+                      fontWeight: isFocused ? '700' : '500',
+                      fontSize: 15,
+                    }}>
+                      {item.label}
+                    </Text>
+                    <Text style={{ color: '#475569', fontSize: 11, marginTop: 1 }}>
+                      {item.description}
+                    </Text>
+                  </View>
+                  {isFocused && <ChevronRight color="#00F0FF" size={14} />}
+                </TouchableOpacity>
+              </Animated.View>
             );
           })}
         </View>
 
         {/* Footer */}
-        <View className="p-6 border-t border-adroom-neon/10">
-            <TouchableOpacity 
-                onPress={signOut}
-                className="flex-row items-center p-4 rounded-xl bg-red-500/10 border border-red-500/20"
-            >
-                <LogOut color="#EF4444" size={20} />
-                <Text className="text-red-400 font-bold ml-3 uppercase text-xs tracking-wider">Disconnect</Text>
-            </TouchableOpacity>
-            <Text className="text-adroom-text-muted/30 text-[10px] text-center mt-6">
-                v1.0.0 • Production Build
-            </Text>
+        <View style={{ paddingHorizontal: 12, paddingBottom: 24, borderTopWidth: 1, borderTopColor: 'rgba(0,240,255,0.06)', paddingTop: 12 }}>
+          <TouchableOpacity
+            onPress={signOut}
+            style={{
+              flexDirection: 'row', alignItems: 'center',
+              paddingHorizontal: 14, paddingVertical: 13, borderRadius: 14,
+              backgroundColor: 'rgba(239,68,68,0.07)',
+              borderWidth: 1, borderColor: 'rgba(239,68,68,0.2)',
+            }}
+            activeOpacity={0.7}
+          >
+            <View style={{
+              width: 36, height: 36, borderRadius: 10,
+              backgroundColor: 'rgba(239,68,68,0.1)',
+              alignItems: 'center', justifyContent: 'center',
+            }}>
+              <LogOut color="#EF4444" size={18} />
+            </View>
+            <Text style={{ color: '#EF4444', fontWeight: '700', fontSize: 15, marginLeft: 12 }}>Sign Out</Text>
+          </TouchableOpacity>
+          <Text style={{ color: '#1E293B', fontSize: 10, textAlign: 'center', marginTop: 14, letterSpacing: 0.5 }}>
+            AdRoom AI • v1.0.0
+          </Text>
         </View>
       </SafeAreaView>
     </View>

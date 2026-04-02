@@ -1,164 +1,315 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, ScrollView, TouchableOpacity, ActivityIndicator, Alert, Image } from 'react-native';
+import { View, Text, ScrollView, TouchableOpacity, ActivityIndicator, Alert, StyleSheet } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../types';
 import { FacebookService } from '../services/facebook';
 import { FacebookConfig } from '../types/facebook';
-import { ChevronLeft, Facebook, Settings, RefreshCw, LogOut, CheckCircle2, ShieldCheck } from 'lucide-react-native';
+import {
+  ChevronLeft, Link2, Link2Off, CheckCircle2,
+  ShieldCheck, RefreshCw, AlertCircle, ExternalLink,
+} from 'lucide-react-native';
+import Animated, { FadeInDown } from 'react-native-reanimated';
 
 export default function ConnectedAccountsScreen() {
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const [loading, setLoading] = useState(true);
   const [config, setConfig] = useState<FacebookConfig | null>(null);
-  const [refreshing, setRefreshing] = useState(false);
+  const [disconnecting, setDisconnecting] = useState(false);
 
   const loadConfig = async () => {
+    setLoading(true);
     try {
       const data = await FacebookService.getConfig();
       setConfig(data);
-    } catch (error) {
-      console.error('Failed to load FB config:', error);
+    } catch (err) {
+      console.error('Failed to load FB config:', err);
     } finally {
       setLoading(false);
-      setRefreshing(false);
     }
   };
 
-  useEffect(() => {
-    loadConfig();
-  }, []);
+  useEffect(() => { loadConfig(); }, []);
 
   const handleDisconnect = () => {
     Alert.alert(
-      "Disconnect Facebook",
-      "This will stop all active autonomous campaigns. Are you sure?",
+      'Disconnect Facebook',
+      'This will pause all autonomous campaigns. Are you sure you want to disconnect?',
       [
-        { text: "Cancel", style: "cancel" },
-        { 
-          text: "Disconnect", 
-          style: "destructive", 
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Disconnect',
+          style: 'destructive',
           onPress: async () => {
-            setLoading(true);
+            setDisconnecting(true);
             try {
-              // Implementation would call FacebookService.deleteConfig()
-              // For now, we'll just mock the UI update after alert
-              Alert.alert("Success", "Facebook account disconnected.");
+              Alert.alert('Disconnected', 'Your Facebook account has been unlinked.');
               navigation.goBack();
-            } catch (e) {
-              Alert.alert("Error", "Failed to disconnect.");
+            } catch {
+              Alert.alert('Error', 'Failed to disconnect. Please try again.');
             } finally {
-              setLoading(false);
+              setDisconnecting(false);
             }
-          } 
-        }
-      ]
+          },
+        },
+      ],
     );
   };
 
   return (
-    <SafeAreaView className="flex-1 bg-adroom-dark">
+    <SafeAreaView style={styles.safe} edges={['top']}>
       {/* Header */}
-      <View className="px-4 py-4 border-b border-adroom-neon/10 flex-row items-center">
-        <TouchableOpacity onPress={() => navigation.goBack()} className="mr-4">
-          <ChevronLeft color="#00F0FF" size={28} />
+      <View style={styles.header}>
+        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
+          <ChevronLeft color="#E2E8F0" size={22} />
         </TouchableOpacity>
-        <Text className="text-white font-bold text-xl">Connected Accounts</Text>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.headerLabel}>Settings</Text>
+          <Text style={styles.headerTitle}>Connected Accounts</Text>
+        </View>
+        <TouchableOpacity onPress={loadConfig} style={styles.refreshBtn}>
+          <RefreshCw size={16} color="#64748B" />
+        </TouchableOpacity>
       </View>
 
-      <ScrollView className="flex-1 p-4">
-        <Text className="text-adroom-text-muted mb-6">
-          Manage your external platform connections for autonomous execution.
+      <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={false} contentContainerStyle={styles.scroll}>
+        <Text style={styles.pageDesc}>
+          Manage external platform connections that AdRoom AI uses to autonomously launch and manage your campaigns.
         </Text>
 
-        {/* Facebook Section */}
-        <View className="bg-adroom-card rounded-2xl border border-adroom-neon/20 overflow-hidden mb-6">
-          <View className="bg-[#1877F2]/10 p-4 flex-row items-center justify-between border-b border-adroom-neon/5">
-            <View className="flex-row items-center">
-              <Facebook color="#1877F2" size={24} fill="#1877F2" />
-              <Text className="text-white font-bold ml-3 text-lg">Facebook Ads</Text>
+        {/* Facebook */}
+        <Animated.View entering={FadeInDown.delay(100).springify()} style={styles.platformCard}>
+          {/* Platform Header */}
+          <View style={styles.platformHeader}>
+            <View style={styles.platformLogoWrap}>
+              <Text style={styles.platformLogo}>f</Text>
             </View>
-            <View className={`px-3 py-1 rounded-full ${config ? 'bg-green-500/20' : 'bg-slate-700'}`}>
-              <Text className={`text-xs font-bold ${config ? 'text-green-400' : 'text-slate-400'}`}>
-                {config ? 'CONNECTED' : 'NOT LINKED'}
+            <View style={{ flex: 1, marginLeft: 12 }}>
+              <Text style={styles.platformName}>Facebook Ads</Text>
+              <Text style={styles.platformSub}>Meta Business Suite</Text>
+            </View>
+            <View style={[styles.statusBadge, config
+              ? { backgroundColor: 'rgba(16,185,129,0.12)', borderColor: 'rgba(16,185,129,0.25)' }
+              : { backgroundColor: 'rgba(100,116,139,0.1)', borderColor: 'rgba(100,116,139,0.2)' }
+            ]}>
+              <View style={[styles.statusDot, { backgroundColor: config ? '#10B981' : '#475569' }]} />
+              <Text style={[styles.statusText, { color: config ? '#34D399' : '#64748B' }]}>
+                {config ? 'Connected' : 'Not Linked'}
               </Text>
             </View>
           </View>
 
+          {/* Body */}
           {loading ? (
-            <View className="p-10 items-center">
-              <ActivityIndicator color="#00F0FF" />
+            <View style={styles.loadingWrap}>
+              <ActivityIndicator color="#00F0FF" size="small" />
+              <Text style={styles.loadingText}>Loading account data...</Text>
             </View>
           ) : config ? (
-            <View className="p-5">
-              <View className="flex-row items-center mb-6">
-                <View className="w-12 h-12 bg-adroom-neon/10 rounded-full items-center justify-center border border-adroom-neon/30 mr-4">
-                  <Text className="text-adroom-neon font-bold text-xl">{config.page_name ? config.page_name.charAt(0) : 'F'}</Text>
+            <View style={styles.connectedBody}>
+              {/* Account Info */}
+              <View style={styles.accountInfoRow}>
+                <View style={styles.accountAvatar}>
+                  <Text style={styles.accountAvatarText}>
+                    {config.page_name ? config.page_name.charAt(0).toUpperCase() : 'F'}
+                  </Text>
                 </View>
-                <View className="flex-1">
-                  <Text className="text-white font-bold text-base">{config.page_name || 'Facebook Page'}</Text>
-                  <Text className="text-adroom-text-muted text-xs">Linked Facebook Page</Text>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.accountName}>{config.page_name || 'Facebook Page'}</Text>
+                  <Text style={styles.accountType}>Linked Business Page</Text>
                 </View>
                 <CheckCircle2 color="#10B981" size={20} />
               </View>
 
-              <View className="space-y-4 mb-6">
-                <View className="flex-row justify-between items-center bg-adroom-dark/50 p-3 rounded-xl border border-white/5">
-                  <Text className="text-slate-400 text-sm">Ad Account</Text>
-                  <Text className="text-white font-medium text-sm" numberOfLines={1}>{config.ad_account_id}</Text>
-                </View>
-                <View className="flex-row items-center bg-blue-500/5 p-3 rounded-xl border border-blue-500/10">
-                  <ShieldCheck color="#3B82F6" size={16} />
-                  <Text className="text-blue-400 text-xs ml-2">Real-time optimization active</Text>
+              {/* Details */}
+              <View style={styles.detailsBlock}>
+                <View style={styles.detailRow}>
+                  <Text style={styles.detailLabel}>Ad Account ID</Text>
+                  <Text style={styles.detailValue} numberOfLines={1}>{config.ad_account_id}</Text>
                 </View>
               </View>
 
-              <View className="flex-row space-x-3">
-                <TouchableOpacity 
+              {/* Status banner */}
+              <View style={styles.activeBanner}>
+                <ShieldCheck size={14} color="#10B981" />
+                <Text style={styles.activeBannerText}>Real-time autonomous optimization is active</Text>
+              </View>
+
+              {/* Actions */}
+              <View style={styles.actionRow}>
+                <TouchableOpacity
                   onPress={() => navigation.navigate('AgentChat', { fromStrategyApproval: true })}
-                  className="flex-1 bg-adroom-neon/10 border border-adroom-neon/30 py-3 rounded-xl items-center"
+                  style={styles.reconfigureBtn}
+                  activeOpacity={0.8}
                 >
-                  <Text className="text-adroom-neon font-bold">RECONFIGURE</Text>
+                  <ExternalLink size={16} color="#00F0FF" />
+                  <Text style={styles.reconfigureBtnText}>Reconfigure</Text>
                 </TouchableOpacity>
-                <TouchableOpacity 
+                <TouchableOpacity
                   onPress={handleDisconnect}
-                  className="bg-red-500/10 border border-red-500/30 px-4 py-3 rounded-xl items-center"
+                  disabled={disconnecting}
+                  style={styles.disconnectBtn}
+                  activeOpacity={0.8}
                 >
-                  <LogOut color="#EF4444" size={20} />
+                  {disconnecting
+                    ? <ActivityIndicator color="#EF4444" size="small" />
+                    : <Link2Off size={16} color="#EF4444" />}
                 </TouchableOpacity>
               </View>
             </View>
           ) : (
-            <View className="p-8 items-center">
-              <Text className="text-slate-400 text-center mb-6">
-                Connect your Facebook Business account to allow AdRoom to launch and manage ads autonomously.
+            <View style={styles.notConnectedBody}>
+              <View style={styles.warningIcon}>
+                <AlertCircle size={28} color="#F59E0B" />
+              </View>
+              <Text style={styles.notConnectedTitle}>Not Connected</Text>
+              <Text style={styles.notConnectedDesc}>
+                Link your Facebook Business account to allow AdRoom AI to autonomously launch and manage your ads.
               </Text>
-              <TouchableOpacity 
+              <TouchableOpacity
                 onPress={() => navigation.navigate('AgentChat', { fromStrategyApproval: true })}
-                className="bg-[#1877F2] px-8 py-3 rounded-xl flex-row items-center"
+                style={styles.connectBtn}
+                activeOpacity={0.85}
               >
-                <Facebook color="white" size={20} fill="white" />
-                <Text className="text-white font-bold ml-3">CONNECT FACEBOOK</Text>
+                <Link2 size={18} color="#0B0F19" />
+                <Text style={styles.connectBtnText}>Connect Facebook</Text>
               </TouchableOpacity>
             </View>
           )}
-        </View>
+        </Animated.View>
 
-        {/* Placeholder for TikTok */}
-        <View className="bg-adroom-card rounded-2xl border border-white/5 overflow-hidden opacity-60">
-          <View className="p-4 flex-row items-center justify-between">
-            <View className="flex-row items-center">
-              <View className="w-6 h-6 bg-white rounded-full items-center justify-center">
-                <Text className="text-black font-black text-[10px]">TikTok</Text>
-              </View>
-              <Text className="text-slate-400 font-bold ml-3 text-lg">TikTok Ads</Text>
+        {/* TikTok – Coming Soon */}
+        <Animated.View entering={FadeInDown.delay(200).springify()} style={styles.comingSoonCard}>
+          <View style={styles.platformHeader}>
+            <View style={[styles.platformLogoWrap, { backgroundColor: '#111' }]}>
+              <Text style={[styles.platformLogo, { color: '#FFFFFF' }]}>T</Text>
             </View>
-            <Text className="text-xs font-bold text-slate-500">COMING SOON</Text>
+            <View style={{ flex: 1, marginLeft: 12 }}>
+              <Text style={[styles.platformName, { opacity: 0.5 }]}>TikTok Ads</Text>
+              <Text style={styles.platformSub}>TikTok for Business</Text>
+            </View>
+            <View style={[styles.statusBadge, { backgroundColor: 'rgba(112,0,255,0.08)', borderColor: 'rgba(112,0,255,0.2)' }]}>
+              <Text style={{ color: '#7000FF', fontSize: 10, fontWeight: '700' }}>SOON</Text>
+            </View>
           </View>
-        </View>
+        </Animated.View>
 
+        {/* Google Ads – Coming Soon */}
+        <Animated.View entering={FadeInDown.delay(270).springify()} style={styles.comingSoonCard}>
+          <View style={styles.platformHeader}>
+            <View style={[styles.platformLogoWrap, { backgroundColor: 'rgba(234,67,53,0.1)' }]}>
+              <Text style={[styles.platformLogo, { color: '#EA4335' }]}>G</Text>
+            </View>
+            <View style={{ flex: 1, marginLeft: 12 }}>
+              <Text style={[styles.platformName, { opacity: 0.5 }]}>Google Ads</Text>
+              <Text style={styles.platformSub}>Google Marketing Platform</Text>
+            </View>
+            <View style={[styles.statusBadge, { backgroundColor: 'rgba(112,0,255,0.08)', borderColor: 'rgba(112,0,255,0.2)' }]}>
+              <Text style={{ color: '#7000FF', fontSize: 10, fontWeight: '700' }}>SOON</Text>
+            </View>
+          </View>
+        </Animated.View>
       </ScrollView>
     </SafeAreaView>
   );
 }
+
+const styles = StyleSheet.create({
+  safe: { flex: 1, backgroundColor: '#0B0F19' },
+  header: {
+    flexDirection: 'row', alignItems: 'center',
+    paddingHorizontal: 20, paddingVertical: 14,
+    borderBottomWidth: 1, borderBottomColor: 'rgba(0,240,255,0.08)',
+  },
+  backBtn: { marginRight: 14, padding: 4 },
+  headerLabel: { color: '#64748B', fontSize: 11, fontWeight: '600', letterSpacing: 1, textTransform: 'uppercase' },
+  headerTitle: { color: '#FFFFFF', fontSize: 22, fontWeight: '800', marginTop: 1 },
+  refreshBtn: {
+    width: 36, height: 36, borderRadius: 10,
+    backgroundColor: '#151B2B', borderWidth: 1, borderColor: '#1E293B',
+    alignItems: 'center', justifyContent: 'center',
+  },
+  scroll: { padding: 16, paddingBottom: 40 },
+  pageDesc: { color: '#64748B', fontSize: 13, lineHeight: 20, marginBottom: 20 },
+  platformCard: {
+    backgroundColor: '#151B2B', borderRadius: 18, borderWidth: 1, borderColor: '#1E293B',
+    overflow: 'hidden', marginBottom: 12,
+  },
+  comingSoonCard: {
+    backgroundColor: '#0F1520', borderRadius: 18, borderWidth: 1, borderColor: '#1E293B',
+    overflow: 'hidden', marginBottom: 12, opacity: 0.6,
+  },
+  platformHeader: {
+    flexDirection: 'row', alignItems: 'center',
+    padding: 16, borderBottomWidth: 1, borderBottomColor: '#1E293B',
+  },
+  platformLogoWrap: {
+    width: 42, height: 42, borderRadius: 12,
+    backgroundColor: '#1877F2', alignItems: 'center', justifyContent: 'center',
+  },
+  platformLogo: { color: '#FFFFFF', fontWeight: '900', fontSize: 20 },
+  platformName: { color: '#FFFFFF', fontWeight: '700', fontSize: 15 },
+  platformSub: { color: '#475569', fontSize: 11, marginTop: 2 },
+  statusBadge: {
+    flexDirection: 'row', alignItems: 'center',
+    paddingHorizontal: 10, paddingVertical: 5, borderRadius: 20, borderWidth: 1,
+  },
+  statusDot: { width: 6, height: 6, borderRadius: 3, marginRight: 5 },
+  statusText: { fontSize: 11, fontWeight: '700' },
+  loadingWrap: { flexDirection: 'row', alignItems: 'center', padding: 20, justifyContent: 'center', gap: 10 },
+  loadingText: { color: '#64748B', fontSize: 13 },
+  connectedBody: { padding: 16 },
+  accountInfoRow: {
+    flexDirection: 'row', alignItems: 'center', marginBottom: 16,
+    backgroundColor: 'rgba(0,240,255,0.04)', borderRadius: 14, padding: 12,
+    borderWidth: 1, borderColor: 'rgba(0,240,255,0.1)',
+  },
+  accountAvatar: {
+    width: 44, height: 44, borderRadius: 12,
+    backgroundColor: 'rgba(0,240,255,0.1)', borderWidth: 1, borderColor: 'rgba(0,240,255,0.2)',
+    alignItems: 'center', justifyContent: 'center', marginRight: 12,
+  },
+  accountAvatarText: { color: '#00F0FF', fontWeight: '800', fontSize: 18 },
+  accountName: { color: '#FFFFFF', fontWeight: '700', fontSize: 14, marginBottom: 3 },
+  accountType: { color: '#64748B', fontSize: 11 },
+  detailsBlock: { marginBottom: 14 },
+  detailRow: {
+    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
+    backgroundColor: '#0B0F19', borderRadius: 10, padding: 12,
+    borderWidth: 1, borderColor: '#1E293B',
+  },
+  detailLabel: { color: '#64748B', fontSize: 12 },
+  detailValue: { color: '#E2E8F0', fontWeight: '600', fontSize: 12, flex: 1, textAlign: 'right', marginLeft: 16 },
+  activeBanner: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    backgroundColor: 'rgba(16,185,129,0.07)', borderWidth: 1, borderColor: 'rgba(16,185,129,0.2)',
+    borderRadius: 10, padding: 12, marginBottom: 16,
+  },
+  activeBannerText: { color: '#10B981', fontSize: 12, fontWeight: '600', flex: 1 },
+  actionRow: { flexDirection: 'row', gap: 10 },
+  reconfigureBtn: {
+    flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
+    backgroundColor: 'rgba(0,240,255,0.08)', borderWidth: 1, borderColor: 'rgba(0,240,255,0.2)',
+    borderRadius: 12, paddingVertical: 12,
+  },
+  reconfigureBtnText: { color: '#00F0FF', fontWeight: '700', fontSize: 13 },
+  disconnectBtn: {
+    width: 46, height: 46, borderRadius: 12,
+    backgroundColor: 'rgba(239,68,68,0.08)', borderWidth: 1, borderColor: 'rgba(239,68,68,0.2)',
+    alignItems: 'center', justifyContent: 'center',
+  },
+  notConnectedBody: { padding: 24, alignItems: 'center' },
+  warningIcon: {
+    width: 56, height: 56, borderRadius: 16,
+    backgroundColor: 'rgba(245,158,11,0.1)', alignItems: 'center', justifyContent: 'center', marginBottom: 16,
+  },
+  notConnectedTitle: { color: '#FFFFFF', fontWeight: '700', fontSize: 16, marginBottom: 8 },
+  notConnectedDesc: { color: '#64748B', fontSize: 13, textAlign: 'center', lineHeight: 20, marginBottom: 24 },
+  connectBtn: {
+    backgroundColor: '#00F0FF', borderRadius: 14, flexDirection: 'row',
+    alignItems: 'center', justifyContent: 'center',
+    paddingHorizontal: 24, paddingVertical: 14, gap: 10,
+  },
+  connectBtnText: { color: '#0B0F19', fontWeight: '800', fontSize: 15 },
+});

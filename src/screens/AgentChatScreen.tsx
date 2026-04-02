@@ -686,28 +686,6 @@ export default function AgentChatScreen({ navigation, route }: Props) {
           />
         </View>
 
-        {/* Only show input bar if explicitly enabled (e.g., manual entry) */}
-        {!isInputDisabled && (
-            <View className="p-4 border-t border-adroom-neon/10 bg-adroom-dark/90">
-            <View className="flex-row items-center space-x-2">
-                <TextInput
-                className={`flex-1 bg-adroom-card border border-adroom-neon/30 rounded-full px-4 py-3 text-adroom-text placeholder:text-gray-500 focus:border-adroom-neon`}
-                placeholder="Enter command..."
-                placeholderTextColor="#64748B"
-                value={inputText}
-                onChangeText={setInputText}
-                onSubmitEditing={handleSend}
-                />
-                
-                <TouchableOpacity 
-                onPress={handleSend}
-                className={`w-12 h-12 bg-adroom-neon rounded-full items-center justify-center shadow-lg shadow-adroom-neon/30`}
-                >
-                <Text className="text-adroom-dark font-bold text-xl">➤</Text>
-                </TouchableOpacity>
-            </View>
-            </View>
-        )}
       </KeyboardAvoidingView>
     </SafeAreaView>
   );
