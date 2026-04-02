@@ -3,10 +3,10 @@ import { AIEngine } from './ai-models.ts';
 import { MemoryContext } from './memory-retriever.ts';
 
 export interface StrategyDecision {
-  strategy_type: 'free' | 'paid';
   platforms: string[];
   content_plan: any;
-  budget_recommendation?: number;
+  engagement_plan?: any;
+  expected_outcomes?: any;
   reasoning: string;
 }
 
@@ -42,35 +42,22 @@ export class DecisionEngine {
       DURATION: ${duration} days
       
       TASK:
-      Generate TWO detailed strategies:
-      1. A FREE (Organic) Strategy: Focus on content, community, and viral growth. No ad spend.
-      2. A PAID (Ads) Strategy: Focus on ROAS, targeting, and scaling. Include budget recommendations.
+      Generate ONE detailed ORGANIC strategy (no ads, no budgets):
       
-      For each strategy, provide:
+      Provide:
       - Platform selection (Why these platforms?)
       - Content pillars and schedule
       - Engagement tactics
-      - Expected outcomes (Reach, Engagement, Conversions)
+      - Expected outcomes (Reach, Engagement, Conversions) without referencing ad spend
       - Key risks and mitigation
       
       Output ONLY valid JSON in the following format:
       {
-        "free_strategy": {
-          "platforms": ["..."],
-          "content_plan": { ... },
-          "engagement_plan": { ... },
-          "expected_outcomes": { ... }
-        },
-        "paid_strategy": {
-          "platforms": ["..."],
-          "budget_recommendation": number,
-          "campaign_structure": { ... },
-          "expected_outcomes": { ... }
-        },
-        "comparison": {
-           "summary": "...",
-           "recommendation": "..."
-        }
+        "platforms": ["..."],
+        "content_plan": { ... },
+        "engagement_plan": { ... },
+        "expected_outcomes": { ... },
+        "reasoning": "..."
       }
     `;
 

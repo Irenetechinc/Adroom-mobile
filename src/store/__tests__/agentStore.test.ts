@@ -5,9 +5,7 @@ import { Strategy } from '../../types/agent';
 jest.mock('../../services/strategy', () => ({
   StrategyService: {
     generateStrategies: jest.fn().mockResolvedValue({
-      free: { type: 'FREE', assets: [], lifespanWeeks: 4 },
-      paid: { type: 'PAID', assets: [], lifespanWeeks: 4 },
-      comparison: {},
+      strategy: { title: 'Organic Plan', assets: [], lifespanWeeks: 4 },
     }),
   },
 }));
@@ -48,9 +46,7 @@ describe('useAgentStore', () => {
     
     const { generatedStrategies } = useAgentStore.getState();
     expect(generatedStrategies).toBeTruthy();
-    expect(generatedStrategies!.free.type).toBe('FREE');
-    expect(generatedStrategies!.paid.type).toBe('PAID');
-    expect(generatedStrategies!.free.assets).toBeDefined();
-    expect(generatedStrategies!.free.lifespanWeeks).toBeDefined();
+    expect((generatedStrategies as any)!.strategy).toBeTruthy();
+    expect((generatedStrategies as any)!.strategy.title).toBe('Organic Plan');
   });
 });

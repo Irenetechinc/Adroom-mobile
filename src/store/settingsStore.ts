@@ -35,7 +35,6 @@ export const useSettingsStore = create<SettingsState>((set) => ({
       const config = await FacebookService.saveConfig(
         input.page_id,
         input.page_name || '',
-        input.ad_account_id,
         input.access_token
       );
       

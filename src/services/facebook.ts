@@ -17,13 +17,6 @@ export interface FacebookPage {
   category: string;
 }
 
-export interface FacebookAdAccount {
-  id: string;
-  name: string;
-  account_id: string;
-  account_status: number;
-}
-
 export const FacebookService = {
   
   /**
@@ -49,7 +42,11 @@ export const FacebookService = {
 
       // Using WebBrowser directly as a fallback for custom OAuth flows
       // SWITCHING TO RESPONSE_TYPE=CODE for backend exchange
-      const authUrl = `https://www.facebook.com/v18.0/dialog/oauth?client_id=${FB_APP_ID}&redirect_uri=${encodeURIComponent(callbackUrl)}&response_type=code&scope=ads_management,ads_read,read_insights,pages_show_list,pages_read_engagement,pages_manage_posts,pages_manage_ads,pages_messaging,public_profile`;
+      if (!FB_APP_ID) {
+        throw new Error('EXPO_PUBLIC_FACEBOOK_APP_ID is not configured');
+      }
+
+      const authUrl = `https://www.facebook.com/v18.0/dialog/oauth?client_id=${FB_APP_ID}&redirect_uri=${encodeURIComponent(callbackUrl)}&response_type=code&scope=pages_show_list,pages_read_engagement,pages_manage_posts,pages_messaging,public_profile`;
       
       console.log('[FacebookService] Initiating login with redirect_uri:', callbackUrl);
       
@@ -89,9 +86,14 @@ export const FacebookService = {
    * Fetch Active Config from Supabase
    */
   async getConfig(): Promise<FacebookConfig | null> {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return null;
+
     const { data, error } = await supabase
       .from('ad_configs')
       .select('*')
+      .eq('user_id', user.id)
+      .eq('platform', 'facebook')
       .maybeSingle();
     
     if (error) {
@@ -113,38 +115,14 @@ export const FacebookService = {
   },
 
   /**
-   * Fetch User's Ad Accounts
-   */
-  async getAdAccounts(userAccessToken: string): Promise<FacebookAdAccount[]> {
-    const response = await fetch(
-      `https://graph.facebook.com/v18.0/me/adaccounts?access_token=${userAccessToken}&fields=id,name,account_id,account_status,currency,timezone_name`
-    );
-    const data = await response.json();
-    if (data.error) throw new Error(data.error.message);
-    return data.data || [];
-  },
-
-  /**
    * Validate Credentials (Token)
    */
   async validateCredentials(input: any): Promise<boolean> {
       if (!input.access_token) return false;
       
       try {
-        const response = await fetch(
-          `https://graph.facebook.com/v18.0/debug_token?input_token=${input.access_token}&access_token=${FB_APP_ID}|${process.env.EXPO_PUBLIC_FACEBOOK_APP_SECRET || ''}`
-        );
-        const data = await response.json();
-        
-        // If app secret is not available in frontend env (security best practice),
-        // we can try a simple /me call to verify.
-        if (data.error && data.error.code === 100) {
-             // Fallback: Verify by fetching user profile
-             const meRes = await fetch(`https://graph.facebook.com/v18.0/me?access_token=${input.access_token}`);
-             return meRes.ok;
-        }
-
-        return data.data && data.data.is_valid;
+        const meRes = await fetch(`https://graph.facebook.com/v18.0/me?access_token=${input.access_token}`);
+        return meRes.ok;
       } catch (e) {
         console.error('Token validation failed:', e);
         return false;
@@ -157,22 +135,23 @@ export const FacebookService = {
   async saveConfig(
     pageId: string, 
     pageName: string,
-    adAccountId: string, 
     accessToken: string
   ): Promise<FacebookConfig> {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) throw new Error('User not authenticated');
 
+    const configData: any = {
+      user_id: user.id,
+      platform: 'facebook',
+      page_id: pageId,
+      page_name: pageName,
+      access_token: accessToken,
+      updated_at: new Date().toISOString(),
+    };
+
     const { data, error } = await supabase
       .from('ad_configs')
-      .upsert({
-        user_id: user.id,
-        page_id: pageId,
-        page_name: pageName, // Ensure this column exists or add it
-        ad_account_id: adAccountId,
-        access_token: accessToken,
-        updated_at: new Date().toISOString(),
-      }, { onConflict: 'user_id' })
+      .upsert(configData, { onConflict: 'user_id,platform' })
       .select()
       .single();
 

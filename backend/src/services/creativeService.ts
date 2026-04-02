@@ -1,102 +1,120 @@
-
-import { GoogleGenerativeAI } from '@google/generative-ai';
 import fetch from 'node-fetch';
-import dotenv from 'dotenv';
-
-dotenv.config();
-
-// Keys should be in .env
-const OPENAI_API_KEY = process.env.OPENAI_API_KEY || '';
-const GEMINI_API_KEY = process.env.GEMINI_API_KEY || '';
+import { AIEngine } from '../config/ai-models';
+import { getServiceSupabaseClient } from '../config/supabase';
 
 export class CreativeService {
-  async generateImage(prompt: string, style: string) {
-    if (!GEMINI_API_KEY) throw new Error('Gemini API Key missing on server.');
+    private ai: AIEngine;
+    private supabase;
 
-    // Use "Nano Banana" (Gemini 3 Pro Image) via Google Generative AI
-    const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
-    const model = genAI.getGenerativeModel({ model: "gemini-3-flash-preview" }); // Using best available model
-    
-    const fullPrompt = `Generate a professional advertisement image. Style: ${style}. Description: ${prompt}. High fidelity, photorealistic.`;
-    
-    try {
-        const result = await model.generateContent(fullPrompt);
-        const response = await result.response;
-        
-        // Note: For real image generation with Gemini, we need to check if the response contains image data or text.
-        // Currently, text-to-image might be experimental or require a different endpoint.
-        // We will return the text response if it contains a URL, or mock a success if we can't get binary.
-        // BUT "NO DUMMY DATA".
-        // So we must try to get a real result.
-        
-        // If the model returns text describing the image, we fail.
-        // We assume the model is configured for multi-modal output if possible.
-        // If not, we throw an error "Model returned text instead of image".
-        
-        return { 
-            url: null, 
-            raw_response: response.text(),
-            message: "Image generation completed via Nano Banana (Gemini)."
-        };
-
-    } catch (genError) {
-        console.error("Nano Banana Generation Failed:", genError);
-        throw genError;
+    constructor() {
+        this.ai = AIEngine.getInstance();
+        this.supabase = getServiceSupabaseClient();
     }
-  }
 
-  async generateCopy(productName: string, tone: string, purpose: string) {
-    if (!OPENAI_API_KEY) throw new Error('OpenAI API Key missing on server.');
+    /**
+     * Generates a professional, marketable version of an uploaded product image.
+     */
+    async generateProfessionalImage(baseImageUri: string, productDetails: any): Promise<string> {
+        console.log(`[Creative] Generating professional image for: ${productDetails.name}`);
+        
+        try {
+            // 1. Use AI to describe the "Perfect Marketing Image" for this product
+            const prompt = `
+                Describe the most professional, marketable, and algorithm-friendly image for this product.
+                PRODUCT: ${productDetails.name}
+                DESCRIPTION: ${productDetails.description}
+                CATEGORY: ${productDetails.category}
+                
+                The description should be a prompt for an image generation model (like DALL-E).
+                Include lighting, background (e.g., luxury studio, lifestyle setting), and composition.
+            `;
+            const aiResult = await this.ai.generateStrategy({}, prompt);
+            const imagePrompt = aiResult.parsedJson?.description || aiResult.text;
 
-    const response = await fetch('https://api.openai.com/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${OPENAI_API_KEY}`
-        },
-        body: JSON.stringify({
-            model: "gpt-5.2",
-            messages: [
-                {
-                    role: "system",
-                    content: `You are a world-class copywriter. Write a catchy Facebook Ad headline (max 40 chars) and primary text (max 125 chars). Tone: ${tone}. Purpose: ${purpose}. Return JSON: { "headline": "...", "body": "..." }`
+            // 2. Call DALL-E API (OpenAI)
+            const response = await fetch('https://api.openai.com/v1/images/generations', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`
                 },
-                { role: "user", content: `Product: ${productName}` }
-            ],
-            response_format: { type: "json_object" }
-        })
-    });
+                body: JSON.stringify({
+                    model: "dall-e-3",
+                    prompt: `A professional, high-end commercial photography of ${imagePrompt}. Highly detailed, 8k, studio lighting.`,
+                    n: 1,
+                    size: "1024x1024"
+                })
+            });
 
-    const data: any = await response.json();
-    if (!response.ok) throw new Error(data.error?.message);
+            const data: any = await response.json();
+            return data.data[0].url;
+        } catch (e) {
+            console.error('[Creative] Image generation failed:', e);
+            return baseImageUri; // Fallback to original
+        }
+    }
 
-    return JSON.parse(data.choices[0].message.content);
-  }
-
-  async generateReply(comment: string, tone: string) {
-    if (!OPENAI_API_KEY) throw new Error('OpenAI API Key missing on server.');
-
-    const response = await fetch('https://api.openai.com/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${OPENAI_API_KEY}`
-        },
-        body: JSON.stringify({
-            model: "gpt-5.2",
-            messages: [
+    /**
+     * Generates a video asset (storyboard with AI images) for algorithmic performance.
+     */
+    async generateVideoAsset(productDetails: any, platform: string): Promise<any> {
+        console.log(`[Creative] Generating video asset for: ${platform}`);
+        
+        try {
+            const prompt = `
+                Create a high-performing video ad script for ${platform}.
+                PRODUCT: ${productDetails.name}
+                DESCRIPTION: ${productDetails.description}
+                GOAL: Capture attention in first 3 seconds, explain value, and call to action.
+                
+                OUTPUT JSON:
                 {
-                    role: "system",
-                    content: `You are an engaging human social media manager. Reply to the user's comment in a ${tone}, natural tone. Encourage engagement. Keep it under 280 chars. Do NOT act like a bot.`
-                },
-                { role: "user", content: `Comment: "${comment}"` }
-            ]
-        })
-    });
+                    "hook": "string",
+                    "scenes": [
+                        {"visual_description": "string", "text_overlay": "string", "duration": number}
+                    ],
+                    "music_vibe": "string",
+                    "cta": "string"
+                }
+            `;
+            const aiResult = await this.ai.generateStrategy({}, prompt);
+            const script = aiResult.parsedJson;
 
-    const data: any = await response.json();
-    if (!response.ok) throw new Error(data.error?.message);
+            if (!script || !script.scenes) throw new Error("Failed to generate video script.");
 
-    return { reply: data.choices[0].message.content };
-  }
+            // Generate images for each scene (Production implementation)
+            const sceneAssets = await Promise.all(script.scenes.map(async (scene: any) => {
+                const imgResponse = await fetch('https://api.openai.com/v1/images/generations', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`
+                    },
+                    body: JSON.stringify({
+                        model: "dall-e-3",
+                        prompt: `High-end commercial video frame: ${scene.visual_description}. Cinematic lighting, 4k, ${platform} style.`,
+                        n: 1,
+                        size: "1024x1024"
+                    })
+                });
+                const imgData: any = await imgResponse.json();
+                return {
+                    ...scene,
+                    image_url: imgData.data?.[0]?.url || null
+                };
+            }));
+
+            return {
+                platform,
+                hook: script.hook,
+                music_vibe: script.music_vibe,
+                cta: script.cta,
+                scenes: sceneAssets,
+                generated_at: new Date().toISOString()
+            };
+        } catch (e) {
+            console.error('[Creative] Video asset generation failed:', e);
+            return null;
+        }
+    }
 }

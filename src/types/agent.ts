@@ -9,7 +9,6 @@ export interface CreativeAsset {
 
 export interface Strategy {
   id: string;
-  type: 'FREE' | 'PAID';
   title: string;
   description: string;
   targetAudience: string;
@@ -18,8 +17,6 @@ export interface Strategy {
   keyMessage: string;
   platforms: string[];
   estimatedReach: string;
-  cost: string;
-  budget: number; // Numeric budget in NGN
   assets: CreativeAsset[];
   actions: string[];
 }
@@ -35,14 +32,15 @@ export interface ChatMessage {
     | 'standard' 
     | 'facebook_connect' 
     | 'page_selection' 
-    | 'ad_account_selection' 
     | 'completion_card' 
     | 'marketing_type_selection' 
     | 'facebook_credentials' 
     | 'attribute_editor' 
     | 'session_restore'
+    | 'strategy_preview'
     // New Strategy Wizard Flow Types
     | 'product_intake_form'
+    | 'website_intake_form'
     | 'service_intake_form'
     | 'brand_intake_form'
     | 'product_manual_form'
@@ -50,7 +48,8 @@ export interface ChatMessage {
     | 'goal_selection'
     | 'duration_selection'
     | 'strategy_comparison'
-    | 'retry_action';
+    | 'retry_action'
+    | 'create_strategy_prompt';
   uiData?: any; // Data for the custom UI
 }
 
@@ -69,7 +68,7 @@ export interface ProductDetails {
   images?: { uri: string; base64: string | null }[];
 }
 
-export type ConnectionState = 'IDLE' | 'CONNECTING_FACEBOOK' | 'SELECTING_PAGE' | 'SELECTING_AD_ACCOUNT' | 'COMPLETED';
+export type ConnectionState = 'IDLE' | 'CONNECTING' | 'CONNECTING_FACEBOOK' | 'SELECTING_PAGE' | 'SELECTING_AD_ACCOUNT' | 'COMPLETED';
 
 export type FlowState = 
   | 'IDLE' 

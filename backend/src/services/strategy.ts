@@ -9,9 +9,14 @@ const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || process.en
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
 
 export interface GeneratedStrategy {
-  free: any;
-  paid: any;
-  comparison: any;
+  title?: string;
+  rationale?: string;
+  platforms?: string[];
+  content_pillars?: any[];
+  schedule?: any[];
+  estimated_outcomes?: any;
+  risk_assessment?: any;
+  [key: string]: any;
 }
 
 export const StrategyService = {

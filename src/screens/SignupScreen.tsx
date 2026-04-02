@@ -33,29 +33,8 @@ export default function SignupScreen({ navigation }: Props) {
     }
 
     if (data.user) {
-      // Poll for wallet creation
-      let walletExists = false;
-      for (let i = 0; i < 5; i++) { // Poll for 5 seconds
-        const { data: wallet, error: walletError } = await supabase
-          .from('wallets')
-          .select('id')
-          .eq('user_id', data.user.id)
-          .maybeSingle();
-
-        if (wallet) {
-          walletExists = true;
-          break;
-        }
-        await new Promise(resolve => setTimeout(resolve, 1000)); // Wait 1 second
-      }
-
       setLoading(false);
-
-      if (!walletExists) {
-        Alert.alert('Account Created', 'There was a delay creating your wallet. Please log in again.');
-      } else {
-        Alert.alert('Success', 'Please check your email for verification!');
-      }
+      Alert.alert('Success', 'Please check your email for verification!');
       navigation.navigate('Login');
     }
   };

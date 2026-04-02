@@ -1,0 +1,689 @@
+
+📄 ADROOM v2.0 - COMPLETE IMPLEMENTATION SPECIFICATION
+```
+AGENT INSTRUCTION: This document specifies WHAT needs to be built and HOW it should behave.
+You will determine WHERE to place these ĺcomponents in the existing codebase.
+You will generate the appropriate code based on your understanding of the current structure.
+```
+
+---
+
+🧠 SECTION 1: INTELLIGENCE SERVICES - Complete Specifications
+
+1.1 PLATFORM INTELLIGENCE SERVICE
+
+Purpose: Continuously monitor social platforms to detect algorithm changes, trends, and opportunities in real-time.
+
+What It Must Do:
+
+· Run continuously in the background, 24/7
+· Monitor official platform sources every 15 minutes
+· Detect 4 types of changes with confidence scoring
+· Quantify impact on different content types and industries
+· Generate short, medium, and long-term predictions
+· Identify content gaps and underserved audiences
+· Monitor policy changes and enforcement patterns
+· Store all findings in the database
+· Alert the AI Brain immediately when important changes detected
+
+What It Must Monitor:
+
+· Official platform blogs (Facebook, Instagram, TikTok, LinkedIn, YouTube)
+· Developer documentation updates
+· Platform status pages
+· Industry news sites
+· Social media expert feeds
+· Platform communities and forums
+· API changelogs
+· Competitor ad libraries
+
+What It Must Output:
+
+· Real-time algorithm priorities per platform (with scores)
+· Trending content formats with performance data
+· Optimal posting times per platform
+· Detected shifts with confidence and impact scores
+· Predictions for next 7, 30, and 90 days
+· Risk flags for content types
+
+When It Must Alert AI Brain:
+
+· Algorithm shift detected with >80% confidence
+· New trend with velocity >200%
+· Risk detected for active campaigns
+· Any change affecting user's active strategies
+
+---
+
+1.2 SOCIAL LISTENING SERVICE
+
+Purpose: Collect and analyze public conversations to understand what people are saying, asking, and complaining about.
+
+What It Must Do:
+
+· Run continuously in the background
+· Connect to multiple public data sources
+· Collect conversations at appropriate frequencies per source
+· Respect API rate limits and robots.txt
+· Deduplicate identical content
+· Process all text through NLP pipeline
+· Extract entities, intent, topics, sentiment
+· Track conversation velocity over time
+· Identify emerging trends before they peak
+· Extract questions people are asking
+· Extract pain points people are mentioning
+· Store all raw and processed data
+
+What It Must Connect To:
+
+· Reddit API (public subreddits)
+· YouTube Data API (public comments)
+· Twitter/X API (public tweets)
+· Facebook Content Library (public pages/groups)
+· Telegram API (public channels)
+· Discord API (public servers)
+· RSS feeds from industry sources
+· Review sites (public reviews)
+· Forums (public discussions)
+
+What It Must Output:
+
+· Conversation volume by category with trends
+· Top questions with frequency and trend
+· Top pain points with sentiment and frequency
+· Trending topics with velocity and predicted peak
+· Top communities where audience gathers
+· Sentiment trends over time
+
+When It Must Alert AI Brain:
+
+· New question reaches significant volume
+· Pain point sentiment drops below threshold
+· Topic velocity exceeds threshold
+· New trend identified in user's category
+· Any conversation pattern shift affecting active strategies
+
+---
+
+1.3 EMOTIONAL INTELLIGENCE SERVICE
+
+Purpose: Understand emotional landscape using NADE 8-emotion framework.
+
+What It Must Do:
+
+· Process all text through emotion detection model
+· Detect 8 emotions: joy, sadness, anger, fear, trust, surprise, anticipation, disgust
+· Return scores for all emotions (0-1)
+· Process all social listening conversations
+· Aggregate emotional data by category, brand, time
+· Map which brands own which emotions
+· Track emotional ownership over time
+· Identify emotional gaps (unowned emotions)
+· Calculate opportunity size for each gap
+· Predict emotional shifts
+· Store all emotional data
+
+What It Must Output:
+
+· Emotional landscape per category (scores for all 8 emotions)
+· Emotional ownership per emotion (brand percentages)
+· Emotional gaps with opportunity scores
+· Emotional trends (rising, falling, stable)
+· Content suggestions for each gap
+
+When It Must Alert AI Brain:
+
+· New emotional gap opens (emotion becomes unowned)
+· Competitor loses emotional ownership
+· Emotional shift >20% in user's category
+· New emotion enters category
+· Gap identified in user's category
+
+---
+
+1.4 GEO MONITORING SERVICE
+
+Purpose: Monitor what AI models say about brands and identify narrative gaps.
+
+What It Must Do:
+
+· Run daily for all active brands
+· Connect to multiple LLM APIs
+· Query each LLM with standardized prompts
+· Store all responses with metadata
+· Extract sentiment, key claims, competitors, missing info
+· Compare to desired brand narrative
+· Identify narrative gaps (missing claims, incorrect claims, competitor advantages)
+· Prioritize gaps by severity
+· Suggest content to fix gaps
+· Track narrative changes over time
+
+What It Must Connect To:
+
+· OpenAI (ChatGPT/GPT-4)
+· Google (Gemini)
+· Anthropic (Claude)
+· Perplexity AI
+· Microsoft Copilot
+· Meta AI (where available)
+
+What It Must Output:
+
+· Current AI narrative for each brand
+· Sentiment scores per LLM
+· Key claims present and missing
+· Competitor mentions and context
+· Narrative gaps with severity
+· Content recommendations for each gap
+· Narrative trend over time
+
+When It Must Alert AI Brain:
+
+· New narrative gap detected (high severity)
+· Sentiment drops significantly
+· Competitor gains advantage in AI answers
+· Important claim starts appearing or disappearing
+· Gap identified for active brand
+
+---
+
+🧠 SECTION 2: AI CORE BRAIN - Complete Specification
+
+What It Must Do:
+
+· Make ALL decisions for the system
+· Never use hard-coded rules or fixed logic
+· Always base decisions on REAL-TIME intelligence
+· Pull fresh data for every decision
+· Weight intelligence sources dynamically
+· Generate multiple options for each decision
+· Score options based on weighted intelligence
+· Select best option
+· Execute decision
+· Store decision with all context
+· Learn from outcomes
+· Improve future decisions
+
+How It Makes Decisions (The Process):
+
+For EVERY decision, the AI Brain must:
+
+Step 1: Gather Fresh Intelligence
+
+· Request current data from Platform Intelligence
+· Request current data from Social Listening
+· Request current data from Emotional Intelligence
+· Request current data from GEO Monitoring
+· Request relevant user history from Memory
+· Request relevant global patterns from Memory
+
+Step 2: Weight Each Source
+
+· Consider recency (minutes since data collected)
+· Consider confidence scores from sources
+· Consider relevance to current decision
+· Consider historical accuracy of each source
+
+Step 3: Generate Options
+
+· Create 3-5 possible approaches
+· Each option must be based on intelligence data
+· No fixed option types
+
+Step 4: Score Each Option
+
+· Use weighted intelligence to predict success
+· Calculate confidence score for each option
+· Consider risks and trade-offs
+
+Step 5: Select Best Option
+
+· Choose option with highest score
+· Document why it was chosen
+
+Step 6: Execute Decision
+
+· Send commands to appropriate systems
+· Track execution
+
+Step 7: Store Decision
+
+· Save all context (data used, weights, options, selection)
+· Save predicted outcome
+
+Step 8: Learn from Outcome
+
+· Compare actual to predicted
+· Update source accuracy metrics
+· Improve weighting for future
+
+What Decisions It Must Make:
+
+· Which platforms to use for each campaign
+· How much effort per platform
+· What content pillars to create
+· What topics to cover in each pillar
+· What formats to use for each piece of content
+· When to post each piece of content
+· How frequently to post
+· How to reply to each comment
+· How to respond to each message
+· Whether to follow up with users
+· What to optimize
+· When to optimize
+· How aggressively to optimize
+
+How It Stays Aware:
+
+The AI Brain does NOT run on a fixed schedule. It is EVENT-DRIVEN:
+
+· Listens for alerts from all intelligence services
+· Processes alerts immediately when received
+· Checks active strategies every 15 minutes
+· Pulls fresh data before every decision
+· Never uses cached data older than 15 minutes
+
+---
+
+🧠 SECTION 3: MEMORY SYSTEM - Complete Specification
+
+What Must Be Stored:
+
+User Memory (Enhance Existing)
+
+· User preferences and history
+· Past campaign performance
+· Connected accounts
+· Communication preferences
+
+Platform Memory (Enhance Existing)
+
+· Algorithm history per platform
+· Content format performance
+· Optimal timing patterns
+· Industry benchmarks
+
+Strategy Memory (Enhance Existing)
+
+· Every campaign ever run
+· What worked and what didn't
+· Performance metrics
+· Learnings applied
+
+Emotional Memory (New)
+
+· Emotional ownership over time
+· Which brands own which emotions
+· Emotional gaps by category
+· Emotional trends
+
+Narrative Memory (New)
+
+· LLM responses over time
+· Narrative changes per brand
+· Gap history
+· Content effectiveness for GEO
+
+Conversation Memory (New)
+
+· Public conversation patterns
+· Questions and pain points over time
+· Trend velocity history
+· Community activity
+
+Decision Memory (New)
+
+· Every AI decision with full context
+· Data used for each decision
+· Weights applied
+· Options considered
+· Outcome achieved
+· Learning applied
+
+---
+
+🧠 SECTION 4: STRATEGY GENERATOR - Complete Specification
+
+What It Must Do:
+
+· Create complete marketing strategies automatically
+· Use intelligence from ALL sources
+· Generate content pillars based on REAL data
+· Never use hard-coded pillar types
+· Adapt to each product/category uniquely
+
+How It Creates Content Pillars:
+
+For each new strategy, the Strategy Generator must:
+
+Step 1: Ask AI Brain
+
+· "What content pillars should I create for this product based on current intelligence?"
+
+Step 2: AI Brain Analyzes:
+
+· Top questions from social listening → creates Answer Pillar
+· Top pain points → creates Solve Pillar
+· Emotional gaps → creates Emotional Pillar
+· Narrative gaps → creates GEO Pillar
+· Trending topics → creates Trend Pillar
+
+Step 3: AI Brain Returns:
+
+· Which pillars to create
+· Why each pillar (the data supporting it)
+· What emotions to target
+· What formats to suggest
+
+Step 4: Generator Creates Content:
+
+· Topics from actual questions/pain points
+· Formats suggested by AI Brain
+· Timing based on optimal times
+
+Step 5: NO FIXED CONTENT MIX
+
+· The AI decides how much of each pillar
+· Could be 80% questions, 20% emotional
+· Or 50% trends, 30% questions, 20% GEO
+· Whatever the data suggests
+
+---
+
+🧠 SECTION 5: ENGAGEMENT AUTOMATION - Complete Specification
+
+What It Must Do (Enhance Existing):
+
+The existing engagement automation (15%) must be enhanced to:
+
+For Every Comment:
+
+· Analyze intent (question, praise, complaint, tag, spam)
+· Analyze sentiment
+· Check user history
+· Ask AI Brain how to respond
+· Post the recommended reply
+· Track outcome
+· Learn for future
+
+For Every Message:
+
+· Load conversation history
+· Determine current stage
+· Analyze intent and urgency
+· Ask AI Brain how to respond
+· Post the recommended response
+· Update conversation stage
+· Schedule follow-up if needed
+· Track outcome
+· Learn for future
+
+For Strategic Liking:
+
+· Identify targets based on intelligence
+· Execute at appropriate frequency
+· Stay within platform limits
+· Track effectiveness
+
+For Community Participation:
+
+· Identify relevant communities
+· Join and observe
+· Participate helpfully
+· Build reputation
+· Share value when earned
+
+---
+
+🧠 SECTION 6: USER INTERFACE - Complete Specification
+
+What User Must See (Simplify Existing):
+
+Dashboard (Results Only):
+
+· Total reach this month
+· Total engagements
+· Total conversations started
+· Active campaigns count
+· [Start New Campaign] button
+
+Campaign Creation:
+
+· Upload product image (or enter details)
+· Choose goal (sales/awareness/launch/leads)
+· Choose duration
+· [Generate Strategy] button
+
+Strategy Preview:
+
+· Platforms that will be used
+· Estimated reach
+· Estimated engagements
+· [Launch] button
+
+Campaign View:
+
+· Daily results (reach, engagements)
+· Weekly summaries
+· Final results
+
+What User Must NEVER See:
+
+· Platform selection logic
+· Content decisions
+· Optimization activities
+· Engagement patterns
+· Intelligence data
+· Any complexity
+· Paid metrics (spend, revenue, ROAS)
+· Strategy type selector (free vs paid)
+· Budget inputs
+· Billing pages
+
+---
+
+🧠 SECTION 7: DATABASE CHANGES - Complete Specification
+
+What To Remove (Paid Components):
+
+From existing tables, remove all fields related to:
+
+· Spend
+· Revenue
+· ROAS
+· Budget
+· Payment methods
+· Subscriptions
+· Free/paid strategy types
+
+Remove entire tables for:
+
+· Ad campaigns
+· Ad spend history
+· Payment methods
+· Billing records
+· Subscription plans
+
+What To Add (New Intelligence Tables):
+
+Platform Intelligence Table
+
+· Store real-time platform data
+· Algorithm priorities, trends, predictions
+
+Social Conversations Table
+
+· Store public conversations
+· Raw content, metadata, source info
+
+Processed Conversations Table
+
+· Store NLP results
+· Entities, sentiment, intent, topics
+
+Emotional Ownership Table
+
+· Store which brands own which emotions
+· Percentages, confidence, timestamps
+
+Narrative Snapshots Table
+
+· Store LLM responses
+· Sentiment, claims, competitors
+
+AI Decisions Table
+
+· Store every decision with context
+· Data used, weights, options, outcome
+
+Add to Products Table
+
+· emotional_appeal_profile
+· conversation_context
+· ai_narrative_baseline
+
+Add to Strategies Table
+
+· emotional_impact
+· ai_narrative_shift
+· platform_selection_logic
+
+---
+
+⏱️ SECTION 8: RUNTIME SPECIFICATION - Complete
+
+Platform Intelligence Service
+
+Runs: Every 15 minutes (quick scan), every 6 hours (deep scan), daily (audit)
+Triggers: Immediate scan on new strategy, performance anomaly
+Alerts AI: When algorithm shift detected (>80% confidence), new trend, risk detected
+
+Social Listening Service
+
+Runs: Continuous (5-60 min per source), batch every 30 min, deep every 6 hours
+Triggers: Immediate collection on new strategy, AI Brain request
+Alerts AI: When new question hits threshold, pain point drops, topic velocity spikes
+
+Emotional Intelligence Service
+
+Runs: Real-time as conversations arrive, ownership update every 3 hours, deep every 12 hours
+Triggers: On new strategy, AI Brain request
+Alerts AI: When new emotional gap opens, competitor loses ownership, emotional shift
+
+GEO Monitoring Service
+
+Runs: Daily at low-traffic time (02:00), gap analysis after each batch
+Triggers: On new brand, major announcement
+Alerts AI: When new narrative gap detected, sentiment drops, competitor gains advantage
+
+AI Core Brain
+
+Runs: Event-driven, always listening
+Checks active strategies: Every 15 minutes
+Uses data: Never older than 15 minutes for decisions
+Learns: Continuously from outcomes
+
+---
+
+✅ FINAL IMPLEMENTATION CHECKLIST
+
+Phase 1: Database Changes
+
+```
+[ ] Remove all paid fields from existing tables
+[ ] Remove all paid tables entirely
+[ ] Create all new intelligence tables
+[ ] Add new columns to products and strategies
+[ ] Ensure migrations are safe (backup first)
+```
+
+Phase 2: Intelligence Services
+
+```
+[ ] Build Platform Intelligence Service
+[ ] Build Social Listening Service
+[ ] Build Emotional Intelligence Service
+[ ] Build GEO Monitoring Service
+[ ] Test each service independently
+[ ] Ensure each service runs at specified frequencies
+[ ] Ensure each service alerts AI Brain correctly
+```
+
+Phase 3: AI Core Brain Enhancement
+
+```
+[ ] Remove ALL hard-coded rules from existing AI Brain
+[ ] Implement true AI decision process (gather, weight, generate, score, select)
+[ ] Add intelligence gathering to every decision
+[ ] Add dynamic weighting based on recency, confidence, relevance
+[ ] Add decision storage for learning
+[ ] Add learning from outcomes
+[ ] Ensure AI Brain is event-driven, not scheduled
+```
+
+Phase 4: Strategy Generator Enhancement
+
+```
+[ ] Remove fixed content pillars
+[ ] Make pillars dynamic based on AI Brain decisions
+[ ] Make content formats dynamic based on intelligence
+[ ] Make scheduling dynamic based on optimal times
+[ ] Test with real intelligence data
+```
+
+Phase 5: Engagement Automation Enhancement
+
+```
+[ ] Enhance comment reply to use AI Brain for every reply
+[ ] Enhance message reply to use AI Brain for every response
+[ ] Add conversation history tracking
+[ ] Add learning from engagement outcomes
+```
+
+Phase 6: User Interface Simplification
+
+```
+[ ] Remove all paid metrics from all views
+[ ] Remove strategy type selector
+[ ] Remove platform selection from user
+[ ] Simplify dashboard to results-only
+[ ] Simplify campaign creation flow
+[ ] Remove billing pages and routes
+```
+
+Phase 7: Testing
+
+```
+[ ] Test each intelligence service with real data
+[ ] Test AI decisions with mock data
+[ ] Test full campaign flow end-to-end
+[ ] Test engagement automation with real comments
+[ ] Verify no hard-coded rules remain anywhere
+[ ] Verify user sees only results, never complexity
+[ ] Verify all services run at correct frequencies
+[ ] Verify AI Brain receives and processes all alerts
+```
+
+---
+
+🚀 FINAL INSTRUCTION TO AGENT
+
+You now have the complete specification. Your task:
+
+1. EXPLORE the existing codebase to understand current structure
+2. LOCATE where each component should live based on existing patterns
+3. BUILD each component according to this specification
+4. ENHANCE existing code where specified, never rebuild from scratch
+5. TEST each component thoroughly
+6. DOCUMENT your changes for the team
+
+Remember:
+
+· The 15% engagement automation already exists - enhance it, don't rebuild it
+· Remove ALL hard-coded rules from everywhere
+· Make EVERY decision based on real-time intelligence
+· Show users ONLY results, hide ALL complexity
+· Each intelligence service runs at its specified frequency
+· The AI Brain is always aware through alerts and checks
+
+Now proceed to implement.
