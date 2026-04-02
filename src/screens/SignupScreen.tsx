@@ -1,104 +1,197 @@
 import React, { useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, Alert, ActivityIndicator, KeyboardAvoidingView, Platform } from 'react-native';
+import {
+  View, Text, TextInput, TouchableOpacity, Alert,
+  ActivityIndicator, KeyboardAvoidingView, Platform, StyleSheet, ScrollView,
+} from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
-import Animated, { FadeInDown, FadeInUp } from 'react-native-reanimated';
+import Animated, { FadeInDown } from 'react-native-reanimated';
 import { RootStackParamList } from '../types';
 import { supabase } from '../services/supabase';
+import { Mail, Lock, Eye, EyeOff, ArrowLeft, UserPlus } from 'lucide-react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Signup'>;
 
 export default function SignupScreen({ navigation }: Props) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
   const [loading, setLoading] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirm, setShowConfirm] = useState(false);
+  const [emailFocused, setEmailFocused] = useState(false);
+  const [passFocused, setPassFocused] = useState(false);
+  const [confirmFocused, setConfirmFocused] = useState(false);
 
   const handleSignup = async () => {
-    if (!email || !password) {
-      Alert.alert('Error', 'Please fill in all fields');
+    if (!email || !password || !confirmPassword) {
+      Alert.alert('Missing Fields', 'Please fill in all fields.');
+      return;
+    }
+    if (password !== confirmPassword) {
+      Alert.alert('Password Mismatch', 'Passwords do not match.');
+      return;
+    }
+    if (password.length < 6) {
+      Alert.alert('Weak Password', 'Password must be at least 6 characters.');
       return;
     }
 
     setLoading(true);
-    const { error } = await supabase.auth.signUp({
-      email,
-      password,
-    });
-
+    const { error } = await supabase.auth.signUp({ email: email.trim(), password });
     setLoading(false);
+
     if (error) {
-      Alert.alert('Signup Failed', error.message);
+      Alert.alert('Registration Failed', error.message);
     } else {
-      Alert.alert('Success', 'Please check your email for verification!');
-      navigation.navigate('Login');
+      Alert.alert('Check Your Email', 'A verification link has been sent to your email address.', [
+        { text: 'OK', onPress: () => navigation.navigate('Login') },
+      ]);
     }
   };
 
   return (
-    <KeyboardAvoidingView 
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      className="flex-1 bg-adroom-dark justify-center px-6"
-    >
-      <Animated.View 
-        entering={FadeInUp.duration(1000).springify()} 
-        className="items-center mb-12"
-      >
-        <Text className="text-4xl font-extrabold text-white" style={{ textShadowColor: '#7000FF', textShadowOffset: { width: 0, height: 0 }, textShadowRadius: 20 }}>
-          NEW IDENTITY
-        </Text>
-        <Text className="text-adroom-text-muted mt-3 text-lg tracking-widest uppercase">
-          Join the Network
-        </Text>
-      </Animated.View>
+    <SafeAreaView style={styles.safe}>
+      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
+        <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
+          {/* Back */}
+          <TouchableOpacity onPress={() => navigation.goBack()} style={styles.back}>
+            <ArrowLeft size={22} color="#94A3B8" />
+          </TouchableOpacity>
 
-      <Animated.View entering={FadeInDown.delay(200).duration(1000).springify()}>
-        <View className="mb-6 space-y-4">
-          <View>
-            <Text className="text-adroom-purple mb-2 font-bold uppercase text-xs tracking-wider">Email Interface</Text>
-            <TextInput
-              className="w-full bg-adroom-card border border-adroom-purple/30 focus:border-adroom-purple rounded-xl p-4 text-adroom-text placeholder:text-gray-600"
-              placeholder="Enter your email"
-              placeholderTextColor="#4B5563"
-              value={email}
-              onChangeText={setEmail}
-              autoCapitalize="none"
-              keyboardType="email-address"
-            />
-          </View>
+          {/* Header */}
+          <Animated.View entering={FadeInDown.delay(100).springify()} style={styles.header}>
+            <View style={styles.logoIcon}>
+              <UserPlus size={26} color="#7000FF" />
+            </View>
+            <Text style={styles.title}>Create Account</Text>
+            <Text style={styles.subtitle}>Join AdRoom AI and launch your first autonomous campaign</Text>
+          </Animated.View>
 
-          <View>
-            <Text className="text-adroom-purple mb-2 font-bold uppercase text-xs tracking-wider">Passcode</Text>
-            <TextInput
-              className="w-full bg-adroom-card border border-adroom-purple/30 focus:border-adroom-purple rounded-xl p-4 text-adroom-text placeholder:text-gray-600"
-              placeholder="Create a password"
-              placeholderTextColor="#4B5563"
-              value={password}
-              onChangeText={setPassword}
-              secureTextEntry
-            />
-          </View>
-        </View>
+          {/* Form */}
+          <Animated.View entering={FadeInDown.delay(250).springify()} style={styles.form}>
+            {/* Email */}
+            <View style={styles.fieldGroup}>
+              <Text style={styles.label}>Email Address</Text>
+              <View style={[styles.inputWrap, emailFocused && styles.inputFocused]}>
+                <Mail size={18} color={emailFocused ? '#7000FF' : '#475569'} style={{ marginRight: 10 }} />
+                <TextInput
+                  style={styles.input}
+                  placeholder="your@email.com"
+                  placeholderTextColor="#475569"
+                  value={email}
+                  onChangeText={setEmail}
+                  autoCapitalize="none"
+                  keyboardType="email-address"
+                  onFocus={() => setEmailFocused(true)}
+                  onBlur={() => setEmailFocused(false)}
+                />
+              </View>
+            </View>
 
-        <TouchableOpacity 
-          onPress={handleSignup}
-          disabled={loading}
-          className={`w-full bg-adroom-purple p-4 rounded-xl items-center shadow-lg shadow-adroom-purple/50 ${loading ? 'opacity-70' : ''}`}
-        >
-          {loading ? (
-            <ActivityIndicator color="#ffffff" />
-          ) : (
-            <Text className="text-white font-bold text-lg uppercase tracking-wider">Register System</Text>
-          )}
-        </TouchableOpacity>
+            {/* Password */}
+            <View style={styles.fieldGroup}>
+              <Text style={styles.label}>Password</Text>
+              <View style={[styles.inputWrap, passFocused && styles.inputFocused]}>
+                <Lock size={18} color={passFocused ? '#7000FF' : '#475569'} style={{ marginRight: 10 }} />
+                <TextInput
+                  style={[styles.input, { flex: 1 }]}
+                  placeholder="Min. 6 characters"
+                  placeholderTextColor="#475569"
+                  value={password}
+                  onChangeText={setPassword}
+                  secureTextEntry={!showPassword}
+                  onFocus={() => setPassFocused(true)}
+                  onBlur={() => setPassFocused(false)}
+                />
+                <TouchableOpacity onPress={() => setShowPassword(!showPassword)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+                  {showPassword ? <EyeOff size={18} color="#475569" /> : <Eye size={18} color="#475569" />}
+                </TouchableOpacity>
+              </View>
+            </View>
 
-        <TouchableOpacity 
-          onPress={() => navigation.goBack()}
-          className="items-center mt-8"
-        >
-          <Text className="text-adroom-text-muted">
-            Already registered? <Text className="text-adroom-purple font-bold">Access System</Text>
-          </Text>
-        </TouchableOpacity>
-      </Animated.View>
-    </KeyboardAvoidingView>
+            {/* Confirm Password */}
+            <View style={styles.fieldGroup}>
+              <Text style={styles.label}>Confirm Password</Text>
+              <View style={[styles.inputWrap, confirmFocused && styles.inputFocused]}>
+                <Lock size={18} color={confirmFocused ? '#7000FF' : '#475569'} style={{ marginRight: 10 }} />
+                <TextInput
+                  style={[styles.input, { flex: 1 }]}
+                  placeholder="Repeat your password"
+                  placeholderTextColor="#475569"
+                  value={confirmPassword}
+                  onChangeText={setConfirmPassword}
+                  secureTextEntry={!showConfirm}
+                  onFocus={() => setConfirmFocused(true)}
+                  onBlur={() => setConfirmFocused(false)}
+                />
+                <TouchableOpacity onPress={() => setShowConfirm(!showConfirm)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+                  {showConfirm ? <EyeOff size={18} color="#475569" /> : <Eye size={18} color="#475569" />}
+                </TouchableOpacity>
+              </View>
+            </View>
+
+            {/* Terms notice */}
+            <Text style={styles.terms}>
+              By creating an account you agree to our{' '}
+              <Text style={{ color: '#7000FF' }}>Terms of Service</Text> and{' '}
+              <Text style={{ color: '#7000FF' }}>Privacy Policy</Text>.
+            </Text>
+
+            {/* Submit */}
+            <TouchableOpacity
+              onPress={handleSignup}
+              disabled={loading}
+              style={[styles.btn, loading && { opacity: 0.7 }]}
+              activeOpacity={0.85}
+            >
+              {loading
+                ? <ActivityIndicator color="#FFFFFF" />
+                : <Text style={styles.btnText}>Create Account</Text>}
+            </TouchableOpacity>
+
+            {/* Sign in link */}
+            <TouchableOpacity onPress={() => navigation.goBack()} style={styles.signinRow}>
+              <Text style={styles.signinText}>Already have an account?{' '}</Text>
+              <Text style={[styles.signinText, { color: '#7000FF', fontWeight: '700' }]}>Sign In</Text>
+            </TouchableOpacity>
+          </Animated.View>
+        </ScrollView>
+      </KeyboardAvoidingView>
+    </SafeAreaView>
   );
 }
+
+const styles = StyleSheet.create({
+  safe: { flex: 1, backgroundColor: '#0B0F19' },
+  scroll: { flexGrow: 1, paddingHorizontal: 24, paddingTop: 20, paddingBottom: 40 },
+  back: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center', marginBottom: 8 },
+  header: { alignItems: 'center', marginBottom: 36 },
+  logoIcon: {
+    width: 64, height: 64, borderRadius: 20,
+    backgroundColor: 'rgba(112,0,255,0.1)',
+    borderWidth: 1.5, borderColor: 'rgba(112,0,255,0.3)',
+    alignItems: 'center', justifyContent: 'center', marginBottom: 16,
+  },
+  title: { color: '#FFFFFF', fontSize: 28, fontWeight: '800', letterSpacing: -0.3 },
+  subtitle: { color: '#64748B', fontSize: 14, textAlign: 'center', marginTop: 8, lineHeight: 20, paddingHorizontal: 16 },
+  form: {},
+  fieldGroup: { marginBottom: 16 },
+  label: { color: '#94A3B8', fontSize: 12, fontWeight: '600', letterSpacing: 0.5, marginBottom: 8, textTransform: 'uppercase' },
+  inputWrap: {
+    flexDirection: 'row', alignItems: 'center',
+    backgroundColor: '#151B2B',
+    borderWidth: 1.5, borderColor: '#1E293B',
+    borderRadius: 14, paddingHorizontal: 16, paddingVertical: 14,
+  },
+  inputFocused: { borderColor: '#7000FF', backgroundColor: 'rgba(112,0,255,0.04)' },
+  input: { flex: 1, color: '#E2E8F0', fontSize: 15, fontWeight: '500' },
+  terms: { color: '#475569', fontSize: 12, textAlign: 'center', lineHeight: 18, marginBottom: 24, marginTop: 4 },
+  btn: {
+    backgroundColor: '#7000FF', borderRadius: 14,
+    height: 54, alignItems: 'center', justifyContent: 'center', marginBottom: 16,
+  },
+  btnText: { color: '#FFFFFF', fontWeight: '800', fontSize: 16, letterSpacing: 0.3 },
+  signinRow: { flexDirection: 'row', justifyContent: 'center', marginTop: 4 },
+  signinText: { color: '#64748B', fontSize: 14 },
+});
