@@ -317,41 +317,55 @@ export const useAgentStore = create<AgentState>((set, get) => ({
   handleWebsiteIntake: async (url: string) => {
     const { addMessage } = get();
     set({ isTyping: true, isInputDisabled: true });
-    
+
     addMessage(`Scanning Website: ${url}`, 'user');
-    
+
     try {
-        const response = await fetch('https://adroom-backend.railway.app/api/scrape', {
+        const BACKEND_URL = process.env.EXPO_PUBLIC_API_URL;
+        if (!BACKEND_URL) throw new Error('Backend URL is not configured. Check EXPO_PUBLIC_API_URL.');
+
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session?.access_token) throw new Error('You must be signed in to scrape a website.');
+
+        const response = await fetch(`${BACKEND_URL}/api/scrape`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ url })
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${session.access_token}`,
+            },
+            body: JSON.stringify({ url }),
         });
-        
-        if (!response.ok) throw new Error('Scraping failed.');
-        
-        const products = await response.json();
-        
+
+        const responseData = await response.json();
+        if (!response.ok) throw new Error(responseData?.error || 'Scraping failed.');
+
+        const products: any[] = Array.isArray(responseData) ? responseData : [];
+
         set({ isTyping: false });
-        
-        if (products && products.length > 0) {
+
+        if (products.length > 0) {
             addMessage(
-                `Successfully scraped ${products.length} products! I've prioritized the best one for now, but all will be marketed.`,
+                `Successfully scraped ${products.length} product${products.length > 1 ? 's' : ''} from your website! Here are the details I found:`,
                 'agent'
             );
-            
             addMessage(
-                "Here are the details I found. You can edit them below:",
+                'You can edit the details below before I start marketing:',
                 'agent',
                 undefined,
                 'attribute_editor',
                 { product: products[0], allProducts: products }
             );
         } else {
-            addMessage("I couldn't find any products on that website. Would you like to try another URL or manual entry?", 'agent', undefined, 'product_intake_form');
+            addMessage(
+                "I couldn't find any products on that URL. This can happen with heavily protected sites. Would you like to enter product details manually?",
+                'agent',
+                undefined,
+                'product_intake_form'
+            );
         }
     } catch (error: any) {
         set({ isTyping: false });
-        addMessage(`Error: ${error.message}`, 'agent', undefined, 'retry_action', { action: 'WEBSITE_INTAKE', data: url });
+        addMessage(`Scraping failed: ${error.message}`, 'agent', undefined, 'retry_action', { action: 'WEBSITE_INTAKE', data: url });
     }
   },
 

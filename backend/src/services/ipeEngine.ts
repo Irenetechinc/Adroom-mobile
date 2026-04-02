@@ -74,7 +74,7 @@ export class PlatformIntelligenceEngine {
    * Monitors official blogs, dev docs, status pages, industry news
    */
   private async monitorPlatforms() {
-    const results = [];
+    const results: any[] = [];
     
     const { data: dbSources } = await this.supabase
       .from('intelligence_sources')
