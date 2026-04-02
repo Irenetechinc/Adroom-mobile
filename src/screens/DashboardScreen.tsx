@@ -5,15 +5,13 @@ import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../types';
 import { supabase } from '../services/supabase';
 import { useAuthStore } from '../store/authStore';
+
 import { DrawerActions } from '@react-navigation/native';
 import {
   Zap, AlertTriangle, TrendingUp, Plus, Activity,
   Target, Eye, MousePointer, Menu, RefreshCw,
 } from 'lucide-react-native';
-import Animated, { FadeInDown, FadeInRight } from 'react-native-reanimated';
-import { SafeAreaView } from 'react-native-safe-area-context';
 
-const { width } = Dimensions.get('window');
 
 export default function DashboardScreen() {
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
@@ -21,13 +19,22 @@ export default function DashboardScreen() {
 
   const [activeStrategies, setActiveStrategies] = useState<any[]>([]);
   const [alerts, setAlerts] = useState<any[]>([]);
+  const [interventions, setInterventions] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+
+  const [stats, setStats] = useState({
+    reach: 0,
+    engagements: 0,
+    conversations: 0,
+    activeCount: 0
+  });
 
   const fetchData = async () => {
     if (!session?.user) return;
     setLoading(true);
     try {
+
       const { data: strategies } = await supabase
         .from('strategy_memory')
         .select('*')
@@ -45,6 +52,7 @@ export default function DashboardScreen() {
       setAlerts(ipeLogs || []);
     } catch (e) {
       console.error('Dashboard error:', e);
+
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -54,11 +62,26 @@ export default function DashboardScreen() {
   useEffect(() => { fetchData(); }, [session]);
   const onRefresh = () => { setRefreshing(true); fetchData(); };
 
+
   const totalImpressions = activeStrategies.reduce((a, s) => a + (s.total_impressions || 0), 0);
   const totalClicks = activeStrategies.reduce((a, s) => a + (s.total_clicks || 0), 0);
   const totalConversions = activeStrategies.reduce((a, s) => a + (s.total_conversions || 0), 0);
 
+
+  const InterventionCard = ({ item }: { item: any }) => (
+    <View className="bg-adroom-card p-4 rounded-xl border border-adroom-neon/10 mb-3">
+      <View className="flex-row items-center mb-2">
+        <Activity size={14} color="#00F0FF" />
+        <Text className="text-adroom-neon text-[10px] font-bold uppercase ml-2">Agent Intervention</Text>
+      </View>
+      <Text className="text-white font-bold text-sm mb-1">{item.action_taken}</Text>
+      <Text className="text-adroom-text-muted text-xs leading-4">{item.problem_detected}</Text>
+      <Text className="text-adroom-text-muted/40 text-[10px] mt-2 italic">Strategy: {item.strategies?.title}</Text>
+    </View>
+  );
+
   return (
+
     <SafeAreaView style={styles.safe} edges={['top']}>
       {/* Header */}
       <View style={styles.header}>
@@ -68,11 +91,13 @@ export default function DashboardScreen() {
         <View style={{ flex: 1 }}>
           <Text style={styles.headerLabel}>AdRoom AI</Text>
           <Text style={styles.headerTitle}>Dashboard</Text>
+
         </View>
         <TouchableOpacity onPress={fetchData} style={styles.refreshBtn}>
           <RefreshCw size={18} color={loading ? '#00F0FF' : '#64748B'} />
         </TouchableOpacity>
       </View>
+
 
       <ScrollView
         style={{ flex: 1 }}
@@ -132,6 +157,7 @@ export default function DashboardScreen() {
               <Text style={styles.sectionTitle}>Active Strategies</Text>
             </View>
             <Text style={styles.sectionCount}>{activeStrategies.length}</Text>
+
           </View>
 
           {activeStrategies.length > 0 ? (
@@ -190,9 +216,11 @@ export default function DashboardScreen() {
               <Zap size={32} color="#1E293B" />
               <Text style={styles.emptyTitle}>No active strategies</Text>
               <Text style={styles.emptySubtitle}>Tap "Create New Strategy" to get started</Text>
+
             </View>
           )}
         </Animated.View>
+
 
         {/* Intelligence Feed */}
         <Animated.View entering={FadeInDown.delay(340).springify()} style={styles.section}>
@@ -204,6 +232,7 @@ export default function DashboardScreen() {
           </View>
 
           <View style={styles.alertsCard}>
+
             {alerts.length > 0 ? (
               alerts.map((alert, i) => (
                 <View key={alert.id} style={[styles.alertItem, i < alerts.length - 1 && styles.alertBorder]}>
@@ -220,10 +249,12 @@ export default function DashboardScreen() {
                 </View>
               ))
             ) : (
+
               <View style={styles.noAlerts}>
                 <Activity size={20} color="#1E293B" />
                 <Text style={styles.noAlertsText}>No intelligence alerts detected</Text>
               </View>
+
             )}
           </View>
         </Animated.View>

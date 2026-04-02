@@ -1,23 +1,22 @@
 import { createClient } from '@supabase/supabase-js';
 import dotenv from 'dotenv';
 import fetch from 'node-fetch';
-import { FacebookAdsApi } from './services/facebookApi';
 import { StrategyService } from './services/strategy';
 import { ProductService } from './services/product';
 import { VisionService } from './services/vision';
 import { IntegrityService } from './services/integrity';
 import { PlatformIntelligenceEngine } from './services/ipeEngine';
+import { SocialListeningEngine } from './services/socialListening';
+import { EmotionalIntelligenceEngine } from './services/emotionalIntelligence';
+import { GeoMonitoringEngine } from './services/geoMonitoring';
+import { GoalOptimizationService } from './services/goalOptimization';
 
 dotenv.config();
 
-// Polyfill fetch for Node environment if needed (Node 18+ has it global, but for safety)
-if (!globalThis.fetch) {
-  (globalThis as any).fetch = fetch;
-}
-
-const SUPABASE_URL = process.env.SUPABASE_URL || process.env.EXPO_PUBLIC_SUPABASE_URL || '';
-const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_KEY || process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || ''; // Must use Service Key for backend worker
+const SUPABASE_URL = process.env.SUPABASE_URL || '';
+const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_KEY || ''; 
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY || '';
+const OPENAI_TEXT_MODEL = process.env.OPENAI_TEXT_MODEL || 'gpt-4o';
 
 if (!SUPABASE_URL || !SUPABASE_SERVICE_KEY) {
   console.error('CRITICAL ERROR: Supabase Environment Variables Missing in Worker');
@@ -25,183 +24,114 @@ if (!SUPABASE_URL || !SUPABASE_SERVICE_KEY) {
 }
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
+
 const ipeEngine = new PlatformIntelligenceEngine();
+const socialEngine = new SocialListeningEngine();
+const emotionalEngine = new EmotionalIntelligenceEngine();
+const geoEngine = new GeoMonitoringEngine();
+const goalOptimizer = new GoalOptimizationService();
 
 /**
- * Main Worker Loop
- * Runs every X minutes to perform autonomous tasks for all active users.
+ * Worker State to track intervals
  */
+const state = {
+    lastSocialRun: 0,
+    lastEmotionalRun: 0,
+    lastGeoRun: 0,
+    lastGoalOptRun: 0
+};
+
 async function runWorker() {
   console.log('[Worker] Starting autonomous cycle...');
+  const now = Date.now();
 
-  // 1. Run Platform Intelligence Engine (IPE) to detect shifts
+  // 1. Run Platform Intelligence Engine (Every 15 mins - each cycle)
   try {
     await ipeEngine.runCycle();
   } catch (err) {
     console.error('[Worker] IPE Cycle failed:', err);
   }
 
-  // 2. Fetch all users with active strategies
-  const { data: strategies, error } = await supabase
+  // 2. Run Social Listening (Every 15 mins)
+  if (now - state.lastSocialRun > 15 * 60 * 1000) {
+      try {
+          await socialEngine.runCycle();
+          state.lastSocialRun = now;
+      } catch (err) {
+          console.error('[Worker] Social Listening failed:', err);
+      }
+  }
+
+  // 3. Run Emotional Intelligence (Every 15 mins)
+  if (now - state.lastEmotionalRun > 15 * 60 * 1000) {
+      try {
+          await emotionalEngine.runCycle();
+          state.lastEmotionalRun = now;
+      } catch (err) {
+          console.error('[Worker] Emotional Intelligence failed:', err);
+      }
+  }
+
+  // 4. Run GEO Monitoring (Every 15 mins)
+  if (now - state.lastGeoRun > 15 * 60 * 1000) {
+      try {
+          await geoEngine.runCycle();
+          state.lastGeoRun = now;
+      } catch (err) {
+          console.error('[Worker] GEO Monitoring failed:', err);
+      }
+  }
+
+  // 5. Run Goal Optimization Agents (Every 15 mins)
+  if (now - state.lastGoalOptRun > 15 * 60 * 1000) {
+      try {
+          await goalOptimizer.runOptimizationCycle();
+          state.lastGoalOptRun = now;
+      } catch (err) {
+          console.error('[Worker] Goal Optimization failed:', err);
+      }
+  }
+
+  // 6. Process Active Strategies
+  const { data: strategies } = await supabase
     .from('strategies')
     .select('*')
     .eq('is_active', true);
 
-  if (error) {
-    console.error('[Worker] Failed to fetch strategies:', error);
-    return;
-  }
-
-  console.log(`[Worker] Found ${strategies?.length || 0} active strategies.`);
-
   if (strategies) {
     for (const strategy of strategies) {
-      console.log(`[Worker] Processing strategy for User ${strategy.user_id}: ${strategy.title} (${strategy.type})`);
-      
       try {
-        // 1. Fetch User's Facebook Config
-        const { data: fbConfig } = await supabase
+        // Validate strategy integrity before processing
+        const integrityCheck = await IntegrityService.validateAndFixContent(strategy.key_message || '');
+        if (!integrityCheck.isValid) {
+          console.warn(`[Worker] Strategy ${strategy.id} failed integrity check: ${integrityCheck.issues.join(', ')}`);
+          continue;
+        }
+
+        const { data: configs } = await supabase
           .from('ad_configs')
           .select('*')
-          .eq('user_id', strategy.user_id)
-          .maybeSingle();
+          .eq('user_id', strategy.user_id);
 
-        // Fetch all unreplied comments or comments needing a follow-up
-        await checkAndHandleConversations(supabase, strategy, fbConfig);
+        if (configs) {
+          for (const config of configs) {
+            // Get product details if available
+            const products = await ProductService.getProductMemory(strategy.user_id);
+            const activeProduct = products?.[0]; // Default to first product for now
 
-        if (fbConfig) {
-          // 2. Check for pending autonomous optimizations from IPE
-          await applyPendingOptimizations(supabase, fbConfig, strategy);
-
-          // 3. Perform Autonomous Tasks
-          // Task A: Daily Post Check
-          await checkAndExecuteDailyPost(fbConfig, strategy);
-          
-          // Task B: Lead Follow-up
-          await checkAndExecuteLeadFollowUp(supabase, fbConfig, strategy);
+            // Run platform-specific autonomous tasks
+            await checkAndExecuteDailyPost(config, strategy, activeProduct);
+            await checkAndHandleConversations(supabase, strategy, config);
+            await checkAndExecuteLeadFollowUp(supabase, config, strategy);
+          }
         }
       } catch (err) {
-        console.error(`[Worker] Error processing user ${strategy.user_id}:`, err);
+        console.error(`[Worker] Error processing strategy for user ${strategy.user_id}:`, err);
       }
     }
   }
 
-  console.log('[Worker] Cycle complete. Sleeping...');
-}
-
-async function applyPendingOptimizations(supabase: any, config: any, strategy: any) {
-  // Fetch optimizations marked as 'applied_automatically' but not yet executed in platform
-  const { data: pending } = await supabase
-      .from('strategy_optimizations')
-      .select('*')
-      .eq('strategy_id', strategy.id)
-      .eq('status', 'applied_automatically')
-      .is('executed_at', null);
-
-  if (!pending || pending.length === 0) return;
-
-  for (const opt of pending) {
-      console.log(`[Worker] Executing autonomous optimization: ${opt.action_taken}`);
-      
-      try {
-          // 1. Identify Target Campaign
-          const { data: campaign } = await supabase
-            .from('campaigns')
-            .select('*')
-            .eq('user_id', config.user_id)
-            .limit(1)
-            .maybeSingle();
-
-          if (!campaign) {
-            console.warn(`[Worker] No campaign found for user ${config.user_id} to optimize.`);
-            continue;
-          }
-
-          // 2. Parse Recommendation into API Parameters via AI
-          const apiParams = await translateRecommendationToApi(
-            opt.action_taken, 
-            campaign.facebook_campaign_id, 
-            config.access_token,
-            strategy.brand_voice || ""
-          );
-          
-          if (apiParams) {
-              // 3. Execute Platform API Call
-              if (apiParams.type === 'campaign') {
-                  await FacebookAdsApi.updateCampaign(config.access_token, apiParams.id, apiParams.updates);
-              } else if (apiParams.type === 'adset') {
-                  await FacebookAdsApi.updateAdSet(config.access_token, apiParams.id, apiParams.updates);
-              }
-              
-              console.log(`[Worker] Successfully executed platform optimization for ${apiParams.type} ${apiParams.id}`);
-
-              await supabase.from('strategy_optimizations').update({
-                  executed_at: new Date().toISOString(),
-                  status: 'executed',
-                  execution_log: JSON.stringify(apiParams)
-              }).eq('id', opt.id);
-          }
-          
-      } catch (e) {
-          console.error(`[Worker] Optimization execution failed for ${opt.id}`, e);
-          await supabase.from('strategy_optimizations').update({
-              status: 'failed',
-              execution_log: JSON.stringify({ error: (e as Error).message })
-          }).eq('id', opt.id);
-      }
-  }
-}
-
-async function translateRecommendationToApi(recommendation: string, campaignId: string, accessToken: string, brandVoice: string): Promise<any> {
-    if (!OPENAI_API_KEY) return null;
-
-    try {
-        // Fetch AdSets to give context to AI if it wants to optimize an AdSet
-        const adSets = await FacebookAdsApi.getAdSets(accessToken, campaignId);
-
-        const prompt = `
-            Translate the following natural language marketing recommendation into a structured Facebook Ads API update.
-            
-            RECOMMENDATION: "${recommendation}"
-            CAMPAIGN_ID: "${campaignId}"
-            ACTIVE_ADSETS: ${JSON.stringify(adSets)}
-            BRAND_VOICE: "${brandVoice}"
-            
-            Return JSON in this format:
-            {
-                "type": "campaign" | "adset",
-                "id": "specific_id_to_update",
-                "updates": {
-                    "daily_budget": number, // if budget update
-                    "status": "ACTIVE" | "PAUSED", // if status update
-                    "name": "string" // etc
-                },
-                "reasoning": "string"
-            }
-            
-            If the recommendation is vague or cannot be translated to a budget/status/name update, return null.
-        `;
-
-        const response = await fetch('https://api.openai.com/v1/chat/completions', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${OPENAI_API_KEY}`
-            },
-            body: JSON.stringify({
-                model: "gpt-4o",
-                messages: [{ role: "system", content: prompt }],
-                response_format: { type: "json_object" }
-            })
-        });
-
-        const data: any = await response.json();
-        const result = JSON.parse(data.choices[0].message.content);
-        return result;
-    } catch (e) {
-        console.error('[Worker] Translation Error:', e);
-        return null;
-    }
+  console.log('[Worker] Cycle complete.');
 }
 
 // --- Simplified Service Logic for Worker Context ---
@@ -237,25 +167,18 @@ async function checkAndExecuteLeadFollowUp(supabase: any, config: any, strategy:
             if (p) contextDetails = `Product: ${p.product_name}, Description: ${p.description}`;
           }
 
-          if (lead.platform === 'facebook' && lead.sender_id) {
+          if (lead.sender_id) {
              try {
                  // Generate Strategic Follow-up via AI
                  const followUpMessage = await generateDynamicFollowUp(
                     contextDetails, 
                     pastConvos || [], 
                     lead.notes || "",
-                    strategy.brand_voice || ""
+                    strategy.brand_voice || "",
+                    lead.platform
                  );
 
-                 await fetch(`https://graph.facebook.com/v18.0/me/messages`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        recipient: { id: lead.sender_id },
-                        message: { text: followUpMessage },
-                        access_token: config.access_token
-                    })
-                 });
+                 await executePlatformMessage(lead.platform, lead.sender_id, followUpMessage, config);
 
                  await supabase.from('leads').update({
                     status: 'follow_up_sent',
@@ -264,7 +187,7 @@ async function checkAndExecuteLeadFollowUp(supabase: any, config: any, strategy:
                  }).eq('id', lead.id);
                  
              } catch (e) {
-                 console.error(`[Worker] Failed to message lead ${lead.id}`, e);
+                 console.error(`[Worker] Failed to message lead ${lead.id} on ${lead.platform}`, e);
              }
           }
       }
@@ -282,34 +205,116 @@ async function checkAndHandleConversations(supabase: any, strategy: any, config?
 
     if (comments && comments.length > 0) {
         for (const comment of comments) {
-            console.log(`[Worker] Replying to comment: ${comment.id}`);
+            console.log(`[Worker] Replying to comment: ${comment.id} on ${config.platform}`);
             
             // Generate Context-Aware Reply
-            const reply = await generateDynamicReply(strategy, comment.content);
+            const reply = await generateDynamicReply(strategy, comment.content, config.platform);
             
             if (reply) {
-                // If config is provided, we could post to FB API here
-                if (config?.access_token) {
-                    // await FacebookAdsApi.postCommentReply(config.access_token, comment.external_id, reply);
+                try {
+                    await executePlatformReply(config.platform, comment.external_id, reply, config);
+                    
+                    await supabase.from('comments').update({
+                        is_replied: true,
+                        reply_content: reply,
+                        notes: `Auto-replied on ${config.platform} based on strategy context`
+                    }).eq('id', comment.id);
+                } catch (e) {
+                    console.error(`[Worker] Failed to reply to comment ${comment.id} on ${config.platform}:`, e);
                 }
-                
-                await supabase.from('comments').update({
-                    is_replied: true,
-                    reply_content: reply,
-                    notes: 'Auto-replied based on strategy context'
-                }).eq('id', comment.id);
             }
         }
     }
 }
 
-async function generateDynamicReply(strategy: any, comment: string): Promise<string | null> {
-    if (!OPENAI_API_KEY) return null;
+async function executePlatformReply(platform: string, commentId: string, message: string, config: any) {
+    const accessToken = config.access_token;
+    
+    if (platform === 'facebook' || platform === 'instagram') {
+        const url = `https://graph.facebook.com/v18.0/${commentId}/comments`;
+        const res = await fetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ message, access_token: accessToken })
+        });
+        if (!res.ok) throw new Error(`Platform API error: ${res.statusText}`);
+    } else if (platform === 'tiktok') {
+        const url = 'https://business-api.tiktok.com/open_api/v1.3/business/comment/reply/';
+        const res = await fetch(url, {
+            method: 'POST',
+            headers: { 'Access-Token': accessToken, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ comment_id: commentId, text: message })
+        });
+        if (!res.ok) throw new Error(`Platform API error: ${res.statusText}`);
+    } else if (platform === 'linkedin') {
+        // LinkedIn UGC Post Comments API
+        const actor = typeof config.page_id === 'string' && config.page_id.startsWith('urn:')
+            ? config.page_id
+            : `urn:li:organization:${config.page_id}`;
+        const url = `https://api.linkedin.com/v2/socialActions/${encodeURIComponent(commentId)}/comments`;
+        const res = await fetch(url, {
+            method: 'POST',
+            headers: { 'Authorization': `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ actor, message: { text: message } })
+        });
+        if (!res.ok) throw new Error(`Platform API error: ${res.statusText}`);
+    } else if (platform === 'twitter' || platform === 'x') {
+        // Twitter API v2 Manage Tweets (Reply)
+        const url = 'https://api.twitter.com/2/tweets';
+        const res = await fetch(url, {
+            method: 'POST',
+            headers: { 'Authorization': `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ text: message, reply: { in_reply_to_tweet_id: commentId } })
+        });
+        if (!res.ok) throw new Error(`Platform API error: ${res.statusText}`);
+    }
+}
+
+async function executePlatformMessage(platform: string, recipientId: string, message: string, config: any) {
+    const accessToken = config.access_token;
+
+    if (platform === 'facebook' || platform === 'instagram') {
+        const url = 'https://graph.facebook.com/v18.0/me/messages';
+        const res = await fetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                recipient: { id: recipientId },
+                message: { text: message },
+                access_token: accessToken
+            })
+        });
+        if (!res.ok) throw new Error(`Platform API error: ${res.statusText}`);
+    } else if (platform === 'tiktok') {
+        // TikTok Direct Message API (requires specific permissions)
+        const url = 'https://business-api.tiktok.com/open_api/v1.3/business/message/send/';
+        const res = await fetch(url, {
+            method: 'POST',
+            headers: { 'Access-Token': accessToken, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ conversation_id: recipientId, text: message })
+        });
+        if (!res.ok) throw new Error(`Platform API error: ${res.statusText}`);
+    } else if (platform === 'twitter' || platform === 'x') {
+        // Twitter Direct Messages API
+        const url = 'https://api.twitter.com/2/dm_conversations/with/' + recipientId + '/messages';
+        const res = await fetch(url, {
+            method: 'POST',
+            headers: { 'Authorization': `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ text: message })
+        });
+        if (!res.ok) throw new Error(`Platform API error: ${res.statusText}`);
+    }
+}
+
+async function generateDynamicReply(strategy: any, comment: string, platform: string): Promise<string | null> {
+    if (!OPENAI_API_KEY || !OPENAI_TEXT_MODEL) {
+        throw new Error('OPENAI_API_KEY and OPENAI_TEXT_MODEL are required for dynamic replies.');
+    }
 
     try {
         const prompt = `
-            You are an engaging human social media manager for a brand. 
-            A user left a comment on your post. Reply in a natural, helpful tone that aligns with the strategy.
+            You are an engaging human social media manager for a brand on ${platform}. 
+            A user left a comment on your post. Reply in a natural, helpful tone that aligns with the strategy and ${platform} culture.
             
             STRATEGY TITLE: ${strategy.title}
             BRAND VOICE: ${strategy.brand_voice}
@@ -329,7 +334,7 @@ async function generateDynamicReply(strategy: any, comment: string): Promise<str
                 'Authorization': `Bearer ${OPENAI_API_KEY}`
             },
             body: JSON.stringify({
-                model: "gpt-4o",
+                model: OPENAI_TEXT_MODEL,
                 messages: [{ role: "system", content: prompt }]
             })
         });
@@ -342,13 +347,15 @@ async function generateDynamicReply(strategy: any, comment: string): Promise<str
     }
 }
 
-async function generateDynamicFollowUp(context: string, convos: any[], notes: string, brandVoice: string): Promise<string> {
-    if (!OPENAI_API_KEY) return "Hi! Just checking in to see if you have any questions about our products.";
+async function generateDynamicFollowUp(context: string, convos: any[], notes: string, brandVoice: string, platform: string): Promise<string> {
+    if (!OPENAI_API_KEY || !OPENAI_TEXT_MODEL) {
+        throw new Error('OPENAI_API_KEY and OPENAI_TEXT_MODEL are required for dynamic follow-ups.');
+    }
 
     try {
         const prompt = `
-            You are the AdRoom AI Sales Assistant. Generate a strategic, personalized follow-up message for a lead.
-            The message must be dynamic and based on past conversations to rekindle the interest.
+            You are the AdRoom AI Sales Assistant on ${platform}. Generate a strategic, personalized follow-up message for a lead.
+            The message must be dynamic and based on past conversations to rekindle the interest in a way that fits ${platform} standards.
             
             CONTEXT: ${context}
             BRAND VOICE: ${brandVoice}
@@ -369,84 +376,181 @@ async function generateDynamicFollowUp(context: string, convos: any[], notes: st
                 'Authorization': `Bearer ${OPENAI_API_KEY}`
             },
             body: JSON.stringify({
-                model: "gpt-4o",
+                model: OPENAI_TEXT_MODEL,
                 messages: [{ role: "system", content: prompt }]
             })
         });
 
         const data: any = await response.json();
-        return data.choices[0].message.content || "Hi! Just checking in. Any thoughts on our previous chat?";
+        const content = data.choices?.[0]?.message?.content;
+        if (!content) {
+            throw new Error('OpenAI returned an empty follow-up message.');
+        }
+        return content;
     } catch (e) {
-        return "Hi! Just checking in to see if you have any questions.";
+        throw e;
     }
 }
 
-async function checkAndExecuteDailyPost(config: any, strategy: any) {
-  // Logic mirrored from SchedulerService but adapted for Node backend
-  const pageId = config.page_id;
+async function checkAndExecuteDailyPost(config: any, strategy: any, product?: any) {
+  const platform = config.platform;
+  const pageId = config.page_id || config.ad_account_id;
   const accessToken = config.access_token;
 
   // 1. Check last post
-  const feedResponse = await fetch(
-    `https://graph.facebook.com/v18.0/${pageId}/feed?limit=1&access_token=${accessToken}`
-  );
-  const feedData: any = await feedResponse.json();
-  
   let shouldPost = true;
-  if (feedData.data && feedData.data.length > 0) {
-    const lastPostTime = new Date(feedData.data[0].created_time).getTime();
-    const oneDayAgo = Date.now() - (24 * 60 * 60 * 1000); // 24 hours
-    
-    if (lastPostTime > oneDayAgo) {
-      shouldPost = false;
-      console.log(`[Worker] User ${config.user_id}: Post already exists today.`);
-    }
+  try {
+      if (platform === 'facebook' || platform === 'instagram') {
+          const feedResponse = await fetch(
+            `https://graph.facebook.com/v18.0/${pageId}/feed?limit=1&access_token=${accessToken}`
+          );
+          const feedData: any = await feedResponse.json();
+          if (feedData.data && feedData.data.length > 0) {
+            const lastPostTime = new Date(feedData.data[0].created_time).getTime();
+            if (lastPostTime > Date.now() - (24 * 60 * 60 * 1000)) shouldPost = false;
+          }
+      } else if (platform === 'tiktok') {
+          // Check TikTok business posts
+          const response = await fetch(`https://business-api.tiktok.com/open_api/v1.3/business/video/list/?advertiser_id=${pageId}`, {
+              headers: { 'Access-Token': accessToken }
+          });
+          const data = await response.json();
+          if (data.data?.list?.length > 0) {
+              const lastPostTime = new Date(data.data.list[0].create_time * 1000).getTime();
+              if (lastPostTime > Date.now() - (24 * 60 * 60 * 1000)) shouldPost = false;
+          }
+      }
+  } catch (e) {
+      console.warn(`[Worker] Failed to check post history on ${platform}:`, e);
   }
 
-  if (shouldPost) {
-    console.log(`[Worker] User ${config.user_id}: Generating daily post...`);
-    // Call OpenAI to generate content
-    const content = await generateContent(strategy.brand_voice, strategy.title);
-    
-    // Post to FB
-    await fetch(
-      `https://graph.facebook.com/v18.0/${pageId}/feed`,
-      {
-        method: 'POST',
-        body: JSON.stringify({ 
-          message: content,
-          access_token: accessToken 
-        }),
-        headers: { 'Content-Type': 'application/json' }
-      }
-    );
-    console.log(`[Worker] User ${config.user_id}: Posted successfully.`);
-  }
+    if (shouldPost) {
+        console.log(`[Worker] User ${config.user_id}: Generating daily post for ${platform}...`);
+        
+        // Fetch current platform intelligence for organic optimization
+        const { data: intelligence } = await supabase
+            .from('platform_intelligence')
+            .select('*')
+            .eq('platform', platform)
+            .order('captured_at', { ascending: false })
+            .limit(1)
+            .single();
+
+        // Use Vision Service for richer context if product image is available
+        let visionContext = "";
+        if (product && product.images && product.images.length > 0) {
+            try {
+                const analysis = await VisionService.analyzeProductImage(product.images[0]);
+                visionContext = `Product Analysis: ${analysis.description}. Attributes: ${analysis.suggested_target_audience}.`;
+            } catch (err) {
+                console.warn(`[Worker] Vision analysis failed:`, err);
+            }
+        }
+
+        const content = await generateContent(strategy.brand_voice, strategy.title, platform, intelligence, visionContext);
+        
+        try {
+            await executePlatformPost(platform, content, config);
+            console.log(`[Worker] User ${config.user_id}: Posted successfully on ${platform}.`);
+        } catch (e) {
+            console.error(`[Worker] Failed to post on ${platform} for user ${config.user_id}:`, e);
+        }
+    }
 }
 
-async function generateContent(tone: string, topic: string): Promise<string> {
-  if (!OPENAI_API_KEY) return `Daily Update: ${topic}`;
+async function executePlatformPost(platform: string, content: string, config: any) {
+    const accessToken = config.access_token;
+    const pageId = config.page_id || config.ad_account_id;
 
-  try {
-    const response = await fetch('https://api.openai.com/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${OPENAI_API_KEY}`
-      },
-      body: JSON.stringify({
-        model: "gpt-4o",
-        messages: [
-          { role: "system", content: "Write a short, engaging Facebook post." },
-          { role: "user", content: `Topic: ${topic}. Tone: ${tone}.` }
-        ]
-      })
-    });
-    const data: any = await response.json();
-    return data.choices[0].message.content;
-  } catch (e) {
-    return `Stay tuned for updates on ${topic}!`;
-  }
+    if (platform === 'facebook' || platform === 'instagram') {
+        const res = await fetch(`https://graph.facebook.com/v18.0/${pageId}/feed`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ message: content, access_token: accessToken })
+        });
+        if (!res.ok) throw new Error(`Platform API error: ${res.statusText}`);
+    } else if (platform === 'tiktok') {
+        // TikTok Video Publish API (Requires video upload flow)
+        // Production implementation for TikTok Content Posting
+        const publishUrl = `https://business-api.tiktok.com/open_api/v1.3/business/video/publish/?advertiser_id=${pageId}`;
+        const res = await fetch(publishUrl, {
+            method: 'POST',
+            headers: { 'Access-Token': accessToken, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ 
+                video_id: config.last_generated_video_id, 
+                title: content.substring(0, 100) 
+            })
+        });
+        if (!res.ok) throw new Error(`Platform API error: ${res.statusText}`);
+    } else if (platform === 'linkedin') {
+        const url = 'https://api.linkedin.com/v2/ugcPosts';
+        const author = typeof pageId === 'string' && pageId.startsWith('urn:')
+            ? pageId
+            : `urn:li:organization:${pageId}`;
+        const res = await fetch(url, {
+            method: 'POST',
+            headers: { 'Authorization': `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                author,
+                lifecycleState: 'PUBLISHED',
+                specificContent: {
+                    'com.linkedin.ugc.ShareContent': {
+                        shareCommentary: { text: content },
+                        shareMediaCategory: 'NONE'
+                    }
+                },
+                visibility: { 'com.linkedin.ugc.MemberNetworkVisibility': 'PUBLIC' }
+            })
+        });
+        if (!res.ok) throw new Error(`Platform API error: ${res.statusText}`);
+    } else if (platform === 'twitter' || platform === 'x') {
+        const url = 'https://api.twitter.com/2/tweets';
+        const res = await fetch(url, {
+            method: 'POST',
+            headers: { 'Authorization': `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ text: content })
+        });
+        if (!res.ok) throw new Error(`Platform API error: ${res.statusText}`);
+    }
+}
+
+async function generateContent(tone: string, topic: string, platform: string, intelligence?: any, visionContext?: string): Promise<string> {
+    if (!OPENAI_API_KEY) return `Daily Update on ${platform}: ${topic}`;
+
+    try {
+        const systemPrompt = `
+            You are a master social media growth hacker. Your goal is to write a post for ${platform} that achieves MAXIMUM organic reach, outperforming paid ads.
+            
+            PLATFORM INTELLIGENCE: ${JSON.stringify(intelligence || {})}
+            PRODUCT CONTEXT: ${visionContext || 'N/A'}
+            
+            STRATEGIC GUIDELINES:
+            - Use current algorithmic priorities (e.g., specific keywords, formatting).
+            - Focus on high-engagement "loops" or "hooks".
+            - If ${platform} favors specific formats (Video/Carousel), structure the text to match.
+            - Optimize for ${platform} SEO (Relevant keywords/hashtags).
+            - Ensure NO DUMMY DATA or PLACEHOLDERS are used.
+        `;
+
+        const response = await fetch('https://api.openai.com/v1/chat/completions', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${OPENAI_API_KEY}`
+            },
+            body: JSON.stringify({
+                model: "gpt-4o",
+                messages: [
+                    { role: "system", content: systemPrompt },
+                    { role: "user", content: `Topic: ${topic}. Tone: ${tone}. Write the post now.` }
+                ]
+            })
+        });
+        const data: any = await response.json();
+        return data.choices[0].message.content;
+    } catch (e) {
+        return `Stay tuned for updates on ${topic}!`;
+    }
 }
 
 // --- Execution ---

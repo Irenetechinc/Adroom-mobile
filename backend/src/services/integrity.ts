@@ -4,6 +4,7 @@ import dotenv from 'dotenv';
 dotenv.config();
 
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY || '';
+const OPENAI_TEXT_MODEL = process.env.OPENAI_TEXT_MODEL || '';
 
 export interface IntegrityCheckResult {
   isValid: boolean;
@@ -12,9 +13,6 @@ export interface IntegrityCheckResult {
 }
 
 export const IntegrityService = {
-  /**
-   * Fast placeholder check
-   */
   hasPlaceholders(text: string): boolean {
     const placeholderPatterns = [
       /lorem ipsum/i,
@@ -29,16 +27,13 @@ export const IntegrityService = {
     return placeholderPatterns.some(pattern => pattern.test(text));
   },
 
-  /**
-   * Deep integrity check & proofreading via OpenAI
-   */
   async validateAndFixContent(text: string): Promise<IntegrityCheckResult> {
     if (this.hasPlaceholders(text)) {
-      return { isValid: false, issues: ['Contains placeholder patterns'], cleanedText: undefined };
+      return { isValid: false, issues: ['Disallowed patterns detected'], cleanedText: undefined };
     }
 
-    if (!OPENAI_API_KEY) {
-      return { isValid: true, issues: [], cleanedText: text };
+    if (!OPENAI_API_KEY || !OPENAI_TEXT_MODEL) {
+      throw new Error('IntegrityService requires OPENAI_API_KEY and OPENAI_TEXT_MODEL.');
     }
 
     try {
@@ -49,7 +44,7 @@ export const IntegrityService = {
           'Authorization': `Bearer ${OPENAI_API_KEY}`
         },
         body: JSON.stringify({
-          model: "gpt-5.2",
+          model: OPENAI_TEXT_MODEL,
           messages: [
             {
               role: "system",
@@ -71,7 +66,7 @@ export const IntegrityService = {
       };
     } catch (error) {
       console.error('Integrity Service Error:', error);
-      return { isValid: true, issues: [], cleanedText: text };
+      throw error;
     }
   }
 };

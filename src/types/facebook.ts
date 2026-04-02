@@ -1,7 +1,7 @@
 export interface FacebookConfig {
   id: string;
   user_id: string;
-  ad_account_id: string;
+  ad_account_id?: string | null;
   access_token: string;
   page_id: string;
   page_name?: string;
@@ -10,7 +10,6 @@ export interface FacebookConfig {
 }
 
 export interface FacebookConfigInput {
-  ad_account_id: string;
   access_token: string;
   page_id: string;
   page_name?: string;
@@ -21,13 +20,6 @@ export interface FacebookPage {
   name: string;
   access_token?: string;
   category?: string;
-}
-
-export interface AdAccount {
-  id: string;
-  name: string;
-  account_id: string;
-  currency?: string;
 }
 
 export interface AuthResponse {

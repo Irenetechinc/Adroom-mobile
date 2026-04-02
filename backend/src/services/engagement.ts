@@ -1,3 +1,4 @@
+
 import { createClient } from '@supabase/supabase-js';
 import dotenv from 'dotenv';
 
@@ -10,13 +11,8 @@ const FB_GRAPH_URL = 'https://graph.facebook.com/v18.0';
 
 if (!SUPABASE_URL || !SUPABASE_SERVICE_KEY) {
     console.warn('Warning: Supabase credentials missing. Engagement features will be disabled.');
-    // Do not log "Missing" errors here to avoid confusion if user is just setting up
-    // console.error('SUPABASE_URL:', SUPABASE_URL ? 'Set' : 'Missing');
-    // console.error('SUPABASE_SERVICE_KEY:', SUPABASE_SERVICE_KEY ? 'Set' : 'Missing');
   }
 
-// Lazy initialization to prevent crash on import if variables are missing
-// but still allows the server to start (even if this service won't work)
 const getSupabase = () => {
   if (!SUPABASE_URL || !SUPABASE_SERVICE_KEY) {
     throw new Error('Supabase credentials missing. Check your environment variables.');
@@ -24,42 +20,33 @@ const getSupabase = () => {
   return createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
 };
 
+import { DecisionEngine } from './decisionEngine';
+
+const decisionEngine = new DecisionEngine();
+
 export const EngagementService = {
 
-  /**
-   * Process incoming webhook event
-   */
   async handleWebhookEvent(event: any) {
     if (event.object === 'page') {
       const supabase = getSupabase();
       for (const entry of event.entry) {
         const pageId = entry.id;
-        console.log(`[Engagement] Processing event for Page ID: ${pageId}`);
         
-        // Find the user config for this page to get the Page Access Token
-        // We use the service key so we can query all configs
         const { data: config } = await supabase
           .from('ad_configs')
           .select('*')
           .eq('page_id', pageId)
           .single();
 
-        if (!config) {
-          console.log(`[Engagement] No config found for Page ID ${pageId}`);
-          continue;
-        }
+        if (!config) continue;
 
-        // Get Page Access Token
-        // In a real scenario, you might need to exchange the user token for a page token
-        // if you haven't stored the specific page token.
-        // For now, we assume access_token in config is sufficient or we fetch a fresh one.
         const pageAccessToken = await this.getPageAccessToken(config.access_token, pageId);
 
         for (const change of entry.changes) {
           if (change.field === 'feed') {
-            await this.handleFeedChange(change.value, pageAccessToken);
+            await this.handleFeedChange(change.value, pageAccessToken, config.user_id);
           } else if (change.field === 'messages') {
-            await this.handleMessage(change.value, pageAccessToken);
+            await this.handleMessage(change.value, pageAccessToken, config.user_id);
           }
         }
       }
@@ -79,159 +66,91 @@ export const EngagementService = {
     } catch (e) {
       console.error('Error fetching page access token:', e);
     }
-    return userAccessToken; // Fallback (might work for some actions if user is admin)
+    return userAccessToken; 
   },
 
   /**
    * Handle Comments and Posts on Page Feed
    */
-  async handleFeedChange(value: any, pageAccessToken: string) {
-    const item = value.item; // 'comment' or 'post'
-    const verb = value.verb; // 'add'
+  async handleFeedChange(value: any, pageAccessToken: string, userId: string) {
+    const item = value.item; 
+    const verb = value.verb; 
     
-    // We only care about new comments for now
     if (verb !== 'add' || item !== 'comment') return;
 
     const commentId = value.comment_id;
     const message = value.message;
     const senderId = value.from.id;
-
-    // Avoid replying to ourselves (if senderId matches pageId - logic omitted for brevity but important)
     
-    console.log(`[Engagement] New comment on ${commentId}: "${message}"`);
+    // 1. Fetch User History (Conversation History Tracking)
+    const userHistory = await this.getUserHistory(senderId);
 
-    // 1. Like the comment immediately
+    // 2. Generate AI Reply (with history context)
+    const replyText = await decisionEngine.generateEngagementReply(message, 'comment', userHistory);
+
+    // 3. Post Reply
+    await this.replyToComment(commentId, replyText, pageAccessToken);
     await this.likeObject(commentId, pageAccessToken);
 
-    // 2. Save to Supabase (for UI real-time updates)
-    const supabase = getSupabase();
-    await supabase.from('comments').insert({
-        external_id: commentId,
-        content: message,
-        author_name: senderId, // We might need a separate call to get name, but ID is ok for now
-        is_liked: true,
-        is_replied: false,
-        platform: 'facebook'
-        // user_id is missing here, we might need to derive it from the page config
-    });
-
-    // 3. Generate AI Reply
-    const replyText = await this.generateAIReply(message, 'comment');
-
-    // 4. Reply to comment
-    await this.replyToComment(commentId, replyText, pageAccessToken);
-
-    // 5. Update Supabase
-    await supabase.from('comments').update({
-        is_replied: true,
-        reply_content: replyText
-    }).eq('external_id', commentId);
+    // 4. Store Interaction (Learning from Outcomes)
+    await this.logInteraction(userId, senderId, 'comment', message, replyText, commentId);
   },
 
   /**
    * Handle Private Messages
    */
-  async handleMessage(value: any, pageAccessToken: string) {
-    // Basic structure of messaging webhook
+  async handleMessage(value: any, pageAccessToken: string, userId: string) {
     const senderId = value.sender?.id;
     const messageText = value.message?.text;
 
     if (!senderId || !messageText) return;
 
-    console.log(`[Engagement] New message from ${senderId}: "${messageText}"`);
+    // 1. Fetch User History (Conversation History Tracking)
+    const userHistory = await this.getUserHistory(senderId);
 
-    // 1. Save to Supabase (for UI real-time updates)
-    const supabase = getSupabase();
-    await supabase.from('messages').insert({
-        external_id: value.id || `msg_${Date.now()}`, // Webhook message object might not have ID at top level, use timestamp if needed
-        sender_id: senderId,
-        content: messageText,
-        platform: 'facebook',
-        is_replied: true, // We are replying immediately below
-        reply_content: '', // Will update below
-        is_from_page: false,
-        conversation_id: senderId // For FB, senderId is effectively the conversation key for page-user chat
-    });
-
-    // 2. Generate AI Reply
-    console.log(`[Engagement] Generating AI reply for DM: "${messageText}"`);
-    const replyText = await this.generateAIReply(messageText, 'message');
-    console.log(`[Engagement] AI DM Reply Generated: "${replyText}"`);
+    // 2. Generate AI Reply (with history context)
+    const replyText = await decisionEngine.generateEngagementReply(messageText, 'message', userHistory);
 
     // 3. Send Message
-    console.log(`[Engagement] Sending DM to ${senderId}...`);
     await this.sendMessage(senderId, replyText, pageAccessToken);
 
-    // 4. Update Supabase with reply
-    await supabase.from('messages').update({
-        reply_content: replyText
-    }).match({ sender_id: senderId, content: messageText }); // Simple match to find the record we just added
+    // 4. Store Interaction (Learning from Outcomes)
+    await this.logInteraction(userId, senderId, 'message', messageText, replyText, senderId);
   },
 
   /**
-   * Handle Database Triggered Comment
+   * Fetches past interactions for this user to provide context to AI
    */
-  async handleDatabaseComment(record: any) {
-    if (record.is_replied || record.is_liked) return;
-
-    console.log('[Engagement] Handling DB Comment:', record.id);
-
-    if (!record.user_id) {
-      console.warn('[Engagement] DB Comment missing user_id, skipping.');
-      return;
-    }
-
-    const supabase = getSupabase();
-
-    const { data: config, error: configError } = await supabase
-      .from('ad_configs')
-      .select('*')
-      .eq('user_id', record.user_id)
-      .single();
-
-    if (configError || !config) {
-      console.warn('[Engagement] No ad config found for user while handling DB comment:', record.user_id);
-      return;
-    }
-
-    const pageAccessToken = await this.getPageAccessToken(config.access_token, config.page_id);
-
-    const replyText = await this.generateAIReply(record.content, 'comment');
-
-    await this.replyToComment(record.external_id, replyText, pageAccessToken);
-    await this.likeObject(record.external_id, pageAccessToken);
-
-    await supabase
-      .from('comments')
-      .update({
-        is_replied: true,
-        is_liked: true,
-        reply_content: replyText
-      })
-      .eq('id', record.id);
+  async getUserHistory(externalUserId: string) {
+      const supabase = getSupabase();
+      const { data } = await supabase
+          .from('engagement_logs')
+          .select('input_text, reply_text, sentiment, created_at')
+          .eq('external_user_id', externalUserId)
+          .order('created_at', { ascending: false })
+          .limit(5);
+      
+      return data || [];
   },
 
-  async handleDatabaseMessage(record: any) {
-      if (record.is_replied || record.is_from_page) return;
-      console.log('[Engagement] Handling DB Message:', record.id);
-      
+  /**
+   * Logs interaction for history tracking and learning
+   */
+  async logInteraction(userId: string, externalUserId: string, type: 'comment'|'message', input: string, reply: string, externalId: string) {
       const supabase = getSupabase();
-      const { data: config } = await supabase
-          .from('ad_configs')
-          .select('*')
-          .eq('user_id', record.user_id)
-          .single();
-
-      if (!config) return;
-
-      // Generate Reply
-      const reply = await this.generateAIReply(record.content, 'message');
       
-      // Send
-      await this.sendMessage(record.sender_name, reply, config.access_token); // sender_name might hold ID in some schemas
-
-      // Update
-      await supabase.from('messages').update({ is_replied: true }).eq('id', record.id);
+      // Calculate simple sentiment (could use AI here too if needed, but keeping it light)
+      // For now we store raw text, AI analyzes history later.
+      
+      await supabase.from('engagement_logs').insert({
+          user_id: userId,
+          external_user_id: externalUserId,
+          interaction_type: type,
+          external_id: externalId,
+          input_text: input,
+          reply_text: reply,
+          created_at: new Date().toISOString()
+      });
   },
 
   /**
@@ -266,39 +185,61 @@ export const EngagementService = {
   },
 
   /**
-   * AI Logic
+   * Database Trigger Handlers
    */
-  async generateAIReply(input: string, context: 'comment' | 'message'): Promise<string> {
-    if (!OPENAI_API_KEY) return "Thanks for reaching out!";
+  async handleDatabaseComment(record: any) {
+    console.log(`[DB Webhook] Processing comment: ${record.id}`);
+    const supabase = getSupabase();
+    
+    // Fetch platform config for this user
+    const { data: config } = await supabase
+      .from('ad_configs')
+      .select('*')
+      .eq('user_id', record.user_id)
+      .eq('platform', record.platform || 'facebook')
+      .single();
 
-    try {
-      const systemPrompt = context === 'comment' 
-        ? "You are an engaging human social media manager. Reply to the comment naturally. Keep it short. Do NOT sound like a bot. Do NOT use robotic language."
-        : "You are a helpful customer support agent for the brand. Reply to the DM warmly and helpfully. Do NOT sound like a bot.";
+    if (!config) return;
 
-      const response = await fetch('https://api.openai.com/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${OPENAI_API_KEY}`
-        },
-        body: JSON.stringify({
-          model: "gpt-4o",
-          messages: [
-            {
-              role: "system",
-              content: systemPrompt
-            },
-            { role: "user", content: input }
-          ]
-        })
-      });
-      
-      const data: any = await response.json();
-      return data.choices?.[0]?.message?.content || "Thanks!";
-    } catch (e) {
-      console.error('AI Reply Error:', e);
-      return "Thanks for your message!";
+    // Generate AI Reply
+    const userHistory = await this.getUserHistory(record.sender_id);
+    const replyText = await decisionEngine.generateEngagementReply(record.content, 'comment', userHistory);
+
+    // Post to platform
+    if (config.platform === 'facebook' || config.platform === 'instagram') {
+        await this.replyToComment(record.external_id, replyText, config.access_token);
     }
+    
+    // Update record
+    await supabase.from('comments').update({
+        is_replied: true,
+        reply_content: replyText
+    }).eq('id', record.id);
+  },
+
+  async handleDatabaseMessage(record: any) {
+    console.log(`[DB Webhook] Processing message: ${record.id}`);
+    const supabase = getSupabase();
+
+    const { data: config } = await supabase
+      .from('ad_configs')
+      .select('*')
+      .eq('user_id', record.user_id)
+      .eq('platform', record.platform || 'facebook')
+      .single();
+
+    if (!config) return;
+
+    const userHistory = await this.getUserHistory(record.sender_id);
+    const replyText = await decisionEngine.generateEngagementReply(record.content, 'message', userHistory);
+
+    if (config.platform === 'facebook' || config.platform === 'instagram') {
+        await this.sendMessage(record.sender_id, replyText, config.access_token);
+    }
+
+    await supabase.from('messages').update({
+        is_replied: true,
+        reply_content: replyText
+    }).eq('id', record.id);
   }
 };
