@@ -1,17 +1,15 @@
 import React from 'react';
-import { View, Text, TouchableOpacity, Platform } from 'react-native';
+import { View, Text, TouchableOpacity } from 'react-native';
 import { DrawerContentComponentProps } from '@react-navigation/drawer';
 
 import { useAuthStore } from '../store/authStore';
-import { Bot, LayoutDashboard, List, Settings, LogOut, X, History, CreditCard, ChevronRight } from 'lucide-react-native';
+import { Bot, LayoutDashboard, Settings, LogOut, X, History, ChevronRight } from 'lucide-react-native';
 import Animated, { FadeInLeft } from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 const menuItems = [
   { label: 'Agent', icon: Bot, route: 'AgentChat', description: 'AI Campaign Assistant' },
   { label: 'Dashboard', icon: LayoutDashboard, route: 'Dashboard', description: 'Performance Overview' },
-  { label: 'Campaigns', icon: List, route: 'CampaignList', description: 'Active Campaigns' },
-  { label: 'Ad Wallet', icon: CreditCard, route: 'Wallet', description: 'Balance & Payments' },
   { label: 'Strategy History', icon: History, route: 'StrategyHistory', description: 'Past Strategies' },
   { label: 'Settings', icon: Settings, route: 'Settings', description: 'App Preferences' },
 ];

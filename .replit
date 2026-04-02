@@ -1,6 +1,7 @@
 modules = ["nodejs-20", "web"]
 [agent]
 expertMode = true
+integrations = ["javascript_database:1.0.0"]
 
 [nix]
 channel = "stable-25_05"
@@ -12,10 +13,6 @@ externalPort = 5000
 [[ports]]
 localPort = 8000
 externalPort = 8000
-
-[[ports]]
-localPort = 8081
-externalPort = 80
 
 [workflows]
 runButton = "Project"
@@ -49,13 +46,13 @@ outputType = "webview"
 name = "Backend API"
 author = "agent"
 
-[[workflows.workflow.tasks]]
-task = "shell.exec"
-args = "cd backend && node dist/server.js"
-waitForPort = 8000
-
 [workflows.workflow.metadata]
 outputType = "console"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "cd backend && npm install --legacy-peer-deps && npx ts-node --transpile-only src/server.ts"
+waitForPort = 8000
 
 [deployment]
 deploymentTarget = "static"

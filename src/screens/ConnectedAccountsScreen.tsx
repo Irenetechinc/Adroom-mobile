@@ -2,7 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, ScrollView, TouchableOpacity, ActivityIndicator, Alert, StyleSheet } from 'react-native';
 
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import {Facebook, LogOut, Instagram, Linkedin, Twitter, Video } from 'lucide-react-native';
@@ -19,6 +19,7 @@ import Animated, { FadeInDown } from 'react-native-reanimated';
 
 export default function ConnectedAccountsScreen() {
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
+  const insets = useSafeAreaInsets();
   const [loading, setLoading] = useState(true);
 
   const [config, setConfig] = useState<FacebookConfig | null>(null);
@@ -39,11 +40,6 @@ export default function ConnectedAccountsScreen() {
   };
 
   useEffect(() => { loadConfig(); }, []);
-
-
-  useEffect(() => {
-    loadConfigs();
-  }, [loadConfigs]);
 
   const handleConnect = (platform: string) => {
     const routeParams: any = {};
@@ -105,7 +101,7 @@ export default function ConnectedAccountsScreen() {
       </View>
 
 
-      <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={false} contentContainerStyle={styles.scroll}>
+      <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={false} contentContainerStyle={[styles.scroll, { paddingBottom: Math.max(40, insets.bottom + 20) }]}>
         <Text style={styles.pageDesc}>
           Manage external platform connections that AdRoom AI uses to autonomously launch and manage your campaigns.
         </Text>
