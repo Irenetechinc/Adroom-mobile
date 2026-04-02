@@ -1,6 +1,7 @@
 import React from 'react';
 import { View, Text, TouchableOpacity, Platform } from 'react-native';
 import { DrawerContentComponentProps } from '@react-navigation/drawer';
+
 import { useAuthStore } from '../store/authStore';
 import { Bot, LayoutDashboard, List, Settings, LogOut, X, History, CreditCard, ChevronRight } from 'lucide-react-native';
 import Animated, { FadeInLeft } from 'react-native-reanimated';
@@ -18,8 +19,10 @@ const menuItems = [
 export default function SideMenu(props: DrawerContentComponentProps) {
   const { signOut, user } = useAuthStore();
 
+
   const userInitial = user?.email ? user.email.charAt(0).toUpperCase() : 'U';
   const userEmail = user?.email || '';
+
 
   return (
     <View style={{ flex: 1, backgroundColor: '#050B14' }}>
@@ -68,10 +71,12 @@ export default function SideMenu(props: DrawerContentComponentProps) {
           </View>
         </View>
 
+
         {/* Nav Items */}
         <View style={{ flex: 1, paddingHorizontal: 12, paddingTop: 4 }}>
           {menuItems.map((item, index) => {
             const isFocused = props.state.index === index;
+
             const Icon = item.icon;
 
             return (

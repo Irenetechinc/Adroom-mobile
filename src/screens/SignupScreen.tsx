@@ -12,6 +12,8 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Signup'>;
 
+const BACKEND_URL = process.env.EXPO_PUBLIC_API_URL;
+
 export default function SignupScreen({ navigation }: Props) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -38,6 +40,7 @@ export default function SignupScreen({ navigation }: Props) {
     }
 
     setLoading(true);
+
     const { error } = await supabase.auth.signUp({ email: email.trim(), password });
     setLoading(false);
 
@@ -47,6 +50,7 @@ export default function SignupScreen({ navigation }: Props) {
       Alert.alert('Check Your Email', 'A verification link has been sent to your email address.', [
         { text: 'OK', onPress: () => navigation.navigate('Login') },
       ]);
+
     }
   };
 

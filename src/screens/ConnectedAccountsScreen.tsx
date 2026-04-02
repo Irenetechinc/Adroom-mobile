@@ -1,9 +1,13 @@
+
 import React, { useState, useEffect } from 'react';
 import { View, Text, ScrollView, TouchableOpacity, ActivityIndicator, Alert, StyleSheet } from 'react-native';
+
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { ChevronLeft, Facebook, LogOut, Instagram, Linkedin, Twitter, Video } from 'lucide-react-native';
 import { RootStackParamList } from '../types';
+
 import { FacebookService } from '../services/facebook';
 import { FacebookConfig } from '../types/facebook';
 import {
@@ -12,9 +16,11 @@ import {
 } from 'lucide-react-native';
 import Animated, { FadeInDown } from 'react-native-reanimated';
 
+
 export default function ConnectedAccountsScreen() {
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const [loading, setLoading] = useState(true);
+
   const [config, setConfig] = useState<FacebookConfig | null>(null);
   const [disconnecting, setDisconnecting] = useState(false);
 
@@ -25,17 +31,37 @@ export default function ConnectedAccountsScreen() {
       setConfig(data);
     } catch (err) {
       console.error('Failed to load FB config:', err);
+
     } finally {
       setLoading(false);
     }
+
   };
 
   useEffect(() => { loadConfig(); }, []);
 
-  const handleDisconnect = () => {
+
+  useEffect(() => {
+    loadConfigs();
+  }, [loadConfigs]);
+
+  const handleConnect = (platform: string) => {
+    const routeParams: any = {};
+    if (platform === 'facebook') routeParams.connectFacebook = true;
+    if (platform === 'instagram') routeParams.connectInstagram = true;
+    if (platform === 'tiktok') routeParams.connectTikTok = true;
+    if (platform === 'linkedin') routeParams.connectLinkedIn = true;
+    if (platform === 'twitter') routeParams.connectTwitter = true;
+    
+    navigation.navigate('AgentChat', routeParams);
+  };
+
+  const handleDisconnect = (platform: string) => {
     Alert.alert(
+
       'Disconnect Facebook',
       'This will pause all autonomous campaigns. Are you sure you want to disconnect?',
+
       [
         { text: 'Cancel', style: 'cancel' },
         {
@@ -44,20 +70,24 @@ export default function ConnectedAccountsScreen() {
           onPress: async () => {
             setDisconnecting(true);
             try {
+
               Alert.alert('Disconnected', 'Your Facebook account has been unlinked.');
               navigation.goBack();
             } catch {
               Alert.alert('Error', 'Failed to disconnect. Please try again.');
+
             } finally {
               setDisconnecting(false);
             }
           },
         },
       ],
+
     );
   };
 
   return (
+
     <SafeAreaView style={styles.safe} edges={['top']}>
       {/* Header */}
       <View style={styles.header}>
@@ -70,8 +100,10 @@ export default function ConnectedAccountsScreen() {
         </View>
         <TouchableOpacity onPress={loadConfig} style={styles.refreshBtn}>
           <RefreshCw size={16} color="#64748B" />
+
         </TouchableOpacity>
       </View>
+
 
       <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={false} contentContainerStyle={styles.scroll}>
         <Text style={styles.pageDesc}>
@@ -210,6 +242,7 @@ export default function ConnectedAccountsScreen() {
             </View>
           </View>
         </Animated.View>
+
       </ScrollView>
     </SafeAreaView>
   );

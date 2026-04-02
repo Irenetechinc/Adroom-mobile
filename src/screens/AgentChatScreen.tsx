@@ -16,7 +16,7 @@ import ImageUploadComponent from '../components/ImageUploadComponent';
 
 // --- Interactive Cards ---
 
-const ProductIntakeCard = ({ onUpload, onManual }: { onUpload: () => void, onManual: () => void }) => (
+const ProductIntakeCard = ({ onUpload, onManual, onWebsite }: { onUpload: () => void, onManual: () => void, onWebsite: () => void }) => (
   <View className="mt-2 bg-adroom-card rounded-xl border border-adroom-neon/20 overflow-hidden">
     <TouchableOpacity 
       onPress={onUpload}
@@ -29,14 +29,127 @@ const ProductIntakeCard = ({ onUpload, onManual }: { onUpload: () => void, onMan
       <Text className="text-adroom-text-muted text-center mt-1 text-xs">AI will scan for attributes automatically</Text>
     </TouchableOpacity>
     
-    <TouchableOpacity 
-      onPress={onManual}
-      className="p-4 items-center bg-adroom-card"
-    >
-      <Text className="text-adroom-neon font-medium">Enter Details Manually</Text>
-    </TouchableOpacity>
+    <View className="flex-row">
+        <TouchableOpacity 
+          onPress={onWebsite}
+          className="flex-1 p-4 items-center bg-adroom-card border-r border-adroom-neon/10"
+        >
+          <Text className="text-adroom-neon font-medium">Website URL</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity 
+          onPress={onManual}
+          className="flex-1 p-4 items-center bg-adroom-card"
+        >
+          <Text className="text-adroom-neon font-medium">Manual Entry</Text>
+        </TouchableOpacity>
+    </View>
   </View>
 );
+
+const WebsiteIntakeCard = ({ onSubmit }: { onSubmit: (url: string) => void }) => {
+    const [url, setUrl] = useState('');
+    return (
+        <View className="mt-2 bg-adroom-card p-4 rounded-xl border border-adroom-neon/20">
+            <TextInput 
+                placeholder="https://yourstore.com" 
+                placeholderTextColor="#64748B"
+                className="bg-adroom-dark p-3 rounded-lg text-white mb-3 border border-white/5"
+                value={url}
+                onChangeText={setUrl}
+                autoCapitalize="none"
+                keyboardType="url"
+            />
+            <TouchableOpacity 
+                onPress={() => onSubmit(url)}
+                className="bg-adroom-neon py-3 rounded-lg items-center"
+            >
+                <Text className="text-adroom-dark font-bold uppercase">Scrape Website</Text>
+            </TouchableOpacity>
+        </View>
+    );
+};
+
+const AttributeEditorCard = ({ product, onSave }: { product: any, onSave: (data: any) => void }) => {
+    const [editedProduct, setEditedProduct] = useState({ ...product });
+    const [newFieldKey, setNewFieldKey] = useState('');
+    const [newFieldValue, setNewFieldValue] = useState('');
+
+    const handleUpdate = (key: string, value: string) => {
+        setEditedProduct({ ...editedProduct, [key]: value });
+    };
+
+    const handleAddField = () => {
+        if (newFieldKey && newFieldValue) {
+            setEditedProduct({ ...editedProduct, [newFieldKey]: newFieldValue });
+            setNewFieldKey('');
+            setNewFieldValue('');
+        }
+    };
+
+    const handleRemoveField = (key: string) => {
+        const updated = { ...editedProduct };
+        delete updated[key];
+        setEditedProduct(updated);
+    };
+
+    return (
+        <View className="mt-2 bg-adroom-card p-4 rounded-xl border border-adroom-neon/20">
+            <Text className="text-white font-bold mb-3">Refine Product Details</Text>
+            <ScrollView className="max-h-64 mb-4">
+                {Object.entries(editedProduct).map(([key, value]) => {
+                    if (key === 'id' || key === 'images' || typeof value === 'object') return null;
+                    return (
+                        <View key={key} className="mb-3">
+                            <View className="flex-row justify-between items-center mb-1">
+                                <Text className="text-adroom-neon text-[10px] uppercase font-bold">{key.replace('_', ' ')}</Text>
+                                <TouchableOpacity onPress={() => handleRemoveField(key)}>
+                                    <Text className="text-red-500 text-xs">Remove</Text>
+                                </TouchableOpacity>
+                            </View>
+                            <TextInput 
+                                className="bg-adroom-dark p-2 rounded text-white border border-white/5"
+                                value={String(value)}
+                                onChangeText={(val) => handleUpdate(key, val)}
+                                multiline={key === 'description'}
+                            />
+                        </View>
+                    );
+                })}
+                
+                <View className="border-t border-adroom-neon/10 pt-3 mt-2">
+                    <Text className="text-slate-400 text-[10px] font-bold mb-2">ADD MISSING FIELD</Text>
+                    <View className="flex-row space-x-2">
+                        <TextInput 
+                            placeholder="Label" 
+                            placeholderTextColor="#475569"
+                            className="flex-1 bg-adroom-dark p-2 rounded text-white text-xs border border-white/5"
+                            value={newFieldKey}
+                            onChangeText={setNewFieldKey}
+                        />
+                        <TextInput 
+                            placeholder="Value" 
+                            placeholderTextColor="#475569"
+                            className="flex-2 bg-adroom-dark p-2 rounded text-white text-xs border border-white/5"
+                            value={newFieldValue}
+                            onChangeText={setNewFieldValue}
+                        />
+                        <TouchableOpacity onPress={handleAddField} className="bg-adroom-neon/20 px-3 justify-center rounded">
+                            <Text className="text-adroom-neon font-bold">+</Text>
+                        </TouchableOpacity>
+                    </View>
+                </View>
+            </ScrollView>
+
+            <TouchableOpacity 
+                onPress={() => onSave(editedProduct)}
+                className="bg-adroom-neon py-3 rounded-lg items-center"
+            >
+                <Text className="text-adroom-dark font-bold uppercase">Confirm & Continue</Text>
+            </TouchableOpacity>
+        </View>
+    );
+};
 
 const GOALS = [
   { id: 'sales', name: 'Sales', icon: DollarSign, color: '#10B981' },
@@ -134,53 +247,37 @@ const DurationSelectionCard = ({ onSelect, recommended }: { onSelect: (days: num
   </View>
 );
 
-const StrategyComparisonCard = ({ strategies, onSelect }: { strategies: any, onSelect: (type: 'free' | 'paid') => void }) => {
-  const [tab, setTab] = useState<'free' | 'paid'>('free');
-  const active = tab === 'free' ? strategies.free : strategies.paid;
-
+const StrategyPreviewCard = ({ strategy, onLaunch }: { strategy: any, onLaunch: () => void }) => {
   return (
     <View className="mt-2 bg-adroom-card rounded-xl border border-adroom-neon/20 overflow-hidden w-full">
-      {/* Tabs */}
-      <View className="flex-row border-b border-adroom-neon/20">
-        <TouchableOpacity 
-          onPress={() => setTab('free')} 
-          className={`flex-1 p-3 items-center ${tab === 'free' ? 'bg-adroom-neon/10 border-b-2 border-adroom-neon' : ''}`}
-        >
-          <Text className={`font-bold ${tab === 'free' ? 'text-adroom-neon' : 'text-slate-500'}`}>FREE</Text>
-        </TouchableOpacity>
-        <TouchableOpacity 
-          onPress={() => setTab('paid')} 
-          className={`flex-1 p-3 items-center ${tab === 'paid' ? 'bg-adroom-neon/10 border-b-2 border-adroom-neon' : ''}`}
-        >
-          <Text className={`font-bold ${tab === 'paid' ? 'text-adroom-neon' : 'text-slate-500'}`}>PAID</Text>
-        </TouchableOpacity>
-      </View>
-
       <View className="p-4">
          <View className="flex-row justify-between mb-4">
             <View>
                 <Text className="text-slate-400 text-xs uppercase">Est. Reach</Text>
-                <Text className="text-white font-bold text-xl">{active.expected_outcomes?.reach || 'N/A'}</Text>
-            </View>
-             <View>
-                <Text className="text-slate-400 text-xs uppercase text-right">Budget</Text>
-                <Text className="text-white font-bold text-xl text-right">
-                    {tab === 'free' ? '$0' : `$${active.budget_recommendation || 0}`}
-                </Text>
+                <Text className="text-white font-bold text-xl">{strategy.estimated_outcomes?.reach || 'N/A'}</Text>
             </View>
          </View>
 
          <View className="bg-adroom-dark/50 p-3 rounded-lg mb-4">
              <Text className="text-slate-300 text-sm leading-5">
-                {active.content_plan?.summary || "strategy focusing on high engagement and conversion optimization."}
+                {strategy.rationale || "Optimized strategy based on real-time intelligence."}
              </Text>
          </View>
          
+         {/* Platforms */}
+         <View className="flex-row flex-wrap gap-2 mb-4">
+            {strategy.platforms?.map((p: string) => (
+                <View key={p} className="bg-adroom-neon/10 px-2 py-1 rounded border border-adroom-neon/30">
+                    <Text className="text-adroom-neon text-xs capitalize">{p}</Text>
+                </View>
+            ))}
+         </View>
+
          <TouchableOpacity 
-            onPress={() => onSelect(tab)}
-            className={`py-3 rounded-lg items-center ${tab === 'free' ? 'bg-green-500' : 'bg-adroom-neon'}`}
+            onPress={onLaunch}
+            className="bg-adroom-neon py-3 rounded-lg items-center"
          >
-             <Text className="text-black font-bold uppercase">LAUNCH {tab} STRATEGY</Text>
+             <Text className="text-adroom-dark font-bold uppercase">LAUNCH STRATEGY</Text>
          </TouchableOpacity>
       </View>
     </View>
@@ -197,7 +294,7 @@ const TypingIndicator = () => (
     </View>
 );
 
-const SelectionList = ({ items, onSelect, type }: { items: any[], onSelect: (item: any) => void, type: 'page' | 'ad_account' }) => (
+const SelectionList = ({ items, onSelect, type }: { items: any[], onSelect: (item: any) => void, type: 'page' }) => (
   <View className="mt-2 bg-adroom-card rounded-xl border border-adroom-neon/20 overflow-hidden">
     {items.map((item, index) => (
       <TouchableOpacity 
@@ -208,7 +305,7 @@ const SelectionList = ({ items, onSelect, type }: { items: any[], onSelect: (ite
         <View>
           <Text className="text-white font-bold text-base">{item.name}</Text>
           <Text className="text-adroom-text-muted text-xs">
-            {type === 'page' ? item.category : `ID: ${item.account_id}`}
+            {item.category}
           </Text>
         </View>
         <Text className="text-adroom-neon text-lg">›</Text>
@@ -314,6 +411,23 @@ const CompletionCard = ({ onDashboard }: { onDashboard: () => void }) => (
   </View>
 );
 
+const CreateStrategyPromptCard = ({ onStartStrategy }: { onStartStrategy: () => void }) => (
+  <View className="mt-2 bg-adroom-card p-5 rounded-xl border border-adroom-neon/50 items-center">
+    <View className="w-12 h-12 bg-adroom-neon/20 rounded-full items-center justify-center mb-3">
+      <Rocket size={24} color="#00F0FF" />
+    </View>
+    <Text className="text-white font-bold text-lg mb-1">Ready to Grow?</Text>
+    <Text className="text-adroom-text-muted text-center mb-4">You are connected! Create a strategy now to start running ads.</Text>
+    
+    <TouchableOpacity 
+      onPress={onStartStrategy}
+      className="bg-adroom-neon w-full py-3 rounded-lg items-center"
+    >
+      <Text className="text-adroom-dark font-bold uppercase">Create New Strategy</Text>
+    </TouchableOpacity>
+  </View>
+);
+
 const ServiceIntakeCard = ({ onSubmit }: { onSubmit: (data: any) => void }) => {
   const [name, setName] = useState('');
   const [category, setCategory] = useState('');
@@ -404,48 +518,14 @@ const BrandIntakeCard = ({ onSubmit }: { onSubmit: (data: any) => void }) => {
   );
 };
 
-const FacebookConnectButton = ({ onPress, isConnected, onDisconnect }: { onPress: () => void, isConnected: boolean, onDisconnect: () => void }) => (
+const FacebookConnectButton = ({ onPress, isConnected, onDisconnect, platform }: { onPress: () => void, isConnected: boolean, onDisconnect: () => void, platform: string }) => (
   <TouchableOpacity 
     onPress={isConnected ? onDisconnect : onPress}
-    className={`${isConnected ? 'bg-red-500/80 border-red-500' : 'bg-[#1877F2]'} py-3 px-6 rounded-xl flex-row items-center justify-center mt-2 shadow-lg border ${isConnected ? '' : 'border-transparent'}`}
+    className={`${isConnected ? 'bg-red-500/80 border-red-500' : 'bg-adroom-neon'} py-3 px-6 rounded-xl flex-row items-center justify-center mt-2 shadow-lg border ${isConnected ? '' : 'border-transparent'}`}
   >
-    <Text className="text-white font-bold text-base mr-2">f</Text>
-    <Text className="text-white font-bold text-base">{isConnected ? 'Disconnect Facebook' : 'Connect Facebook'}</Text>
+    <Text className="text-white font-bold text-base mr-2">{platform?.charAt(0).toUpperCase()}</Text>
+    <Text className="text-adroom-dark font-bold text-base">{isConnected ? `Disconnect ${platform}` : `Connect ${platform}`}</Text>
   </TouchableOpacity>
-);
-
-const SessionRestoreCard = ({ lastActivity, preview, onRestore, onNew }: any) => (
-  <View className="mt-2 bg-adroom-card p-5 rounded-xl border border-adroom-neon/50">
-    <View className="flex-row items-center mb-3">
-        <View className="w-10 h-10 bg-adroom-neon/20 rounded-full items-center justify-center mr-3">
-            <Text className="text-adroom-neon text-xl">↺</Text>
-        </View>
-        <View>
-            <Text className="text-white font-bold text-lg">Resume Session?</Text>
-            <Text className="text-adroom-text-muted text-xs">Last active: {lastActivity}</Text>
-        </View>
-    </View>
-    
-    <View className="bg-adroom-dark p-3 rounded-lg mb-4 border border-white/10">
-        <Text className="text-gray-400 italic text-sm">"{preview}"</Text>
-    </View>
-
-    <View className="flex-row space-x-3">
-        <TouchableOpacity 
-            onPress={onNew}
-            className="flex-1 bg-red-500/20 py-3 rounded-lg items-center border border-red-500/50"
-        >
-            <Text className="text-red-400 font-bold">Start Fresh</Text>
-        </TouchableOpacity>
-        
-        <TouchableOpacity 
-            onPress={onRestore}
-            className="flex-1 bg-adroom-neon py-3 rounded-lg items-center"
-        >
-            <Text className="text-adroom-dark font-bold">Continue</Text>
-        </TouchableOpacity>
-    </View>
-  </View>
 );
 
 
@@ -455,10 +535,11 @@ export default function AgentChatScreen({ navigation, route }: Props) {
   const { 
     messages, addMessage, isTyping, setTyping, isInputDisabled, setInputDisabled,
     flowState, handleProductIntake, handleGoalSelection, handleDurationSelection, handleStrategySelection,
-    initiateFacebookConnection, handleFacebookLogin, handlePageSelection, handleAdAccountSelection,
-    connectionState, loadMessages, restoreSession, startNewSession, fbAccessToken, disconnectFacebook,
+    initiateConnection, handleLogin, handleAccountSelection,
+    connectionState, loadMessages, restoreSession, startNewSession, tokens, disconnectPlatform,
     handleStrategyTypeSelection, handleServiceIntake, handleBrandIntake, handleManualProductSubmit,
-    handleRetry, handleImageUpload: handleImageUploadStore
+    handleRetry, handleImageUpload: handleImageUploadStore, startStrategyFlow,
+    handleWebsiteIntake
   } = useAgentStore();
   
   const { user } = useAuthStore();
@@ -473,11 +554,17 @@ export default function AgentChatScreen({ navigation, route }: Props) {
     loadMessages().then(() => setHistoryLoaded(true));
   }, []);
 
-  // Check if we came from Strategy Approval
   useEffect(() => {
-    if (route.params?.fromStrategyApproval && connectionState === 'IDLE') {
-        initiateFacebookConnection();
+    if (connectionState !== 'IDLE') return;
+    if (route.params?.fromStrategyApproval) {
+      initiateConnection('facebook', true);
+      return;
     }
+    if (route.params?.connectFacebook) initiateConnection('facebook', false);
+    if (route.params?.connectInstagram) initiateConnection('instagram', false);
+    if (route.params?.connectTikTok) initiateConnection('tiktok', false);
+    if (route.params?.connectLinkedIn) initiateConnection('linkedin', false);
+    if (route.params?.connectTwitter) initiateConnection('twitter', false);
   }, [route.params]);
 
   useEffect(() => {
@@ -493,13 +580,6 @@ export default function AgentChatScreen({ navigation, route }: Props) {
     setInputText('');
     
     addMessage(finalText, 'user');
-    
-    // Fallback: If in a specific flow but user types, we might want to handle it or just let AI generic respond
-    // For now, if flow is active, we mostly ignore text unless it's a manual entry override (future improvement)
-    if (flowState === 'IDLE') {
-        // Generic chat response or intent detection
-        // ...
-    }
   };
 
   const handleImageUpload = async () => {
@@ -514,12 +594,17 @@ export default function AgentChatScreen({ navigation, route }: Props) {
       mediaTypes: ImagePicker.MediaTypeOptions.Images,
       allowsEditing: true,
       quality: 0.8,
-      base64: true, // Need base64 for AI analysis
+      base64: true, 
     });
 
     if (!result.canceled && result.assets && result.assets.length > 0) {
       const selectedImage = result.assets[0].uri;
       const base64 = result.assets[0].base64; 
+
+      if (!base64) {
+        Alert.alert('Upload Error', 'Image encoding failed. Please try another image.');
+        return;
+      }
       
       setUploading(true);
       addMessage('Uploading product image...', 'user', selectedImage);
@@ -531,11 +616,33 @@ export default function AgentChatScreen({ navigation, route }: Props) {
       }
     }
   };
+
+  const SessionRestoreCard = ({ lastActivity, preview, onRestore, onNew }: { lastActivity?: string; preview?: string; onRestore: () => void; onNew: () => void }) => (
+    <View className="mt-3 bg-adroom-dark/50 border border-adroom-neon/20 rounded-xl p-4">
+      <Text className="text-white font-bold mb-2">Resume session?</Text>
+      {lastActivity ? <Text className="text-adroom-text-muted text-xs mb-2">Last activity: {lastActivity}</Text> : null}
+      {preview ? <Text className="text-adroom-text text-sm mb-3">{preview}</Text> : null}
+      <View className="flex-row">
+        <TouchableOpacity onPress={onRestore} className="flex-1 bg-adroom-neon rounded-lg py-3 items-center mr-2">
+          <Text className="text-adroom-dark font-bold">Resume</Text>
+        </TouchableOpacity>
+        <TouchableOpacity onPress={onNew} className="flex-1 border border-adroom-neon/40 rounded-lg py-3 items-center ml-2">
+          <Text className="text-adroom-neon font-bold">Start New</Text>
+        </TouchableOpacity>
+      </View>
+    </View>
+  );
   
   const handleManualEntry = () => {
       setInputDisabled(true);
       addMessage("Manual Entry", 'user');
       addMessage("Please provide your product details below.", 'agent', undefined, 'product_manual_form');
+  };
+
+  const handleWebsiteEntry = () => {
+      setInputDisabled(true);
+      addMessage("Website Scan", 'user');
+      addMessage("Please provide your store or product URL below.", 'agent', undefined, 'website_intake_form' as any);
   };
 
   const renderMessage = ({ item }: { item: any }) => (
@@ -571,7 +678,15 @@ export default function AgentChatScreen({ navigation, route }: Props) {
         {/* Custom UI Rendering */}
         
         {item.uiType === 'product_intake_form' && (
-            <ProductIntakeCard onUpload={handleImageUpload} onManual={handleManualEntry} />
+            <ProductIntakeCard onUpload={handleImageUpload} onManual={handleManualEntry} onWebsite={handleWebsiteEntry} />
+        )}
+
+        {item.uiType === 'website_intake_form' && (
+            <WebsiteIntakeCard onSubmit={handleWebsiteIntake} />
+        )}
+
+        {item.uiType === 'attribute_editor' && item.uiData?.product && (
+            <AttributeEditorCard product={item.uiData.product} onSave={(data) => handleProductIntake(data)} />
         )}
 
         {item.uiType === 'product_manual_form' && (
@@ -601,8 +716,8 @@ export default function AgentChatScreen({ navigation, route }: Props) {
             />
         )}
         
-        {item.uiType === 'strategy_comparison' && item.uiData?.strategies && (
-            <StrategyComparisonCard strategies={item.uiData.strategies} onSelect={handleStrategySelection} />
+        {item.uiType === 'strategy_preview' && item.uiData?.strategy && (
+            <StrategyPreviewCard strategy={item.uiData.strategy} onLaunch={handleStrategySelection} />
         )}
 
         {item.uiType === 'retry_action' && (
@@ -613,12 +728,12 @@ export default function AgentChatScreen({ navigation, route }: Props) {
             />
         )}
 
-        {/* Previous UI Types */}
         {item.uiType === 'facebook_connect' && (
             <FacebookConnectButton 
-                onPress={handleFacebookLogin} 
-                isConnected={!!fbAccessToken} 
-                onDisconnect={disconnectFacebook}
+                onPress={() => handleLogin(item.uiData?.platform || 'facebook')} 
+                isConnected={!!tokens[item.uiData?.platform || 'facebook']} 
+                onDisconnect={() => disconnectPlatform(item.uiData?.platform || 'facebook')}
+                platform={item.uiData?.platform || 'facebook'}
             />
         )}
         
@@ -626,20 +741,16 @@ export default function AgentChatScreen({ navigation, route }: Props) {
             <SelectionList 
                 items={item.uiData.pages} 
                 type="page" 
-                onSelect={handlePageSelection} 
-            />
-        )}
-
-        {item.uiType === 'ad_account_selection' && item.uiData?.adAccounts && (
-            <SelectionList 
-                items={item.uiData.adAccounts} 
-                type="ad_account" 
-                onSelect={handleAdAccountSelection} 
+                onSelect={(account) => handleAccountSelection(item.uiData?.platform || 'facebook', account)} 
             />
         )}
 
         {item.uiType === 'completion_card' && (
-            <CompletionCard onDashboard={() => navigation.navigate('Main')} />
+            <CompletionCard onDashboard={() => navigation.navigate('Main', { screen: 'Dashboard' })} />
+        )}
+
+        {item.uiType === 'create_strategy_prompt' && (
+            <CreateStrategyPromptCard onStartStrategy={startStrategyFlow} />
         )}
 
         {item.uiType === 'session_restore' && (

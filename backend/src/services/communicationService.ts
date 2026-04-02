@@ -9,48 +9,64 @@ export class CommunicationService {
   async generateDailyReport(userId: string) {
     console.log(`Generating Daily Report for ${userId}...`);
 
-    // 1. Fetch Yesterday's Performance Data
-    const { data: strategies } = await this.supabase
-        .from('strategy_memory')
-        .select('*')
-        .eq('user_id', userId)
-        .eq('status', 'active');
+    const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
 
-    if (!strategies || strategies.length === 0) {
-        return "No active strategies to report on.";
+    const { data: strategies, error: strategiesError } = await this.supabase
+      .from('strategies')
+      .select('*')
+      .eq('user_id', userId)
+      .eq('is_active', true);
+
+    if (strategiesError) {
+      throw new Error(strategiesError.message);
     }
 
-    // 2. Fetch IPE Alerts
-    const { data: alerts } = await this.supabase
-        .from('ipe_intelligence_log')
-        .select('*')
-        .order('timestamp', { ascending: false })
-        .limit(5);
+    if (!strategies || strategies.length === 0) {
+      return 'No active strategies to report on.';
+    }
 
-    // 3. Construct Prompt
+    const { data: engagementLogs } = await this.supabase
+      .from('engagement_logs')
+      .select('interaction_type, sentiment, created_at')
+      .eq('user_id', userId)
+      .gte('created_at', since);
+
+    const { data: platformIntel } = await this.supabase
+      .from('platform_intelligence')
+      .select('*')
+      .order('captured_at', { ascending: false })
+      .limit(5);
+
+    const { data: conversationPatterns } = await this.supabase
+      .from('conversation_patterns')
+      .select('*')
+      .order('captured_at', { ascending: false })
+      .limit(3);
+
     const prompt = `
-        You are AdRoom AI. Generate a concise, professional, and encouraging daily marketing report for the user.
-        
+        You are AdRoom AI. Generate a concise, professional, and encouraging daily ORGANIC marketing report for the user.
+
         DATE: ${new Date().toLocaleDateString()}
-        
-        ACTIVE STRATEGIES:
-        ${JSON.stringify(strategies.map(s => ({
-            name: s.strategy_name,
-            spend: s.total_spend,
-            roas: s.roas,
-            clicks: s.total_clicks,
-            impressions: s.total_impressions
-        })))}
-        
-        RECENT INTELLIGENCE/ALERTS:
-        ${JSON.stringify(alerts)}
-        
+        WINDOW: last 24 hours
+
+        ACTIVE STRATEGIES (organic-only):
+        ${JSON.stringify(strategies)}
+
+        ENGAGEMENT LOGS (last 24h):
+        ${JSON.stringify(engagementLogs || [])}
+
+        RECENT PLATFORM INTELLIGENCE:
+        ${JSON.stringify(platformIntel || [])}
+
+        RECENT CONVERSATION PATTERNS:
+        ${JSON.stringify(conversationPatterns || [])}
+
         REQUIREMENTS:
         - Start with a friendly greeting.
-        - Summarize total spend and key results (ROAS, conversions).
-        - Highlight the best performing strategy.
-        - Mention any critical alerts or platform changes they need to know.
-        - End with a recommended action for today.
+        - Summarize engagement trends (comments/messages sentiment/volume) if data is available.
+        - Highlight the most promising organic strategy focus for today.
+        - Mention any critical platform shifts or risks relevant to organic reach.
+        - End with 1 specific recommended action for today.
         - Keep it under 200 words.
     `;
 
@@ -63,20 +79,21 @@ export class CommunicationService {
   async generateAlertMessage(alertId: string) {
     if (!alertId) throw new Error('Alert ID required');
 
-    const { data: alert } = await this.supabase
-        .from('ipe_intelligence_log')
-        .select('*')
-        .eq('id', alertId)
-        .single();
+    const { data: alert, error } = await this.supabase
+      .from('platform_intelligence')
+      .select('*')
+      .eq('id', alertId)
+      .single();
 
-    if (!alert) throw new Error('Alert not found');
+    if (error || !alert) throw new Error('Alert not found');
 
     const prompt = `
         Rephrase this technical alert into a short, urgent push notification for a marketing user.
         Keep it under 100 characters if possible.
         
-        ALERT: ${alert.summary}
-        DETAILS: ${JSON.stringify(alert.details)}
+        PLATFORM: ${alert.platform}
+        DETECTED_SHIFTS: ${JSON.stringify(alert.detected_shifts)}
+        RISKS: ${JSON.stringify(alert.risks)}
     `;
 
     const notificationText = await this.aiEngine.generateText(prompt);

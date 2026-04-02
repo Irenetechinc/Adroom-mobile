@@ -1,150 +1,49 @@
-import { CampaignService } from './campaign';
-import { AdSetService } from './adSet';
-import { AdService } from './ad';
 import { CreativeService } from './creative';
 import { FacebookService } from './facebook';
-import { CampaignObjective, CampaignStatus } from '../types/campaign';
-import { BillingEvent, OptimizationGoal } from '../types/adSet';
 import { Strategy } from '../types/agent';
 import { supabase } from './supabase';
 
 export const AutonomousService = {
-  /**
-   * Execute the selected strategy by creating Campaign, AdSets, and Ads autonomously.
-   */
   async executeStrategy(strategy: Strategy, productImageUrl?: string): Promise<void> {
-    if (strategy.type === 'FREE') {
-      await this.executeOrganicStrategy(strategy, productImageUrl);
-    } else {
-      if (!productImageUrl) {
-        throw new Error('Product image is required for paid campaigns. Please ensure an image was analyzed in the chat.');
-      }
-      await this.executePaidStrategy(strategy, productImageUrl);
-    }
-  },
-
-  /**
-   * Autonomously Amend Strategy
-   * Used when a required action (e.g. Daily Post) is not in the current strategy plan.
-   */
-  async amendStrategy(currentStrategy: Strategy, reason: string): Promise<Strategy> {
-    console.log(`[Autonomous] Amending strategy '${currentStrategy.title}'. Reason: ${reason}`);
-    
-    // Create a copy to amend
-    const amendedStrategy = { ...currentStrategy };
-    
-    // Logic to amend based on reason
-    if (reason === 'ADD_DAILY_POST') {
-      if (!amendedStrategy.actions.includes('Daily Post')) {
-         amendedStrategy.actions.push('Daily Post');
-         amendedStrategy.description += ' (Updated with Daily Posting)';
-         console.log('[Autonomous] Amendment: Added "Daily Post" to actions.');
-      }
-    }
-
-    // In a real system, we might save this amendment to the DB/History
-    return amendedStrategy;
+    await this.executeOrganicStrategy(strategy, productImageUrl);
   },
 
   async executeOrganicStrategy(strategy: Strategy, imageUrl?: string): Promise<void> {
-    // 1. Create Internal Tracking Campaign
-    await CampaignService.createCampaign({
-      name: `[Organic] ${strategy.title} - ${new Date().toLocaleDateString()}`,
-      objective: CampaignObjective.OUTCOME_AWARENESS,
-      status: CampaignStatus.ACTIVE,
-    }, true);
+    if (!strategy.brandVoice) {
+      throw new Error('Strategy brandVoice is required.');
+    }
 
-    // 2. Publish Content to Facebook Page (Real-time)
     try {
         const config = await FacebookService.getConfig();
         if (config) {
-            // Generate Organic Copy
-            const copy = await CreativeService.generateCopy(strategy.title, strategy.brandVoice || 'Friendly', 'AWARENESS');
+            const copy = await CreativeService.generateCopy(strategy.title, strategy.brandVoice, 'AWARENESS');
             
-            console.log('[Autonomous] Publishing Organic Post...');
             await FacebookService.createPost(
                 config.page_id,
                 `${copy.headline}\n\n${copy.body}`,
                 imageUrl,
                 config.access_token
             );
-            console.log('[Autonomous] Organic Post Published Successfully.');
         } else {
-            console.warn('[Autonomous] Facebook config missing. Skipping organic post.');
+            throw new Error('Facebook config missing.');
         }
     } catch (e) {
         console.error('[Autonomous] Failed to publish organic post:', e);
-        // Don't fail the whole strategy, just log
+        throw e;
     }
   },
 
-  async executePaidStrategy(strategy: Strategy, imageUrl: string): Promise<void> {
-    try {
-      // 1. Create Campaign
-      const campaign = await CampaignService.createCampaign({
-        name: `[Auto-Paid] ${strategy.title} - ${new Date().toLocaleDateString()}`,
-        objective: CampaignObjective.OUTCOME_SALES,
-        status: CampaignStatus.ACTIVE,
-      });
-
-      // 2. Create Ad Set
-      const adSet = await AdSetService.createAdSet({
-        campaign_id: campaign.id,
-        facebook_campaign_id: campaign.facebook_campaign_id,
-        name: 'Auto Target - Broad - US',
-        daily_budget: strategy.budget || 2000, 
-        billing_event: BillingEvent.IMPRESSIONS,
-        optimization_goal: OptimizationGoal.OFFSITE_CONVERSIONS,
-        status: CampaignStatus.ACTIVE,
-      });
-
-      console.log(`[Autonomous] Created Ad Set: ${adSet.name}`);
-
-      // 3. Generate Human-Like Copy
-      // Extract product name from title
-      const productName = strategy.title;
-      const tone = strategy.brandVoice || 'Professional';
-      
-      const copy = await CreativeService.generateCopy(productName, tone, 'CONVERSION');
-
-      // 4. Create Ad Creative & Ad
-      // Check if strategy requires Video or Image
-      let finalAssetUrl = imageUrl;
-      
-      // If strategy mentions "Video" or "Reel", try to generate a video asset (Storyboard for now)
-      if (strategy.title.toLowerCase().includes('video') || strategy.title.toLowerCase().includes('reel')) {
-          try {
-              finalAssetUrl = await CreativeService.generateVideoAsset(productName, "High energy promotional video");
-              console.log('[Autonomous] Generated Video Asset (Storyboard):', finalAssetUrl);
-          } catch (e) {
-              console.warn('[Autonomous] Video generation failed, falling back to image:', e);
-          }
-      }
-
-      const ad = await AdService.createAd({
-        ad_set_id: adSet.id,
-        facebook_ad_set_id: adSet.facebook_ad_set_id,
-        name: `Ad - ${strategy.title}`,
-        status: CampaignStatus.ACTIVE,
-        creative: {
-          title: copy.headline, // Use generated catchy headline
-          body: copy.body,      // Use generated persuasive body
-          image_url: finalAssetUrl, 
-        },
-      });
-
-      console.log(`[Autonomous] Created Ad: ${ad.name} (${ad.facebook_ad_id})`);
-
-    } catch (error) {
-      console.error('[Autonomous] Execution Failed:', error);
-      throw error;
+  async amendStrategy(strategy: Strategy, amendment: string): Promise<Strategy> {
+    console.log(`[Autonomous] Amending strategy: ${amendment}`);
+    // In production, this would call the AI Brain to re-generate or adjust the strategy
+    // For now, we'll manually add the action if it's 'ADD_DAILY_POST'
+    const newStrategy = { ...strategy };
+    if (amendment === 'ADD_DAILY_POST' && !newStrategy.actions.includes('Daily Post')) {
+        newStrategy.actions.push('Daily Post');
     }
+    return newStrategy;
   },
 
-  /**
-   * Main Autonomous Loop
-   * Called periodically (e.g. by Dashboard) to perform background tasks.
-   */
   async runAutonomousLoop(): Promise<void> {
     console.log('[Autonomous] Starting background loop...');
     await this.likeAllInteractions();
@@ -153,43 +52,30 @@ export const AutonomousService = {
     await this.followUpLeads();
   },
 
-  /**
-   * Start Real-time Listeners
-   * NOTE: Actual execution (Like/Reply) is now handled by Supabase Edge Functions
-   * to ensure 24/7 autonomous operation even when the app is closed.
-   * This listener now serves to update the UI in real-time.
-   */
   startRealtimeListeners(): void {
     console.log('[Autonomous] Initializing Real-time UI Listeners...');
     
-    // Listen for new comments
     supabase
       .channel('public:comments')
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'comments' }, async (payload) => {
-        console.log('[Autonomous] Real-time: New comment detected (Processing on Backend)', payload.new);
-        // The backend Edge Function will handle the reply.
-        // We can add local notification logic here if desired.
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'comments' }, async (payload: any) => {
+        console.log('[Autonomous] Real-time: New comment detected', payload.new);
       })
       .subscribe();
 
-    // Listen for new messages
     supabase
       .channel('public:messages')
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, async (payload) => {
-        console.log('[Autonomous] Real-time: New message detected (Processing on Backend)', payload.new);
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, async (payload: any) => {
+        console.log('[Autonomous] Real-time: New message detected', payload.new);
       })
       .subscribe();
   },
 
   async handleNewComment(comment: any): Promise<void> {
-    // Deprecated in favor of Edge Function 'autonomous-worker'
-    // Kept for reference or fallback if backend is offline
-    console.log('Event handled by backend autonomous-worker');
+    console.log('Unhandled comment event', comment);
   },
 
   async handleNewMessage(msg: any): Promise<void> {
-    // Deprecated in favor of Edge Function 'autonomous-worker'
-    console.log('Event handled by backend autonomous-worker');
+    console.log('Unhandled message event', msg);
   },
 
   /**

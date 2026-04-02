@@ -1,33 +1,40 @@
 
 import { AIEngine } from '../config/ai-models';
 import { getServiceSupabaseClient } from '../config/supabase';
-import { CommunicationService } from './communicationService';
+import fetch from 'node-fetch';
+
+type PlatformSource = { name: string; url: string; platform: string };
 
 export class PlatformIntelligenceEngine {
   private ai: AIEngine;
   private supabase;
-  private communicationService: CommunicationService;
+  private sources: PlatformSource[];
 
   constructor() {
     this.ai = AIEngine.getInstance();
     this.supabase = getServiceSupabaseClient();
-    this.communicationService = new CommunicationService();
+    this.sources = [];
   }
 
   /**
-   * Main cycle for the IPE (Runs every 15-60 mins)
+   * Main cycle for the Platform Intelligence Engine (Runs every 15 minutes)
    */
   async runCycle() {
-    console.log('Starting IPE Cycle...');
+    console.log('Starting Platform Intelligence Cycle...');
     
-    // 1. Platform Monitor
+    // 1. Platform Monitor Service
     const rawData = await this.monitorPlatforms();
     
-    // 2. Algorithm Analyzer
-    const shifts = await this.analyzeAlgorithms(rawData);
+    if (rawData.length === 0) {
+        console.log('No new platform updates found.');
+        return;
+    }
+
+    // 2. Algorithm Detection Engine
+    const shifts = await this.detectAlgorithmShifts(rawData);
     
     // 3. Trend Predictor
-    const trends = await this.analyzeTrends();
+    const trends = await this.predictTrends(rawData);
 
     // 4. Opportunity Detector
     const opportunities = await this.detectOpportunities(shifts, trends);
@@ -35,38 +42,71 @@ export class PlatformIntelligenceEngine {
     // 5. Risk Assessor
     const risks = await this.assessRisks(shifts);
     
-    // 6. Intelligence Dispatcher
-    await this.dispatchIntelligence([...shifts, ...trends, ...opportunities, ...risks]);
+    // 6. Store in Database
+    await this.storeIntelligence(shifts, trends, opportunities, risks);
     
-    console.log('IPE Cycle Completed.');
-    return { shifts, trends, opportunities, risks };
+    const alerts = this.checkAlerts(shifts, trends, risks);
+
+    console.log('Platform Intelligence Cycle Completed.');
+    return { shifts, trends, opportunities, risks, alerts };
+  }
+
+  private checkAlerts(shifts: any[], trends: any[], risks: any[]) {
+      const alerts = [];
+      const criticalShifts = shifts.filter(s => s.confidence > 80 && s.type === 'algorithm_update');
+      if (criticalShifts.length > 0) alerts.push({ type: 'CRITICAL_ALGO_UPDATE', data: criticalShifts });
+      const highRisks = risks.filter(r => r.severity === 'high');
+      if (highRisks.length > 0) alerts.push({ type: 'HIGH_RISK_DETECTED', data: highRisks });
+      return alerts;
+  }
+
+  private async logSourceFailure(source: string, error: string) {
+    console.error(`[IPE] Source Failure: ${source} - ${error}`);
+    await this.supabase.from('system_logs').insert({
+      level: 'error',
+      module: 'IPE',
+      message: 'Source monitoring failed',
+      details: { source, error }
+    });
   }
 
   /**
-   * Fetches data from official sources (RSS/APIs)
+   * Monitors official blogs, dev docs, status pages, industry news
    */
   private async monitorPlatforms() {
-    const sources = [
-      { name: 'Meta Newsroom', url: 'https://about.fb.com/news/feed/' },
-      { name: 'Instagram Blog', url: 'https://about.instagram.com/blog/feed' }, 
-      { name: 'TikTok Newsroom', url: 'https://newsroom.tiktok.com/en-us/feed' } 
-    ];
-
     const results = [];
     
-    for (const source of sources) {
+    const { data: dbSources } = await this.supabase
+      .from('intelligence_sources')
+      .select('*')
+      .eq('is_active', true);
+
+    this.sources = (dbSources || []) as PlatformSource[];
+    if (this.sources.length === 0) {
+      await this.logSourceFailure('intelligence_sources', 'No active intelligence sources configured');
+      return results;
+    }
+    const allSources = this.sources;
+    
+    for (const source of allSources) {
       try {
         console.log(`Fetching from ${source.name}...`);
-        const response = await fetch(source.url);
+        const response = await fetch(source.url, { timeout: 10000 });
         if (response.ok) {
           const text = await response.text();
-          const contentSnippet = text.substring(0, 5000); 
-          results.push({ source: source.name, content: contentSnippet });
+          const cleanText = text.replace(/<[^>]*>?/gm, ' ').substring(0, 15000); 
+          
+          results.push({ 
+              source: source.name, 
+              platform: source.platform, 
+              content: cleanText,
+              captured_at: new Date().toISOString()
+          });
         } else {
-            console.warn(`Failed to fetch ${source.name}: ${response.status}`);
+            await this.logSourceFailure(source.name, `HTTP ${response.status}: ${response.statusText}`);
         }
-      } catch (error) {
-        console.error(`Error monitoring ${source.name}:`, error);
+      } catch (error: any) {
+        await this.logSourceFailure(source.name, error.message || 'Unknown error');
       }
     }
     
@@ -74,219 +114,176 @@ export class PlatformIntelligenceEngine {
   }
 
   /**
-   * Analyzes raw data for algorithm shifts using AI
+   * Detects algorithm shifts and user behavior patterns
    */
-  private async analyzeAlgorithms(rawData: any[]) {
+  private async detectAlgorithmShifts(rawData: any[]) {
     if (rawData.length === 0) return [];
 
     const prompt = `
-      Analyze the following text snippets from social media platform newsrooms.
-      Detect any announcements or patterns indicating algorithm changes, new features, or policy updates.
-      
-      Focus on:
-      - Algorithm ranking factors (e.g., "Video weight increased")
-      - New features affecting reach (e.g., "Reels update")
-      - Policy changes (e.g., "Ad transparency rules")
+      Analyze the following text snippets from social media platform newsrooms/feeds.
+      Focus on detecting:
+      1. Algorithm changes that affect ORGANIC REACH.
+      2. New features that enable interactive or immersive experiences.
+      3. Shifts in USER BEHAVIOR (e.g., how people are reacting to certain content types).
+      4. Policy changes regarding data privacy or ad-free experiences.
       
       DATA:
-      ${JSON.stringify(rawData)}
+      ${JSON.stringify(rawData.map(d => ({ source: d.source, content: d.content.substring(0, 1500) })))} 
       
       Return a JSON array of detected shifts:
       [
         {
-          "platform": "facebook" | "instagram" | "tiktok",
-          "type": "algorithm_shift" | "feature_update" | "policy_change",
-          "summary": "Short description",
+          "platform": "facebook" | "instagram" | "tiktok" | "linkedin" | "x",
+          "type": "algorithm_update" | "feature_launch" | "policy_update" | "user_behavior_shift",
+          "summary": "Short description of the change",
           "confidence": number (0-100),
           "impact_score": number (1-10),
-          "recommended_action": "Actionable advice for advertisers"
+          "organic_leverage": "How to exploit this for organic reach",
+          "user_reaction_patterns": "How users are likely to react",
+          "priorities": ["Video", "Text", "Images", "Live"]
         }
       ]
-      
-      If no significant shifts are found, return an empty array [].
     `;
 
-    const response = await this.ai.generateStrategy({}, prompt);
-    return response.parsedJson || [];
-  }
-
-  /**
-   * Trend Predictor: Forecasts future trends based on global strategy data
-   */
-  private async analyzeTrends() {
-      // Fetch aggregated global stats
-      const { data: globalStats } = await this.supabase
-          .from('global_strategy_memory')
-          .select('*')
-          .order('average_roas', { ascending: false })
-          .limit(20);
-
-      if (!globalStats || globalStats.length === 0) return [];
-
-      const prompt = `
-        Analyze the following global ad performance data.
-        Identify emerging trends and forecast what will work in the next 30 days.
-        
-        DATA:
-        ${JSON.stringify(globalStats)}
-        
-        Return a JSON array of predicted trends:
-        [
-            {
-                "platform": "string",
-                "type": "trend_forecast",
-                "summary": "Short prediction (e.g. 'Short-form video dominant in Beauty')",
-                "confidence": number (0-100),
-                "impact_score": number (1-10),
-                "recommended_action": "How to capitalize on this"
-            }
-        ]
-      `;
-
-      const response = await this.ai.generateStrategy({}, prompt);
-      return response.parsedJson || [];
-  }
-
-  /**
-   * Opportunity Detector: Finds gaps and high-potential areas
-   */
-  private async detectOpportunities(shifts: any[], trends: any[]) {
-      // Combine shifts and trends to find "Arbitrage" opportunities
-      // e.g. New Feature (Shift) + Rising Trend (Trend) = Opportunity
-      
-      if (shifts.length === 0 && trends.length === 0) return [];
-
-      const prompt = `
-        Based on the identified Algorithm Shifts and Market Trends, detect specific high-value opportunities for advertisers.
-        Look for "first-mover advantage" gaps.
-        
-        SHIFTS: ${JSON.stringify(shifts)}
-        TRENDS: ${JSON.stringify(trends)}
-        
-        Return a JSON array of opportunities:
-        [
-            {
-                "platform": "string",
-                "type": "opportunity_gap",
-                "summary": "Description of the opportunity",
-                "confidence": number,
-                "impact_score": number,
-                "recommended_action": "Specific tactic to execute"
-            }
-        ]
-      `;
-
-      const response = await this.ai.generateStrategy({}, prompt);
-      return response.parsedJson || [];
-  }
-
-  /**
-   * Risk Assessor: Evaluates compliance and platform stability risks
-   */
-  private async assessRisks(shifts: any[]) {
-      // Filter for policy changes or negative shifts
-      const policyShifts = shifts.filter(s => s.type === 'policy_change' || s.impact_score >= 7);
-      
-      if (policyShifts.length === 0) return [];
-
-      const prompt = `
-        Evaluate the following platform changes for Compliance Risks to advertisers.
-        Flag any update that could lead to ad rejections, bans, or reduced reach if ignored.
-        
-        CHANGES: ${JSON.stringify(policyShifts)}
-        
-        Return a JSON array of risks:
-        [
-            {
-                "platform": "string",
-                "type": "compliance_risk",
-                "summary": "Risk description",
-                "confidence": number,
-                "impact_score": number, // High score = High Danger
-                "recommended_action": "What to avoid or change"
-            }
-        ]
-      `;
-      
-      const response = await this.ai.generateStrategy({}, prompt);
-      return response.parsedJson || [];
-  }
-
-  /**
-   * Dispatches intelligence to the database and flags urgent items
-   */
-  private async dispatchIntelligence(items: any[]) {
-    if (!items || items.length === 0) return;
-
-    console.log(`Dispatching ${items.length} intelligence items...`);
-
-    for (const item of items) {
-      // 1. Log to Database
-      const { data: inserted, error } = await this.supabase
-        .from('ipe_intelligence_log')
-        .insert({
-          intelligence_type: item.type,
-          platform: item.platform || 'General',
-          summary: item.summary,
-          details: item,
-          priority: item.impact_score >= 8 ? 1 : item.impact_score >= 5 ? 2 : 3,
-          recommended_actions: [item.recommended_action],
-          expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(), // Expires in 7 days
-          status: 'applied_automatically' // IPE Engine executes autonomously
-        })
-        .select()
-        .single();
-
-      if (error) console.error('Error logging intelligence:', error);
-
-      // 2. Autonomous Execution: Apply optimizations to active strategies
-      if (item.recommended_action && inserted) {
-          console.log(`IPE Autonomous Action: ${item.summary}`);
-          await this.applyAutonomousOptimization(item);
-      }
-
-      // 3. If Urgent (Priority 1), trigger notifications via Communication Service
-      if (item.impact_score >= 8 && inserted) {
-          console.log(`URGENT INTELLIGENCE DETECTED: ${item.summary}`);
-          
-          try {
-             await this.communicationService.generateAlertMessage(inserted.id);
-          } catch (commError) {
-             console.error("Failed to trigger communication service:", commError);
-          }
-      }
+    try {
+        const response = await this.ai.generateStrategy({}, prompt);
+        return response.parsedJson || [];
+    } catch (e: any) {
+        await this.logSourceFailure('AI_ANALYSIS_SHIFTS', e.message);
+        return [];
     }
   }
 
   /**
-   * Applies optimizations autonomously to all active strategies affected by the platform change
+   * Generates short/medium/long-term predictions
    */
-  private async applyAutonomousOptimization(intelligence: any) {
-    // Fetch all active strategies for the affected platform
-    const { data: strategies } = await this.supabase
-        .from('strategies')
-        .select('*')
-        .eq('is_active', true);
+  private async predictTrends(rawData: any[]) {
+    if (rawData.length === 0) return [];
 
-    if (!strategies) return;
-
-    for (const strategy of strategies) {
-        // If the strategy uses the platform mentioned in intelligence
-        if (strategy.platforms && strategy.platforms.includes(intelligence.platform.toLowerCase())) {
-            console.log(`[IPE Autonomy] Applying optimization to Strategy ${strategy.id} for ${intelligence.platform}`);
-            
-            // Log the optimization in strategy history
-            await this.supabase.from('strategy_optimizations').insert({
-                strategy_id: strategy.id,
-                intelligence_id: intelligence.id,
-                action_taken: intelligence.recommended_action,
-                reason: intelligence.summary,
-                applied_at: new Date().toISOString(),
-                status: 'applied_automatically'
-            });
-
-            console.log(`[IPE Autonomy] Optimization queued for Worker execution: ${intelligence.recommended_action}`);
+    const prompt = `
+      Based on the latest platform news, predict future trends.
+      
+      DATA:
+      ${JSON.stringify(rawData.map(d => ({ source: d.source, content: d.content.substring(0, 500) })))}
+      
+      Return a JSON array of predictions:
+      [
+        {
+          "platform": "string",
+          "timeframe": "short_term" | "medium_term" | "long_term",
+          "prediction": "Prediction text",
+          "confidence": number,
+          "trending_formats": ["Reels", "Carousel", "Stories"]
         }
+      ]
+    `;
+
+    try {
+        const response = await this.ai.generateStrategy({}, prompt);
+        return response.parsedJson || [];
+    } catch (e) {
+        console.error("Error in predictTrends:", e);
+        return [];
+    }
+  }
+
+  /**
+   * Identifies content gaps and underserved audiences
+   */
+  private async detectOpportunities(shifts: any[], trends: any[]) {
+    if (shifts.length === 0 && trends.length === 0) return [];
+
+    const prompt = `
+      Based on these shifts and trends, identify "Arbitrage" opportunities for marketers.
+      
+      SHIFTS: ${JSON.stringify(shifts)}
+      TRENDS: ${JSON.stringify(trends)}
+      
+      Return a JSON array of opportunities:
+      [
+        {
+          "platform": "string",
+          "opportunity": "Description",
+          "gap_type": "content_gap" | "underserved_audience",
+          "action": "What to do"
+        }
+      ]
+    `;
+
+    try {
+        const response = await this.ai.generateStrategy({}, prompt);
+        return response.parsedJson || [];
+    } catch (e) {
+        console.error("Error in detectOpportunities:", e);
+        return [];
+    }
+  }
+
+  /**
+   * Monitors policy changes and enforcement patterns
+   */
+  private async assessRisks(shifts: any[]) {
+    const policyShifts = shifts.filter(s => s.type === 'policy_update');
+    
+    if (policyShifts.length === 0) return [];
+
+    const prompt = `
+      Evaluate these policy changes for marketing risks.
+      
+      CHANGES: ${JSON.stringify(policyShifts)}
+      
+      Return a JSON array of risks:
+      [
+        {
+          "platform": "string",
+          "risk": "Description",
+          "severity": "low" | "medium" | "high",
+          "mitigation": "How to avoid"
+        }
+      ]
+    `;
+    
+    try {
+        const response = await this.ai.generateStrategy({}, prompt);
+        return response.parsedJson || [];
+    } catch (e) {
+        console.error("Error in assessRisks:", e);
+        return [];
+    }
+  }
+
+  /**
+   * Stores findings in the database
+   */
+  private async storeIntelligence(shifts: any[], trends: any[], opportunities: any[], risks: any[]) {
+    const platforms = Array.from(new Set(this.sources.map(s => s.platform)));
+
+    for (const platform of platforms) {
+      const pShifts = shifts.filter(s => s.platform === platform);
+      const pTrends = trends.filter(t => t.platform === platform);
+      const pOpportunities = opportunities.filter(o => o.platform === platform);
+      const pRisks = risks.filter(r => r.platform === platform);
+
+      if (pShifts.length === 0 && pTrends.length === 0 && pOpportunities.length === 0 && pRisks.length === 0) continue;
+
+      const algorithmPriorities = pShifts.map(s => s.priorities).flat().filter(Boolean);
+      const trendingFormats = pTrends.map(t => t.trending_formats).flat().filter(Boolean);
+      const predictions = pTrends.map(t => ({ timeframe: t.timeframe, prediction: t.prediction }));
+
+      const { error } = await this.supabase
+        .from('platform_intelligence')
+        .insert({
+          platform,
+          algorithm_priorities: algorithmPriorities,
+          trending_formats: trendingFormats,
+          detected_shifts: pShifts,
+          predictions: predictions,
+          risks: pRisks,
+          captured_at: new Date().toISOString(),
+          optimal_times: null
+        });
+
+      if (error) console.error(`Error storing intelligence for ${platform}:`, error);
     }
   }
 }

@@ -1,8 +1,9 @@
 
 import React, { useEffect } from 'react';
 import { View } from 'react-native';
-import { NavigationContainer, DarkTheme } from '@react-navigation/native';
+import { NavigationContainer, DarkTheme, LinkingOptions } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
+import * as Linking from 'expo-linking';
 import { RootStackParamList } from '../types';
 import { useAuthStore } from '../store/authStore';
 
@@ -31,6 +32,31 @@ const AdRoomTheme = {
   },
 };
 
+const prefix = Linking.createURL('/');
+
+const linking: LinkingOptions<RootStackParamList> = {
+  prefixes: [prefix, 'adroom://'],
+  config: {
+    screens: {
+      Main: {
+        path: 'main',
+        screens: {
+          Dashboard: 'dashboard',
+          AgentChat: 'agent-chat-tab',
+          StrategyHistory: 'strategy-history',
+          Settings: 'settings',
+        },
+      } as any,
+      AgentChat: 'agent-chat',
+      ConnectedAccounts: 'connected-accounts',
+      StrategyApproval: 'strategy-approval',
+      Login: 'login',
+      Signup: 'signup',
+      Onboarding: 'onboarding',
+    },
+  },
+};
+
 export default function AppNavigator() {
   const { session, isLoading, initialize } = useAuthStore();
 
@@ -45,7 +71,7 @@ export default function AppNavigator() {
   }
 
   return (
-    <NavigationContainer theme={AdRoomTheme}>
+    <NavigationContainer theme={AdRoomTheme} linking={linking}>
       <Stack.Navigator screenOptions={{ headerShown: false }}>
         {!session ? (
           <>

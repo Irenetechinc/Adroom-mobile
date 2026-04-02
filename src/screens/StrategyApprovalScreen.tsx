@@ -9,14 +9,12 @@ type Props = NativeStackScreenProps<RootStackParamList, 'StrategyApproval'>;
 
 export default function StrategyApprovalScreen({ navigation }: Props) {
   const { generatedStrategies, setActiveStrategy } = useAgentStore();
-  const [selectedTab, setSelectedTab] = useState<'FREE' | 'PAID'>('PAID');
 
   if (!generatedStrategies) {
     return <View className="flex-1 bg-adroom-dark" />;
   }
 
-  const activeStrategy: any =
-    selectedTab === 'FREE' ? generatedStrategies.free : generatedStrategies.paid;
+  const activeStrategy: any = (generatedStrategies as any)?.strategy || null;
 
   const handleApprove = async () => {
     if (!activeStrategy) return;
@@ -50,19 +48,8 @@ export default function StrategyApprovalScreen({ navigation }: Props) {
 
   return (
     <View className="flex-1 bg-adroom-dark">
-      <View className="bg-adroom-card px-4 py-3 flex-row justify-center border-b border-adroom-neon/20">
-        <TouchableOpacity 
-          onPress={() => setSelectedTab('FREE')}
-          className={`px-6 py-2 rounded-l-lg border border-adroom-neon ${selectedTab === 'FREE' ? 'bg-adroom-neon' : 'bg-transparent'}`}
-        >
-          <Text className={`${selectedTab === 'FREE' ? 'text-adroom-dark' : 'text-adroom-neon'} font-bold uppercase`}>Free Strategy</Text>
-        </TouchableOpacity>
-        <TouchableOpacity 
-          onPress={() => setSelectedTab('PAID')}
-          className={`px-6 py-2 rounded-r-lg border border-adroom-neon ${selectedTab === 'PAID' ? 'bg-adroom-neon' : 'bg-transparent'}`}
-        >
-          <Text className={`${selectedTab === 'PAID' ? 'text-adroom-dark' : 'text-adroom-neon'} font-bold uppercase`}>Paid Strategy</Text>
-        </TouchableOpacity>
+      <View className="bg-adroom-card px-4 py-3 border-b border-adroom-neon/20">
+        <Text className="text-adroom-neon text-center font-bold uppercase">Organic Strategy</Text>
       </View>
 
       <ScrollView className="flex-1 p-4">
@@ -126,10 +113,7 @@ export default function StrategyApprovalScreen({ navigation }: Props) {
             <Text className="text-xs text-adroom-text-muted uppercase font-bold">Est. Reach</Text>
             <Text className="text-lg font-bold text-white">{activeStrategy.estimatedReach}</Text>
           </View>
-          <View className="items-end">
-            <Text className="text-xs text-adroom-text-muted uppercase font-bold">Cost</Text>
-            <Text className="text-lg font-bold text-white">{activeStrategy.cost}</Text>
-          </View>
+          <View />
         </View>
 
         <TouchableOpacity 

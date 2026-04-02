@@ -5,9 +5,7 @@ import { RemoteLogger } from './remoteLogger';
 const BACKEND_URL = process.env.EXPO_PUBLIC_API_URL;
 
 export interface GeneratedStrategy {
-  free: any;
-  paid: any;
-  comparison: any;
+  strategy: any;
 }
 
 export const StrategyService = {

@@ -1,7 +1,11 @@
 import { create } from 'zustand';
 import { ChatMessage, ProductDetails, ConnectionState, FlowState } from '../types/agent';
 import { supabase } from '../services/supabase';
-import { FacebookService, FacebookPage, FacebookAdAccount } from '../services/facebook';
+import { FacebookService, FacebookPage } from '../services/facebook';
+import { InstagramService } from '../services/instagram';
+import { TikTokService } from '../services/tiktok';
+import { LinkedInService } from '../services/linkedin';
+import { TwitterService } from '../services/twitter';
 import { ProductService } from '../services/product';
 import { StrategyService, GeneratedStrategy } from '../services/strategy';
 import { VisionService } from '../services/vision';
@@ -24,13 +28,12 @@ interface AgentState {
   generatedStrategies: GeneratedStrategy | null;
   activeStrategy: any | null;
   connectionState: ConnectionState;
+  connectionSource: 'flow' | 'settings' | null;
   
-  // Facebook Flow Data
-  fbAccessToken: string | null;
-  fetchedPages: FacebookPage[];
-  fetchedAdAccounts: FacebookAdAccount[];
-  selectedPage: FacebookPage | null;
-  selectedAdAccount: FacebookAdAccount | null;
+  // Platform Access Tokens
+  tokens: Record<string, string | null>;
+  fetchedAccounts: Record<string, any[]>;
+  selectedAccounts: Record<string, any>;
 
   addMessage: (text: string, sender: 'user' | 'agent', imageUri?: string, uiType?: ChatMessage['uiType'], uiData?: any) => void;
   setTyping: (typing: boolean) => void;
@@ -42,13 +45,14 @@ interface AgentState {
   handleProductIntake: (data: ProductDetails) => Promise<void>;
   handleGoalSelection: (goal: string) => void;
   handleDurationSelection: (duration: number) => Promise<void>;
-  handleStrategySelection: (type: 'free' | 'paid') => Promise<void>;
+  handleStrategySelection: () => Promise<void>;
   handleServiceIntake: (data: any) => Promise<void>;
   handleBrandIntake: (data: any) => Promise<void>;
+  handleWebsiteIntake: (url: string) => Promise<void>;
   handleRetry: (action: string, data: any) => Promise<void>;
   handleManualProductSubmit: (data: any) => Promise<void>;
   handleStrategyTypeSelection: (type: string) => void;
-  handleImageUpload: (uri: string) => Promise<void>;
+  handleImageUpload: (uri: string, base64: string) => Promise<void>;
   
   // Standard Actions
   setActiveStrategy: (strategy: any) => Promise<void>;
@@ -59,15 +63,18 @@ interface AgentState {
   restoreSession: () => Promise<void>;
   startNewSession: () => Promise<void>;
   
-  // Facebook
+  // Unified Connection Actions
+  initiateConnection: (platform: string, fromFlow?: boolean) => void;
+  handleLogin: (platform: string) => Promise<void>;
+  handleAccountSelection: (platform: string, account: any) => Promise<void>;
+  disconnectPlatform: (platform: string) => Promise<void>;
+
+  // Legacy (Keep for compatibility if needed, but we'll use unified)
   initiateFacebookConnection: (fromFlow?: boolean) => void;
   handleFacebookLogin: () => Promise<void>;
-  fetchPages: () => Promise<void>;
   handlePageSelection: (page: FacebookPage) => Promise<void>;
-  handleAdAccountSelection: (account: FacebookAdAccount) => Promise<void>;
   disconnectFacebook: () => Promise<void>;
-  handleMarketingTypeSelection: () => void;
-  analyzeContext: () => Promise<void>;
+  fbAccessToken: string | null;
 }
 
 export const useAgentStore = create<AgentState>((set, get) => ({
@@ -82,11 +89,11 @@ export const useAgentStore = create<AgentState>((set, get) => ({
   generatedStrategies: null,
   activeStrategy: null,
   connectionState: 'IDLE',
+  connectionSource: null,
+  tokens: {},
+  fetchedAccounts: {},
+  selectedAccounts: {},
   fbAccessToken: null,
-  fetchedPages: [],
-  fetchedAdAccounts: [],
-  selectedPage: null,
-  selectedAdAccount: null,
 
   addMessage: (text, sender, imageUri, uiType, uiData) => {
     const newMessage: ChatMessage = {
@@ -188,7 +195,6 @@ export const useAgentStore = create<AgentState>((set, get) => ({
     addMessage(data.baseImageUri ? "Analyzing product image..." : "Saving product details...", 'user');
 
     try {
-        // Integrity Check
         const integrity = await IntegrityService.validateAndFixContent(data.name + " " + (data.description || ""));
         if (!integrity.isValid) {
             set({ isTyping: false });
@@ -229,7 +235,6 @@ export const useAgentStore = create<AgentState>((set, get) => ({
     addMessage(`Service: ${data.name}`, 'user');
 
     try {
-        // Integrity Check
         const integrity = await IntegrityService.validateAndFixContent(data.name + " " + (data.description || ""));
         if (!integrity.isValid) {
             set({ isTyping: false });
@@ -242,7 +247,6 @@ export const useAgentStore = create<AgentState>((set, get) => ({
             description: integrity.cleanedText || data.description
         };
 
-        // Services use Product table for now or a dedicated one
         const serviceId = await ProductService.saveProduct({
             ...validatedData,
             images: data.images || [],
@@ -273,7 +277,6 @@ export const useAgentStore = create<AgentState>((set, get) => ({
     addMessage(`Brand: ${data.name}`, 'user');
 
     try {
-        // Integrity Check
         const integrity = await IntegrityService.validateAndFixContent(data.name + " " + (data.mission || ""));
         if (!integrity.isValid) {
             set({ isTyping: false });
@@ -281,13 +284,11 @@ export const useAgentStore = create<AgentState>((set, get) => ({
             return;
         }
 
-        // Use cleaned text if available
         const validatedData = {
             ...data,
             mission: integrity.cleanedText || data.mission
         };
 
-        // Save brand identity
         const brandId = await ProductService.saveProduct({
             ...validatedData,
             name: data.name,
@@ -313,6 +314,47 @@ export const useAgentStore = create<AgentState>((set, get) => ({
     }
   },
 
+  handleWebsiteIntake: async (url: string) => {
+    const { addMessage } = get();
+    set({ isTyping: true, isInputDisabled: true });
+    
+    addMessage(`Scanning Website: ${url}`, 'user');
+    
+    try {
+        const response = await fetch('https://adroom-backend.railway.app/api/scrape', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ url })
+        });
+        
+        if (!response.ok) throw new Error('Scraping failed.');
+        
+        const products = await response.json();
+        
+        set({ isTyping: false });
+        
+        if (products && products.length > 0) {
+            addMessage(
+                `Successfully scraped ${products.length} products! I've prioritized the best one for now, but all will be marketed.`,
+                'agent'
+            );
+            
+            addMessage(
+                "Here are the details I found. You can edit them below:",
+                'agent',
+                undefined,
+                'attribute_editor',
+                { product: products[0], allProducts: products }
+            );
+        } else {
+            addMessage("I couldn't find any products on that website. Would you like to try another URL or manual entry?", 'agent', undefined, 'product_intake_form');
+        }
+    } catch (error: any) {
+        set({ isTyping: false });
+        addMessage(`Error: ${error.message}`, 'agent', undefined, 'retry_action', { action: 'WEBSITE_INTAKE', data: url });
+    }
+  },
+
   handleManualProductSubmit: async (data: any) => {
     const { addMessage, handleProductIntake } = get();
     addMessage(`Product: ${data.name}`, 'user');
@@ -320,7 +362,7 @@ export const useAgentStore = create<AgentState>((set, get) => ({
   },
 
   handleRetry: async (action: string, data: any) => {
-    const { handleProductIntake, handleServiceIntake, handleBrandIntake, handleManualProductSubmit, handleImageUpload, handlePageSelection, handleFacebookLogin, addMessage } = get();
+    const { addMessage } = get();
     addMessage("Retrying last action...", 'agent');
     
     switch(action) {
@@ -340,10 +382,10 @@ export const useAgentStore = create<AgentState>((set, get) => ({
             addMessage("Please re-upload image:", 'agent', undefined, 'product_intake_form', data);
             break;
         case 'PAGE_SELECTION': 
-            addMessage("Please re-select your Facebook page:", 'agent', undefined, 'page_selection', { pages: data });
+            addMessage("Please re-select your account:", 'agent', undefined, 'page_selection', { pages: data });
             break;
         case 'FB_LOGIN': 
-            addMessage("Please try connecting to Facebook again:", 'agent', undefined, 'facebook_connect');
+            addMessage("Please try connecting again:", 'agent', undefined, 'facebook_connect');
             break;
         default: addMessage("I'm not sure what to retry. Let's try starting over.", 'agent');
     }
@@ -356,9 +398,8 @@ export const useAgentStore = create<AgentState>((set, get) => ({
       
       addMessage(`${goal.replace('_', ' ')}`, 'user');
       
-      // Calculate Recommendation based on PDF Section 6 Step 4
       const price = parseFloat(productDetails.price || '0');
-      let rec = 21; // Default
+      let rec = 21; 
       if (goal === 'sales') rec = 21;
       else if (goal === 'awareness') rec = 30;
       else if (goal === 'promotional') rec = 14;
@@ -405,11 +446,11 @@ export const useAgentStore = create<AgentState>((set, get) => ({
           });
           
           addMessage(
-              "Strategy generation complete. I have prepared two options for you.",
+              "Strategy generation complete. Here is your optimized plan.",
               'agent',
               undefined,
-              'strategy_comparison',
-              { strategies }
+              'strategy_preview', 
+              { strategy: strategies.strategy }
           );
 
       } catch (error: any) {
@@ -418,21 +459,20 @@ export const useAgentStore = create<AgentState>((set, get) => ({
       }
   },
 
-  handleStrategySelection: async (type: 'free' | 'paid') => {
-      const { addMessage, generatedStrategies, initiateFacebookConnection } = get();
+  handleStrategySelection: async () => {
+      const { addMessage, generatedStrategies, initiateConnection } = get();
       
       if (!generatedStrategies) return;
       
-      const strategy = type === 'free' ? generatedStrategies.free : generatedStrategies.paid;
+      const strategy = generatedStrategies.strategy;
       set({ activeStrategy: strategy, flowState: 'EXECUTION', isInputDisabled: true });
       
-      addMessage(`I choose the ${type.toUpperCase()} strategy.`, 'user');
-      addMessage(`Excellent choice. Locking in ${type.toUpperCase()} strategy parameters.`, 'agent');
+      addMessage(`I approve this strategy. Let's launch it.`, 'user');
+      addMessage(`Excellent. Locking in strategy parameters.`, 'agent');
       
-      // Proceed to Facebook Connection if not connected
-      // We'll trigger the existing connection flow logic
       setTimeout(() => {
-          initiateFacebookConnection(true);
+          const platforms = strategy.platforms || ['facebook'];
+          initiateConnection(platforms[0], true);
       }, 1000);
   },
 
@@ -458,8 +498,6 @@ export const useAgentStore = create<AgentState>((set, get) => ({
         addMessage(`Analysis failed: ${error.message}. Would you like to try uploading again?`, 'agent', undefined, 'retry_action', { action: 'IMAGE_UPLOAD', data: { uri, base64 } });
     }
   },
-
-  // --- Standard Actions ---
 
   setActiveStrategy: async (strategy: any) => {
     set({ activeStrategy: strategy });
@@ -534,7 +572,7 @@ export const useAgentStore = create<AgentState>((set, get) => ({
       }));
       
       const lastMsg = data[data.length - 1];
-      const needsDisabled = ['strategy_type_selection', 'product_intake_form', 'product_manual_form', 'service_intake_form', 'brand_intake_form', 'goal_selection', 'duration_selection', 'strategy_comparison', 'facebook_connect', 'page_selection', 'ad_account_selection', 'retry_action'].includes(lastMsg.ui_type);
+      const needsDisabled = ['strategy_type_selection', 'product_intake_form', 'product_manual_form', 'service_intake_form', 'brand_intake_form', 'goal_selection', 'duration_selection', 'strategy_comparison', 'facebook_connect', 'page_selection', 'retry_action'].includes(lastMsg.ui_type);
 
       set({ 
         messages: loadedMessages, 
@@ -562,8 +600,9 @@ export const useAgentStore = create<AgentState>((set, get) => ({
         activeStrategy: null,
         connectionState: 'IDLE',
         flowState: 'IDLE',
-        selectedPage: null,
-        selectedAdAccount: null
+        tokens: {},
+        fetchedAccounts: {},
+        selectedAccounts: {}
     });
 
     const { data: { user } } = await supabase.auth.getUser();
@@ -578,142 +617,139 @@ export const useAgentStore = create<AgentState>((set, get) => ({
         const userName = user?.email?.split('@')[0] || 'User';
         addMessage(`Hello ${userName}. I am AdRoom AI. Ready to strategize?`, 'agent');
         setTyping(false);
-        // Automatically start the flow as per "ENTIRE FLOW IN CHAT"
         setTimeout(() => startStrategyFlow(), 1000);
     }, 1000);
   },
 
   resetAgent: () => get().startNewSession(),
   
-  // --- Facebook Flow ---
-  
-  initiateFacebookConnection: (fromFlow = false) => {
-    const { addMessage, fbAccessToken, activeStrategy } = get();
-    
-    // Check if connected
-    if (fbAccessToken) {
-        if (activeStrategy) {
-            addMessage("Facebook is already connected. Proceeding with your strategy execution...", 'agent');
-            // Continue flow
+  // --- Unified Connection Flow ---
+
+  initiateConnection: (platform: string, fromFlow = false) => {
+    const { addMessage, tokens, activeStrategy } = get();
+    set({ connectionSource: fromFlow ? 'flow' : 'settings' });
+
+    if (tokens[platform]) {
+        if (fromFlow && activeStrategy) {
+            // Check if there are more platforms to connect
+            const platforms = activeStrategy.platforms || [];
+            const currentIndex = platforms.indexOf(platform);
+            if (currentIndex < platforms.length - 1) {
+                get().initiateConnection(platforms[currentIndex + 1], true);
+            } else {
+                addMessage(`All platforms (${platforms.join(', ')}) are connected. Launching!`, 'agent', undefined, 'completion_card');
+            }
         } else {
-            addMessage("Facebook is connected. Since you don't have an active strategy yet, let's create one!", 'agent');
-            get().startStrategyFlow();
+            addMessage(`${platform.toUpperCase()} is already connected.`, 'agent');
         }
         return;
     }
 
-    set({ connectionState: 'CONNECTING_FACEBOOK', isInputDisabled: true });
-    
-    const msg = fromFlow 
-        ? "To launch this strategy, I need to connect to your Facebook Business account."
-        : "Let's connect your Facebook account so I can manage your ads autonomously.";
-
-    addMessage(msg, 'agent', undefined, 'facebook_connect');
+    set({ connectionState: 'CONNECTING', isInputDisabled: true });
+    const msg = `To proceed, I need to connect to your ${platform.toUpperCase()} account.`;
+    addMessage(msg, 'agent', undefined, 'facebook_connect', { platform });
   },
 
-  handleFacebookLogin: async () => {
-      const { addMessage, handlePageSelection } = get();
+  handleLogin: async (platform: string) => {
+      const { addMessage, handleAccountSelection } = get();
       set({ isTyping: true, isInputDisabled: true });
       try {
-          const token = await FacebookService.login();
+          let token = null;
+          let accounts: any[] = [];
+
+          if (platform === 'facebook') {
+              token = await FacebookService.login();
+              if (token) accounts = await FacebookService.getPages(token);
+          } else if (platform === 'instagram') {
+              token = await InstagramService.login();
+              if (token) accounts = await InstagramService.getInstagramAccounts(token);
+          } else if (platform === 'tiktok') {
+              token = await TikTokService.login();
+              if (token) accounts = await TikTokService.getAdvertiserAccounts(token);
+          } else if (platform === 'linkedin') {
+              token = await LinkedInService.login();
+              if (token) accounts = await LinkedInService.getAdAccounts(token);
+          } else if (platform === 'twitter') {
+              token = await TwitterService.login();
+              if (token) accounts = await TwitterService.getAdAccounts(token);
+          }
+
           if (token) {
-              set({ fbAccessToken: token, connectionState: 'SELECTING_PAGE' });
-              const pages = await FacebookService.getPages(token);
-              set({ fetchedPages: pages, isTyping: false });
-              
-              if (pages.length === 1) {
-                  // Auto-select if only one page
-                  addMessage(`Connected! Found 1 page: ${pages[0].name}. Selecting it automatically...`, 'agent');
-                  await handlePageSelection(pages[0]);
-              } else if (pages.length > 1) {
+              set((state) => ({ 
+                  tokens: { ...state.tokens, [platform]: token },
+                  fetchedAccounts: { ...state.fetchedAccounts, [platform]: accounts },
+                  isTyping: false 
+              }));
+
+              if (accounts.length === 1) {
+                  await handleAccountSelection(platform, accounts[0]);
+              } else if (accounts.length > 1) {
                   addMessage(
-                      "Successfully connected to Facebook! Please select the page you want to use for this strategy:",
+                      `Connected! Please select the ${platform} account you want to use:`,
                       'agent',
                       undefined,
                       'page_selection',
-                      { pages }
+                      { pages: accounts, platform }
                   );
               } else {
-                  addMessage("Successfully connected, but no Facebook pages were found. Please ensure you are an admin of at least one page.", 'agent');
+                  addMessage(`Connected, but no ${platform} accounts were found.`, 'agent');
               }
           }
       } catch (error: any) {
           set({ isTyping: false });
-          addMessage(`Facebook connection failed: ${error.message}`, 'agent', undefined, 'retry_action', { action: 'FB_LOGIN', data: null });
+          addMessage(`${platform.toUpperCase()} connection failed: ${error.message}`, 'agent', undefined, 'retry_action', { action: 'LOGIN', data: platform });
       }
   },
 
-  fetchPages: async () => {
-      const { fbAccessToken } = get();
-      if (fbAccessToken) {
-          const pages = await FacebookService.getPages(fbAccessToken);
-          set({ fetchedPages: pages });
-      }
-  },
+  handleAccountSelection: async (platform: string, account: any) => {
+      const { addMessage, activeStrategy, connectionSource, initiateConnection } = get();
+      set({ isTyping: true, isInputDisabled: true });
 
-  handlePageSelection: async (page: FacebookPage) => {
-      const { addMessage, fbAccessToken } = get();
-      set({ selectedPage: page, isTyping: true, isInputDisabled: true });
-      addMessage(`Selected Page: ${page.name}`, 'user');
-      
-      if (fbAccessToken) {
-          try {
-              const accounts = await FacebookService.getAdAccounts(fbAccessToken);
-              set({ fetchedAdAccounts: accounts, connectionState: 'SELECTING_AD_ACCOUNT', isTyping: false });
-              
-              if (accounts.length > 0) {
-                  addMessage(
-                      `Great. Now select the Ad Account for ${page.name}:`,
-                      'agent',
-                      undefined,
-                      'ad_account_selection',
-                      { adAccounts: accounts }
-                  );
+      try {
+          const accessToken = get().tokens[platform];
+          if (!accessToken) throw new Error('Missing access token.');
+
+          if (platform === 'facebook') await FacebookService.saveConfig(account.id, account.name, accessToken);
+          else if (platform === 'instagram') await InstagramService.saveConfig(account.id, accessToken, account.username);
+          else if (platform === 'tiktok') await TikTokService.saveConfig(account.id, accessToken, account.name);
+          else if (platform === 'linkedin') await LinkedInService.saveConfig(account.id, accessToken, account.name);
+          else if (platform === 'twitter') await TwitterService.saveConfig(account.id, accessToken, account.name);
+
+          set((state) => ({
+              selectedAccounts: { ...state.selectedAccounts, [platform]: account },
+              isTyping: false
+          }));
+
+          if (connectionSource === 'flow' && activeStrategy) {
+              const platforms = activeStrategy.platforms || [];
+              const currentIndex = platforms.indexOf(platform);
+              if (currentIndex < platforms.length - 1) {
+                  initiateConnection(platforms[currentIndex + 1], true);
               } else {
-                  addMessage("No Ad Accounts found. Please ensure you have an active Ad Account linked to your Business Manager.", 'agent');
+                  addMessage('All systems connected. Strategy is launching now!', 'agent', undefined, 'completion_card');
               }
-          } catch (error: any) {
-              set({ isTyping: false });
-              addMessage(`Error fetching accounts: ${error.message}`, 'agent', undefined, 'retry_action', { action: 'PAGE_SELECTION', data: page });
+          } else {
+              addMessage(`Successfully connected to ${platform}!`, 'agent');
+              set({ isInputDisabled: false });
           }
+      } catch (error: any) {
+          set({ isTyping: false });
+          addMessage(`Failed to save ${platform} config: ${error.message}`, 'agent');
       }
   },
 
-  handleAdAccountSelection: async (account: FacebookAdAccount) => {
-      const { addMessage, selectedPage, fbAccessToken } = get();
-      set({ selectedAdAccount: account, isTyping: true, isInputDisabled: true });
-      addMessage(`Selected Account: ${account.name}`, 'user');
-      
-      // Save Config
-      if (selectedPage && selectedPage.access_token) { // Use selectedPage.access_token
-          await FacebookService.saveConfig(selectedPage.id, selectedPage.name, account.id, selectedPage.access_token);
-      }
-      
-      set({ connectionState: 'COMPLETED', isTyping: false, isInputDisabled: true });
-      
-      addMessage("Configuration saved. Launching campaign...", 'agent');
-      
-      const { activeStrategy, generatedStrategies, setActiveStrategy, updateActiveStrategy } = get();
-
-      if (activeStrategy) {
-          // If there's an active strategy, update it
-          await updateActiveStrategy(activeStrategy);
-      } else if (generatedStrategies) {
-          // If a strategy was just generated, set it as active
-          const strategyToActivate = generatedStrategies.free || generatedStrategies.paid; // Assuming one is selected
-          if (strategyToActivate) {
-              await setActiveStrategy(strategyToActivate);
-          }
-      }
-      
-      addMessage("Campaign Active! Monitoring performance.", 'agent', undefined, 'completion_card');
+  disconnectPlatform: async (platform: string) => {
+      set((state) => {
+          const newTokens = { ...state.tokens };
+          delete newTokens[platform];
+          return { tokens: newTokens };
+      });
   },
 
-  disconnectFacebook: async () => {
-      set({ fbAccessToken: null });
-  },
-
-  handleMarketingTypeSelection: () => {},
-  analyzeContext: async () => {}
+  // Legacy Compatibility
+  initiateFacebookConnection: (fromFlow = false) => get().initiateConnection('facebook', fromFlow),
+  handleFacebookLogin: () => get().handleLogin('facebook'),
+  handlePageSelection: (page: FacebookPage) => get().handleAccountSelection('facebook', page),
+  disconnectFacebook: () => get().disconnectPlatform('facebook')
 
 }));
