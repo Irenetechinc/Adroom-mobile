@@ -536,30 +536,41 @@ export const useAgentStore = create<AgentState>((set, get) => ({
       .order('created_at', { ascending: true });
 
     if (data && data.length > 0) {
-      const lastMessage = data[data.length - 1];
+      // Filter out any previous session_restore messages so they don't show again
+      const filtered = data.filter((m: any) => m.ui_type !== 'session_restore');
+      const lastMessage = filtered.length > 0 ? filtered[filtered.length - 1] : data[data.length - 1];
       const isCompleted = lastMessage.ui_type === 'completion_card';
-      
+
       if (!isCompleted) {
-        set({ messages: [], isTyping: false });
-        setTimeout(() => {
-            get().addMessage(
-                "Welcome back! You have an incomplete session. Would you like to resume your last action?",
-                'agent',
-                undefined,
-                'session_restore',
-                {
-                   lastActivity: new Date(lastMessage.created_at).toLocaleString(),
-                   preview: lastMessage.text.substring(0, 50) + '...',
-                   lastUiType: lastMessage.ui_type,
-                   lastUiData: lastMessage.ui_data
-                }
-            );
-        }, 500);
+        // Restore all messages directly — no modal, just pick up where we left off
+        const loadedMessages: ChatMessage[] = filtered.map((m: any) => ({
+          id: m.id,
+          text: m.text,
+          sender: m.sender as 'user' | 'agent',
+          timestamp: new Date(m.created_at).getTime(),
+          imageUri: m.image_uri,
+          uiType: m.ui_type,
+          uiData: m.ui_data,
+        }));
+
+        const activeInteractiveTypes = [
+          'strategy_type_selection', 'product_intake_form', 'product_manual_form',
+          'service_intake_form', 'brand_intake_form', 'goal_selection',
+          'duration_selection', 'strategy_comparison', 'facebook_connect',
+          'page_selection', 'retry_action',
+        ];
+        const needsDisabled = activeInteractiveTypes.includes(lastMessage.ui_type);
+
+        set({
+          messages: loadedMessages,
+          isTyping: false,
+          isInputDisabled: needsDisabled,
+        });
       } else {
-         await get().startNewSession();
+        await get().startNewSession();
       }
     } else {
-       await get().startNewSession();
+      await get().startNewSession();
     }
   },
 
@@ -567,7 +578,7 @@ export const useAgentStore = create<AgentState>((set, get) => ({
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
     set({ isTyping: true });
-    
+
     const { data } = await supabase
       .from('chat_history')
       .select('*')
@@ -575,33 +586,31 @@ export const useAgentStore = create<AgentState>((set, get) => ({
       .order('created_at', { ascending: true });
 
     if (data && data.length > 0) {
-      const loadedMessages: ChatMessage[] = data.map((m: any) => ({
+      const filtered = data.filter((m: any) => m.ui_type !== 'session_restore');
+      const loadedMessages: ChatMessage[] = filtered.map((m: any) => ({
         id: m.id,
         text: m.text,
         sender: m.sender as 'user' | 'agent',
         timestamp: new Date(m.created_at).getTime(),
         imageUri: m.image_uri,
         uiType: m.ui_type,
-        uiData: m.ui_data
+        uiData: m.ui_data,
       }));
-      
-      const lastMsg = data[data.length - 1];
-      const needsDisabled = ['strategy_type_selection', 'product_intake_form', 'product_manual_form', 'service_intake_form', 'brand_intake_form', 'goal_selection', 'duration_selection', 'strategy_comparison', 'facebook_connect', 'page_selection', 'retry_action'].includes(lastMsg.ui_type);
 
-      set({ 
-        messages: loadedMessages, 
-        isTyping: false, 
+      const lastMsg = filtered[filtered.length - 1];
+      const activeInteractiveTypes = [
+        'strategy_type_selection', 'product_intake_form', 'product_manual_form',
+        'service_intake_form', 'brand_intake_form', 'goal_selection',
+        'duration_selection', 'strategy_comparison', 'facebook_connect',
+        'page_selection', 'retry_action',
+      ];
+      const needsDisabled = lastMsg && activeInteractiveTypes.includes(lastMsg.ui_type);
+
+      set({
+        messages: loadedMessages,
+        isTyping: false,
         isInputDisabled: needsDisabled,
-        flowState: lastMsg.ui_type === 'completion_card' ? 'IDLE' : lastMsg.ui_type.toUpperCase().replace('_FORM', '_INTAKE').replace('_SELECTION', '_SELECTION') as FlowState,
       });
-
-      get().addMessage(
-          `Welcome back! We were right here:`, 
-          'agent', 
-          undefined, 
-          lastMsg.ui_type, 
-          lastMsg.ui_data
-      );
     }
   },
 

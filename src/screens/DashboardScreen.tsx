@@ -1,11 +1,12 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, ScrollView, RefreshControl, TouchableOpacity, StyleSheet, Dimensions, Platform } from 'react-native';
+import { View, Text, ScrollView, RefreshControl, TouchableOpacity, StyleSheet } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../types';
 import { supabase } from '../services/supabase';
 import { useAuthStore } from '../store/authStore';
+import Animated, { FadeInDown, FadeInRight } from 'react-native-reanimated';
 
 import { DrawerActions } from '@react-navigation/native';
 import {

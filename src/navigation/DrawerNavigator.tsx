@@ -5,6 +5,7 @@ import DashboardScreen from '../screens/DashboardScreen';
 import StrategyHistoryScreen from '../screens/StrategyHistoryScreen';
 import SettingsScreen from '../screens/SettingsScreen';
 import AgentChatScreen from '../screens/AgentChatScreen';
+import CommunityScreen from '../screens/CommunityScreen';
 import SideMenu from '../components/SideMenu';
 
 const Drawer = createDrawerNavigator<MainTabParamList>();
@@ -38,6 +39,10 @@ export default function DrawerNavigator() {
       <Drawer.Screen 
         name="Settings" 
         component={SettingsScreen} 
+      />
+      <Drawer.Screen 
+        name="Community" 
+        component={CommunityScreen} 
       />
     </Drawer.Navigator>
   );

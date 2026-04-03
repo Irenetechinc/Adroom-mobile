@@ -31,8 +31,9 @@ export type DrawerParamList = {
 };
 
 export type MainTabParamList = {
-  AgentChat: { fromStrategyApproval?: boolean }; // New Home
+  AgentChat: { fromStrategyApproval?: boolean };
   Dashboard: undefined;
   StrategyHistory: undefined;
   Settings: undefined;
+  Community: undefined;
 };

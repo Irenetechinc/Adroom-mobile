@@ -1,0 +1,36 @@
+1. Dashboard screen crashes my app each time user clock on the dashboard menue on phisical device
+
+2. Other socials account(LinkedIn, tiktok, connections that have been inplemented should be added to the connected accounts sections ensure that thier are properly configure for real-time and production but study how account connection flow is handled and follow Sam process where required 
+
+3. Fix this a anon key missing errooccoring even there anon key messing all keys including the anone key is very present in all .env files, railway env 
+
+4. Fix image scanning error when I try to upload product image I get this error "Jason perse error unexpected character : <" 
+Retry fails with adroom retrshow user message not sure what to retry invistigate and fix this retry actually retired the correct and current failed action  
+
+5. Fix the screen reload that happen from the connect account screen  each time user clicks the connect account button and the user is redirected to the agent chat screen it happens just after the user has been redirected to the agent chat screen the agent chat screen  reload in a split second after user has been redirected Investigate and fix from root course 
+
+6.Using the adroom logo icon generate a watermark version and it should be visible at the middle and user it say 100% tonomy, smart digital marketing let's go no all at once the should al fade in and fade out lndividualy of the chat screen of this oder (100% otonomy, smart digital marketing, intelegence, workforce, smart autonomous ai, let's go adroom ai)   soon as thier is any activity that is gone 
+
+8. Redisign header ui for agent chat screen shloub like settings screen header use professional ad hat icon for reset
+
+9. Redisign ui for all cards, modal and form being used in the agent chat screen give a more professional feel and look and recoring animations where required where user Intracts
+
+10. add a community menus option and real-time screen thowlink tree focominities users can join on this platforms telegram, discord, x, redit and remebr must be real time Implimetationwith following links as required 
+
+11. Implements a chat screen where users wilcan see thief idivual adroom interaction with thieclients a cross all platforadroom
+
+ 12. is currently connected to during a running campaign from chats to comments also show the clients messages and comments as well along with the clients names, time stamps 
+
+Please remeber no demo implementation, all implementation and fix must be made for realtime and production, no hard coded data, no simplified method, no unresolved comments
+
+13. Let skoleton loader structure match the companents  next page  will  display
+
+14. On android the models forms and cards on the agent chat screen are been covered by the default android device controller at the bottom when ever thier is any of the components at that area investigated and fix this.
+
+15. when users want to type on a modal like a form in the agent chat screen the keyboard entirely hides the form and input naturally when this happens user is able to scroll up to reveal the hiden compent while the keyboard is still up but here I can't investigate and fix this  issue in the agent chat screen
+
+16. When user resums a session user shouldn't  see the resume or start now madal as  modal js not needed any more also  the last activity which doesn't include the resume / start modal 
+
+17. Disable  forms and selection modal after user has passed that section reason is so user don't scroll to already passed form or selection modal and retry the action again ction instead user should be able to go back in time see precise day interactions in realtime using the new time line feature you will integrate 
+
+Please remeber no demo implementation, all implementation and fix must be made for realtime and production, no hard coded data, no simplified method, no unresolved comments
