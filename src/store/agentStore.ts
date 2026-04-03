@@ -62,6 +62,7 @@ interface AgentState {
   resetAgent: () => void;
   restoreSession: () => Promise<void>;
   startNewSession: () => Promise<void>;
+  goBackToMenu: () => void;
   
   // Unified Connection Actions
   initiateConnection: (platform: string, fromFlow?: boolean) => void;
@@ -412,7 +413,9 @@ export const useAgentStore = create<AgentState>((set, get) => ({
       
       addMessage(`${goal.replace('_', ' ')}`, 'user');
       
-      const price = parseFloat(productDetails.price || '0');
+      const rawPrice = productDetails.price || '0';
+      const numericOnly = rawPrice.replace(/[^0-9.]/g, '');
+      const price = parseFloat(numericOnly || '0');
       let rec = 21; 
       if (goal === 'sales') rec = 21;
       else if (goal === 'awareness') rec = 30;
@@ -482,7 +485,25 @@ export const useAgentStore = create<AgentState>((set, get) => ({
       set({ activeStrategy: strategy, flowState: 'EXECUTION', isInputDisabled: true });
       
       addMessage(`I approve this strategy. Let's launch it.`, 'user');
-      addMessage(`Excellent. Locking in strategy parameters.`, 'agent');
+      addMessage(`Excellent. Locking in strategy parameters and activating your agents...`, 'agent');
+
+      // Activate goal agents in the background
+      const BACKEND_URL = process.env.EXPO_PUBLIC_API_URL;
+      if (BACKEND_URL) {
+          const { data: { session } } = await supabase.auth.getSession();
+          const token = session?.access_token;
+          if (token && (generatedStrategies as any).strategyId) {
+              fetch(`${BACKEND_URL}/api/ai/activate-agents`, {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                  body: JSON.stringify({
+                      strategyId: (generatedStrategies as any).strategyId,
+                      goal: strategy.goal,
+                      platforms: strategy.platforms,
+                  }),
+              }).catch(() => {});
+          }
+      }
       
       setTimeout(() => {
           const platforms = strategy.platforms || ['facebook'];
@@ -645,6 +666,16 @@ export const useAgentStore = create<AgentState>((set, get) => ({
   },
 
   resetAgent: () => get().startNewSession(),
+
+  goBackToMenu: () => {
+    const { startStrategyFlow } = get();
+    set({
+      flowState: 'IDLE',
+      isInputDisabled: true,
+      isTyping: false,
+    });
+    startStrategyFlow();
+  },
   
   // --- Unified Connection Flow ---
 

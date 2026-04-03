@@ -74,7 +74,8 @@ export default function SideMenu(props: DrawerContentComponentProps) {
         {/* Nav Items */}
         <View style={{ flex: 1, paddingHorizontal: 12, paddingTop: 4 }}>
           {menuItems.map((item, index) => {
-            const isFocused = props.state.index === index;
+            const currentRouteName = props.state.routeNames[props.state.index];
+            const isFocused = currentRouteName === item.route;
 
             const Icon = item.icon;
 
