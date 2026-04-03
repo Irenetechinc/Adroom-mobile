@@ -44,6 +44,8 @@ const linking: LinkingOptions<RootStackParamList> = {
           Dashboard: 'dashboard',
           AgentChat: 'agent-chat-tab',
           StrategyHistory: 'strategy-history',
+          Interactions: 'interactions',
+          Community: 'community',
           Settings: 'settings',
         },
       } as any,

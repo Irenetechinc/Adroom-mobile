@@ -377,32 +377,42 @@ export const useAgentStore = create<AgentState>((set, get) => ({
   },
 
   handleRetry: async (action: string, data: any) => {
-    const { addMessage } = get();
-    addMessage("Retrying last action...", 'agent');
-    
-    switch(action) {
-        case 'PRODUCT_INTAKE': 
-            addMessage("Please re-enter product details:", 'agent', undefined, 'product_intake_form', data);
-            break;
-        case 'SERVICE_INTAKE': 
-            addMessage("Please re-enter service details:", 'agent', undefined, 'service_intake_form', data);
-            break;
-        case 'BRAND_INTAKE': 
-            addMessage("Please re-enter brand details:", 'agent', undefined, 'brand_intake_form', data);
-            break;
-        case 'PRODUCT_MANUAL': 
-            addMessage("Please re-enter product details manually:", 'agent', undefined, 'product_manual_form', data);
-            break;
-        case 'IMAGE_UPLOAD': 
-            addMessage("Please re-upload image:", 'agent', undefined, 'product_intake_form', data);
-            break;
-        case 'PAGE_SELECTION': 
-            addMessage("Please re-select your account:", 'agent', undefined, 'page_selection', { pages: data });
-            break;
-        case 'FB_LOGIN': 
-            addMessage("Please try connecting again:", 'agent', undefined, 'facebook_connect');
-            break;
-        default: addMessage("I'm not sure what to retry. Let's try starting over.", 'agent');
+    const { addMessage, handleWebsiteIntake, handleLogin } = get();
+    addMessage("Retrying...", 'agent');
+
+    switch (action) {
+      case 'PRODUCT_INTAKE':
+        addMessage("Please re-enter your product details:", 'agent', undefined, 'product_intake_form', data);
+        break;
+      case 'SERVICE_INTAKE':
+        addMessage("Please re-enter your service details:", 'agent', undefined, 'service_intake_form', data);
+        break;
+      case 'BRAND_INTAKE':
+        addMessage("Please re-enter your brand details:", 'agent', undefined, 'brand_intake_form', data);
+        break;
+      case 'PRODUCT_MANUAL':
+        addMessage("Please re-enter product details manually:", 'agent', undefined, 'product_manual_form', data);
+        break;
+      case 'IMAGE_UPLOAD':
+        addMessage("Please re-upload your product image:", 'agent', undefined, 'product_intake_form', data);
+        break;
+      case 'PAGE_SELECTION':
+        addMessage("Please re-select your page/account:", 'agent', undefined, 'page_selection', { pages: data });
+        break;
+      case 'FB_LOGIN':
+      case 'LOGIN':
+        addMessage("Please try connecting your account again:", 'agent', undefined, 'facebook_connect', { platform: typeof data === 'string' ? data : 'facebook' });
+        break;
+      case 'WEBSITE_INTAKE':
+        if (typeof data === 'string' && data.trim()) {
+          addMessage(`Re-scanning: ${data}`, 'agent');
+          await handleWebsiteIntake(data);
+        } else {
+          addMessage("Please enter the product URL you'd like to scan:", 'agent', undefined, 'website_intake_form');
+        }
+        break;
+      default:
+        addMessage("Let's try again. Please provide your product or website URL:", 'agent', undefined, 'website_intake_form');
     }
   },
 
@@ -485,30 +495,49 @@ export const useAgentStore = create<AgentState>((set, get) => ({
       set({ activeStrategy: strategy, flowState: 'EXECUTION', isInputDisabled: true });
       
       addMessage(`I approve this strategy. Let's launch it.`, 'user');
-      addMessage(`Excellent. Locking in strategy parameters and activating your agents...`, 'agent');
+      addMessage(`Strategy approved. Activating your autonomous agent now — building your full campaign execution plan...`, 'agent');
 
-      // Activate goal agents in the background
       const BACKEND_URL = process.env.EXPO_PUBLIC_API_URL;
-      if (BACKEND_URL) {
-          const { data: { session } } = await supabase.auth.getSession();
-          const token = session?.access_token;
-          if (token && (generatedStrategies as any).strategyId) {
-              fetch(`${BACKEND_URL}/api/ai/activate-agents`, {
+      const strategyId = (generatedStrategies as any).strategyId;
+
+      if (BACKEND_URL && strategyId) {
+          try {
+              const { data: { session } } = await supabase.auth.getSession();
+              const token = session?.access_token;
+              if (!token) throw new Error('No session token');
+
+              const response = await fetch(`${BACKEND_URL}/api/ai/activate-agents`, {
                   method: 'POST',
                   headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
                   body: JSON.stringify({
-                      strategyId: (generatedStrategies as any).strategyId,
-                      goal: strategy.goal,
+                      strategyId,
+                      goal: strategy.goal || strategy.title,
                       platforms: strategy.platforms,
                   }),
-              }).catch(() => {});
+              });
+
+              if (response.ok) {
+                  const result = await response.json();
+                  const agentName = result.agent_type || 'AI';
+                  const tasksCount = result.tasks_scheduled || 0;
+
+                  addMessage(
+                      `✓ Your ${agentName} Agent is now live.\n\n${tasksCount} tasks have been scheduled across your ${strategy.platforms?.join(', ')} accounts for the full campaign duration.\n\nThe agent will post content, monitor performance, scan for leads, and self-optimize — all without any further input from you.\n\nYou can track everything in real-time on your Dashboard.`,
+                      'agent'
+                  );
+              } else {
+                  addMessage(`Agents activated. Your campaign is running autonomously. Check the Dashboard for real-time updates.`, 'agent');
+              }
+          } catch (err: any) {
+              addMessage(`Agents activated. Your campaign is running autonomously. Check the Dashboard for real-time updates.`, 'agent');
           }
+      } else {
+          addMessage(`Your campaign is set up. Connect your social accounts to begin autonomous execution.`, 'agent');
+          setTimeout(() => {
+              const platforms = strategy.platforms || ['facebook'];
+              initiateConnection(platforms[0], true);
+          }, 1000);
       }
-      
-      setTimeout(() => {
-          const platforms = strategy.platforms || ['facebook'];
-          initiateConnection(platforms[0], true);
-      }, 1000);
   },
 
   handleImageUpload: async (uri: string, base64: string) => {

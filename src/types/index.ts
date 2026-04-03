@@ -34,6 +34,7 @@ export type MainTabParamList = {
   AgentChat: { fromStrategyApproval?: boolean };
   Dashboard: undefined;
   StrategyHistory: undefined;
-  Settings: undefined;
+  Interactions: undefined;
   Community: undefined;
+  Settings: undefined;
 };
