@@ -12,18 +12,25 @@ export interface ScrapedProduct {
 }
 
 const JINA_TIMEOUT_MS = 20000;
+const DIRECT_TIMEOUT_MS = 15000;
 const MAX_PRODUCT_PAGES = 6;
 
-/**
- * Fetches clean, LLM-ready text from any URL using Jina AI Reader.
- * Handles JavaScript-rendered pages, avoids bot detection, works on SPAs.
- */
+function scraperLog(msg: string, extra?: any) {
+    const ts = new Date().toISOString();
+    if (extra) {
+        console.log(`[Scraper] [${ts}] ${msg}`, extra);
+    } else {
+        console.log(`[Scraper] [${ts}] ${msg}`);
+    }
+}
+
 async function fetchWithJina(url: string): Promise<string> {
     const jinaUrl = `https://r.jina.ai/${encodeURIComponent(url)}`;
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), JINA_TIMEOUT_MS);
 
     try {
+        scraperLog(`Fetching via Jina: ${url}`);
         const res = await fetch(jinaUrl, {
             headers: {
                 'Accept': 'text/plain',
@@ -33,57 +40,81 @@ async function fetchWithJina(url: string): Promise<string> {
             signal: controller.signal,
         });
         if (!res.ok) throw new Error(`Jina returned ${res.status}`);
-        return await res.text();
+        const text = await res.text();
+        scraperLog(`Jina fetched ${text.length} chars for ${url}`);
+        return text;
     } finally {
         clearTimeout(timer);
     }
 }
 
-/**
- * Direct fetch fallback for Jina failures — uses realistic browser headers.
- */
 async function fetchDirect(url: string): Promise<string> {
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), JINA_TIMEOUT_MS);
+    const timer = setTimeout(() => controller.abort(), DIRECT_TIMEOUT_MS);
 
     try {
+        scraperLog(`Direct fetch fallback: ${url}`);
         const res = await fetch(url, {
             headers: {
                 'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1',
                 'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
                 'Accept-Language': 'en-US,en;q=0.9',
-                'Accept-Encoding': 'gzip, deflate, br',
                 'Cache-Control': 'no-cache',
             },
             signal: controller.signal,
         });
         if (!res.ok) throw new Error(`Direct fetch returned ${res.status}`);
         const html = await res.text();
-        // Strip HTML tags for LLM use
-        return html.replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')
-                   .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
-                   .replace(/<[^>]+>/g, ' ')
-                   .replace(/\s{2,}/g, ' ')
-                   .trim()
-                   .substring(0, 8000);
+        const cleaned = html
+            .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')
+            .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
+            .replace(/<[^>]+>/g, ' ')
+            .replace(/\s{2,}/g, ' ')
+            .trim()
+            .substring(0, 8000);
+        scraperLog(`Direct fetch returned ${cleaned.length} cleaned chars`);
+        return cleaned;
     } finally {
         clearTimeout(timer);
     }
 }
 
-/**
- * Gets readable page content — tries Jina first, falls back to direct fetch.
- */
 async function getPageContent(url: string): Promise<string> {
     try {
-        console.log(`[Scraper] Fetching via Jina: ${url}`);
         const text = await fetchWithJina(url);
-        if (text && text.length > 100) return text.substring(0, 10000);
+        if (text && text.length > 100) return text.substring(0, 12000);
         throw new Error('Jina returned too little content');
     } catch (jinaErr: any) {
-        console.warn(`[Scraper] Jina failed (${jinaErr.message}), trying direct fetch: ${url}`);
-        return await fetchDirect(url);
+        scraperLog(`Jina failed (${jinaErr.message}), trying direct fetch`);
+        try {
+            return await fetchDirect(url);
+        } catch (directErr: any) {
+            scraperLog(`Direct fetch also failed: ${directErr.message}`);
+            return `Website: ${url}`;
+        }
     }
+}
+
+function buildFallbackProduct(url: string): ScrapedProduct {
+    const hostname = (() => {
+        try { return new URL(url).hostname.replace(/^www\./, ''); } catch { return url; }
+    })();
+    const brandName = hostname.split('.')[0];
+    const brandCapitalized = brandName.charAt(0).toUpperCase() + brandName.slice(1);
+
+    return {
+        name: `${brandCapitalized} Product`,
+        description: `Products and services from ${brandCapitalized}. Please review and edit the details below to accurately represent your offering.`,
+        price: undefined,
+        images: [],
+        url,
+        category: 'General',
+        metadata: {
+            usp: ['Quality products', 'Customer satisfaction', 'Competitive pricing'],
+            target_audience: 'General consumers',
+            fallback: true,
+        },
+    };
 }
 
 export class ScraperService {
@@ -96,33 +127,34 @@ export class ScraperService {
     }
 
     async scrapeWebsite(url: string, userId: string): Promise<ScrapedProduct[]> {
-        console.log(`[Scraper] Starting scrape for: ${url} (user: ${userId})`);
+        scraperLog(`Starting scrape — URL: ${url} | User: ${userId}`);
 
-        // 1. Get the homepage content
-        const homepageContent = await getPageContent(url);
+        let homepageContent = '';
+        try {
+            homepageContent = await getPageContent(url);
+        } catch (err: any) {
+            scraperLog(`Could not fetch page, using AI inference from URL alone`);
+            homepageContent = `URL: ${url}`;
+        }
 
-        // 2. Use AI to extract products directly from homepage + discover product links
         const discoveryPrompt = `
-You are analyzing the text content of an e-commerce or business website homepage.
+You are analyzing the text content of an e-commerce or business website.
+Your job: extract products/services and find product page URLs.
 
 URL: ${url}
 CONTENT:
 ${homepageContent}
 
-Your tasks:
-1. Extract any products/services already visible on this page.
-2. Find all product page URLs mentioned in the content (look for links to /product/, /p/, /item/, /shop/, /collections/, /catalog/, etc.)
-
-OUTPUT STRICT JSON (no extra text):
+OUTPUT STRICT JSON (no markdown, no extra text):
 {
   "homepage_products": [
     {
       "name": "string",
-      "description": "string",
+      "description": "string (2-3 sentences, marketing-ready)",
       "price": "string or null",
-      "image_url": "string or null",
+      "image_url": "absolute image URL or null",
       "category": "string",
-      "usp": ["unique selling point 1", "unique selling point 2"]
+      "usp": ["key benefit 1", "key benefit 2"]
     }
   ],
   "product_links": ["absolute url 1", "absolute url 2"]
@@ -130,26 +162,30 @@ OUTPUT STRICT JSON (no extra text):
 
 Rules:
 - All URLs must be absolute (start with http). Resolve relative URLs against: ${url}
-- Only include real products/services, not navigation items or blog posts.
+- Only include real products/services, NOT navigation, blog posts, or footer links.
 - Maximum 6 product_links.
-- If no products found, return empty arrays.
+- If no products found on page, still try to infer at least 1 product from the site domain and content.
+- Never return empty arrays if you can reasonably infer a product from context.
 `;
 
+        scraperLog('Running AI discovery pass...');
         let discoveryResult: any = { homepage_products: [], product_links: [] };
         try {
             const aiResult = await this.ai.generateStrategy({}, discoveryPrompt);
             if (aiResult.parsedJson) {
                 discoveryResult = aiResult.parsedJson;
+                scraperLog(`AI discovery found ${discoveryResult.homepage_products?.length || 0} homepage products, ${discoveryResult.product_links?.length || 0} product links`);
+            } else {
+                scraperLog('AI discovery returned no parsedJson — will try product links only');
             }
         } catch (err: any) {
-            console.error('[Scraper] AI discovery failed:', err.message);
+            scraperLog(`AI discovery error: ${err.message}`);
         }
 
         const products: ScrapedProduct[] = [];
 
-        // 3. Add homepage products
         for (const hp of (discoveryResult.homepage_products || [])) {
-            if (hp.name && hp.description) {
+            if (hp?.name && hp?.description) {
                 const product: ScrapedProduct = {
                     name: hp.name,
                     description: hp.description,
@@ -161,82 +197,86 @@ Rules:
                 };
                 products.push(product);
                 await this.storeScrapedProduct(product, userId);
+                scraperLog(`Added homepage product: "${product.name}"`);
             }
         }
 
-        // 4. Scrape individual product pages concurrently
         const productLinks: string[] = (discoveryResult.product_links || [])
-            .filter((l: string) => typeof l === 'string' && l.startsWith('http'))
+            .filter((l: any) => typeof l === 'string' && l.startsWith('http'))
             .slice(0, MAX_PRODUCT_PAGES);
 
         if (productLinks.length > 0) {
-            console.log(`[Scraper] Scraping ${productLinks.length} product pages`);
+            scraperLog(`Scraping ${productLinks.length} individual product pages...`);
             const pageTasks = productLinks.map((productUrl: string) =>
                 this.scrapeProductPage(productUrl, url).then(async (product) => {
                     if (product) {
                         await this.storeScrapedProduct(product, userId);
                         products.push(product);
+                        scraperLog(`Added product page: "${product.name}" from ${productUrl}`);
                     }
                 }).catch((e: any) => {
-                    console.warn(`[Scraper] Product page failed (${productUrl}):`, e.message);
+                    scraperLog(`Product page failed (${productUrl}): ${e.message}`);
                 })
             );
             await Promise.all(pageTasks);
         }
 
-        // 5. Update last_scraped_at on the product_memory row for this site
-        await this.supabase
-            .from('product_memory')
-            .update({ last_scraped_at: new Date().toISOString() })
-            .eq('website_url', url)
-            .eq('user_id', userId);
+        if (products.length === 0) {
+            scraperLog('No products found — using fallback product');
+            const fallback = buildFallbackProduct(url);
+            products.push(fallback);
+            await this.storeScrapedProduct(fallback, userId);
+        }
 
-        console.log(`[Scraper] Done — found ${products.length} products from ${url}`);
+        scraperLog(`Scrape complete — ${products.length} products found from ${url}`);
         return products;
     }
 
     private async scrapeProductPage(productUrl: string, baseUrl: string): Promise<ScrapedProduct | null> {
-        const content = await getPageContent(productUrl);
+        let content = '';
+        try {
+            content = await getPageContent(productUrl);
+        } catch {
+            return null;
+        }
 
         const extractPrompt = `
-You are extracting a single product's details from the text of an e-commerce product page.
+You are extracting a single product's details from an e-commerce product page.
 
 PRODUCT PAGE URL: ${productUrl}
 SITE URL: ${baseUrl}
 CONTENT:
 ${content}
 
-Extract the product shown on this specific page.
-
-OUTPUT STRICT JSON (no extra text):
+OUTPUT STRICT JSON (no markdown):
 {
   "name": "string",
   "description": "string (2-3 sentences, marketing-ready)",
   "price": "string or null",
-  "image_url": "string or null (absolute URL)",
+  "image_url": "absolute image URL or null",
   "category": "string",
-  "usp": ["unique selling point 1", "unique selling point 2", "unique selling point 3"],
+  "usp": ["benefit 1", "benefit 2", "benefit 3"],
   "target_audience": "string"
 }
 
 Rules:
-- name must be the actual product name, not the site name.
-- description must be real, from the page content.
-- Do NOT invent or hallucinate data. If not found, use null.
+- name must be the ACTUAL product name, not the site name.
+- description must be real from the content, not invented.
+- If name/description cannot be found, use the URL path as the name hint.
 `;
 
         try {
             const aiResult = await this.ai.generateStrategy({}, extractPrompt);
             const refined = aiResult.parsedJson;
 
-            if (!refined?.name || !refined?.description) {
-                console.warn(`[Scraper] AI could not extract product from ${productUrl}`);
+            if (!refined?.name) {
+                scraperLog(`AI could not extract product from ${productUrl}`);
                 return null;
             }
 
             return {
                 name: refined.name,
-                description: refined.description,
+                description: refined.description || `Product from ${productUrl}`,
                 price: refined.price || undefined,
                 images: refined.image_url ? [refined.image_url] : [],
                 url: productUrl,
@@ -247,34 +287,38 @@ Rules:
                 },
             };
         } catch (err: any) {
-            console.error(`[Scraper] Product extraction failed for ${productUrl}:`, err.message);
+            scraperLog(`Product extraction failed for ${productUrl}: ${err.message}`);
             return null;
         }
     }
 
     private async storeScrapedProduct(product: ScrapedProduct, userId: string) {
-        const { error } = await this.supabase.from('product_memory').upsert(
-            {
-                user_id: userId,
-                name: product.name,
-                description: product.description,
-                price: product.price || null,
-                category: product.category || null,
-                baseImageUri: product.images[0] || null,
-                website_url: product.url,
-                conversation_context: {
-                    usp: product.metadata?.usp || [],
-                    target_audience: product.metadata?.target_audience || null,
+        try {
+            const { error } = await this.supabase.from('product_memory').upsert(
+                {
+                    user_id: userId,
+                    name: product.name,
+                    description: product.description,
+                    price: product.price || null,
+                    category: product.category || null,
+                    baseImageUri: product.images[0] || null,
+                    website_url: product.url,
+                    conversation_context: {
+                        usp: product.metadata?.usp || [],
+                        target_audience: product.metadata?.target_audience || null,
+                    },
+                    last_scraped_at: new Date().toISOString(),
                 },
-                last_scraped_at: new Date().toISOString(),
-            },
-            { onConflict: 'user_id,name' }
-        );
+                { onConflict: 'user_id,name' }
+            );
 
-        if (error) {
-            console.error(`[Scraper] Failed to store product "${product.name}":`, error.message);
-        } else {
-            console.log(`[Scraper] Stored product: "${product.name}"`);
+            if (error) {
+                scraperLog(`Failed to store product "${product.name}": ${error.message}`);
+            } else {
+                scraperLog(`Stored product: "${product.name}"`);
+            }
+        } catch (e: any) {
+            scraperLog(`storeScrapedProduct exception: ${e.message}`);
         }
     }
 }

@@ -257,26 +257,141 @@ app.post('/api/ai/scan-product', async (req, res) => {
 });
 
 /**
- * Generate Strategy
+ * Generate Strategy — full intelligence pipeline with step-by-step logging
  */
 app.post('/api/ai/generate-strategy', async (req, res) => {
     const { productId, goal, duration } = req.body;
+    const ts = () => new Date().toISOString();
+    console.log(`\n[Strategy] ═══════════════════════════════════════`);
+    console.log(`[Strategy] [${ts()}] NEW STRATEGY GENERATION REQUEST`);
+    console.log(`[Strategy] Product: ${productId} | Goal: ${goal} | Duration: ${duration} days`);
     try {
         const supabase = getSupabaseClient(req as any);
         
-        // Use MemoryRetriever for full context instead of just product
         const { data: { user } } = await supabase.auth.getUser();
         if (!user) return res.status(401).json({ error: 'Unauthorized.' });
+
+        console.log(`[Strategy] [${ts()}] STEP 1 — Authenticated user: ${user.id}`);
+        console.log(`[Strategy] [${ts()}] STEP 2 — Retrieving memory context from all intelligence tables...`);
 
         const retriever = new MemoryRetriever(supabase);
         const context = await retriever.getAllContext(user.id, productId, 'product');
 
+        console.log(`[Strategy] [${ts()}] STEP 3 — Memory context assembled:`);
+        console.log(`[Strategy]   Platform Intelligence: ${context.platformIntelligence?.length || 0} signals`);
+        console.log(`[Strategy]   Social Listening: ${context.socialListening?.length || 0} conversations`);
+        console.log(`[Strategy]   Emotional Intelligence: ${context.emotionalIntelligence?.length || 0} entries`);
+        console.log(`[Strategy]   GEO Narrative: ${context.geoNarrative?.length || 0} snapshots`);
+        console.log(`[Strategy]   Strategy History: ${context.history?.length || 0} past strategies`);
+        console.log(`[Strategy] [${ts()}] STEP 4 — Passing context to DecisionEngine (GPT-4o)...`);
+
         const strategy = await decisionEngine.generateStrategy(context, goal, duration);
 
-        res.status(200).json({ strategy });
+        console.log(`[Strategy] [${ts()}] STEP 5 — Strategy generated successfully`);
+        console.log(`[Strategy]   Title: ${strategy.title}`);
+        console.log(`[Strategy]   Platforms: ${JSON.stringify(strategy.platforms)}`);
+        console.log(`[Strategy]   Est. Reach: ${strategy.estimated_outcomes?.reach || 'N/A'}`);
+        console.log(`[Strategy] [${ts()}] STEP 6 — Saving strategy to Supabase...`);
+
+        const { data: savedStrategy, error: saveErr } = await supabase.from('strategies').insert({
+            user_id: user.id,
+            product_id: productId,
+            goal,
+            duration,
+            title: strategy.title,
+            rationale: strategy.rationale,
+            platforms: strategy.platforms,
+            content_pillars: strategy.content_pillars,
+            schedule: strategy.schedule,
+            estimated_outcomes: strategy.estimated_outcomes,
+            status: 'approved',
+            created_at: new Date().toISOString(),
+        }).select().single();
+
+        if (saveErr) {
+            console.warn(`[Strategy] [${ts()}] Save warning: ${saveErr.message}`);
+        } else {
+            console.log(`[Strategy] [${ts()}] STEP 7 — Strategy saved with ID: ${savedStrategy?.id}`);
+        }
+
+        console.log(`[Strategy] ═══════════════════════════════════════\n`);
+        res.status(200).json({ strategy, strategyId: savedStrategy?.id });
     } catch (error: any) {
-        console.error('Strategy generation error:', error);
+        console.error(`[Strategy] [${ts()}] FATAL ERROR:`, error.message);
+        console.log(`[Strategy] ═══════════════════════════════════════\n`);
         res.status(500).json({ error: error.message });
+    }
+});
+
+/**
+ * Activate Goal Agents after strategy approval
+ */
+app.post('/api/ai/activate-agents', async (req, res) => {
+    const { strategyId, goal, platforms } = req.body;
+    const ts = () => new Date().toISOString();
+    console.log(`\n[AgentActivation] [${ts()}] Activating agents for strategy: ${strategyId}`);
+    console.log(`[AgentActivation] Goal: ${goal} | Platforms: ${JSON.stringify(platforms)}`);
+
+    try {
+        const supabase = getSupabaseClient(req as any);
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) return res.status(401).json({ error: 'Unauthorized.' });
+
+        const { data: strategy } = await supabase
+            .from('strategies')
+            .select('*')
+            .eq('id', strategyId)
+            .single();
+
+        if (!strategy) {
+            console.warn(`[AgentActivation] [${ts()}] Strategy ${strategyId} not found — activating with request data`);
+        }
+
+        const activeStrategy = strategy || { id: strategyId, goal, platforms, user_id: user.id };
+
+        console.log(`[AgentActivation] [${ts()}] Launching ${goal?.toUpperCase()} agent...`);
+
+        const agentPrompt = `
+You are the AdRoom ${goal?.toUpperCase()} Agent. A strategy has been approved and you must now create the execution plan.
+
+STRATEGY: ${JSON.stringify(activeStrategy)}
+GOAL: ${goal}
+PLATFORMS: ${JSON.stringify(platforms)}
+
+Create the first 7 days of organic content execution with specific actions per day.
+Output JSON:
+{
+  "agent_type": "${goal}",
+  "execution_plan": [
+    { "day": 1, "platform": "...", "action": "...", "content": "...", "time": "HH:MM", "objective": "..." }
+  ],
+  "success_metrics": { "day_7_target": {}, "day_30_target": {} },
+  "auto_responses": ["template response 1", "template response 2"]
+}
+`;
+
+        const aiEngine = AIEngine.getInstance();
+        const agentResult = await aiEngine.generateStrategy({}, agentPrompt);
+
+        const { error: agentErr } = await supabase.from('goal_progress').upsert({
+            strategy_id: strategyId,
+            user_id: user.id,
+            goal,
+            execution_plan: agentResult.parsedJson?.execution_plan || [],
+            success_metrics: agentResult.parsedJson?.success_metrics || {},
+            status: 'active',
+            activated_at: new Date().toISOString(),
+        }, { onConflict: 'strategy_id' });
+
+        if (agentErr) {
+            console.warn(`[AgentActivation] [${ts()}] Could not save to goal_progress: ${agentErr.message}`);
+        }
+
+        console.log(`[AgentActivation] [${ts()}] Agent activated successfully`);
+        res.status(200).json({ activated: true, agent: agentResult.parsedJson });
+    } catch (error: any) {
+        console.error(`[AgentActivation] [${ts()}] Error:`, error.message);
+        res.status(200).json({ activated: false, error: error.message });
     }
 });
 

@@ -1,9 +1,9 @@
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
-  View, Text, TextInput, TouchableOpacity, FlatList,
-  KeyboardAvoidingView, Platform, Image, ActivityIndicator,
-  Alert, ScrollView, StyleSheet, Keyboard,
+  View, Text, TouchableOpacity, FlatList,
+  Image, ActivityIndicator,
+  Alert, ScrollView, StyleSheet, Modal,
 } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../types';
@@ -19,11 +19,117 @@ import { useAuthStore } from '../store/authStore';
 import { DrawerActions } from '@react-navigation/native';
 import {
   Menu, Edit2, Check, Upload, DollarSign, Eye, Tag, Rocket, MapPin,
-  RefreshCw, Users, Zap, Calendar, TrendingUp, Bot, RotateCcw,
+  RefreshCw, Users, Zap, Calendar, TrendingUp, Bot, RotateCcw, ArrowLeft,
+  ChevronDown, Package,
 } from 'lucide-react-native';
 import { IntegrityService } from '../services/integrity';
 import { VisionService } from '../services/vision';
 import ImageUploadComponent from '../components/ImageUploadComponent';
+
+// ─── Currency Data ────────────────────────────────────────────────────────────
+
+const CURRENCIES = [
+  { code: 'USD', symbol: '$', name: 'US Dollar' },
+  { code: 'EUR', symbol: '€', name: 'Euro' },
+  { code: 'GBP', symbol: '£', name: 'British Pound' },
+  { code: 'AED', symbol: 'د.إ', name: 'UAE Dirham' },
+  { code: 'NGN', symbol: '₦', name: 'Nigerian Naira' },
+  { code: 'GHS', symbol: '₵', name: 'Ghanaian Cedi' },
+  { code: 'ZAR', symbol: 'R', name: 'South African Rand' },
+  { code: 'KES', symbol: 'KSh', name: 'Kenyan Shilling' },
+  { code: 'CAD', symbol: 'C$', name: 'Canadian Dollar' },
+  { code: 'AUD', symbol: 'A$', name: 'Australian Dollar' },
+  { code: 'INR', symbol: '₹', name: 'Indian Rupee' },
+  { code: 'BRL', symbol: 'R$', name: 'Brazilian Real' },
+];
+
+const CurrencySelector = ({ value, onChange, disabled }: { value: string; onChange: (code: string) => void; disabled?: boolean }) => {
+  const [visible, setVisible] = useState(false);
+  const selected = CURRENCIES.find(c => c.code === value) || CURRENCIES[0];
+  return (
+    <>
+      <TouchableOpacity
+        onPress={() => !disabled && setVisible(true)}
+        style={{
+          flexDirection: 'row', alignItems: 'center', gap: 4,
+          backgroundColor: 'rgba(0,240,255,0.1)', borderWidth: 1, borderColor: 'rgba(0,240,255,0.25)',
+          borderRadius: 8, paddingHorizontal: 8, paddingVertical: 8, minWidth: 52,
+        }}
+        disabled={disabled}
+      >
+        <Text style={{ color: '#00F0FF', fontWeight: '700', fontSize: 13 }}>{selected.symbol}</Text>
+        <ChevronDown size={10} color="#00F0FF" />
+      </TouchableOpacity>
+      <Modal visible={visible} transparent animationType="fade" onRequestClose={() => setVisible(false)}>
+        <TouchableOpacity style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'center', paddingHorizontal: 20 }} activeOpacity={1} onPress={() => setVisible(false)}>
+          <View style={{ backgroundColor: '#151B2B', borderRadius: 16, borderWidth: 1, borderColor: 'rgba(0,240,255,0.15)', overflow: 'hidden' }}>
+            <Text style={{ color: '#00F0FF', fontWeight: '800', fontSize: 13, letterSpacing: 1, padding: 14, borderBottomWidth: 1, borderBottomColor: 'rgba(0,240,255,0.08)' }}>SELECT CURRENCY</Text>
+            <ScrollView style={{ maxHeight: 300 }}>
+              {CURRENCIES.map((c) => (
+                <TouchableOpacity
+                  key={c.code}
+                  onPress={() => { onChange(c.code); setVisible(false); }}
+                  style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.04)', backgroundColor: c.code === value ? 'rgba(0,240,255,0.07)' : 'transparent' }}
+                >
+                  <Text style={{ color: '#00F0FF', fontWeight: '700', width: 36 }}>{c.symbol}</Text>
+                  <Text style={{ color: '#E2E8F0', fontSize: 14 }}>{c.name}</Text>
+                  <Text style={{ color: '#475569', fontSize: 11, marginLeft: 6 }}>({c.code})</Text>
+                  {c.code === value && <Check size={14} color="#00F0FF" style={{ marginLeft: 'auto' }} />}
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          </View>
+        </TouchableOpacity>
+      </Modal>
+    </>
+  );
+};
+
+// ─── Size Chips ──────────────────────────────────────────────────────────────
+
+const SIZE_OPTIONS = ['XS', 'S', 'M', 'L', 'XL', 'XXL', 'One Size', 'Custom'];
+
+const SizeChips = ({ selected, onToggle, disabled }: { selected: string[]; onToggle: (size: string) => void; disabled?: boolean }) => (
+  <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
+    {SIZE_OPTIONS.map((s) => {
+      const isSelected = selected.includes(s);
+      return (
+        <TouchableOpacity
+          key={s}
+          onPress={() => !disabled && onToggle(s)}
+          style={{
+            paddingHorizontal: 10, paddingVertical: 5, borderRadius: 8,
+            backgroundColor: isSelected ? 'rgba(0,240,255,0.15)' : '#0B0F19',
+            borderWidth: 1, borderColor: isSelected ? '#00F0FF' : '#1E293B',
+          }}
+        >
+          <Text style={{ color: isSelected ? '#00F0FF' : '#64748B', fontSize: 12, fontWeight: '600' }}>{s}</Text>
+        </TouchableOpacity>
+      );
+    })}
+  </View>
+);
+
+// ─── Back to Menu Button ─────────────────────────────────────────────────────
+
+const BackToMenuButton = ({ onPress, disabled }: { onPress: () => void; disabled?: boolean }) => {
+  if (disabled) return null;
+  return (
+    <TouchableOpacity
+      onPress={onPress}
+      style={{
+        flexDirection: 'row', alignItems: 'center', gap: 6,
+        marginTop: 10, paddingVertical: 8, paddingHorizontal: 12,
+        borderWidth: 1, borderColor: 'rgba(100,116,139,0.3)',
+        borderRadius: 10, alignSelf: 'flex-start',
+      }}
+      activeOpacity={0.7}
+    >
+      <ArrowLeft size={13} color="#64748B" />
+      <Text style={{ color: '#64748B', fontSize: 12, fontWeight: '600' }}>Back to Main Menu</Text>
+    </TouchableOpacity>
+  );
+};
 
 // ─── Watermark Overlay ──────────────────────────────────────────────────────
 
@@ -79,7 +185,7 @@ const WatermarkOverlay = ({ visible }: { visible: boolean }) => {
 
 // ─── Interactive Cards ────────────────────────────────────────────────────────
 
-const ProductIntakeCard = ({ onUpload, onManual, onWebsite, disabled }: { onUpload: () => void; onManual: () => void; onWebsite: () => void; disabled?: boolean }) => (
+const ProductIntakeCard = ({ onUpload, onManual, onWebsite, onBack, disabled }: { onUpload: () => void; onManual: () => void; onWebsite: () => void; onBack?: () => void; disabled?: boolean }) => (
   <View style={[styles.card, disabled && styles.cardDisabled]}>
     <TouchableOpacity
       onPress={onUpload}
@@ -104,7 +210,7 @@ const ProductIntakeCard = ({ onUpload, onManual, onWebsite, disabled }: { onUplo
   </View>
 );
 
-const WebsiteIntakeCard = ({ onSubmit, disabled }: { onSubmit: (url: string) => void; disabled?: boolean }) => {
+const WebsiteIntakeCard = ({ onSubmit, onBack, disabled }: { onSubmit: (url: string) => void; onBack?: () => void; disabled?: boolean }) => {
   const [url, setUrl] = useState('');
   return (
     <View style={[styles.card, { padding: 14 }, disabled && styles.cardDisabled]}>
@@ -118,22 +224,24 @@ const WebsiteIntakeCard = ({ onSubmit, disabled }: { onSubmit: (url: string) => 
         keyboardType="url"
         editable={!disabled}
       />
-      <TouchableOpacity onPress={() => onSubmit(url)} disabled={disabled} style={[styles.primaryBtn, disabled && { opacity: 0.4 }]}>
-        <Text style={styles.primaryBtnText}>Scrape Website</Text>
+      <TouchableOpacity onPress={() => onSubmit(url)} disabled={disabled || !url.trim()} style={[styles.primaryBtn, (disabled || !url.trim()) && { opacity: 0.4 }]}>
+        <Text style={styles.primaryBtnText}>Scan Website</Text>
       </TouchableOpacity>
+      <BackToMenuButton onPress={onBack!} disabled={disabled} />
     </View>
   );
 };
 
-const AttributeEditorCard = ({ product, onSave, disabled }: { product: any; onSave: (data: any) => void; disabled?: boolean }) => {
+const AttributeEditorCard = ({ product, onSave, onBack, disabled }: { product: any; onSave: (data: any) => void; onBack?: () => void; disabled?: boolean }) => {
   const [editedProduct, setEditedProduct] = useState({ ...product });
   const [newFieldKey, setNewFieldKey] = useState('');
   const [newFieldValue, setNewFieldValue] = useState('');
+  const [currency, setCurrency] = useState('USD');
 
-  const handleUpdate = (key: string, value: string) => setEditedProduct({ ...editedProduct, [key]: value });
+  const handleUpdate = (key: string, value: string) => setEditedProduct((p: any) => ({ ...p, [key]: value }));
   const handleAddField = () => {
     if (newFieldKey && newFieldValue) {
-      setEditedProduct({ ...editedProduct, [newFieldKey]: newFieldValue });
+      setEditedProduct((p: any) => ({ ...p, [newFieldKey]: newFieldValue }));
       setNewFieldKey('');
       setNewFieldValue('');
     }
@@ -144,12 +252,29 @@ const AttributeEditorCard = ({ product, onSave, disabled }: { product: any; onSa
     setEditedProduct(updated);
   };
 
+  const images: string[] = Array.isArray(product?.images) ? product.images : [];
+
   return (
     <View style={[styles.card, { padding: 14 }, disabled && styles.cardDisabled]}>
-      <Text style={styles.cardTitle}>Refine Product Details</Text>
-      <ScrollView style={{ maxHeight: 220, marginBottom: 12 }} nestedScrollEnabled keyboardShouldPersistTaps="handled">
+      <Text style={styles.cardTitle}>Review & Edit Product Details</Text>
+
+      {images.length > 0 && (
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 12 }}>
+          {images.map((imgUri, idx) => (
+            <Image
+              key={idx}
+              source={{ uri: imgUri }}
+              style={{ width: 80, height: 80, borderRadius: 8, marginRight: 8, borderWidth: 1, borderColor: 'rgba(0,240,255,0.2)' }}
+              resizeMode="cover"
+            />
+          ))}
+        </ScrollView>
+      )}
+
+      <ScrollView style={{ maxHeight: 260, marginBottom: 12 }} nestedScrollEnabled keyboardShouldPersistTaps="handled">
         {Object.entries(editedProduct).map(([key, value]) => {
-          if (key === 'id' || key === 'images' || typeof value === 'object') return null;
+          if (key === 'id' || key === 'images' || key === 'metadata' || typeof value === 'object') return null;
+          const isPrice = key === 'price';
           return (
             <View key={key} style={{ marginBottom: 10 }}>
               <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 4 }}>
@@ -160,13 +285,28 @@ const AttributeEditorCard = ({ product, onSave, disabled }: { product: any; onSa
                   </TouchableOpacity>
                 )}
               </View>
-              <TextInput
-                style={styles.input}
-                value={String(value)}
-                onChangeText={(val) => handleUpdate(key, val)}
-                multiline={key === 'description'}
-                editable={!disabled}
-              />
+              {isPrice ? (
+                <View style={{ flexDirection: 'row', gap: 8 }}>
+                  <CurrencySelector value={currency} onChange={setCurrency} disabled={disabled} />
+                  <TextInput
+                    style={[styles.input, { flex: 1 }]}
+                    value={String(value)}
+                    onChangeText={(val) => handleUpdate(key, val)}
+                    keyboardType="numeric"
+                    editable={!disabled}
+                    placeholder="0.00"
+                    placeholderTextColor="#475569"
+                  />
+                </View>
+              ) : (
+                <TextInput
+                  style={styles.input}
+                  value={String(value)}
+                  onChangeText={(val) => handleUpdate(key, val)}
+                  multiline={key === 'description'}
+                  editable={!disabled}
+                />
+              )}
             </View>
           );
         })}
@@ -184,10 +324,11 @@ const AttributeEditorCard = ({ product, onSave, disabled }: { product: any; onSa
         )}
       </ScrollView>
       {!disabled && (
-        <TouchableOpacity onPress={() => onSave(editedProduct)} style={styles.primaryBtn}>
+        <TouchableOpacity onPress={() => onSave({ ...editedProduct, currency })} style={styles.primaryBtn}>
           <Text style={styles.primaryBtnText}>Confirm & Continue</Text>
         </TouchableOpacity>
       )}
+      <BackToMenuButton onPress={onBack!} disabled={disabled} />
     </View>
   );
 };
@@ -199,25 +340,28 @@ const GOALS = [
   { id: 'launch', name: 'Launch', icon: Rocket, color: '#8B5CF6' },
 ];
 
-const GoalSelectionCard = ({ onSelect, disabled }: { onSelect: (goal: string) => void; disabled?: boolean }) => (
-  <View style={{ marginTop: 8, flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
-    {GOALS.map((goal) => {
-      const Icon = goal.icon;
-      return (
-        <TouchableOpacity
-          key={goal.id}
-          onPress={() => onSelect(goal.id)}
-          disabled={disabled}
-          style={[styles.goalCard, disabled && styles.cardDisabled]}
-          activeOpacity={0.75}
-        >
-          <View style={[styles.goalIcon, { backgroundColor: `${goal.color}20` }]}>
-            <Icon size={20} color={disabled ? '#334155' : goal.color} />
-          </View>
-          <Text style={[styles.goalText, disabled && { color: '#334155' }]}>{goal.name}</Text>
-        </TouchableOpacity>
-      );
-    })}
+const GoalSelectionCard = ({ onSelect, onBack, disabled }: { onSelect: (goal: string) => void; onBack?: () => void; disabled?: boolean }) => (
+  <View style={{ marginTop: 8 }}>
+    <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+      {GOALS.map((goal) => {
+        const Icon = goal.icon;
+        return (
+          <TouchableOpacity
+            key={goal.id}
+            onPress={() => onSelect(goal.id)}
+            disabled={disabled}
+            style={[styles.goalCard, disabled && styles.cardDisabled]}
+            activeOpacity={0.75}
+          >
+            <View style={[styles.goalIcon, { backgroundColor: `${goal.color}20` }]}>
+              <Icon size={20} color={disabled ? '#334155' : goal.color} />
+            </View>
+            <Text style={[styles.goalText, disabled && { color: '#334155' }]}>{goal.name}</Text>
+          </TouchableOpacity>
+        );
+      })}
+    </View>
+    <BackToMenuButton onPress={onBack!} disabled={disabled} />
   </View>
 );
 
@@ -227,41 +371,44 @@ const DURATIONS = [
   { days: 30, label: '30 Days', icon: TrendingUp },
 ];
 
-const DurationSelectionCard = ({ onSelect, recommended, disabled }: { onSelect: (days: number) => void; recommended?: number; disabled?: boolean }) => (
-  <View style={[styles.card, { overflow: 'hidden' }, disabled && styles.cardDisabled]}>
-    {recommended && (
-      <TouchableOpacity
-        onPress={() => onSelect(recommended)}
-        disabled={disabled}
-        style={[styles.durationRecommendedRow, disabled && { opacity: 0.4 }]}
-      >
-        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-          <Zap size={18} color="#00F0FF" />
-          <View style={{ marginLeft: 10 }}>
-            <Text style={{ color: '#00F0FF', fontWeight: '700' }}>Recommended: {recommended} Days</Text>
-            <Text style={{ color: 'rgba(0,240,255,0.5)', fontSize: 11 }}>Optimised for your goal and price</Text>
-          </View>
-        </View>
-        {!disabled && <Text style={{ color: '#00F0FF', fontWeight: '700' }}>Select ›</Text>}
-      </TouchableOpacity>
-    )}
-    {DURATIONS.filter(d => d.days !== recommended).map((d, i, arr) => {
-      const Icon = d.icon;
-      return (
+const DurationSelectionCard = ({ onSelect, recommended, onBack, disabled }: { onSelect: (days: number) => void; recommended?: number; onBack?: () => void; disabled?: boolean }) => (
+  <View>
+    <View style={[styles.card, { overflow: 'hidden' }, disabled && styles.cardDisabled]}>
+      {recommended && (
         <TouchableOpacity
-          key={d.days}
-          onPress={() => onSelect(d.days)}
+          onPress={() => onSelect(recommended)}
           disabled={disabled}
-          style={[styles.durationRow, i < arr.length - 1 && { borderBottomWidth: 1, borderBottomColor: 'rgba(0,240,255,0.08)' }, disabled && { opacity: 0.4 }]}
+          style={[styles.durationRecommendedRow, disabled && { opacity: 0.4 }]}
         >
           <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-            <Icon size={18} color={disabled ? '#334155' : '#64748B'} />
-            <Text style={[styles.durationText, disabled && { color: '#334155' }]}>{d.label}</Text>
+            <Zap size={18} color="#00F0FF" />
+            <View style={{ marginLeft: 10 }}>
+              <Text style={{ color: '#00F0FF', fontWeight: '700' }}>Recommended: {recommended} Days</Text>
+              <Text style={{ color: 'rgba(0,240,255,0.5)', fontSize: 11 }}>Optimised for your goal and price</Text>
+            </View>
           </View>
           {!disabled && <Text style={{ color: '#00F0FF', fontWeight: '700' }}>Select ›</Text>}
         </TouchableOpacity>
-      );
-    })}
+      )}
+      {DURATIONS.filter(d => d.days !== recommended).map((d, i, arr) => {
+        const Icon = d.icon;
+        return (
+          <TouchableOpacity
+            key={d.days}
+            onPress={() => onSelect(d.days)}
+            disabled={disabled}
+            style={[styles.durationRow, i < arr.length - 1 && { borderBottomWidth: 1, borderBottomColor: 'rgba(0,240,255,0.08)' }, disabled && { opacity: 0.4 }]}
+          >
+            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+              <Icon size={18} color={disabled ? '#334155' : '#64748B'} />
+              <Text style={[styles.durationText, disabled && { color: '#334155' }]}>{d.label}</Text>
+            </View>
+            {!disabled && <Text style={{ color: '#00F0FF', fontWeight: '700' }}>Select ›</Text>}
+          </TouchableOpacity>
+        );
+      })}
+    </View>
+    <BackToMenuButton onPress={onBack!} disabled={disabled} />
   </View>
 );
 
@@ -294,12 +441,18 @@ const StrategyTypeSelectionCard = ({ onSelect, disabled }: { onSelect: (type: st
   </View>
 );
 
-const StrategyPreviewCard = ({ strategy, onLaunch, disabled }: { strategy: any; onLaunch: () => void; disabled?: boolean }) => (
+const StrategyPreviewCard = ({ strategy, onLaunch, onBack, disabled }: { strategy: any; onLaunch: () => void; onBack?: () => void; disabled?: boolean }) => (
   <View style={[styles.card, { padding: 14 }, disabled && styles.cardDisabled]}>
     <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 12 }}>
       <View>
         <Text style={styles.fieldLabel}>EST. REACH</Text>
-        <Text style={styles.stratReach}>{strategy.estimated_outcomes?.reach || 'N/A'}</Text>
+        <Text style={styles.stratReach}>{strategy.estimated_outcomes?.reach?.toLocaleString?.() || strategy.estimated_outcomes?.reach || 'N/A'}</Text>
+      </View>
+      <View style={{ alignItems: 'flex-end' }}>
+        <Text style={styles.fieldLabel}>PAID EQUIVALENT</Text>
+        <Text style={{ color: '#10B981', fontWeight: '700', fontSize: 16 }}>
+          ${(strategy.estimated_outcomes?.paid_equivalent_value_usd || 0).toLocaleString()}
+        </Text>
       </View>
     </View>
     <View style={styles.stratRationale}>
@@ -316,7 +469,7 @@ const StrategyPreviewCard = ({ strategy, onLaunch, disabled }: { strategy: any; 
     </View>
     {!disabled && (
       <TouchableOpacity onPress={onLaunch} style={styles.primaryBtn}>
-        <Text style={styles.primaryBtnText}>LAUNCH STRATEGY</Text>
+        <Text style={styles.primaryBtnText}>APPROVE & LAUNCH STRATEGY</Text>
       </TouchableOpacity>
     )}
     {disabled && (
@@ -324,56 +477,106 @@ const StrategyPreviewCard = ({ strategy, onLaunch, disabled }: { strategy: any; 
         <Text style={[styles.primaryBtnText, { color: '#475569' }]}>STRATEGY LAUNCHED</Text>
       </View>
     )}
+    {!disabled && <BackToMenuButton onPress={onBack!} disabled={disabled} />}
   </View>
 );
 
-const ProductManualIntakeCard = ({ onSubmit, disabled }: { onSubmit: (data: any) => void; disabled?: boolean }) => {
+const ProductManualIntakeCard = ({ onSubmit, onBack, disabled }: { onSubmit: (data: any) => void; onBack?: () => void; disabled?: boolean }) => {
   const [name, setName] = useState('');
   const [category, setCategory] = useState('');
   const [price, setPrice] = useState('');
+  const [currency, setCurrency] = useState('USD');
   const [description, setDescription] = useState('');
+  const [color, setColor] = useState('');
+  const [selectedSizes, setSelectedSizes] = useState<string[]>([]);
+  const [quantity, setQuantity] = useState('');
   const [images, setImages] = useState<{ uri: string; base64: string | null }[]>([]);
+
+  const toggleSize = (size: string) =>
+    setSelectedSizes((prev) => prev.includes(size) ? prev.filter(s => s !== size) : [...prev, size]);
+
+  const currencySymbol = CURRENCIES.find(c => c.code === currency)?.symbol || '$';
 
   return (
     <View style={[styles.card, { padding: 14 }, disabled && styles.cardDisabled]}>
-      <TextInput placeholder="Product Name" placeholderTextColor="#475569" style={[styles.input, { marginBottom: 10 }]} value={name} onChangeText={setName} editable={!disabled} />
-      <TextInput placeholder="Category (e.g. Fashion)" placeholderTextColor="#475569" style={[styles.input, { marginBottom: 10 }]} value={category} onChangeText={setCategory} editable={!disabled} />
-      <TextInput placeholder="Price (e.g. 5000)" placeholderTextColor="#475569" keyboardType="numeric" style={[styles.input, { marginBottom: 10 }]} value={price} onChangeText={setPrice} editable={!disabled} />
-      <TextInput placeholder="Product Description" placeholderTextColor="#475569" multiline style={[styles.input, { height: 80, marginBottom: 14 }]} value={description} onChangeText={setDescription} editable={!disabled} />
+      <Text style={[styles.fieldLabel, { marginBottom: 8 }]}>PRODUCT DETAILS</Text>
+
+      <TextInput placeholder="Product Name *" placeholderTextColor="#475569" style={[styles.input, { marginBottom: 10 }]} value={name} onChangeText={setName} editable={!disabled} />
+      <TextInput placeholder="Category (e.g. Fashion, Electronics)" placeholderTextColor="#475569" style={[styles.input, { marginBottom: 10 }]} value={category} onChangeText={setCategory} editable={!disabled} />
+
+      <Text style={[styles.fieldLabel, { marginBottom: 6 }]}>PRICE</Text>
+      <View style={{ flexDirection: 'row', gap: 8, marginBottom: 10 }}>
+        <CurrencySelector value={currency} onChange={setCurrency} disabled={disabled} />
+        <TextInput
+          placeholder="0.00"
+          placeholderTextColor="#475569"
+          keyboardType="numeric"
+          style={[styles.input, { flex: 1 }]}
+          value={price}
+          onChangeText={setPrice}
+          editable={!disabled}
+        />
+      </View>
+
+      <TextInput placeholder="Color (e.g. Red, Navy Blue)" placeholderTextColor="#475569" style={[styles.input, { marginBottom: 10 }]} value={color} onChangeText={setColor} editable={!disabled} />
+
+      <Text style={[styles.fieldLabel, { marginBottom: 6 }]}>AVAILABLE SIZES</Text>
+      <View style={{ marginBottom: 10 }}>
+        <SizeChips selected={selectedSizes} onToggle={toggleSize} disabled={disabled} />
+      </View>
+
+      <TextInput placeholder="Quantity in Stock" placeholderTextColor="#475569" keyboardType="numeric" style={[styles.input, { marginBottom: 10 }]} value={quantity} onChangeText={setQuantity} editable={!disabled} />
+
+      <TextInput placeholder="Product Description" placeholderTextColor="#475569" multiline style={[styles.input, { height: 70, marginBottom: 12 }]} value={description} onChangeText={setDescription} editable={!disabled} />
+
       {!disabled && <ImageUploadComponent onImagesSelected={setImages} maxImages={5} />}
       {!disabled && (
-        <TouchableOpacity onPress={() => onSubmit({ name, category, price, description, images })} style={[styles.primaryBtn, { marginTop: 14 }]}>
+        <TouchableOpacity
+          onPress={() => onSubmit({ name, category, price: `${currencySymbol}${price}`, currency, description, color, sizes: selectedSizes, quantity, images })}
+          style={[styles.primaryBtn, { marginTop: 12 }]}
+          disabled={!name.trim()}
+        >
           <Text style={styles.primaryBtnText}>Save Product</Text>
         </TouchableOpacity>
       )}
+      <BackToMenuButton onPress={onBack!} disabled={disabled} />
     </View>
   );
 };
 
-const ServiceIntakeCard = ({ onSubmit, disabled }: { onSubmit: (data: any) => void; disabled?: boolean }) => {
+const ServiceIntakeCard = ({ onSubmit, onBack, disabled }: { onSubmit: (data: any) => void; onBack?: () => void; disabled?: boolean }) => {
   const [name, setName] = useState('');
   const [category, setCategory] = useState('');
   const [price, setPrice] = useState('');
+  const [currency, setCurrency] = useState('USD');
   const [description, setDescription] = useState('');
   const [images, setImages] = useState<{ uri: string; base64: string | null }[]>([]);
 
+  const currencySymbol = CURRENCIES.find(c => c.code === currency)?.symbol || '$';
+
   return (
     <View style={[styles.card, { padding: 14 }, disabled && styles.cardDisabled]}>
-      <TextInput placeholder="Service Name" placeholderTextColor="#475569" style={[styles.input, { marginBottom: 10 }]} value={name} onChangeText={setName} editable={!disabled} />
-      <TextInput placeholder="Category (e.g. Consulting)" placeholderTextColor="#475569" style={[styles.input, { marginBottom: 10 }]} value={category} onChangeText={setCategory} editable={!disabled} />
-      <TextInput placeholder="Pricing Model (e.g. $100/hr)" placeholderTextColor="#475569" style={[styles.input, { marginBottom: 10 }]} value={price} onChangeText={setPrice} editable={!disabled} />
-      <TextInput placeholder="Service Description" placeholderTextColor="#475569" multiline style={[styles.input, { height: 80, marginBottom: 14 }]} value={description} onChangeText={setDescription} editable={!disabled} />
+      <Text style={[styles.fieldLabel, { marginBottom: 8 }]}>SERVICE DETAILS</Text>
+      <TextInput placeholder="Service Name *" placeholderTextColor="#475569" style={[styles.input, { marginBottom: 10 }]} value={name} onChangeText={setName} editable={!disabled} />
+      <TextInput placeholder="Category (e.g. Consulting, Design)" placeholderTextColor="#475569" style={[styles.input, { marginBottom: 10 }]} value={category} onChangeText={setCategory} editable={!disabled} />
+      <Text style={[styles.fieldLabel, { marginBottom: 6 }]}>PRICE / RATE</Text>
+      <View style={{ flexDirection: 'row', gap: 8, marginBottom: 10 }}>
+        <CurrencySelector value={currency} onChange={setCurrency} disabled={disabled} />
+        <TextInput placeholder="Amount or rate (e.g. 100/hr)" placeholderTextColor="#475569" style={[styles.input, { flex: 1 }]} value={price} onChangeText={setPrice} editable={!disabled} />
+      </View>
+      <TextInput placeholder="Service Description" placeholderTextColor="#475569" multiline style={[styles.input, { height: 70, marginBottom: 12 }]} value={description} onChangeText={setDescription} editable={!disabled} />
       {!disabled && <ImageUploadComponent onImagesSelected={setImages} maxImages={5} />}
       {!disabled && (
-        <TouchableOpacity onPress={() => onSubmit({ name, category, price, description, images })} style={[styles.primaryBtn, { marginTop: 14 }]}>
+        <TouchableOpacity onPress={() => onSubmit({ name, category, price: `${currencySymbol}${price}`, currency, description, images })} style={[styles.primaryBtn, { marginTop: 12 }]} disabled={!name.trim()}>
           <Text style={styles.primaryBtnText}>Save Service</Text>
         </TouchableOpacity>
       )}
+      <BackToMenuButton onPress={onBack!} disabled={disabled} />
     </View>
   );
 };
 
-const BrandIntakeCard = ({ onSubmit, disabled }: { onSubmit: (data: any) => void; disabled?: boolean }) => {
+const BrandIntakeCard = ({ onSubmit, onBack, disabled }: { onSubmit: (data: any) => void; onBack?: () => void; disabled?: boolean }) => {
   const [name, setName] = useState('');
   const [mission, setMission] = useState('');
   const [values, setValues] = useState('');
@@ -381,57 +584,65 @@ const BrandIntakeCard = ({ onSubmit, disabled }: { onSubmit: (data: any) => void
 
   return (
     <View style={[styles.card, { padding: 14 }, disabled && styles.cardDisabled]}>
-      <TextInput placeholder="Brand Name" placeholderTextColor="#475569" style={[styles.input, { marginBottom: 10 }]} value={name} onChangeText={setName} editable={!disabled} />
+      <Text style={[styles.fieldLabel, { marginBottom: 8 }]}>BRAND DETAILS</Text>
+      <TextInput placeholder="Brand Name *" placeholderTextColor="#475569" style={[styles.input, { marginBottom: 10 }]} value={name} onChangeText={setName} editable={!disabled} />
       <TextInput placeholder="Mission Statement" placeholderTextColor="#475569" style={[styles.input, { marginBottom: 10 }]} value={mission} onChangeText={setMission} editable={!disabled} />
-      <TextInput placeholder="Core Values" placeholderTextColor="#475569" multiline style={[styles.input, { height: 80, marginBottom: 14 }]} value={values} onChangeText={setValues} editable={!disabled} />
+      <TextInput placeholder="Core Values (e.g. Quality, Innovation)" placeholderTextColor="#475569" multiline style={[styles.input, { height: 70, marginBottom: 12 }]} value={values} onChangeText={setValues} editable={!disabled} />
       {!disabled && <ImageUploadComponent onImagesSelected={setImages} maxImages={5} />}
       {!disabled && (
-        <TouchableOpacity onPress={() => onSubmit({ name, mission, values, images })} style={[styles.primaryBtn, { marginTop: 14 }]}>
+        <TouchableOpacity onPress={() => onSubmit({ name, mission, values, images })} style={[styles.primaryBtn, { marginTop: 12 }]} disabled={!name.trim()}>
           <Text style={styles.primaryBtnText}>Save Brand</Text>
         </TouchableOpacity>
       )}
+      <BackToMenuButton onPress={onBack!} disabled={disabled} />
     </View>
   );
 };
 
-const FacebookConnectButton = ({ onPress, isConnected, onDisconnect, platform, disabled }: { onPress: () => void; isConnected: boolean; onDisconnect: () => void; platform: string; disabled?: boolean }) => (
-  <TouchableOpacity
-    onPress={isConnected ? onDisconnect : onPress}
-    disabled={disabled && !isConnected}
-    style={[
-      styles.connectBtn,
-      isConnected ? styles.connectBtnConnected : styles.connectBtnPrimary,
-      disabled && !isConnected && styles.cardDisabled,
-    ]}
-    activeOpacity={0.8}
-  >
-    <Text style={styles.connectBtnLetter}>{platform.charAt(0).toUpperCase()}</Text>
-    <Text style={[styles.connectBtnText, isConnected && { color: '#FFFFFF' }]}>
-      {isConnected ? `Disconnect ${platform}` : `Connect ${platform}`}
-    </Text>
-  </TouchableOpacity>
-);
-
-const SelectionList = ({ items, onSelect, type, disabled }: { items: any[]; onSelect: (item: any) => void; type: string; disabled?: boolean }) => (
-  <View style={[styles.card, { overflow: 'hidden' }, disabled && styles.cardDisabled]}>
-    {items.map((item, index) => (
-      <TouchableOpacity
-        key={item.id}
-        onPress={() => onSelect(item)}
-        disabled={disabled}
-        style={[styles.selectionRow, index < items.length - 1 && { borderBottomWidth: 1, borderBottomColor: 'rgba(0,240,255,0.08)' }]}
-      >
-        <View>
-          <Text style={styles.selectionName}>{item.name}</Text>
-          <Text style={styles.selectionSub}>{item.category}</Text>
-        </View>
-        {!disabled && <Text style={{ color: '#00F0FF', fontSize: 20 }}>›</Text>}
-      </TouchableOpacity>
-    ))}
+const FacebookConnectButton = ({ onPress, isConnected, onDisconnect, platform, onBack, disabled }: { onPress: () => void; isConnected: boolean; onDisconnect: () => void; platform: string; onBack?: () => void; disabled?: boolean }) => (
+  <View>
+    <TouchableOpacity
+      onPress={isConnected ? onDisconnect : onPress}
+      disabled={disabled && !isConnected}
+      style={[
+        styles.connectBtn,
+        isConnected ? styles.connectBtnConnected : styles.connectBtnPrimary,
+        disabled && !isConnected && styles.cardDisabled,
+      ]}
+      activeOpacity={0.8}
+    >
+      <Text style={styles.connectBtnLetter}>{platform.charAt(0).toUpperCase()}</Text>
+      <Text style={[styles.connectBtnText, isConnected && { color: '#FFFFFF' }]}>
+        {isConnected ? `Disconnect ${platform}` : `Connect ${platform}`}
+      </Text>
+    </TouchableOpacity>
+    <BackToMenuButton onPress={onBack!} disabled={disabled} />
   </View>
 );
 
-const RetryActionCard = ({ onRetry, onCancel, actionName, disabled }: { onRetry: () => void; onCancel: () => void; actionName: string; disabled?: boolean }) => (
+const SelectionList = ({ items, onSelect, type, onBack, disabled }: { items: any[]; onSelect: (item: any) => void; type: string; onBack?: () => void; disabled?: boolean }) => (
+  <View>
+    <View style={[styles.card, { overflow: 'hidden' }, disabled && styles.cardDisabled]}>
+      {items.map((item, index) => (
+        <TouchableOpacity
+          key={item.id || index}
+          onPress={() => onSelect(item)}
+          disabled={disabled}
+          style={[styles.selectionRow, index < items.length - 1 && { borderBottomWidth: 1, borderBottomColor: 'rgba(0,240,255,0.08)' }]}
+        >
+          <View style={{ flex: 1 }}>
+            <Text style={styles.selectionName}>{item.name}</Text>
+            <Text style={styles.selectionSub}>{item.category || item.username || item.sub || ''}</Text>
+          </View>
+          {!disabled && <Text style={{ color: '#00F0FF', fontSize: 20 }}>›</Text>}
+        </TouchableOpacity>
+      ))}
+    </View>
+    <BackToMenuButton onPress={onBack!} disabled={disabled} />
+  </View>
+);
+
+const RetryActionCard = ({ onRetry, onCancel, onBack, actionName, disabled }: { onRetry: () => void; onCancel: () => void; onBack?: () => void; actionName: string; disabled?: boolean }) => (
   <View style={[styles.card, styles.retryCard, disabled && styles.cardDisabled]}>
     <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 14 }}>
       <View style={styles.retryIcon}>
@@ -455,6 +666,7 @@ const RetryActionCard = ({ onRetry, onCancel, actionName, disabled }: { onRetry:
     {disabled && (
       <Text style={{ color: '#334155', fontSize: 12 }}>This step has been skipped.</Text>
     )}
+    <BackToMenuButton onPress={onBack!} disabled={disabled} />
   </View>
 );
 
@@ -528,11 +740,11 @@ export default function AgentChatScreen({ navigation, route }: Props) {
     disconnectPlatform, handleStrategyTypeSelection, handleServiceIntake,
     handleBrandIntake, handleManualProductSubmit, handleRetry,
     handleImageUpload: handleImageUploadStore, startStrategyFlow, handleWebsiteIntake,
+    goBackToMenu,
   } = useAgentStore();
 
   const { user } = useAuthStore();
   const insets = useSafeAreaInsets();
-  const [inputText, setInputText] = useState('');
   const flatListRef = useRef<FlatList>(null);
   const [historyLoaded, setHistoryLoaded] = useState(false);
   const [uploading, setUploading] = useState(false);
@@ -569,14 +781,6 @@ export default function AgentChatScreen({ navigation, route }: Props) {
     if (route.params?.connectLinkedIn) initiateConnection('linkedin', false);
     if (route.params?.connectTwitter) initiateConnection('twitter', false);
   }, [route.params]);
-
-  const handleSend = async () => {
-    if (!inputText.trim()) return;
-    const text = inputText;
-    setInputText('');
-    markActive();
-    addMessage(text, 'user');
-  };
 
   const handleImageUpload = async () => {
     const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -662,40 +866,41 @@ export default function AgentChatScreen({ navigation, route }: Props) {
           </Text>
 
           {item.uiType === 'product_intake_form' && (
-            <ProductIntakeCard onUpload={handleImageUpload} onManual={handleManualEntry} onWebsite={handleWebsiteEntry} disabled={isDisabled} />
+            <ProductIntakeCard onUpload={handleImageUpload} onManual={handleManualEntry} onWebsite={handleWebsiteEntry} onBack={goBackToMenu} disabled={isDisabled} />
           )}
           {item.uiType === 'website_intake_form' && (
-            <WebsiteIntakeCard onSubmit={handleWebsiteIntake} disabled={isDisabled} />
+            <WebsiteIntakeCard onSubmit={handleWebsiteIntake} onBack={goBackToMenu} disabled={isDisabled} />
           )}
           {item.uiType === 'attribute_editor' && item.uiData?.product && (
-            <AttributeEditorCard product={item.uiData.product} onSave={(data) => handleProductIntake(data)} disabled={isDisabled} />
+            <AttributeEditorCard product={item.uiData.product} onSave={(data) => handleProductIntake(data)} onBack={goBackToMenu} disabled={isDisabled} />
           )}
           {item.uiType === 'product_manual_form' && (
-            <ProductManualIntakeCard onSubmit={handleManualProductSubmit} disabled={isDisabled} />
+            <ProductManualIntakeCard onSubmit={handleManualProductSubmit} onBack={goBackToMenu} disabled={isDisabled} />
           )}
           {item.uiType === 'service_intake_form' && (
-            <ServiceIntakeCard onSubmit={handleServiceIntake} disabled={isDisabled} />
+            <ServiceIntakeCard onSubmit={handleServiceIntake} onBack={goBackToMenu} disabled={isDisabled} />
           )}
           {item.uiType === 'brand_intake_form' && (
-            <BrandIntakeCard onSubmit={handleBrandIntake} disabled={isDisabled} />
+            <BrandIntakeCard onSubmit={handleBrandIntake} onBack={goBackToMenu} disabled={isDisabled} />
           )}
           {item.uiType === 'strategy_type_selection' && (
             <StrategyTypeSelectionCard onSelect={handleStrategyTypeSelection} disabled={isDisabled} />
           )}
           {item.uiType === 'goal_selection' && (
-            <GoalSelectionCard onSelect={handleGoalSelection} disabled={isDisabled} />
+            <GoalSelectionCard onSelect={handleGoalSelection} onBack={goBackToMenu} disabled={isDisabled} />
           )}
           {item.uiType === 'duration_selection' && (
-            <DurationSelectionCard onSelect={handleDurationSelection} recommended={item.uiData?.recommended} disabled={isDisabled} />
+            <DurationSelectionCard onSelect={handleDurationSelection} recommended={item.uiData?.recommended} onBack={goBackToMenu} disabled={isDisabled} />
           )}
           {item.uiType === 'strategy_preview' && item.uiData?.strategy && (
-            <StrategyPreviewCard strategy={item.uiData.strategy} onLaunch={handleStrategySelection} disabled={isDisabled} />
+            <StrategyPreviewCard strategy={item.uiData.strategy} onLaunch={handleStrategySelection} onBack={goBackToMenu} disabled={isDisabled} />
           )}
           {item.uiType === 'retry_action' && (
             <RetryActionCard
               actionName={item.uiData?.action}
               onRetry={() => handleRetry(item.uiData?.action, item.uiData?.data)}
               onCancel={() => addMessage("I'll help you with something else. What would you like to do?", 'agent')}
+              onBack={goBackToMenu}
               disabled={isDisabled}
             />
           )}
@@ -705,11 +910,12 @@ export default function AgentChatScreen({ navigation, route }: Props) {
               isConnected={!!tokens[item.uiData?.platform || 'facebook']}
               onDisconnect={() => disconnectPlatform(item.uiData?.platform || 'facebook')}
               platform={item.uiData?.platform || 'facebook'}
+              onBack={goBackToMenu}
               disabled={isDisabled}
             />
           )}
           {item.uiType === 'page_selection' && item.uiData?.pages && (
-            <SelectionList items={item.uiData.pages} type="page" onSelect={(account) => handleAccountSelection(item.uiData?.platform || 'facebook', account)} disabled={isDisabled} />
+            <SelectionList items={item.uiData.pages} type="page" onSelect={(account) => handleAccountSelection(item.uiData?.platform || 'facebook', account)} onBack={goBackToMenu} disabled={isDisabled} />
           )}
           {item.uiType === 'completion_card' && (
             <CompletionCard onDashboard={() => navigation.navigate('Main', { screen: 'Dashboard' })} disabled={isDisabled} />
@@ -744,54 +950,23 @@ export default function AgentChatScreen({ navigation, route }: Props) {
         </View>
       </View>
 
-      <KeyboardAvoidingView
-        style={{ flex: 1 }}
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 24}
-      >
-        <View style={{ flex: 1 }}>
-          <FlatList
-            ref={flatListRef}
-            data={messages}
-            renderItem={renderMessage}
-            keyExtractor={(item) => item.id}
-            onContentSizeChange={() => flatListRef.current?.scrollToEnd({ animated: true })}
-            onScrollBeginDrag={() => { markActive(); Keyboard.dismiss(); }}
-            showsVerticalScrollIndicator={false}
-            contentContainerStyle={[styles.flatListContent, { paddingBottom: insets.bottom + 80 }]}
-            ListFooterComponent={(isTyping || uploading) ? <TypingIndicator /> : null}
-            keyboardShouldPersistTaps="handled"
-          />
+      <View style={{ flex: 1 }}>
+        <FlatList
+          ref={flatListRef}
+          data={messages}
+          renderItem={renderMessage}
+          keyExtractor={(item) => item.id}
+          onContentSizeChange={() => flatListRef.current?.scrollToEnd({ animated: true })}
+          onScrollBeginDrag={() => markActive()}
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={[styles.flatListContent, { paddingBottom: insets.bottom + 24 }]}
+          ListFooterComponent={(isTyping || uploading) ? <TypingIndicator /> : null}
+          keyboardShouldPersistTaps="handled"
+        />
 
-          {/* Watermark */}
-          <WatermarkOverlay visible={!isActive && messages.length === 0} />
-
-          {/* Input Bar */}
-          <View style={[styles.inputBar, { paddingBottom: Math.max(insets.bottom, 12) }]}>
-            <TouchableOpacity onPress={handleImageUpload} style={styles.inputCameraBtn} disabled={uploading}>
-              <Upload size={20} color="#00F0FF" />
-            </TouchableOpacity>
-            <TextInput
-              style={styles.inputField}
-              value={inputText}
-              onChangeText={(t) => { setInputText(t); markActive(); }}
-              placeholder="Message AdRoom AI..."
-              placeholderTextColor="#475569"
-              multiline
-              maxLength={500}
-              editable={!isInputDisabled}
-              onFocus={markActive}
-            />
-            <TouchableOpacity
-              onPress={handleSend}
-              disabled={!inputText.trim() || isInputDisabled}
-              style={[styles.sendBtn, (!inputText.trim() || isInputDisabled) && { opacity: 0.4 }]}
-            >
-              <Text style={styles.sendBtnText}>↑</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </KeyboardAvoidingView>
+        {/* Watermark */}
+        <WatermarkOverlay visible={!isActive && messages.length === 0} />
+      </View>
     </SafeAreaView>
   );
 }

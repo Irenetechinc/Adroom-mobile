@@ -1,4 +1,3 @@
-
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import OpenAI from 'openai';
 import dotenv from 'dotenv';
@@ -10,8 +9,8 @@ const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY || '',
 });
 
-const GEMINI_FLASH_MODEL = 'gemini-1.5-flash';
-const GEMINI_PRO_VISION_MODEL = 'gemini-1.5-pro';
+const GEMINI_FLASH_MODEL = 'gemini-2.0-flash';
+const GEMINI_VISION_MODEL = 'gemini-2.0-flash';
 const OPENAI_STRATEGY_MODEL = process.env.OPENAI_TEXT_MODEL || 'gpt-4o';
 
 function aiLog(engine: string, action: string, detail?: any) {
@@ -41,18 +40,15 @@ export class AIEngine {
     return AIEngine.instance;
   }
 
-  /**
-   * Gemini 1.5 Pro Vision (Nano Banana) — Image Analysis
-   */
   async analyzeImage(imageBase64: string, prompt: string): Promise<AIResponse> {
-    aiLog('GEMINI-VISION', `analyzeImage START — model: ${GEMINI_PRO_VISION_MODEL}`);
+    aiLog('GEMINI-VISION', `analyzeImage START — model: ${GEMINI_VISION_MODEL}`);
     try {
-      const model = genAI.getGenerativeModel({ model: GEMINI_PRO_VISION_MODEL });
+      const model = genAI.getGenerativeModel({ model: GEMINI_VISION_MODEL });
       
       const imagePart = {
         inlineData: {
           data: imageBase64,
-          mimeType: 'image/jpeg',
+          mimeType: 'image/jpeg' as const,
         },
       };
 
@@ -62,14 +58,15 @@ export class AIEngine {
       
       let parsedJson;
       try {
-        const jsonMatch = text.match(/```json\n([\s\S]*?)\n```/);
+        const jsonMatch = text.match(/```json\n?([\s\S]*?)\n?```/);
         if (jsonMatch && jsonMatch[1]) {
           parsedJson = JSON.parse(jsonMatch[1]);
         } else {
-          parsedJson = JSON.parse(text);
+          const cleaned = text.trim().replace(/^```json?\s*/i, '').replace(/```\s*$/i, '');
+          parsedJson = JSON.parse(cleaned);
         }
       } catch (_e) {
-        console.warn('[AI:GEMINI-VISION] Could not parse JSON from response, returning raw text');
+        console.warn('[AI:GEMINI-VISION] Could not parse JSON, returning raw text');
       }
 
       aiLog('GEMINI-VISION', 'analyzeImage SUCCESS', { textLength: text.length, hasParsedJson: !!parsedJson });
@@ -80,9 +77,6 @@ export class AIEngine {
     }
   }
 
-  /**
-   * GPT-4o — Complex reasoning and strategy generation (JSON mode)
-   */
   async generateStrategy(context: any, prompt: string): Promise<AIResponse> {
     aiLog('GPT-4o', `generateStrategy START — model: ${OPENAI_STRATEGY_MODEL}`);
     try {
@@ -90,7 +84,7 @@ export class AIEngine {
         messages: [
           {
             role: 'system',
-            content: 'You are the AdRoom AI Core Brain. You are an expert marketing strategist capable of generating comprehensive, data-driven marketing strategies. Always return valid JSON.',
+            content: 'You are AdRoom AI Core Brain — a world-class marketing strategist. Always respond with valid JSON only, no markdown, no code blocks.',
           },
           {
             role: 'user',
@@ -99,6 +93,7 @@ export class AIEngine {
         ],
         model: OPENAI_STRATEGY_MODEL,
         response_format: { type: 'json_object' },
+        temperature: 0.7,
       });
 
       const text = completion.choices[0].message.content || '';
@@ -106,14 +101,10 @@ export class AIEngine {
       try {
         parsedJson = JSON.parse(text);
       } catch (_e) {
-        console.warn('[AI:GPT-4o] Could not parse JSON from OpenAI response');
+        console.warn('[AI:GPT-4o] Could not parse JSON from response');
       }
 
-      aiLog('GPT-4o', 'generateStrategy SUCCESS', {
-        model: OPENAI_STRATEGY_MODEL,
-        tokens: completion.usage?.total_tokens,
-        hasParsedJson: !!parsedJson,
-      });
+      aiLog('GPT-4o', 'generateStrategy SUCCESS', { textLength: text.length });
       return { text, parsedJson };
     } catch (error: any) {
       aiLog('GPT-4o', 'generateStrategy ERROR', error.message);
@@ -121,9 +112,6 @@ export class AIEngine {
     }
   }
 
-  /**
-   * Gemini 1.5 Flash — Fast text generation for reports/alerts
-   */
   async generateText(prompt: string): Promise<string> {
     aiLog('GEMINI-FLASH', `generateText START — model: ${GEMINI_FLASH_MODEL}`);
     try {
@@ -139,9 +127,6 @@ export class AIEngine {
     }
   }
 
-  /**
-   * Generate image using Google Imagen 3 (Nano Banana) via Gemini API
-   */
   async generateImage(imagePrompt: string): Promise<{ base64: string; mimeType: string } | null> {
     const GEMINI_API_KEY = process.env.GEMINI_API_KEY || '';
     aiLog('GEMINI-IMAGEN', `generateImage START — prompt: ${imagePrompt.substring(0, 80)}...`);
