@@ -8,6 +8,8 @@ import { MemoryRetriever, type MemoryContext } from './services/memoryRetriever'
 import { DecisionEngine, type AIStrategy } from './services/decisionEngine';
 import { AIEngine } from './config/ai-models';
 import { ScraperService } from './services/scraperService';
+import { AgentOrchestrator } from './agents/agentOrchestrator';
+import { SchedulerService } from './services/scheduler';
 
 dotenv.config();
 
@@ -324,13 +326,18 @@ app.post('/api/ai/generate-strategy', async (req, res) => {
 });
 
 /**
- * Activate Goal Agents after strategy approval
+ * Activate Goal Agents — full autonomous campaign execution begins after user approves strategy
  */
 app.post('/api/ai/activate-agents', async (req, res) => {
     const { strategyId, goal, platforms } = req.body;
     const ts = () => new Date().toISOString();
-    console.log(`\n[AgentActivation] [${ts()}] Activating agents for strategy: ${strategyId}`);
-    console.log(`[AgentActivation] Goal: ${goal} | Platforms: ${JSON.stringify(platforms)}`);
+    console.log(`\n[AgentActivation] ═══════════════════════════════════════`);
+    console.log(`[AgentActivation] [${ts()}] ACTIVATING AUTONOMOUS AGENT`);
+    console.log(`[AgentActivation] Strategy: ${strategyId} | Goal: ${goal} | Platforms: ${JSON.stringify(platforms)}`);
+
+    if (!strategyId || !goal) {
+        return res.status(400).json({ error: 'strategyId and goal are required' });
+    }
 
     try {
         const supabase = getSupabaseClient(req as any);
@@ -343,55 +350,150 @@ app.post('/api/ai/activate-agents', async (req, res) => {
             .eq('id', strategyId)
             .single();
 
-        if (!strategy) {
-            console.warn(`[AgentActivation] [${ts()}] Strategy ${strategyId} not found — activating with request data`);
-        }
+        const activeStrategy = strategy || { id: strategyId, goal, platforms, user_id: user.id, duration: 30 };
+        const activePlatforms = platforms || strategy?.platforms || ['facebook'];
 
-        const activeStrategy = strategy || { id: strategyId, goal, platforms, user_id: user.id };
+        console.log(`[AgentActivation] [${ts()}] Launching orchestrator...`);
 
-        console.log(`[AgentActivation] [${ts()}] Launching ${goal?.toUpperCase()} agent...`);
-
-        const agentPrompt = `
-You are the AdRoom ${goal?.toUpperCase()} Agent. A strategy has been approved and you must now create the execution plan.
-
-STRATEGY: ${JSON.stringify(activeStrategy)}
-GOAL: ${goal}
-PLATFORMS: ${JSON.stringify(platforms)}
-
-Create the first 7 days of organic content execution with specific actions per day.
-Output JSON:
-{
-  "agent_type": "${goal}",
-  "execution_plan": [
-    { "day": 1, "platform": "...", "action": "...", "content": "...", "time": "HH:MM", "objective": "..." }
-  ],
-  "success_metrics": { "day_7_target": {}, "day_30_target": {} },
-  "auto_responses": ["template response 1", "template response 2"]
-}
-`;
-
-        const aiEngine = AIEngine.getInstance();
-        const agentResult = await aiEngine.generateStrategy({}, agentPrompt);
-
-        const { error: agentErr } = await supabase.from('goal_progress').upsert({
-            strategy_id: strategyId,
-            user_id: user.id,
+        // Use service-level client so orchestrator can read all tables
+        const orchestrator = new AgentOrchestrator();
+        const result = await orchestrator.activateAgent({
+            strategyId,
+            userId: user.id,
             goal,
-            execution_plan: agentResult.parsedJson?.execution_plan || [],
-            success_metrics: agentResult.parsedJson?.success_metrics || {},
-            status: 'active',
-            activated_at: new Date().toISOString(),
-        }, { onConflict: 'strategy_id' });
+            platforms: activePlatforms,
+            strategy: activeStrategy
+        });
 
-        if (agentErr) {
-            console.warn(`[AgentActivation] [${ts()}] Could not save to goal_progress: ${agentErr.message}`);
-        }
+        console.log(`[AgentActivation] [${ts()}] ✓ ${result.agentType} agent active — ${result.tasksScheduled} tasks scheduled`);
+        console.log(`[AgentActivation] ═══════════════════════════════════════\n`);
 
-        console.log(`[AgentActivation] [${ts()}] Agent activated successfully`);
-        res.status(200).json({ activated: true, agent: agentResult.parsedJson });
+        res.status(200).json({
+            activated: true,
+            agent_type: result.agentType,
+            tasks_scheduled: result.tasksScheduled,
+            activated_at: result.activatedAt,
+            message: `${result.agentType} agent is running autonomously. ${result.tasksScheduled} tasks scheduled across your campaign duration.`
+        });
     } catch (error: any) {
-        console.error(`[AgentActivation] [${ts()}] Error:`, error.message);
-        res.status(200).json({ activated: false, error: error.message });
+        console.error(`[AgentActivation] [${ts()}] FATAL:`, error.message);
+        console.log(`[AgentActivation] ═══════════════════════════════════════\n`);
+        res.status(500).json({ activated: false, error: error.message });
+    }
+});
+
+/**
+ * Get Agent Status — live performance, tasks, interventions
+ */
+app.get('/api/agents/status/:strategyId', async (req, res) => {
+    try {
+        const supabase = getSupabaseClient(req as any);
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) return res.status(401).json({ error: 'Unauthorized.' });
+
+        const orchestrator = new AgentOrchestrator();
+        const status = await orchestrator.getAgentStatus(req.params.strategyId);
+        res.status(200).json(status);
+    } catch (error: any) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+/**
+ * Agent Tasks — get all tasks for a strategy with their current status
+ */
+app.get('/api/agents/tasks/:strategyId', async (req, res) => {
+    try {
+        const supabase = getSupabaseClient(req as any);
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) return res.status(401).json({ error: 'Unauthorized.' });
+
+        const { data: tasks } = await supabase
+            .from('agent_tasks')
+            .select('*')
+            .eq('strategy_id', req.params.strategyId)
+            .eq('user_id', user.id)
+            .order('scheduled_at', { ascending: true })
+            .limit(100);
+
+        res.status(200).json({ tasks: tasks || [] });
+    } catch (error: any) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+/**
+ * Agent Performance — real metrics fetched from platforms
+ */
+app.get('/api/agents/performance/:strategyId', async (req, res) => {
+    try {
+        const supabase = getSupabaseClient(req as any);
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) return res.status(401).json({ error: 'Unauthorized.' });
+
+        const { data: perf } = await supabase
+            .from('agent_performance')
+            .select('*')
+            .eq('strategy_id', req.params.strategyId)
+            .eq('user_id', user.id)
+            .order('fetched_at', { ascending: false })
+            .limit(50);
+
+        const totals = (perf || []).reduce((acc: any, p: any) => ({
+            reach: (acc.reach || 0) + (p.reach || 0),
+            likes: (acc.likes || 0) + (p.likes || 0),
+            comments: (acc.comments || 0) + (p.comments || 0),
+            shares: (acc.shares || 0) + (p.shares || 0),
+            paid_equivalent_usd: (acc.paid_equivalent_usd || 0) + (p.paid_equivalent_usd || 0)
+        }), {});
+
+        res.status(200).json({ performance: perf || [], totals });
+    } catch (error: any) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+/**
+ * Agent Leads — SALESMAN agent's lead pipeline
+ */
+app.get('/api/agents/leads/:strategyId', async (req, res) => {
+    try {
+        const supabase = getSupabaseClient(req as any);
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) return res.status(401).json({ error: 'Unauthorized.' });
+
+        const { data: leads } = await supabase
+            .from('agent_leads')
+            .select('*')
+            .eq('strategy_id', req.params.strategyId)
+            .eq('user_id', user.id)
+            .order('intent_score', { ascending: false });
+
+        res.status(200).json({ leads: leads || [] });
+    } catch (error: any) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+/**
+ * Agent Interventions — AI decisions the agents made autonomously
+ */
+app.get('/api/agents/interventions/:strategyId', async (req, res) => {
+    try {
+        const supabase = getSupabaseClient(req as any);
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) return res.status(401).json({ error: 'Unauthorized.' });
+
+        const { data: interventions } = await supabase
+            .from('agent_interventions')
+            .select('*')
+            .eq('strategy_id', req.params.strategyId)
+            .order('created_at', { ascending: false })
+            .limit(20);
+
+        res.status(200).json({ interventions: interventions || [] });
+    } catch (error: any) {
+        res.status(500).json({ error: error.message });
     }
 });
 
@@ -472,6 +574,11 @@ app.post('/api/logs', (req, res) => {
 
 app.listen(PORT, () => {
   console.log(`[AdRoom Server] Running on port ${PORT} — ${new Date().toISOString()}`);
-  console.log(`[AdRoom Server] AI Engines: GPT-4o (strategy) | Gemini 1.5 Flash (text) | Imagen 3 (creative)`);
-  console.log(`[AdRoom Server] Features: Web Scraping | GEO Monitoring | Social Listening | Emotional Intelligence`);
+  console.log(`[AdRoom Server] AI Engines: GPT-4o (strategy) | Gemini 2.0 Flash (text) | Imagen 3 (creative)`);
+  console.log(`[AdRoom Server] Agents: SALESMAN | AWARENESS | PROMOTION | LAUNCH`);
+  console.log(`[AdRoom Server] Features: Autonomous Execution | Lead Capture | Performance Monitoring | Self-Optimization`);
+
+  // Start all background intelligence + agent execution loops
+  const scheduler = new SchedulerService();
+  scheduler.start();
 });

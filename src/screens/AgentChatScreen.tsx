@@ -928,13 +928,28 @@ export default function AgentChatScreen({ navigation, route }: Props) {
     );
   };
 
+  const isStackEntry = !!(
+    route.params?.connectFacebook ||
+    route.params?.connectInstagram ||
+    route.params?.connectTikTok ||
+    route.params?.connectLinkedIn ||
+    route.params?.connectTwitter ||
+    route.params?.fromStrategyApproval
+  );
+
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
       {/* Header */}
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.dispatch(DrawerActions.openDrawer())} style={styles.headerMenuBtn}>
-          <Menu color="#E2E8F0" size={22} />
-        </TouchableOpacity>
+        {isStackEntry ? (
+          <TouchableOpacity onPress={() => navigation.goBack()} style={styles.headerMenuBtn}>
+            <ArrowLeft color="#E2E8F0" size={22} />
+          </TouchableOpacity>
+        ) : (
+          <TouchableOpacity onPress={() => navigation.dispatch(DrawerActions.openDrawer())} style={styles.headerMenuBtn}>
+            <Menu color="#E2E8F0" size={22} />
+          </TouchableOpacity>
+        )}
         <View style={{ flex: 1 }}>
           <Text style={styles.headerLabel}>AdRoom AI</Text>
           <Text style={styles.headerTitle}>Agent</Text>

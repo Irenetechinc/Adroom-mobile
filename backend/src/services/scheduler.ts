@@ -6,96 +6,202 @@ import { EmotionalIntelligenceEngine } from './emotionalIntelligence';
 import { GeoMonitoringEngine } from './geoMonitoring';
 import { DecisionEngine } from './decisionEngine';
 import { ScraperService } from './scraperService';
+import { AgentOrchestrator } from '../agents/agentOrchestrator';
 import { getServiceSupabaseClient } from '../config/supabase';
 
 dotenv.config();
 
-const SCHED_IPE_CRON = process.env.SCHED_IPE_CRON || '*/15 * * * *';
-const SCHED_SOCIAL_CRON = process.env.SCHED_SOCIAL_CRON || '*/15 * * * *';
-const SCHED_EMOTIONAL_CRON = process.env.SCHED_EMOTIONAL_CRON || '*/15 * * * *';
-const SCHED_GEO_CRON = process.env.SCHED_GEO_CRON || '*/15 * * * *';
-const SCHED_SCRAPE_CRON = process.env.SCHED_SCRAPE_CRON || '*/15 * * * *';
+const SCHED_IPE_CRON          = process.env.SCHED_IPE_CRON          || '*/15 * * * *';
+const SCHED_SOCIAL_CRON       = process.env.SCHED_SOCIAL_CRON       || '*/15 * * * *';
+const SCHED_EMOTIONAL_CRON    = process.env.SCHED_EMOTIONAL_CRON    || '*/15 * * * *';
+const SCHED_GEO_CRON          = process.env.SCHED_GEO_CRON          || '*/15 * * * *';
+const SCHED_SCRAPE_CRON       = process.env.SCHED_SCRAPE_CRON       || '*/30 * * * *';
+const SCHED_AGENT_EXEC_CRON   = process.env.SCHED_AGENT_EXEC_CRON   || '*/5 * * * *';   // Execute due tasks every 5 min
+const SCHED_AGENT_SPECIAL_CRON= process.env.SCHED_AGENT_SPECIAL_CRON|| '*/10 * * * *';  // Lead scans, perf checks every 10 min
+const SCHED_AGENT_MONITOR_CRON= process.env.SCHED_AGENT_MONITOR_CRON|| '0 * * * *';     // Fetch platform metrics hourly
+const SCHED_AGENT_OPTIM_CRON  = process.env.SCHED_AGENT_OPTIM_CRON  || '0 */2 * * *';   // Self-optimize every 2 hours
+const SCHED_LEAD_FOLLOWUP_CRON= process.env.SCHED_LEAD_FOLLOWUP_CRON|| '*/30 * * * *';  // SALESMAN lead follow-ups every 30 min
 
 export class SchedulerService {
-  private ipe: PlatformIntelligenceEngine;
-  private social: SocialListeningEngine;
-  private emotional: EmotionalIntelligenceEngine;
-  private geo: GeoMonitoringEngine;
-  private scraper: ScraperService;
-  private decisionEngine: DecisionEngine;
+    private ipe: PlatformIntelligenceEngine;
+    private social: SocialListeningEngine;
+    private emotional: EmotionalIntelligenceEngine;
+    private geo: GeoMonitoringEngine;
+    private scraper: ScraperService;
+    private decisionEngine: DecisionEngine;
+    private orchestrator: AgentOrchestrator;
 
-  constructor() {
-    this.ipe = new PlatformIntelligenceEngine();
-    this.social = new SocialListeningEngine();
-    this.emotional = new EmotionalIntelligenceEngine();
-    this.geo = new GeoMonitoringEngine();
-    this.scraper = new ScraperService();
-    this.decisionEngine = new DecisionEngine();
-  }
+    constructor() {
+        this.ipe = new PlatformIntelligenceEngine();
+        this.social = new SocialListeningEngine();
+        this.emotional = new EmotionalIntelligenceEngine();
+        this.geo = new GeoMonitoringEngine();
+        this.scraper = new ScraperService();
+        this.decisionEngine = new DecisionEngine();
+        this.orchestrator = new AgentOrchestrator();
+    }
 
-  start() {
-    console.log('Starting AdRoom Intelligence Scheduler...');
+    start() {
+        console.log('[Scheduler] Starting AdRoom Intelligence + Agent Execution Scheduler...');
 
-    cron.schedule(SCHED_IPE_CRON, async () => {
-      console.log('[Scheduler] Running Platform Intelligence...');
-      const result = await this.ipe.runCycle();
-      if (result && result.alerts && result.alerts.length > 0) {
-          await this.notifyBrain('platform', result.alerts);
-      }
-    });
+        // ─── INTELLIGENCE LOOPS ─────────────────────────────────────────────────
 
-    cron.schedule(SCHED_SOCIAL_CRON, async () => {
-      console.log('[Scheduler] Running Social Listening...');
-      const result = await this.social.runCycle();
-      if (result && result.alerts && result.alerts.length > 0) {
-          await this.notifyBrain('social', result.alerts);
-      }
-      
-      if (result && result.conversations && result.conversations.length > 0) {
-          await this.runEmotionalCycle();
-      }
-    });
+        cron.schedule(SCHED_IPE_CRON, async () => {
+            console.log('[Scheduler] Running Platform Intelligence Engine...');
+            try {
+                const result = await this.ipe.runCycle();
+                if (result?.alerts?.length > 0) await this.notifyBrain('platform', result.alerts);
+            } catch (e: any) {
+                console.error('[Scheduler] IPE error:', e.message);
+            }
+        });
 
-    cron.schedule(SCHED_EMOTIONAL_CRON, async () => {
-       await this.runEmotionalCycle();
-    });
+        cron.schedule(SCHED_SOCIAL_CRON, async () => {
+            console.log('[Scheduler] Running Social Listening...');
+            try {
+                const result = await this.social.runCycle();
+                if (result?.alerts?.length > 0) await this.notifyBrain('social', result.alerts);
+                if (result?.conversations?.length > 0) await this.runEmotionalCycle();
+            } catch (e: any) {
+                console.error('[Scheduler] Social listening error:', e.message);
+            }
+        });
 
-    cron.schedule(SCHED_GEO_CRON, async () => {
-      console.log('[Scheduler] Running GEO Monitoring...');
-      const result = await this.geo.runCycle();
-      if (result && result.alerts && result.alerts.length > 0) {
-          await this.notifyBrain('geo', result.alerts);
-      }
-    });
+        cron.schedule(SCHED_EMOTIONAL_CRON, async () => {
+            try { await this.runEmotionalCycle(); }
+            catch (e: any) { console.error('[Scheduler] Emotional cycle error:', e.message); }
+        });
 
-    cron.schedule(SCHED_SCRAPE_CRON, async () => {
-      console.log('[Scheduler] Running Website Auto-Update Scrape...');
-      const supabase = getServiceSupabaseClient();
-      const { data: products } = await supabase
-        .from('product_memory')
-        .select('website_url, user_id')
-        .not('website_url', 'is', null);
+        cron.schedule(SCHED_GEO_CRON, async () => {
+            console.log('[Scheduler] Running GEO Monitoring...');
+            try {
+                const result = await this.geo.runCycle();
+                if (result?.alerts?.length > 0) await this.notifyBrain('geo', result.alerts);
+            } catch (e: any) {
+                console.error('[Scheduler] GEO error:', e.message);
+            }
+        });
 
-      if (products) {
-          for (const p of products) {
-              if (p.website_url) await this.scraper.scrapeWebsite(p.website_url, p.user_id);
-          }
-      }
-    });
+        cron.schedule(SCHED_SCRAPE_CRON, async () => {
+            console.log('[Scheduler] Running Website Auto-Update Scrape...');
+            try {
+                const supabase = getServiceSupabaseClient();
+                const { data: products } = await supabase
+                    .from('product_memory')
+                    .select('website_url, user_id')
+                    .not('website_url', 'is', null);
 
-    console.log('Scheduler started successfully.');
-  }
+                if (products) {
+                    for (const p of products) {
+                        if (p.website_url) await this.scraper.scrapeWebsite(p.website_url, p.user_id);
+                    }
+                }
+            } catch (e: any) {
+                console.error('[Scheduler] Scrape error:', e.message);
+            }
+        });
 
-  private async runEmotionalCycle() {
-      console.log('[Scheduler] Triggering Emotional Analysis...');
-      const result = await this.emotional.runCycle();
-      if (result && result.alerts && result.alerts.length > 0) {
-          await this.notifyBrain('emotional', result.alerts);
-      }
-  }
+        // ─── AGENT EXECUTION LOOPS ───────────────────────────────────────────────
 
-  private async notifyBrain(source: string, alerts: any[]) {
-      console.log(`[ALERT] AI Brain received ${alerts.length} alerts from ${source}`);
-      await this.decisionEngine.handleAlert(source, alerts);
-  }
+        // Execute due content tasks (posts, reels, stories, threads) — every 5 minutes
+        cron.schedule(SCHED_AGENT_EXEC_CRON, async () => {
+            try {
+                const result = await this.orchestrator.executeDueTasks();
+                if (result.executed > 0 || result.failed > 0) {
+                    console.log(`[Scheduler] Agent execution cycle: ${result.executed} published, ${result.failed} failed`);
+                }
+            } catch (e: any) {
+                console.error('[Scheduler] Agent execution error:', e.message);
+            }
+        });
+
+        // Execute special tasks (lead scans, DM follow-ups, performance checks) — every 10 minutes
+        cron.schedule(SCHED_AGENT_SPECIAL_CRON, async () => {
+            try {
+                await this.orchestrator.executeSpecialTasks();
+            } catch (e: any) {
+                console.error('[Scheduler] Agent special tasks error:', e.message);
+            }
+        });
+
+        // Fetch real performance metrics from platform APIs — hourly
+        cron.schedule(SCHED_AGENT_MONITOR_CRON, async () => {
+            console.log('[Scheduler] Running performance monitoring...');
+            try {
+                await this.orchestrator.monitorPerformance();
+            } catch (e: any) {
+                console.error('[Scheduler] Performance monitoring error:', e.message);
+            }
+        });
+
+        // Self-optimization: agents evaluate performance and adjust strategy — every 2 hours
+        cron.schedule(SCHED_AGENT_OPTIM_CRON, async () => {
+            console.log('[Scheduler] Running agent self-optimization...');
+            try {
+                await this.orchestrator.optimizeActiveStrategies();
+            } catch (e: any) {
+                console.error('[Scheduler] Optimization error:', e.message);
+            }
+        });
+
+        // SALESMAN agent lead follow-ups — every 30 minutes
+        cron.schedule(SCHED_LEAD_FOLLOWUP_CRON, async () => {
+            try {
+                await this.runLeadFollowUps();
+            } catch (e: any) {
+                console.error('[Scheduler] Lead follow-up error:', e.message);
+            }
+        });
+
+        console.log('[Scheduler] ✓ All loops started:');
+        console.log('[Scheduler]   Intelligence: IPE, Social, Emotional, GEO — every 15 min');
+        console.log('[Scheduler]   Agent Execution: Content posts — every 5 min');
+        console.log('[Scheduler]   Special Tasks: Lead scans, DMs — every 10 min');
+        console.log('[Scheduler]   Performance: Platform metrics — hourly');
+        console.log('[Scheduler]   Optimization: Self-adjustment — every 2 hours');
+        console.log('[Scheduler]   Lead Follow-up: Salesman DMs — every 30 min');
+    }
+
+    private async runEmotionalCycle() {
+        console.log('[Scheduler] Triggering Emotional Analysis...');
+        try {
+            const result = await this.emotional.runCycle();
+            if (result?.alerts?.length > 0) await this.notifyBrain('emotional', result.alerts);
+        } catch (e: any) {
+            console.error('[Scheduler] Emotional analysis error:', e.message);
+        }
+    }
+
+    private async notifyBrain(source: string, alerts: any[]) {
+        console.log(`[Scheduler] AI Brain: ${alerts.length} alerts from ${source}`);
+        try {
+            await this.decisionEngine.handleAlert(source, alerts);
+        } catch (e: any) {
+            console.error(`[Scheduler] Brain notify error (${source}):`, e.message);
+        }
+    }
+
+    private async runLeadFollowUps() {
+        const supabase = getServiceSupabaseClient();
+
+        // Get all active SALESMAN strategies
+        const { data: strategies } = await supabase
+            .from('strategies')
+            .select('id, user_id')
+            .eq('is_active', true)
+            .eq('agent_type', 'SALESMAN');
+
+        if (!strategies?.length) return;
+
+        const { SalesmanAgent } = await import('../agents/salesmanAgent');
+
+        for (const strategy of strategies) {
+            try {
+                const agent = new SalesmanAgent(supabase);
+                await agent.followUpLeads(strategy.user_id);
+            } catch (e: any) {
+                console.error(`[Scheduler] Lead follow-up error for ${strategy.id}:`, e.message);
+            }
+        }
+    }
 }

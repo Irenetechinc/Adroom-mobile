@@ -3,7 +3,7 @@ import { View, Text, TouchableOpacity } from 'react-native';
 import { DrawerContentComponentProps } from '@react-navigation/drawer';
 
 import { useAuthStore } from '../store/authStore';
-import { Bot, LayoutDashboard, Settings, LogOut, X, History, ChevronRight, Users } from 'lucide-react-native';
+import { Bot, LayoutDashboard, Settings, LogOut, X, History, ChevronRight, Users, MessageSquare } from 'lucide-react-native';
 import Animated, { FadeInLeft } from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
@@ -11,6 +11,7 @@ const menuItems = [
   { label: 'Agent', icon: Bot, route: 'AgentChat', description: 'AI Campaign Assistant' },
   { label: 'Dashboard', icon: LayoutDashboard, route: 'Dashboard', description: 'Performance Overview' },
   { label: 'Strategy History', icon: History, route: 'StrategyHistory', description: 'Past Strategies' },
+  { label: 'Interactions', icon: MessageSquare, route: 'Interactions', description: 'Real-time Comments & Messages' },
   { label: 'Community', icon: Users, route: 'Community', description: 'AdRoom Global Network' },
   { label: 'Settings', icon: Settings, route: 'Settings', description: 'App Preferences' },
 ];
@@ -74,8 +75,8 @@ export default function SideMenu(props: DrawerContentComponentProps) {
         {/* Nav Items */}
         <View style={{ flex: 1, paddingHorizontal: 12, paddingTop: 4 }}>
           {menuItems.map((item, index) => {
-            const currentRouteName = props.state.routeNames[props.state.index];
-            const isFocused = currentRouteName === item.route;
+            const activeRoute = props.state.routes[props.state.index]?.name;
+            const isFocused = activeRoute === item.route;
 
             const Icon = item.icon;
 
