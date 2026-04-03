@@ -7,7 +7,7 @@ dotenv.config();
 
 export const getSupabaseClient = (req: Request) => {
   const supabaseUrl = process.env.SUPABASE_URL;
-  const supabaseAnonKey = process.env.SUPABASE_ANON_KEY;
+  const supabaseAnonKey = process.env.SUPABASE_ANON_KEY || process.env.SUPABASE_KEY;
   const authHeader = req.headers.authorization;
 
   if (!supabaseUrl) {

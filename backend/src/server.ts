@@ -203,6 +203,60 @@ app.post('/api/creative/image', async (req, res) => {
 });
 
 /**
+ * Scan Product Image via Gemini Vision
+ */
+app.post('/api/ai/scan-product', async (req, res) => {
+  const { imageBase64 } = req.body;
+  const authHeader = req.headers.authorization;
+
+  if (!imageBase64) return res.status(400).json({ error: 'imageBase64 is required.' });
+  if (!authHeader) return res.status(401).json({ error: 'Unauthorized.' });
+
+  try {
+    const supabase = getSupabaseClient(req as any);
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return res.status(401).json({ error: 'Invalid session.' });
+
+    const aiEngine = AIEngine.getInstance();
+    const scanPrompt = `Analyze this product image in extreme detail. Extract every possible piece of information. Return ONLY a valid JSON object (no markdown, no code blocks) with these exact fields:
+{
+  "product_name": "name of product",
+  "product_type": "type of product",
+  "brand": "brand name or null",
+  "color": "primary color",
+  "visible_features": ["feature1","feature2"],
+  "estimated_size": "size if visible",
+  "category": "product category",
+  "material": "material if apparent",
+  "condition": "new/used",
+  "packaging": "packaging description",
+  "text_detected": "any text visible",
+  "suggested_target_audience": "who would buy this",
+  "suggested_price_range": "price range estimate",
+  "quality_score": 8,
+  "description": "detailed product description"
+}`;
+
+    const result = await aiEngine.analyzeImage(imageBase64, scanPrompt);
+
+    if (result.parsedJson) {
+      return res.status(200).json(result.parsedJson);
+    }
+
+    // Try to manually parse if the AI returned JSON without code blocks
+    try {
+      const cleaned = result.text.trim().replace(/^```json\s*/i, '').replace(/```\s*$/i, '');
+      return res.status(200).json(JSON.parse(cleaned));
+    } catch {
+      return res.status(200).json({ product_name: 'Unknown Product', description: result.text, quality_score: 5 });
+    }
+  } catch (error: any) {
+    console.error('Scan Product Error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
  * Generate Strategy
  */
 app.post('/api/ai/generate-strategy', async (req, res) => {
