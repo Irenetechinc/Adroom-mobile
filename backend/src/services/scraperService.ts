@@ -11,14 +11,14 @@ export interface ScrapedProduct {
     metadata?: any;
 }
 
-const JINA_TIMEOUT_MS = 20000;
+const JINA_TIMEOUT_MS = 22000;
 const DIRECT_TIMEOUT_MS = 15000;
-const MAX_PRODUCT_PAGES = 6;
+const MAX_PRODUCT_PAGES = 8;
 
 function scraperLog(msg: string, extra?: any) {
     const ts = new Date().toISOString();
     if (extra) {
-        console.log(`[Scraper] [${ts}] ${msg}`, extra);
+        console.log(`[Scraper] [${ts}] ${msg}`, typeof extra === 'object' ? JSON.stringify(extra).slice(0, 500) : extra);
     } else {
         console.log(`[Scraper] [${ts}] ${msg}`);
     }
@@ -28,9 +28,8 @@ async function fetchWithJina(url: string): Promise<string> {
     const jinaUrl = `https://r.jina.ai/${encodeURIComponent(url)}`;
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), JINA_TIMEOUT_MS);
-
     try {
-        scraperLog(`Fetching via Jina: ${url}`);
+        scraperLog(`Jina fetch: ${url}`);
         const res = await fetch(jinaUrl, {
             headers: {
                 'Accept': 'text/plain',
@@ -41,19 +40,18 @@ async function fetchWithJina(url: string): Promise<string> {
         });
         if (!res.ok) throw new Error(`Jina returned ${res.status}`);
         const text = await res.text();
-        scraperLog(`Jina fetched ${text.length} chars for ${url}`);
+        scraperLog(`Jina OK: ${text.length} chars from ${url}`);
         return text;
     } finally {
         clearTimeout(timer);
     }
 }
 
-async function fetchDirect(url: string): Promise<string> {
+async function fetchRawHtml(url: string): Promise<{ text: string; rawHtml: string }> {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), DIRECT_TIMEOUT_MS);
-
     try {
-        scraperLog(`Direct fetch fallback: ${url}`);
+        scraperLog(`Raw HTML fetch: ${url}`);
         const res = await fetch(url, {
             headers: {
                 'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1',
@@ -63,58 +61,114 @@ async function fetchDirect(url: string): Promise<string> {
             },
             signal: controller.signal,
         });
-        if (!res.ok) throw new Error(`Direct fetch returned ${res.status}`);
-        const html = await res.text();
-        const cleaned = html
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const rawHtml = await res.text();
+        const text = rawHtml
             .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')
             .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
             .replace(/<[^>]+>/g, ' ')
             .replace(/\s{2,}/g, ' ')
             .trim()
-            .substring(0, 8000);
-        scraperLog(`Direct fetch returned ${cleaned.length} cleaned chars`);
-        return cleaned;
+            .substring(0, 10000);
+        scraperLog(`Raw HTML OK: ${text.length} cleaned chars`);
+        return { text, rawHtml };
     } finally {
         clearTimeout(timer);
     }
 }
 
-async function getPageContent(url: string): Promise<string> {
-    try {
-        const text = await fetchWithJina(url);
-        if (text && text.length > 100) return text.substring(0, 12000);
-        throw new Error('Jina returned too little content');
-    } catch (jinaErr: any) {
-        scraperLog(`Jina failed (${jinaErr.message}), trying direct fetch`);
-        try {
-            return await fetchDirect(url);
-        } catch (directErr: any) {
-            scraperLog(`Direct fetch also failed: ${directErr.message}`);
-            return `Website: ${url}`;
-        }
-    }
+async function fetchWithFirecrawl(url: string): Promise<string> {
+    const key = process.env.FIRECRAWL_API_KEY;
+    if (!key) throw new Error('No Firecrawl key');
+    scraperLog(`Firecrawl fetch: ${url}`);
+    const res = await fetch('https://api.firecrawl.dev/v1/scrape', {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${key}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url, formats: ['markdown'] }),
+        signal: AbortSignal.timeout(25000),
+    });
+    if (!res.ok) throw new Error(`Firecrawl ${res.status}`);
+    const data: any = await res.json();
+    const text = data?.data?.markdown || '';
+    scraperLog(`Firecrawl OK: ${text.length} chars`);
+    return text;
 }
 
-function buildFallbackProduct(url: string): ScrapedProduct {
-    const hostname = (() => {
-        try { return new URL(url).hostname.replace(/^www\./, ''); } catch { return url; }
-    })();
-    const brandName = hostname.split('.')[0];
-    const brandCapitalized = brandName.charAt(0).toUpperCase() + brandName.slice(1);
+async function getPageContent(url: string): Promise<{ text: string; rawHtml?: string }> {
+    // Method 1: Jina AI reader (best for clean text extraction)
+    try {
+        const text = await fetchWithJina(url);
+        if (text && text.length > 300) return { text: text.substring(0, 14000) };
+    } catch (e: any) {
+        scraperLog(`Jina failed: ${e.message}`);
+    }
+    // Method 2: Firecrawl (handles JS-heavy sites)
+    try {
+        const text = await fetchWithFirecrawl(url);
+        if (text && text.length > 300) return { text: text.substring(0, 14000) };
+    } catch (e: any) {
+        scraperLog(`Firecrawl failed: ${e.message}`);
+    }
+    // Method 3: Raw HTML with our own cleaning
+    try {
+        const result = await fetchRawHtml(url);
+        if (result.text && result.text.length > 50) return result;
+    } catch (e: any) {
+        scraperLog(`Raw HTML failed: ${e.message}`);
+    }
+    return { text: `Website: ${url}` };
+}
 
-    return {
-        name: `${brandCapitalized} Product`,
-        description: `Products and services from ${brandCapitalized}. Please review and edit the details below to accurately represent your offering.`,
-        price: undefined,
-        images: [],
-        url,
-        category: 'General',
-        metadata: {
-            usp: ['Quality products', 'Customer satisfaction', 'Competitive pricing'],
-            target_audience: 'General consumers',
-            fallback: true,
-        },
-    };
+/**
+ * Extracts all internal href links from raw HTML.
+ * Fully dynamic — no pre-listed paths.
+ */
+function extractAllLinksFromHtml(rawHtml: string, origin: string): string[] {
+    const hrefs = new Set<string>();
+    const hrefRegex = /href=["']([^"'#?]+)["']/gi;
+    let match;
+    while ((match = hrefRegex.exec(rawHtml)) !== null) {
+        const href = match[1].trim();
+        if (!href || href.startsWith('javascript:') || href.startsWith('mailto:') || href.startsWith('tel:')) continue;
+        try {
+            const resolved = new URL(href, origin);
+            if (resolved.hostname === new URL(origin).hostname) {
+                hrefs.add(resolved.pathname);
+            }
+        } catch {}
+    }
+    return Array.from(hrefs).slice(0, 100);
+}
+
+/**
+ * AI classifies extracted links to identify product/collection pages.
+ * No pre-listed assumptions — fully adaptive to any site structure.
+ */
+async function discoverProductPagesAI(paths: string[], origin: string, ai: AIEngine): Promise<string[]> {
+    if (paths.length === 0) return [];
+    scraperLog(`AI classifying ${paths.length} paths from ${origin}`);
+    const prompt = `
+You are a web scraping intelligence engine. A website at "${origin}" has these URL paths.
+Identify paths that are: product listing pages, shop pages, category pages, collection pages, catalog pages, or individual product pages.
+
+EXCLUDE: home, about, contact, blog, news, faq, terms, privacy, login, cart, checkout, account, wishlist, search, 404, cookie-policy, sitemap.
+
+PATHS:
+${paths.map((p, i) => `${i + 1}. ${p}`).join('\n')}
+
+Return ONLY a JSON array of path strings (no markdown, no explanation):
+["path1", "path2"]
+If none qualify, return: []
+`;
+    try {
+        const resp = await ai.generateStrategy({}, prompt);
+        const found: string[] = Array.isArray(resp.parsedJson) ? resp.parsedJson : [];
+        scraperLog(`AI discovered ${found.length} product paths`, found.slice(0, 5));
+        return found.slice(0, MAX_PRODUCT_PAGES);
+    } catch (e: any) {
+        scraperLog(`AI discovery failed: ${e.message}`);
+        return [];
+    }
 }
 
 export class ScraperService {
@@ -127,198 +181,233 @@ export class ScraperService {
     }
 
     async scrapeWebsite(url: string, userId: string): Promise<ScrapedProduct[]> {
+        scraperLog(`\n══════════════════════════════════`);
         scraperLog(`Starting scrape — URL: ${url} | User: ${userId}`);
 
-        let homepageContent = '';
-        try {
-            homepageContent = await getPageContent(url);
-        } catch (err: any) {
-            scraperLog(`Could not fetch page, using AI inference from URL alone`);
-            homepageContent = `URL: ${url}`;
+        const parsedUrl = (() => {
+            try { return new URL(url.startsWith('http') ? url : `https://${url}`); } catch { return null; }
+        })();
+
+        if (!parsedUrl) {
+            const fb = this.buildFallback(url, 'Invalid URL');
+            await this.storeProduct(fb, userId);
+            return [fb];
         }
 
-        const discoveryPrompt = `
-You are analyzing the text content of an e-commerce or business website.
-Your job: extract products/services and find product page URLs.
+        const origin = parsedUrl.origin;
 
-URL: ${url}
-CONTENT:
-${homepageContent}
+        // ── STEP 1: Fetch homepage ─────────────────────────────────────────────
+        scraperLog(`STEP 1: Fetching homepage at ${origin}`);
+        const { text: homepageText, rawHtml } = await getPageContent(origin);
 
-OUTPUT STRICT JSON (no markdown, no extra text):
-{
-  "homepage_products": [
-    {
-      "name": "string",
-      "description": "string (2-3 sentences, marketing-ready)",
-      "price": "string or null",
-      "image_url": "absolute image URL or null",
-      "category": "string",
-      "usp": ["key benefit 1", "key benefit 2"]
-    }
-  ],
-  "product_links": ["absolute url 1", "absolute url 2"]
-}
+        // ── STEP 2: Extract all links from raw HTML ────────────────────────────
+        let productPageUrls: string[] = [parsedUrl.href];
 
-Rules:
-- All URLs must be absolute (start with http). Resolve relative URLs against: ${url}
-- Only include real products/services, NOT navigation, blog posts, or footer links.
-- Maximum 6 product_links.
-- If no products found on page, still try to infer at least 1 product from the site domain and content.
-- Never return empty arrays if you can reasonably infer a product from context.
-`;
+        if (rawHtml) {
+            scraperLog(`STEP 2: Extracting all internal links from homepage HTML`);
+            const allPaths = extractAllLinksFromHtml(rawHtml, origin);
+            scraperLog(`Found ${allPaths.length} unique internal paths`);
 
-        scraperLog('Running AI discovery pass...');
-        let discoveryResult: any = { homepage_products: [], product_links: [] };
-        try {
-            const aiResult = await this.ai.generateStrategy({}, discoveryPrompt);
-            if (aiResult.parsedJson) {
-                discoveryResult = aiResult.parsedJson;
-                scraperLog(`AI discovery found ${discoveryResult.homepage_products?.length || 0} homepage products, ${discoveryResult.product_links?.length || 0} product links`);
-            } else {
-                scraperLog('AI discovery returned no parsedJson — will try product links only');
+            // ── STEP 3: AI classifies which paths are product/collection pages ──
+            scraperLog(`STEP 3: AI identifying product/collection pages`);
+            const productPaths = await discoverProductPagesAI(allPaths, origin, this.ai);
+            const productUrls = productPaths.map(p => `${origin}${p.startsWith('/') ? p : '/' + p}`);
+
+            // Always include the original URL the user gave us
+            if (!productUrls.includes(parsedUrl.href)) {
+                productUrls.unshift(parsedUrl.href);
             }
-        } catch (err: any) {
-            scraperLog(`AI discovery error: ${err.message}`);
+            productPageUrls = productUrls;
         }
 
-        const products: ScrapedProduct[] = [];
+        scraperLog(`STEP 4: Scraping ${productPageUrls.length} product page(s)`, productPageUrls);
 
-        for (const hp of (discoveryResult.homepage_products || [])) {
-            if (hp?.name && hp?.description) {
-                const product: ScrapedProduct = {
-                    name: hp.name,
-                    description: hp.description,
-                    price: hp.price || undefined,
-                    images: hp.image_url ? [hp.image_url] : [],
-                    url,
-                    category: hp.category || undefined,
-                    metadata: { usp: hp.usp || [] },
-                };
-                products.push(product);
-                await this.storeScrapedProduct(product, userId);
-                scraperLog(`Added homepage product: "${product.name}"`);
+        // ── STEP 4: Scrape each discovered product page ────────────────────────
+        const pageContents: string[] = [];
+        for (const pageUrl of productPageUrls.slice(0, MAX_PRODUCT_PAGES)) {
+            try {
+                const { text } = await getPageContent(pageUrl);
+                if (text && text.length > 100) {
+                    pageContents.push(`\n\n─── PAGE: ${pageUrl} ───\n${text.substring(0, 5000)}`);
+                }
+            } catch (e: any) {
+                scraperLog(`Failed to scrape ${pageUrl}: ${e.message}`);
             }
         }
 
-        const productLinks: string[] = (discoveryResult.product_links || [])
-            .filter((l: any) => typeof l === 'string' && l.startsWith('http'))
-            .slice(0, MAX_PRODUCT_PAGES);
+        const combinedContent = (pageContents.join('\n') || homepageText).substring(0, 22000);
 
-        if (productLinks.length > 0) {
-            scraperLog(`Scraping ${productLinks.length} individual product pages...`);
-            const pageTasks = productLinks.map((productUrl: string) =>
-                this.scrapeProductPage(productUrl, url).then(async (product) => {
-                    if (product) {
-                        await this.storeScrapedProduct(product, userId);
-                        products.push(product);
-                        scraperLog(`Added product page: "${product.name}" from ${productUrl}`);
-                    }
-                }).catch((e: any) => {
-                    scraperLog(`Product page failed (${productUrl}): ${e.message}`);
-                })
-            );
-            await Promise.all(pageTasks);
-        }
+        // ── STEP 5: AI extracts product data ──────────────────────────────────
+        scraperLog(`STEP 5: AI extracting product data from ${combinedContent.length} chars`);
+        const products = await this.extractProductsWithAI(combinedContent, url, origin);
 
+        // ── STEP 6: Store and return ──────────────────────────────────────────
         if (products.length === 0) {
-            scraperLog('No products found — using fallback product');
-            const fallback = buildFallbackProduct(url);
-            products.push(fallback);
-            await this.storeScrapedProduct(fallback, userId);
+            scraperLog(`No products extracted — building fallback from homepage context`);
+            const fallback = await this.extractSingleProductWithAI(homepageText, url);
+            await this.storeProduct(fallback, userId);
+            scraperLog(`══════════════════════════════════\n`);
+            return [fallback];
         }
 
-        scraperLog(`Scrape complete — ${products.length} products found from ${url}`);
+        for (const p of products) {
+            await this.storeProduct(p, userId);
+        }
+        scraperLog(`Scrape complete — ${products.length} product(s) found`);
+        scraperLog(`══════════════════════════════════\n`);
         return products;
     }
 
-    private async scrapeProductPage(productUrl: string, baseUrl: string): Promise<ScrapedProduct | null> {
-        let content = '';
-        try {
-            content = await getPageContent(productUrl);
-        } catch {
-            return null;
-        }
+    private async extractProductsWithAI(content: string, originalUrl: string, origin: string): Promise<ScrapedProduct[]> {
+        const prompt = `
+You are a product extraction engine analyzing e-commerce website content.
+Extract ALL distinct products or the primary product/service.
 
-        const extractPrompt = `
-You are extracting a single product's details from an e-commerce product page.
-
-PRODUCT PAGE URL: ${productUrl}
-SITE URL: ${baseUrl}
-CONTENT:
+WEBSITE CONTENT (may span multiple pages):
 ${content}
 
-OUTPUT STRICT JSON (no markdown):
-{
-  "name": "string",
-  "description": "string (2-3 sentences, marketing-ready)",
-  "price": "string or null",
-  "image_url": "absolute image URL or null",
-  "category": "string",
-  "usp": ["benefit 1", "benefit 2", "benefit 3"],
-  "target_audience": "string"
-}
+For each product found, provide:
+- name: exact product name (not brand, not site name)
+- description: 2-3 sentence marketing-ready description
+- price: price string with currency symbol, or null
+- category: specific category (Fashion, Electronics, Beauty, Food, Furniture, etc.)
+- image_url: first absolute image URL found or null
+- target_audience: who buys this
+
+Return STRICT JSON array (no markdown):
+[
+  {
+    "name": "string",
+    "description": "string",
+    "price": "string or null",
+    "category": "string",
+    "image_url": "absolute URL or null",
+    "target_audience": "string"
+  }
+]
 
 Rules:
-- name must be the ACTUAL product name, not the site name.
-- description must be real from the content, not invented.
-- If name/description cannot be found, use the URL path as the name hint.
+- Max 5 products. Pick the most prominent/primary ones.
+- name must be a real product name, NOT the website/brand name.
+- If this is a service-based business, treat the service as the "product".
+- Return ONLY the JSON array.
 `;
-
         try {
-            const aiResult = await this.ai.generateStrategy({}, extractPrompt);
-            const refined = aiResult.parsedJson;
-
-            if (!refined?.name) {
-                scraperLog(`AI could not extract product from ${productUrl}`);
-                return null;
-            }
-
-            return {
-                name: refined.name,
-                description: refined.description || `Product from ${productUrl}`,
-                price: refined.price || undefined,
-                images: refined.image_url ? [refined.image_url] : [],
-                url: productUrl,
-                category: refined.category || undefined,
-                metadata: {
-                    usp: refined.usp || [],
-                    target_audience: refined.target_audience || null,
-                },
-            };
-        } catch (err: any) {
-            scraperLog(`Product extraction failed for ${productUrl}: ${err.message}`);
-            return null;
+            const resp = await this.ai.generateStrategy({}, prompt);
+            const extracted: any[] = Array.isArray(resp.parsedJson) ? resp.parsedJson : [];
+            return extracted
+                .filter((p: any) => p?.name && p?.description)
+                .map((p: any) => ({
+                    name: p.name,
+                    description: p.description,
+                    price: p.price || undefined,
+                    images: (p.image_url && typeof p.image_url === 'string' && p.image_url.startsWith('http')) ? [p.image_url] : [],
+                    url: originalUrl,
+                    category: p.category || 'General',
+                    metadata: { target_audience: p.target_audience || '', scraped_from: origin },
+                }));
+        } catch (e: any) {
+            scraperLog(`extractProductsWithAI error: ${e.message}`);
+            return [];
         }
     }
 
-    private async storeScrapedProduct(product: ScrapedProduct, userId: string) {
+    private async extractSingleProductWithAI(content: string, url: string): Promise<ScrapedProduct> {
+        const prompt = `
+Extract the primary product/service from this website content.
+
+CONTENT: ${content.substring(0, 8000)}
+
+Return ONLY JSON (no markdown):
+{
+  "name": "product name",
+  "description": "2-3 sentences",
+  "price": "price or null",
+  "category": "category",
+  "image_url": "absolute URL or null",
+  "target_audience": "who buys this"
+}
+`;
+        try {
+            const resp = await this.ai.generateStrategy({}, prompt);
+            const p = resp.parsedJson;
+            if (p?.name && p.name.length > 2) {
+                return {
+                    name: p.name,
+                    description: p.description || '',
+                    price: p.price || undefined,
+                    images: (p.image_url && typeof p.image_url === 'string' && p.image_url.startsWith('http')) ? [p.image_url] : [],
+                    url,
+                    category: p.category || 'General',
+                    metadata: { target_audience: p.target_audience || '' },
+                };
+            }
+        } catch (e: any) {
+            scraperLog(`extractSingleProductWithAI error: ${e.message}`);
+        }
+        return this.buildFallback(url, 'AI extraction returned no usable data');
+    }
+
+    private buildFallback(url: string, reason: string): ScrapedProduct {
+        scraperLog(`Fallback product built. Reason: ${reason}`);
+        const hostname = (() => { try { return new URL(url).hostname.replace(/^www\./, ''); } catch { return url; } })();
+        const brand = hostname.split('.')[0];
+        const name = brand.charAt(0).toUpperCase() + brand.slice(1);
+        return {
+            name: `${name} Product`,
+            description: `Products and services from ${name}. Please review and edit the details to accurately represent your offering.`,
+            price: undefined,
+            images: [],
+            url,
+            category: 'General',
+            metadata: { fallback: true, reason },
+        };
+    }
+
+    private async storeProduct(product: ScrapedProduct, userId: string): Promise<void> {
         try {
             const { error } = await this.supabase.from('product_memory').upsert(
                 {
                     user_id: userId,
-                    name: product.name,
+                    product_name: product.name,
                     description: product.description,
-                    price: product.price || null,
+                    price: product.price ? parseFloat(product.price.replace(/[^0-9.]/g, '')) || null : null,
                     category: product.category || null,
-                    baseImageUri: product.images[0] || null,
+                    images: product.images || [],
                     website_url: product.url,
-                    conversation_context: {
-                        usp: product.metadata?.usp || [],
-                        target_audience: product.metadata?.target_audience || null,
-                    },
+                    conversation_context: { target_audience: product.metadata?.target_audience || '' },
+                    original_scan_data: product.metadata || null,
                     last_scraped_at: new Date().toISOString(),
                 },
-                { onConflict: 'user_id,name' }
+                { onConflict: 'user_id,product_name' }
             );
-
-            if (error) {
-                scraperLog(`Failed to store product "${product.name}": ${error.message}`);
-            } else {
-                scraperLog(`Stored product: "${product.name}"`);
-            }
+            if (error) scraperLog(`DB store failed for "${product.name}": ${error.message}`);
+            else scraperLog(`Stored product: "${product.name}"`);
         } catch (e: any) {
-            scraperLog(`storeScrapedProduct exception: ${e.message}`);
+            scraperLog(`storeProduct exception: ${e.message}`);
+        }
+    }
+
+    async refreshStaleProducts(): Promise<void> {
+        const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+        const { data: stale } = await this.supabase
+            .from('product_memory')
+            .select('product_id, website_url, user_id')
+            .not('website_url', 'is', null)
+            .lt('last_scraped_at', oneHourAgo)
+            .limit(5);
+
+        if (!stale || stale.length === 0) return;
+        for (const product of stale) {
+            if (!product.website_url) continue;
+            try {
+                const products = await this.scrapeWebsite(product.website_url, product.user_id);
+                if (products.length > 0) {
+                    scraperLog(`Refreshed product ${product.product_id} — ${products[0].name}`);
+                }
+            } catch (e: any) {
+                scraperLog(`Failed to refresh ${product.product_id}: ${e.message}`);
+            }
         }
     }
 }

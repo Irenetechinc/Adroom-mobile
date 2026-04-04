@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity,
   ActivityIndicator, Alert, StyleSheet,
@@ -8,13 +8,12 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../types';
-import { FacebookService } from '../services/facebook';
-import { FacebookConfig } from '../types/facebook';
 import {
   ChevronLeft, Link2, Link2Off, CheckCircle2,
   ShieldCheck, RefreshCw, AlertCircle, ExternalLink,
 } from 'lucide-react-native';
 import Animated, { FadeInDown } from 'react-native-reanimated';
+import { supabase } from '../services/supabase';
 
 type Platform = {
   id: string;
@@ -23,40 +22,47 @@ type Platform = {
   letter: string;
   bg: string;
   letterColor: string;
+  comingSoon?: boolean;
 };
 
 const PLATFORMS: Platform[] = [
-  { id: 'facebook', name: 'Facebook Ads', sub: 'Meta Business Suite', letter: 'f', bg: '#1877F2', letterColor: '#FFFFFF' },
-  { id: 'instagram', name: 'Instagram Ads', sub: 'Meta Business Suite', letter: 'IG', bg: 'rgba(195,42,163,0.9)', letterColor: '#FFFFFF' },
-  { id: 'tiktok', name: 'TikTok Ads', sub: 'TikTok for Business', letter: 'T', bg: '#111', letterColor: '#FFFFFF' },
-  { id: 'linkedin', name: 'LinkedIn Ads', sub: 'LinkedIn Marketing Solutions', letter: 'in', bg: '#0A66C2', letterColor: '#FFFFFF' },
-  { id: 'twitter', name: 'X / Twitter Ads', sub: 'X Advertising Platform', letter: 'X', bg: '#000000', letterColor: '#FFFFFF' },
-  { id: 'google', name: 'Google Ads', sub: 'Google Marketing Platform', letter: 'G', bg: 'rgba(234,67,53,0.12)', letterColor: '#EA4335' },
+  { id: 'facebook', name: 'Facebook', sub: 'Meta Business Suite', letter: 'f', bg: '#1877F2', letterColor: '#FFFFFF' },
+  { id: 'instagram', name: 'Instagram', sub: 'Meta Business Suite', letter: 'IG', bg: 'rgba(195,42,163,0.9)', letterColor: '#FFFFFF' },
+  { id: 'tiktok', name: 'TikTok', sub: 'TikTok for Creators', letter: 'T', bg: '#111', letterColor: '#FFFFFF' },
+  { id: 'twitter', name: 'X / Twitter', sub: 'X Platform', letter: 'X', bg: '#000000', letterColor: '#FFFFFF' },
+  { id: 'linkedin', name: 'LinkedIn', sub: 'LinkedIn Marketing', letter: 'in', bg: '#0A66C2', letterColor: '#FFFFFF' },
+  { id: 'google', name: 'Google Ads', sub: 'Google Marketing Platform', letter: 'G', bg: 'rgba(234,67,53,0.12)', letterColor: '#EA4335', comingSoon: true },
 ];
 
 export default function ConnectedAccountsScreen() {
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const insets = useSafeAreaInsets();
   const [loading, setLoading] = useState(true);
-  const [fbConfig, setFbConfig] = useState<FacebookConfig | null>(null);
+  const [configs, setConfigs] = useState<Record<string, any>>({});
   const [disconnecting, setDisconnecting] = useState<string | null>(null);
 
-  const loadConfig = async () => {
+  const loadConfigs = useCallback(async () => {
     setLoading(true);
     try {
-      const data = await FacebookService.getConfig();
-      setFbConfig(data);
-    } catch {
-      setFbConfig(null);
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) return;
+      const BACKEND_URL = process.env.EXPO_PUBLIC_API_URL;
+      const res = await fetch(`${BACKEND_URL}/api/platform-configs`, {
+        headers: { 'Authorization': `Bearer ${session.access_token}` },
+      });
+      if (!res.ok) { setConfigs({}); return; }
+      const data = await res.json();
+      setConfigs(data.configs || {});
+    } catch (e) {
+      setConfigs({});
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
-  useEffect(() => { loadConfig(); }, []);
+  useEffect(() => { loadConfigs(); }, [loadConfigs]);
 
-  const isConnected = (id: string) => id === 'facebook' && !!fbConfig;
-  const isComingSoon = (id: string) => ['google'].includes(id);
+  const isConnected = (id: string) => !!configs[id];
 
   const handleConnect = (platform: Platform) => {
     const params: any = {};
@@ -70,8 +76,8 @@ export default function ConnectedAccountsScreen() {
 
   const handleDisconnect = (platform: Platform) => {
     Alert.alert(
-      `Disconnect ${platform.name}`,
-      'This will pause all autonomous campaigns on this platform. Are you sure?',
+      `Disconnect ${platform.name}?`,
+      'This will pause all autonomous campaigns on this platform. Your content history will remain.',
       [
         { text: 'Cancel', style: 'cancel' },
         {
@@ -80,10 +86,24 @@ export default function ConnectedAccountsScreen() {
           onPress: async () => {
             setDisconnecting(platform.id);
             try {
-              Alert.alert('Disconnected', `${platform.name} has been unlinked.`);
-              if (platform.id === 'facebook') setFbConfig(null);
-            } catch {
-              Alert.alert('Error', 'Failed to disconnect. Please try again.');
+              const { data: { session } } = await supabase.auth.getSession();
+              if (!session) throw new Error('Not authenticated');
+              const BACKEND_URL = process.env.EXPO_PUBLIC_API_URL;
+              const res = await fetch(`${BACKEND_URL}/api/platform-configs/${platform.id}`, {
+                method: 'DELETE',
+                headers: { 'Authorization': `Bearer ${session.access_token}` },
+              });
+              if (!res.ok) {
+                const err = await res.json();
+                throw new Error(err.error || 'Disconnect failed');
+              }
+              setConfigs(prev => {
+                const next = { ...prev };
+                delete next[platform.id];
+                return next;
+              });
+            } catch (e: any) {
+              Alert.alert('Error', e.message || 'Failed to disconnect. Please try again.');
             } finally {
               setDisconnecting(null);
             }
@@ -93,9 +113,30 @@ export default function ConnectedAccountsScreen() {
     );
   };
 
+  const getConnectedLabel = (platform: Platform): string => {
+    const cfg = configs[platform.id];
+    if (!cfg) return '';
+    if (cfg.page_name) return cfg.page_name;
+    if (platform.id === 'instagram') return 'Instagram Account';
+    if (platform.id === 'twitter') return 'X / Twitter Account';
+    if (platform.id === 'linkedin') return cfg.org_urn ? 'Company Page' : 'Personal Profile';
+    if (platform.id === 'tiktok') return 'TikTok Creator';
+    return 'Account Connected';
+  };
+
+  const getConnectedSub = (platform: Platform): string => {
+    const cfg = configs[platform.id];
+    if (!cfg) return '';
+    if (platform.id === 'facebook') return cfg.ad_account_id ? `Ad Account: ${cfg.ad_account_id}` : 'Business Page Linked';
+    if (platform.id === 'instagram') return cfg.instagram_account_id ? `IG Account: ${cfg.instagram_account_id}` : 'Account Linked';
+    if (platform.id === 'twitter') return 'X Account Linked';
+    if (platform.id === 'linkedin') return cfg.org_urn ? `Page: ${cfg.org_urn}` : (cfg.person_urn ? `Profile: ${cfg.person_urn}` : 'Profile Linked');
+    if (platform.id === 'tiktok') return cfg.open_id ? `ID: ${cfg.open_id.substring(0, 12)}...` : 'Creator Account Linked';
+    return '';
+  };
+
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
-      {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
           <ChevronLeft color="#E2E8F0" size={22} />
@@ -104,8 +145,10 @@ export default function ConnectedAccountsScreen() {
           <Text style={styles.headerLabel}>Settings</Text>
           <Text style={styles.headerTitle}>Connected Accounts</Text>
         </View>
-        <TouchableOpacity onPress={loadConfig} style={styles.refreshBtn}>
-          <RefreshCw size={16} color="#64748B" />
+        <TouchableOpacity onPress={loadConfigs} style={styles.refreshBtn} disabled={loading}>
+          {loading
+            ? <ActivityIndicator color="#64748B" size="small" />
+            : <RefreshCw size={16} color="#64748B" />}
         </TouchableOpacity>
       </View>
 
@@ -115,21 +158,20 @@ export default function ConnectedAccountsScreen() {
         contentContainerStyle={[styles.scroll, { paddingBottom: Math.max(40, insets.bottom + 20) }]}
       >
         <Text style={styles.pageDesc}>
-          Connect your ad platforms so AdRoom AI can autonomously launch and manage your campaigns across every channel.
+          Connect your social accounts so AdRoom can autonomously publish, reply, and engage on your behalf — across every platform.
         </Text>
 
         {PLATFORMS.map((platform, index) => {
           const connected = isConnected(platform.id);
-          const comingSoon = isComingSoon(platform.id);
+          const comingSoon = !!platform.comingSoon;
           const disc = disconnecting === platform.id;
 
           return (
             <Animated.View
               key={platform.id}
-              entering={FadeInDown.delay(index * 70).springify()}
+              entering={FadeInDown.delay(index * 60).springify()}
               style={[styles.platformCard, comingSoon && styles.platformCardDim]}
             >
-              {/* Header Row */}
               <View style={styles.platformHeader}>
                 <View style={[styles.platformLogoWrap, { backgroundColor: platform.bg }]}>
                   <Text style={[styles.platformLogo, { color: platform.letterColor, fontSize: platform.letter.length > 1 ? 14 : 22 }]}>
@@ -157,41 +199,27 @@ export default function ConnectedAccountsScreen() {
                 )}
               </View>
 
-              {/* Body */}
               {!comingSoon && (
-                loading && platform.id === 'facebook' ? (
-                  <View style={styles.loadingWrap}>
-                    <ActivityIndicator color="#00F0FF" size="small" />
-                    <Text style={styles.loadingText}>Loading...</Text>
-                  </View>
-                ) : connected ? (
+                connected ? (
                   <View style={styles.connectedBody}>
-                    {platform.id === 'facebook' && fbConfig && (
-                      <>
-                        <View style={styles.accountInfoRow}>
-                          <View style={styles.accountAvatar}>
-                            <Text style={styles.accountAvatarText}>
-                              {fbConfig.page_name ? fbConfig.page_name.charAt(0).toUpperCase() : 'F'}
-                            </Text>
-                          </View>
-                          <View style={{ flex: 1 }}>
-                            <Text style={styles.accountName}>{fbConfig.page_name || 'Facebook Page'}</Text>
-                            <Text style={styles.accountType}>Linked Business Page</Text>
-                          </View>
-                          <CheckCircle2 color="#10B981" size={20} />
-                        </View>
-                        <View style={styles.detailsBlock}>
-                          <View style={styles.detailRow}>
-                            <Text style={styles.detailLabel}>Ad Account ID</Text>
-                            <Text style={styles.detailValue} numberOfLines={1}>{fbConfig.ad_account_id}</Text>
-                          </View>
-                        </View>
-                      </>
-                    )}
+                    <View style={styles.accountInfoRow}>
+                      <View style={styles.accountAvatar}>
+                        <Text style={styles.accountAvatarText}>
+                          {getConnectedLabel(platform).charAt(0).toUpperCase() || platform.letter.charAt(0).toUpperCase()}
+                        </Text>
+                      </View>
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.accountName}>{getConnectedLabel(platform)}</Text>
+                        <Text style={styles.accountType}>{getConnectedSub(platform)}</Text>
+                      </View>
+                      <CheckCircle2 color="#10B981" size={20} />
+                    </View>
+
                     <View style={styles.activeBanner}>
                       <ShieldCheck size={14} color="#10B981" />
-                      <Text style={styles.activeBannerText}>Autonomous optimization is active</Text>
+                      <Text style={styles.activeBannerText}>Autonomous publishing is active on {platform.name}</Text>
                     </View>
+
                     <View style={styles.actionRow}>
                       <TouchableOpacity
                         onPress={() => handleConnect(platform)}
@@ -220,7 +248,7 @@ export default function ConnectedAccountsScreen() {
                     </View>
                     <Text style={styles.notConnectedTitle}>Not Connected</Text>
                     <Text style={styles.notConnectedDesc}>
-                      Link your {platform.name} account to allow AdRoom AI to run autonomous campaigns.
+                      Connect your {platform.name} account so AdRoom AI can autonomously post, reply, and engage for your campaign.
                     </Text>
                     <TouchableOpacity
                       onPress={() => handleConnect(platform)}
@@ -228,7 +256,7 @@ export default function ConnectedAccountsScreen() {
                       activeOpacity={0.85}
                     >
                       <Link2 size={18} color="#0B0F19" />
-                      <Text style={styles.connectBtnText}>Connect {platform.name.split(' ')[0]}</Text>
+                      <Text style={styles.connectBtnText}>Connect {platform.name}</Text>
                     </TouchableOpacity>
                   </View>
                 )
@@ -263,7 +291,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#151B2B', borderRadius: 18, borderWidth: 1, borderColor: '#1E293B',
     overflow: 'hidden', marginBottom: 12,
   },
-  platformCardDim: { opacity: 0.5 },
+  platformCardDim: { opacity: 0.45 },
   platformHeader: {
     flexDirection: 'row', alignItems: 'center',
     padding: 16, borderBottomWidth: 1, borderBottomColor: '#1E293B',
@@ -287,12 +315,9 @@ const styles = StyleSheet.create({
   },
   comingSoonText: { color: '#7000FF', fontSize: 10, fontWeight: '700' },
 
-  loadingWrap: { flexDirection: 'row', alignItems: 'center', padding: 20, justifyContent: 'center', gap: 10 },
-  loadingText: { color: '#64748B', fontSize: 13 },
-
   connectedBody: { padding: 16 },
   accountInfoRow: {
-    flexDirection: 'row', alignItems: 'center', marginBottom: 16,
+    flexDirection: 'row', alignItems: 'center', marginBottom: 14,
     backgroundColor: 'rgba(0,240,255,0.04)', borderRadius: 14, padding: 12,
     borderWidth: 1, borderColor: 'rgba(0,240,255,0.1)',
   },
@@ -304,17 +329,10 @@ const styles = StyleSheet.create({
   accountAvatarText: { color: '#00F0FF', fontWeight: '800', fontSize: 18 },
   accountName: { color: '#FFFFFF', fontWeight: '700', fontSize: 14, marginBottom: 3 },
   accountType: { color: '#64748B', fontSize: 11 },
-  detailsBlock: { marginBottom: 14 },
-  detailRow: {
-    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
-    backgroundColor: '#0B0F19', borderRadius: 10, padding: 12, borderWidth: 1, borderColor: '#1E293B',
-  },
-  detailLabel: { color: '#64748B', fontSize: 12 },
-  detailValue: { color: '#E2E8F0', fontWeight: '600', fontSize: 12, flex: 1, textAlign: 'right', marginLeft: 16 },
   activeBanner: {
     flexDirection: 'row', alignItems: 'center', gap: 8,
     backgroundColor: 'rgba(16,185,129,0.07)', borderWidth: 1, borderColor: 'rgba(16,185,129,0.2)',
-    borderRadius: 10, padding: 12, marginBottom: 16,
+    borderRadius: 10, padding: 12, marginBottom: 14,
   },
   activeBannerText: { color: '#10B981', fontSize: 12, fontWeight: '600', flex: 1 },
   actionRow: { flexDirection: 'row', gap: 10 },
