@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   View, Text, TouchableOpacity, FlatList,
-  Image, ActivityIndicator,
+  Image, ActivityIndicator, TextInput,
   Alert, ScrollView, StyleSheet, Modal,
 } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';

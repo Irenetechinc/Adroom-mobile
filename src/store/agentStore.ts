@@ -157,7 +157,12 @@ export const useAgentStore = create<AgentState>((set, get) => ({
 
   handleStrategyTypeSelection: (type: string) => {
     const { addMessage, setTyping } = get();
-    set({ flowState: type.toUpperCase() === 'PRODUCT' ? 'PRODUCT_INTAKE' : 'SERVICE_INTAKE' as any, isInputDisabled: true });
+    const flowStateMap: Record<string, FlowState> = {
+      product: 'PRODUCT_INTAKE',
+      service: 'SERVICE_INTAKE',
+      brand: 'BRAND_INTAKE',
+    };
+    set({ flowState: flowStateMap[type] ?? 'PRODUCT_INTAKE', isInputDisabled: true });
     
     addMessage(`${type.toUpperCase()} Strategy`, 'user');
     setTyping(true);
