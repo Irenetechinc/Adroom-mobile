@@ -270,7 +270,7 @@ Return JSON:
                     snapshot_text: angle.post_content,
                     keyword_cluster: angle.keyword_cluster,
                     narrative_angle: angle.angle_name
-                }).catch(() => null);
+                });
 
                 this.log(`Narrative angle "${angle.angle_name}" published to ${platform}`);
             } catch (err: any) {

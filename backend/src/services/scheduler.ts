@@ -50,7 +50,7 @@ export class SchedulerService {
             console.log('[Scheduler] Running Platform Intelligence Engine...');
             try {
                 const result = await this.ipe.runCycle();
-                if (result?.alerts?.length > 0) await this.notifyBrain('platform', result.alerts);
+                if (result && result.alerts && result.alerts.length > 0) await this.notifyBrain('platform', result.alerts);
             } catch (e: any) {
                 console.error('[Scheduler] IPE error:', e.message);
             }
@@ -60,8 +60,8 @@ export class SchedulerService {
             console.log('[Scheduler] Running Social Listening...');
             try {
                 const result = await this.social.runCycle();
-                if (result?.alerts?.length > 0) await this.notifyBrain('social', result.alerts);
-                if (result?.conversations?.length > 0) await this.runEmotionalCycle();
+                if (result && result.alerts && result.alerts.length > 0) await this.notifyBrain('social', result.alerts);
+                if (result && result.conversations && result.conversations.length > 0) await this.runEmotionalCycle();
             } catch (e: any) {
                 console.error('[Scheduler] Social listening error:', e.message);
             }
