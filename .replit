@@ -11,6 +11,10 @@ packages = ["eas-cli"]
 localPort = 5000
 externalPort = 80
 
+[[ports]]
+localPort = 8000
+externalPort = 8000
+
 [workflows]
 runButton = "Project"
 
@@ -64,6 +68,9 @@ EXPO_PUBLIC_FACEBOOK_APP_ID = "1536532767602012"
 EXPO_PUBLIC_TWITTER_CLIENT_ID = "uFUW0E3WZ5RnUwK4f4RlzRjBn"
 EXPO_PUBLIC_MIN_DEPOSIT = "1000"
 EXPO_PUBLIC_ADROOM_FEE = "45"
-EXPO_PUBLIC_API_URL = "https://adroom-mobile-production-c7fb.up.railway.app"
+EXPO_PUBLIC_API_URL = "http://localhost:8000"
 PORT = "8000"
 NODE_ENV = "production"
+EXPO_PUBLIC_SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1ycmdqdnJudGVubGt2c2xmdmZoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njk1NzIxMzgsImV4cCI6MjA4NTE0ODEzOH0.wIwrxgBTsYsx1jGSDDgNw3iPPHN0TZ8v7psen51Z9ks"
+SUPABASE_URL = "https://mrrgjvrntenlkvslfvfh.supabase.co"
+SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1ycmdqdnJudGVubGt2c2xmdmZoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njk1NzIxMzgsImV4cCI6MjA4NTE0ODEzOH0.wIwrxgBTsYsx1jGSDDgNw3iPPHN0TZ8v7psen51Z9ks"
