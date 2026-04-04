@@ -4,6 +4,7 @@ import {
   View, Text, TouchableOpacity, FlatList,
   Image, ActivityIndicator, TextInput,
   Alert, ScrollView, StyleSheet, Modal,
+  KeyboardAvoidingView, Platform, Keyboard,
 } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../types';
@@ -233,10 +234,10 @@ const WebsiteIntakeCard = ({ onSubmit, onBack, disabled }: { onSubmit: (url: str
 };
 
 const AttributeEditorCard = ({ product, onSave, onBack, disabled }: { product: any; onSave: (data: any) => void; onBack?: () => void; disabled?: boolean }) => {
-  const [editedProduct, setEditedProduct] = useState({ ...product });
+  const [editedProduct, setEditedProduct] = useState({ price: '', ...product });
   const [newFieldKey, setNewFieldKey] = useState('');
   const [newFieldValue, setNewFieldValue] = useState('');
-  const [currency, setCurrency] = useState('USD');
+  const [currency, setCurrency] = useState(product?.currency || 'USD');
 
   const handleUpdate = (key: string, value: string) => setEditedProduct((p: any) => ({ ...p, [key]: value }));
   const handleAddField = () => {
@@ -505,46 +506,47 @@ const ProductManualIntakeCard = ({ onSubmit, onBack, disabled }: { onSubmit: (da
   return (
     <View style={[styles.card, { padding: 14 }, disabled && styles.cardDisabled]}>
       <Text style={[styles.fieldLabel, { marginBottom: 8 }]}>PRODUCT DETAILS</Text>
+      <ScrollView nestedScrollEnabled keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+        <TextInput placeholder="Product Name *" placeholderTextColor="#475569" style={[styles.input, { marginBottom: 10 }]} value={name} onChangeText={setName} editable={!disabled} />
+        <TextInput placeholder="Category (e.g. Fashion, Electronics)" placeholderTextColor="#475569" style={[styles.input, { marginBottom: 10 }]} value={category} onChangeText={setCategory} editable={!disabled} />
 
-      <TextInput placeholder="Product Name *" placeholderTextColor="#475569" style={[styles.input, { marginBottom: 10 }]} value={name} onChangeText={setName} editable={!disabled} />
-      <TextInput placeholder="Category (e.g. Fashion, Electronics)" placeholderTextColor="#475569" style={[styles.input, { marginBottom: 10 }]} value={category} onChangeText={setCategory} editable={!disabled} />
+        <Text style={[styles.fieldLabel, { marginBottom: 6 }]}>PRICE</Text>
+        <View style={{ flexDirection: 'row', gap: 8, marginBottom: 10 }}>
+          <CurrencySelector value={currency} onChange={setCurrency} disabled={disabled} />
+          <TextInput
+            placeholder="0.00"
+            placeholderTextColor="#475569"
+            keyboardType="numeric"
+            style={[styles.input, { flex: 1 }]}
+            value={price}
+            onChangeText={setPrice}
+            editable={!disabled}
+          />
+        </View>
 
-      <Text style={[styles.fieldLabel, { marginBottom: 6 }]}>PRICE</Text>
-      <View style={{ flexDirection: 'row', gap: 8, marginBottom: 10 }}>
-        <CurrencySelector value={currency} onChange={setCurrency} disabled={disabled} />
-        <TextInput
-          placeholder="0.00"
-          placeholderTextColor="#475569"
-          keyboardType="numeric"
-          style={[styles.input, { flex: 1 }]}
-          value={price}
-          onChangeText={setPrice}
-          editable={!disabled}
-        />
-      </View>
+        <TextInput placeholder="Color (e.g. Red, Navy Blue)" placeholderTextColor="#475569" style={[styles.input, { marginBottom: 10 }]} value={color} onChangeText={setColor} editable={!disabled} />
 
-      <TextInput placeholder="Color (e.g. Red, Navy Blue)" placeholderTextColor="#475569" style={[styles.input, { marginBottom: 10 }]} value={color} onChangeText={setColor} editable={!disabled} />
+        <Text style={[styles.fieldLabel, { marginBottom: 6 }]}>AVAILABLE SIZES</Text>
+        <View style={{ marginBottom: 10 }}>
+          <SizeChips selected={selectedSizes} onToggle={toggleSize} disabled={disabled} />
+        </View>
 
-      <Text style={[styles.fieldLabel, { marginBottom: 6 }]}>AVAILABLE SIZES</Text>
-      <View style={{ marginBottom: 10 }}>
-        <SizeChips selected={selectedSizes} onToggle={toggleSize} disabled={disabled} />
-      </View>
+        <TextInput placeholder="Quantity in Stock" placeholderTextColor="#475569" keyboardType="numeric" style={[styles.input, { marginBottom: 10 }]} value={quantity} onChangeText={setQuantity} editable={!disabled} />
 
-      <TextInput placeholder="Quantity in Stock" placeholderTextColor="#475569" keyboardType="numeric" style={[styles.input, { marginBottom: 10 }]} value={quantity} onChangeText={setQuantity} editable={!disabled} />
+        <TextInput placeholder="Product Description" placeholderTextColor="#475569" multiline style={[styles.input, { height: 70, marginBottom: 12 }]} value={description} onChangeText={setDescription} editable={!disabled} />
 
-      <TextInput placeholder="Product Description" placeholderTextColor="#475569" multiline style={[styles.input, { height: 70, marginBottom: 12 }]} value={description} onChangeText={setDescription} editable={!disabled} />
-
-      {!disabled && <ImageUploadComponent onImagesSelected={setImages} maxImages={5} />}
-      {!disabled && (
-        <TouchableOpacity
-          onPress={() => onSubmit({ name, category, price: `${currencySymbol}${price}`, currency, description, color, sizes: selectedSizes, quantity, images })}
-          style={[styles.primaryBtn, { marginTop: 12 }]}
-          disabled={!name.trim()}
-        >
-          <Text style={styles.primaryBtnText}>Save Product</Text>
-        </TouchableOpacity>
-      )}
-      <BackToMenuButton onPress={onBack!} disabled={disabled} />
+        {!disabled && <ImageUploadComponent onImagesSelected={setImages} maxImages={5} />}
+        {!disabled && (
+          <TouchableOpacity
+            onPress={() => onSubmit({ name, category, price: `${currencySymbol}${price}`, currency, description, color, sizes: selectedSizes, quantity, images })}
+            style={[styles.primaryBtn, { marginTop: 12 }]}
+            disabled={!name.trim()}
+          >
+            <Text style={styles.primaryBtnText}>Save Product</Text>
+          </TouchableOpacity>
+        )}
+        <BackToMenuButton onPress={onBack!} disabled={disabled} />
+      </ScrollView>
     </View>
   );
 };
@@ -562,21 +564,23 @@ const ServiceIntakeCard = ({ onSubmit, onBack, disabled }: { onSubmit: (data: an
   return (
     <View style={[styles.card, { padding: 14 }, disabled && styles.cardDisabled]}>
       <Text style={[styles.fieldLabel, { marginBottom: 8 }]}>SERVICE DETAILS</Text>
-      <TextInput placeholder="Service Name *" placeholderTextColor="#475569" style={[styles.input, { marginBottom: 10 }]} value={name} onChangeText={setName} editable={!disabled} />
-      <TextInput placeholder="Category (e.g. Consulting, Design)" placeholderTextColor="#475569" style={[styles.input, { marginBottom: 10 }]} value={category} onChangeText={setCategory} editable={!disabled} />
-      <Text style={[styles.fieldLabel, { marginBottom: 6 }]}>PRICE / RATE</Text>
-      <View style={{ flexDirection: 'row', gap: 8, marginBottom: 10 }}>
-        <CurrencySelector value={currency} onChange={setCurrency} disabled={disabled} />
-        <TextInput placeholder="Amount or rate (e.g. 100/hr)" placeholderTextColor="#475569" style={[styles.input, { flex: 1 }]} value={price} onChangeText={setPrice} editable={!disabled} />
-      </View>
-      <TextInput placeholder="Service Description" placeholderTextColor="#475569" multiline style={[styles.input, { height: 70, marginBottom: 12 }]} value={description} onChangeText={setDescription} editable={!disabled} />
-      {!disabled && <ImageUploadComponent onImagesSelected={setImages} maxImages={5} />}
-      {!disabled && (
-        <TouchableOpacity onPress={() => onSubmit({ name, category, price: `${currencySymbol}${price}`, currency, description, images })} style={[styles.primaryBtn, { marginTop: 12 }]} disabled={!name.trim()}>
-          <Text style={styles.primaryBtnText}>Save Service</Text>
-        </TouchableOpacity>
-      )}
-      <BackToMenuButton onPress={onBack!} disabled={disabled} />
+      <ScrollView nestedScrollEnabled keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+        <TextInput placeholder="Service Name *" placeholderTextColor="#475569" style={[styles.input, { marginBottom: 10 }]} value={name} onChangeText={setName} editable={!disabled} />
+        <TextInput placeholder="Category (e.g. Consulting, Design)" placeholderTextColor="#475569" style={[styles.input, { marginBottom: 10 }]} value={category} onChangeText={setCategory} editable={!disabled} />
+        <Text style={[styles.fieldLabel, { marginBottom: 6 }]}>PRICE / RATE</Text>
+        <View style={{ flexDirection: 'row', gap: 8, marginBottom: 10 }}>
+          <CurrencySelector value={currency} onChange={setCurrency} disabled={disabled} />
+          <TextInput placeholder="Amount or rate (e.g. 100/hr)" placeholderTextColor="#475569" style={[styles.input, { flex: 1 }]} value={price} onChangeText={setPrice} editable={!disabled} />
+        </View>
+        <TextInput placeholder="Service Description" placeholderTextColor="#475569" multiline style={[styles.input, { height: 70, marginBottom: 12 }]} value={description} onChangeText={setDescription} editable={!disabled} />
+        {!disabled && <ImageUploadComponent onImagesSelected={setImages} maxImages={5} />}
+        {!disabled && (
+          <TouchableOpacity onPress={() => onSubmit({ name, category, price: `${currencySymbol}${price}`, currency, description, images })} style={[styles.primaryBtn, { marginTop: 12 }]} disabled={!name.trim()}>
+            <Text style={styles.primaryBtnText}>Save Service</Text>
+          </TouchableOpacity>
+        )}
+        <BackToMenuButton onPress={onBack!} disabled={disabled} />
+      </ScrollView>
     </View>
   );
 };
@@ -590,16 +594,18 @@ const BrandIntakeCard = ({ onSubmit, onBack, disabled }: { onSubmit: (data: any)
   return (
     <View style={[styles.card, { padding: 14 }, disabled && styles.cardDisabled]}>
       <Text style={[styles.fieldLabel, { marginBottom: 8 }]}>BRAND DETAILS</Text>
-      <TextInput placeholder="Brand Name *" placeholderTextColor="#475569" style={[styles.input, { marginBottom: 10 }]} value={name} onChangeText={setName} editable={!disabled} />
-      <TextInput placeholder="Mission Statement" placeholderTextColor="#475569" style={[styles.input, { marginBottom: 10 }]} value={mission} onChangeText={setMission} editable={!disabled} />
-      <TextInput placeholder="Core Values (e.g. Quality, Innovation)" placeholderTextColor="#475569" multiline style={[styles.input, { height: 70, marginBottom: 12 }]} value={values} onChangeText={setValues} editable={!disabled} />
-      {!disabled && <ImageUploadComponent onImagesSelected={setImages} maxImages={5} />}
-      {!disabled && (
-        <TouchableOpacity onPress={() => onSubmit({ name, mission, values, images })} style={[styles.primaryBtn, { marginTop: 12 }]} disabled={!name.trim()}>
-          <Text style={styles.primaryBtnText}>Save Brand</Text>
-        </TouchableOpacity>
-      )}
-      <BackToMenuButton onPress={onBack!} disabled={disabled} />
+      <ScrollView nestedScrollEnabled keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+        <TextInput placeholder="Brand Name *" placeholderTextColor="#475569" style={[styles.input, { marginBottom: 10 }]} value={name} onChangeText={setName} editable={!disabled} />
+        <TextInput placeholder="Mission Statement" placeholderTextColor="#475569" style={[styles.input, { marginBottom: 10 }]} value={mission} onChangeText={setMission} editable={!disabled} />
+        <TextInput placeholder="Core Values (e.g. Quality, Innovation)" placeholderTextColor="#475569" multiline style={[styles.input, { height: 70, marginBottom: 12 }]} value={values} onChangeText={setValues} editable={!disabled} />
+        {!disabled && <ImageUploadComponent onImagesSelected={setImages} maxImages={5} />}
+        {!disabled && (
+          <TouchableOpacity onPress={() => onSubmit({ name, mission, values, images })} style={[styles.primaryBtn, { marginTop: 12 }]} disabled={!name.trim()}>
+            <Text style={styles.primaryBtnText}>Save Brand</Text>
+          </TouchableOpacity>
+        )}
+        <BackToMenuButton onPress={onBack!} disabled={disabled} />
+      </ScrollView>
     </View>
   );
 };
@@ -701,7 +707,7 @@ const CreateStrategyPromptCard = ({ onStartStrategy, disabled }: { onStartStrate
     </Text>
     {!disabled && (
       <TouchableOpacity onPress={onStartStrategy} style={styles.primaryBtn}>
-        <Text style={styles.primaryBtnText}>Create New Strategy</Text>
+        <Text style={[styles.primaryBtnText, { flexShrink: 1 }]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7}>Create New Strategy</Text>
       </TouchableOpacity>
     )}
   </View>
@@ -786,6 +792,13 @@ export default function AgentChatScreen({ navigation, route }: Props) {
     if (route.params?.connectLinkedIn) initiateConnection('linkedin', false);
     if (route.params?.connectTwitter) initiateConnection('twitter', false);
   }, [route.params]);
+
+  useEffect(() => {
+    const sub = Keyboard.addListener('keyboardDidShow', () => {
+      flatListRef.current?.scrollToEnd({ animated: true });
+    });
+    return () => sub.remove();
+  }, []);
 
   const handleImageUpload = async () => {
     const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -970,7 +983,11 @@ export default function AgentChatScreen({ navigation, route }: Props) {
         </View>
       </View>
 
-      <View style={{ flex: 1 }}>
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        keyboardVerticalOffset={0}
+      >
         <FlatList
           ref={flatListRef}
           data={messages}
@@ -986,7 +1003,7 @@ export default function AgentChatScreen({ navigation, route }: Props) {
 
         {/* Watermark */}
         <WatermarkOverlay visible={!isActive && messages.length === 0} />
-      </View>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
