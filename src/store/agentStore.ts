@@ -63,6 +63,7 @@ interface AgentState {
   restoreSession: () => Promise<void>;
   startNewSession: () => Promise<void>;
   goBackToMenu: () => void;
+  dismissStrategyFlow: () => void;
   
   // Unified Connection Actions
   initiateConnection: (platform: string, fromFlow?: boolean) => void;
@@ -710,6 +711,17 @@ export const useAgentStore = create<AgentState>((set, get) => ({
     });
     startStrategyFlow();
   },
+
+  dismissStrategyFlow: () => {
+    const { addMessage } = get();
+    set({ flowState: 'IDLE', isInputDisabled: false, isTyping: false });
+    addMessage(
+      "No problem! Whenever you're ready to create a strategy, just let me know.",
+      'agent',
+      undefined,
+      'create_strategy_prompt'
+    );
+  },
   
   // --- Unified Connection Flow ---
 
@@ -782,9 +794,18 @@ export const useAgentStore = create<AgentState>((set, get) => ({
               } else {
                   addMessage(`Connected, but no ${platform} accounts were found.`, 'agent');
               }
+          } else {
+              set({ isTyping: false, connectionState: 'IDLE', isInputDisabled: false });
+              addMessage(
+                  `${platform.charAt(0).toUpperCase() + platform.slice(1)} connection was cancelled. You can try again or connect a different account.`,
+                  'agent',
+                  undefined,
+                  'facebook_connect',
+                  { platform }
+              );
           }
       } catch (error: any) {
-          set({ isTyping: false });
+          set({ isTyping: false, connectionState: 'IDLE', isInputDisabled: false });
           addMessage(`${platform.toUpperCase()} connection failed: ${error.message}`, 'agent', undefined, 'retry_action', { action: 'LOGIN', data: platform });
       }
   },

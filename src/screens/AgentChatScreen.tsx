@@ -418,7 +418,7 @@ const STRATEGY_TYPES = [
   { id: 'brand', name: 'Brand', icon: Rocket, description: 'Build brand awareness and authority' },
 ];
 
-const StrategyTypeSelectionCard = ({ onSelect, disabled }: { onSelect: (type: string) => void; disabled?: boolean }) => (
+const StrategyTypeSelectionCard = ({ onSelect, onCancel, disabled }: { onSelect: (type: string) => void; onCancel?: () => void; disabled?: boolean }) => (
   <View style={{ marginTop: 8, gap: 8 }}>
     {STRATEGY_TYPES.map((type) => (
       <TouchableOpacity
@@ -438,6 +438,11 @@ const StrategyTypeSelectionCard = ({ onSelect, disabled }: { onSelect: (type: st
         {!disabled && <Text style={{ color: '#00F0FF' }}>›</Text>}
       </TouchableOpacity>
     ))}
+    {!disabled && onCancel && (
+      <TouchableOpacity onPress={onCancel} style={{ alignItems: 'center', paddingVertical: 10 }}>
+        <Text style={{ color: '#475569', fontSize: 13 }}>Not now</Text>
+      </TouchableOpacity>
+    )}
   </View>
 );
 
@@ -740,7 +745,7 @@ export default function AgentChatScreen({ navigation, route }: Props) {
     disconnectPlatform, handleStrategyTypeSelection, handleServiceIntake,
     handleBrandIntake, handleManualProductSubmit, handleRetry,
     handleImageUpload: handleImageUploadStore, startStrategyFlow, handleWebsiteIntake,
-    goBackToMenu,
+    goBackToMenu, dismissStrategyFlow,
   } = useAgentStore();
 
   const { user } = useAuthStore();
@@ -884,7 +889,7 @@ export default function AgentChatScreen({ navigation, route }: Props) {
             <BrandIntakeCard onSubmit={handleBrandIntake} onBack={goBackToMenu} disabled={isDisabled} />
           )}
           {item.uiType === 'strategy_type_selection' && (
-            <StrategyTypeSelectionCard onSelect={handleStrategyTypeSelection} disabled={isDisabled} />
+            <StrategyTypeSelectionCard onSelect={handleStrategyTypeSelection} onCancel={isDisabled ? undefined : dismissStrategyFlow} disabled={isDisabled} />
           )}
           {item.uiType === 'goal_selection' && (
             <GoalSelectionCard onSelect={handleGoalSelection} onBack={goBackToMenu} disabled={isDisabled} />
