@@ -23,8 +23,7 @@
         "backgroundColor": "#ffffff"
       },
       "package": "com.adroom.mobile",
-      "edgeToEdgeEnabled": true,
-      "predictiveBackGestureEnabled": false
+      "edgeToEdgeEnabled": true
     },
     "web": {
       "favicon": "./assets/favicon.png"
