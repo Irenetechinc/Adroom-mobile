@@ -23,6 +23,9 @@ const LINKEDIN_CLIENT_SECRET = process.env.LINKEDIN_CLIENT_SECRET;
 const TWITTER_CLIENT_ID = process.env.TWITTER_CLIENT_ID;
 const TWITTER_CLIENT_SECRET = process.env.TWITTER_CLIENT_SECRET;
 
+const TIKTOK_CLIENT_KEY = process.env.TIKTOK_CLIENT_KEY;
+const TIKTOK_CLIENT_SECRET = process.env.TIKTOK_CLIENT_SECRET;
+
 const scraperService = new ScraperService();
 const creativeService = new CreativeService();
 const decisionEngine = new DecisionEngine();
@@ -31,7 +34,8 @@ if (!VERIFY_TOKEN) {
   console.warn('[Server] WARNING: FB_VERIFY_TOKEN not set — Facebook webhook verification disabled.');
 }
 
-function buildDeepLink(platform: 'facebook' | 'instagram' | 'twitter' | 'linkedin', query: Record<string, string | undefined>) {
+type OAuthPlatform = 'facebook' | 'instagram' | 'twitter' | 'linkedin' | 'tiktok';
+function buildDeepLink(platform: OAuthPlatform, query: Record<string, string | undefined>) {
   const url = new URL(`adroom://auth/${platform}/callback`);
   for (const [k, v] of Object.entries(query)) {
     if (typeof v === 'string' && v.length > 0) url.searchParams.set(k, v);
@@ -77,6 +81,16 @@ app.get('/auth/linkedin/callback', (req, res) => {
   const error = typeof req.query.error === 'string' ? req.query.error : undefined;
   const error_description = typeof req.query.error_description === 'string' ? req.query.error_description : undefined;
   res.redirect(buildDeepLink('linkedin', { code, state, error, error_description }));
+});
+
+app.get('/auth/tiktok/callback', (req, res) => {
+  const code = typeof req.query.code === 'string' ? req.query.code : undefined;
+  const auth_code = typeof req.query.auth_code === 'string' ? req.query.auth_code : undefined;
+  const state = typeof req.query.state === 'string' ? req.query.state : undefined;
+  const error = typeof req.query.error === 'string' ? req.query.error : undefined;
+  const error_description = typeof req.query.error_description === 'string' ? req.query.error_description : undefined;
+  // TikTok uses both 'code' and 'auth_code' depending on API version
+  res.redirect(buildDeepLink('tiktok', { code: code || auth_code, state, error, error_description }));
 });
 
 app.post('/api/auth/facebook/exchange', async (req, res) => {
@@ -166,6 +180,97 @@ app.post('/api/auth/twitter/exchange', async (req, res) => {
     return res.status(200).json(data);
   } catch (e: any) {
     return res.status(500).json({ error: e?.message || 'Twitter token exchange failed' });
+  }
+});
+
+app.post('/api/auth/tiktok/exchange', async (req, res) => {
+  const code = typeof req.body?.code === 'string' ? req.body.code : undefined;
+  const redirectUri = typeof req.body?.redirectUri === 'string' ? req.body.redirectUri : undefined;
+  if (!code || !redirectUri) return res.status(400).json({ error: 'code and redirectUri are required' });
+  if (!TIKTOK_CLIENT_KEY || !TIKTOK_CLIENT_SECRET) {
+    return res.status(500).json({ error: 'TIKTOK_CLIENT_KEY and TIKTOK_CLIENT_SECRET are not configured on the server' });
+  }
+  try {
+    // TikTok Login Kit (content API) token exchange
+    const body = new URLSearchParams({
+      client_key: TIKTOK_CLIENT_KEY,
+      client_secret: TIKTOK_CLIENT_SECRET,
+      code,
+      grant_type: 'authorization_code',
+      redirect_uri: redirectUri,
+    });
+    const exchangeRes = await fetch('https://open.tiktokapis.com/v2/oauth/token/', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: body.toString(),
+    });
+    const data: any = await exchangeRes.json();
+    if (!exchangeRes.ok) return res.status(exchangeRes.status).json(data);
+
+    console.log(`[Auth] TikTok token exchanged for open_id: ${data.open_id}`);
+    return res.status(200).json(data);
+  } catch (e: any) {
+    return res.status(500).json({ error: e?.message || 'TikTok token exchange failed' });
+  }
+});
+
+/**
+ * Platform Configs — get all connected platform statuses for the current user
+ */
+app.get('/api/platform-configs', async (req, res) => {
+  try {
+    const supabase = getSupabaseClient(req as any);
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return res.status(401).json({ error: 'Unauthorized.' });
+
+    const { data: configs } = await supabase
+      .from('ad_configs')
+      .select('platform, page_id, page_name, ad_account_id, instagram_account_id, person_urn, org_urn, open_id, updated_at')
+      .eq('user_id', user.id);
+
+    const connected: Record<string, any> = {};
+    for (const c of configs || []) {
+      connected[c.platform] = {
+        platform: c.platform,
+        page_id: c.page_id,
+        page_name: c.page_name,
+        ad_account_id: c.ad_account_id,
+        instagram_account_id: c.instagram_account_id,
+        person_urn: c.person_urn,
+        org_urn: c.org_urn,
+        open_id: c.open_id,
+        updated_at: c.updated_at,
+        connected: true,
+      };
+    }
+    return res.status(200).json({ configs: connected });
+  } catch (e: any) {
+    return res.status(500).json({ error: e?.message });
+  }
+});
+
+/**
+ * Platform Configs — disconnect a platform for the current user
+ */
+app.delete('/api/platform-configs/:platform', async (req, res) => {
+  try {
+    const supabase = getSupabaseClient(req as any);
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return res.status(401).json({ error: 'Unauthorized.' });
+
+    const platform = req.params.platform.toLowerCase();
+    console.log(`[Auth] Disconnecting ${platform} for user ${user.id}`);
+
+    const { error } = await supabase
+      .from('ad_configs')
+      .delete()
+      .eq('user_id', user.id)
+      .eq('platform', platform);
+
+    if (error) return res.status(500).json({ error: error.message });
+    return res.status(200).json({ disconnected: true, platform });
+  } catch (e: any) {
+    return res.status(500).json({ error: e?.message });
   }
 });
 
