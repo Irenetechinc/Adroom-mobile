@@ -53,9 +53,11 @@ export class PlatformIntelligenceEngine {
 
   private checkAlerts(shifts: any[], trends: any[], risks: any[]) {
       const alerts = [];
-      const criticalShifts = shifts.filter(s => s.confidence > 80 && s.type === 'algorithm_update');
+      const safeShifts = Array.isArray(shifts) ? shifts : [];
+      const safeRisks = Array.isArray(risks) ? risks : [];
+      const criticalShifts = safeShifts.filter(s => s.confidence > 80 && s.type === 'algorithm_update');
       if (criticalShifts.length > 0) alerts.push({ type: 'CRITICAL_ALGO_UPDATE', data: criticalShifts });
-      const highRisks = risks.filter(r => r.severity === 'high');
+      const highRisks = safeRisks.filter(r => r.severity === 'high');
       if (highRisks.length > 0) alerts.push({ type: 'HIGH_RISK_DETECTED', data: highRisks });
       return alerts;
   }
@@ -147,7 +149,11 @@ export class PlatformIntelligenceEngine {
 
     try {
         const response = await this.ai.generateStrategy({}, prompt);
-        return response.parsedJson || [];
+        const result = response.parsedJson;
+        if (Array.isArray(result)) return result;
+        if (Array.isArray(result?.shifts)) return result.shifts;
+        if (Array.isArray(result?.data)) return result.data;
+        return [];
     } catch (e: any) {
         await this.logSourceFailure('AI_ANALYSIS_SHIFTS', e.message);
         return [];
@@ -180,7 +186,11 @@ export class PlatformIntelligenceEngine {
 
     try {
         const response = await this.ai.generateStrategy({}, prompt);
-        return response.parsedJson || [];
+        const result = response.parsedJson;
+        if (Array.isArray(result)) return result;
+        if (Array.isArray(result?.trends)) return result.trends;
+        if (Array.isArray(result?.data)) return result.data;
+        return [];
     } catch (e) {
         console.error("Error in predictTrends:", e);
         return [];
@@ -191,13 +201,15 @@ export class PlatformIntelligenceEngine {
    * Identifies content gaps and underserved audiences
    */
   private async detectOpportunities(shifts: any[], trends: any[]) {
-    if (shifts.length === 0 && trends.length === 0) return [];
+    const safeS = Array.isArray(shifts) ? shifts : [];
+    const safeT = Array.isArray(trends) ? trends : [];
+    if (safeS.length === 0 && safeT.length === 0) return [];
 
     const prompt = `
       Based on these shifts and trends, identify "Arbitrage" opportunities for marketers.
       
-      SHIFTS: ${JSON.stringify(shifts)}
-      TRENDS: ${JSON.stringify(trends)}
+      SHIFTS: ${JSON.stringify(safeS)}
+      TRENDS: ${JSON.stringify(safeT)}
       
       Return a JSON array of opportunities:
       [
@@ -212,7 +224,11 @@ export class PlatformIntelligenceEngine {
 
     try {
         const response = await this.ai.generateStrategy({}, prompt);
-        return response.parsedJson || [];
+        const result = response.parsedJson;
+        if (Array.isArray(result)) return result;
+        if (Array.isArray(result?.opportunities)) return result.opportunities;
+        if (Array.isArray(result?.data)) return result.data;
+        return [];
     } catch (e) {
         console.error("Error in detectOpportunities:", e);
         return [];
@@ -223,7 +239,8 @@ export class PlatformIntelligenceEngine {
    * Monitors policy changes and enforcement patterns
    */
   private async assessRisks(shifts: any[]) {
-    const policyShifts = shifts.filter(s => s.type === 'policy_update');
+    const safeShifts = Array.isArray(shifts) ? shifts : [];
+    const policyShifts = safeShifts.filter(s => s.type === 'policy_update');
     
     if (policyShifts.length === 0) return [];
 
@@ -245,7 +262,11 @@ export class PlatformIntelligenceEngine {
     
     try {
         const response = await this.ai.generateStrategy({}, prompt);
-        return response.parsedJson || [];
+        const result = response.parsedJson;
+        if (Array.isArray(result)) return result;
+        if (Array.isArray(result?.risks)) return result.risks;
+        if (Array.isArray(result?.data)) return result.data;
+        return [];
     } catch (e) {
         console.error("Error in assessRisks:", e);
         return [];
@@ -256,13 +277,17 @@ export class PlatformIntelligenceEngine {
    * Stores findings in the database
    */
   private async storeIntelligence(shifts: any[], trends: any[], opportunities: any[], risks: any[]) {
+    const safeShifts = Array.isArray(shifts) ? shifts : [];
+    const safeTrends = Array.isArray(trends) ? trends : [];
+    const safeOpportunities = Array.isArray(opportunities) ? opportunities : [];
+    const safeRisks = Array.isArray(risks) ? risks : [];
     const platforms = Array.from(new Set(this.sources.map(s => s.platform)));
 
     for (const platform of platforms) {
-      const pShifts = shifts.filter(s => s.platform === platform);
-      const pTrends = trends.filter(t => t.platform === platform);
-      const pOpportunities = opportunities.filter(o => o.platform === platform);
-      const pRisks = risks.filter(r => r.platform === platform);
+      const pShifts = safeShifts.filter(s => s.platform === platform);
+      const pTrends = safeTrends.filter(t => t.platform === platform);
+      const pOpportunities = safeOpportunities.filter(o => o.platform === platform);
+      const pRisks = safeRisks.filter(r => r.platform === platform);
 
       if (pShifts.length === 0 && pTrends.length === 0 && pOpportunities.length === 0 && pRisks.length === 0) continue;
 
