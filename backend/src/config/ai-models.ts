@@ -112,6 +112,25 @@ export class AIEngine {
     }
   }
 
+  async generateJson(prompt: string): Promise<any> {
+    aiLog('GEMINI-FLASH', `generateJson START — model: ${GEMINI_FLASH_MODEL}`);
+    try {
+      const model = genAI.getGenerativeModel({ model: GEMINI_FLASH_MODEL });
+      const result = await model.generateContent(
+        `Return ONLY valid JSON, no markdown fences, no explanation.\n\n${prompt}`
+      );
+      const response = await result.response;
+      const text = response.text().trim();
+      aiLog('GEMINI-FLASH', 'generateJson SUCCESS', { textLength: text.length });
+      const jsonMatch = text.match(/```json?\s*([\s\S]*?)\s*```/);
+      const cleaned = jsonMatch ? jsonMatch[1] : text.replace(/^```json?\s*/i, '').replace(/```\s*$/i, '');
+      return JSON.parse(cleaned);
+    } catch (error: any) {
+      aiLog('GEMINI-FLASH', 'generateJson ERROR', error.message);
+      return null;
+    }
+  }
+
   async generateText(prompt: string): Promise<string> {
     aiLog('GEMINI-FLASH', `generateText START — model: ${GEMINI_FLASH_MODEL}`);
     try {

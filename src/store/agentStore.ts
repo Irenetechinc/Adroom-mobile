@@ -352,7 +352,7 @@ export const useAgentStore = create<AgentState>((set, get) => ({
 
         if (products.length > 0) {
             addMessage(
-                `Successfully scraped ${products.length} product${products.length > 1 ? 's' : ''} from your website! Here are the details I found:`,
+                `Successfully discovered ${products.length} product${products.length > 1 ? 's' : ''} from your website! Here are the details I found:`,
                 'agent'
             );
             addMessage(

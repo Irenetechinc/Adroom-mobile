@@ -271,7 +271,10 @@ For each product found, provide:
 - description: 2-3 sentence marketing-ready description
 - price: price string with currency symbol, or null
 - category: specific category (Fashion, Electronics, Beauty, Food, Furniture, etc.)
-- image_url: first absolute image URL found or null
+- image_url: first absolute image URL found for this product, or null
+- image_urls: array of up to 5 absolute image URLs for this product
+- sizes: array of available sizes/dimensions (e.g. ["S","M","L","XL"] or ["250ml","500ml"]), or []
+- colors: array of available colors/variants (e.g. ["Red","Blue","Black"]), or []
 - target_audience: who buys this
 
 Return STRICT JSON array (no markdown):
@@ -282,6 +285,9 @@ Return STRICT JSON array (no markdown):
     "price": "string or null",
     "category": "string",
     "image_url": "absolute URL or null",
+    "image_urls": ["absolute URL", ...],
+    "sizes": ["string", ...],
+    "colors": ["string", ...],
     "target_audience": "string"
   }
 ]
@@ -292,24 +298,50 @@ Rules:
 - If this is a service-based business, treat the service as the "product".
 - Return ONLY the JSON array.
 `;
-        try {
-            const resp = await this.ai.generateStrategy({}, prompt);
-            const extracted: any[] = Array.isArray(resp.parsedJson) ? resp.parsedJson : [];
+        const parseResult = (raw: any): ScrapedProduct[] => {
+            const extracted: any[] = Array.isArray(raw) ? raw : [];
             return extracted
                 .filter((p: any) => p?.name && p?.description)
-                .map((p: any) => ({
-                    name: p.name,
-                    description: p.description,
-                    price: p.price || undefined,
-                    images: (p.image_url && typeof p.image_url === 'string' && p.image_url.startsWith('http')) ? [p.image_url] : [],
-                    url: originalUrl,
-                    category: p.category || 'General',
-                    metadata: { target_audience: p.target_audience || '', scraped_from: origin },
-                }));
+                .map((p: any) => {
+                    const images: string[] = [];
+                    if (Array.isArray(p.image_urls)) {
+                        p.image_urls.forEach((u: any) => { if (typeof u === 'string' && u.startsWith('http')) images.push(u); });
+                    }
+                    if (images.length === 0 && p.image_url && typeof p.image_url === 'string' && p.image_url.startsWith('http')) {
+                        images.push(p.image_url);
+                    }
+                    return {
+                        name: p.name,
+                        description: p.description,
+                        price: p.price || undefined,
+                        images,
+                        url: originalUrl,
+                        category: p.category || 'General',
+                        metadata: {
+                            target_audience: p.target_audience || '',
+                            scraped_from: origin,
+                            sizes: Array.isArray(p.sizes) ? p.sizes : [],
+                            colors: Array.isArray(p.colors) ? p.colors : [],
+                        },
+                    };
+                });
+        };
+        // Try GPT-4o first, fall back to Gemini
+        try {
+            const resp = await this.ai.generateStrategy({}, prompt);
+            const extracted = parseResult(resp.parsedJson);
+            if (extracted.length > 0) return extracted;
         } catch (e: any) {
-            scraperLog(`extractProductsWithAI error: ${e.message}`);
-            return [];
+            scraperLog(`extractProductsWithAI GPT-4o failed: ${e.message} — trying Gemini`);
         }
+        try {
+            const raw = await this.ai.generateJson(prompt);
+            const extracted = parseResult(raw);
+            if (extracted.length > 0) return extracted;
+        } catch (e: any) {
+            scraperLog(`extractProductsWithAI Gemini also failed: ${e.message}`);
+        }
+        return [];
     }
 
     private async extractSingleProductWithAI(content: string, url: string): Promise<ScrapedProduct> {
@@ -325,25 +357,50 @@ Return ONLY JSON (no markdown):
   "price": "price or null",
   "category": "category",
   "image_url": "absolute URL or null",
+  "image_urls": ["absolute URL", ...],
+  "sizes": ["S","M","L"] or [],
+  "colors": ["Red","Blue"] or [],
   "target_audience": "who buys this"
 }
 `;
+        const tryParse = (p: any): ScrapedProduct | null => {
+            if (!p?.name || p.name.length <= 2) return null;
+            const images: string[] = [];
+            if (Array.isArray(p.image_urls)) {
+                p.image_urls.forEach((u: any) => { if (typeof u === 'string' && u.startsWith('http')) images.push(u); });
+            }
+            if (images.length === 0 && p.image_url && typeof p.image_url === 'string' && p.image_url.startsWith('http')) {
+                images.push(p.image_url);
+            }
+            return {
+                name: p.name,
+                description: p.description || '',
+                price: p.price || undefined,
+                images,
+                url,
+                category: p.category || 'General',
+                metadata: {
+                    target_audience: p.target_audience || '',
+                    sizes: Array.isArray(p.sizes) ? p.sizes : [],
+                    colors: Array.isArray(p.colors) ? p.colors : [],
+                },
+            };
+        };
+        // Try GPT-4o first
         try {
             const resp = await this.ai.generateStrategy({}, prompt);
-            const p = resp.parsedJson;
-            if (p?.name && p.name.length > 2) {
-                return {
-                    name: p.name,
-                    description: p.description || '',
-                    price: p.price || undefined,
-                    images: (p.image_url && typeof p.image_url === 'string' && p.image_url.startsWith('http')) ? [p.image_url] : [],
-                    url,
-                    category: p.category || 'General',
-                    metadata: { target_audience: p.target_audience || '' },
-                };
-            }
+            const result = tryParse(resp.parsedJson);
+            if (result) return result;
         } catch (e: any) {
-            scraperLog(`extractSingleProductWithAI error: ${e.message}`);
+            scraperLog(`extractSingleProductWithAI GPT-4o failed: ${e.message} — trying Gemini`);
+        }
+        // Fall back to Gemini
+        try {
+            const raw = await this.ai.generateJson(prompt);
+            const result = tryParse(raw);
+            if (result) return result;
+        } catch (e: any) {
+            scraperLog(`extractSingleProductWithAI Gemini also failed: ${e.message}`);
         }
         return this.buildFallback(url, 'AI extraction returned no usable data');
     }
@@ -366,35 +423,53 @@ Return ONLY JSON (no markdown):
 
     private async storeProduct(product: ScrapedProduct, userId: string): Promise<void> {
         try {
-            const { error } = await this.supabase.from('product_memory').upsert(
-                {
-                    user_id: userId,
-                    product_name: product.name,
-                    description: product.description,
-                    price: product.price ? parseFloat(product.price.replace(/[^0-9.]/g, '')) || null : null,
-                    category: product.category || null,
-                    images: product.images || [],
-                    website_url: product.url,
-                    conversation_context: { target_audience: product.metadata?.target_audience || '' },
-                    original_scan_data: product.metadata || null,
-                    last_scraped_at: new Date().toISOString(),
-                },
-                { onConflict: 'user_id,product_name' }
-            );
+            const payload = {
+                user_id: userId,
+                product_name: product.name,
+                description: product.description,
+                price: product.price ? parseFloat(product.price.replace(/[^0-9.]/g, '')) || null : null,
+                category: product.category || null,
+                images: product.images || [],
+                website_url: product.url,
+                conversation_context: { target_audience: product.metadata?.target_audience || '' },
+                original_scan_data: product.metadata || null,
+                last_scraped_at: new Date().toISOString(),
+            };
+
+            // Check for existing record to avoid onConflict constraint dependency
+            const { data: existing } = await this.supabase
+                .from('product_memory')
+                .select('product_id')
+                .eq('user_id', userId)
+                .eq('product_name', product.name)
+                .maybeSingle();
+
+            let error;
+            if (existing?.product_id) {
+                ({ error } = await this.supabase
+                    .from('product_memory')
+                    .update(payload)
+                    .eq('product_id', existing.product_id));
+            } else {
+                ({ error } = await this.supabase
+                    .from('product_memory')
+                    .insert(payload));
+            }
+
             if (error) scraperLog(`DB store failed for "${product.name}": ${error.message}`);
-            else scraperLog(`Stored product: "${product.name}"`);
+            else scraperLog(`Stored product: "${product.name}" (${existing?.product_id ? 'updated' : 'inserted'})`);
         } catch (e: any) {
             scraperLog(`storeProduct exception: ${e.message}`);
         }
     }
 
     async refreshStaleProducts(): Promise<void> {
-        const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+        const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
         const { data: stale } = await this.supabase
             .from('product_memory')
             .select('product_id, website_url, user_id')
             .not('website_url', 'is', null)
-            .lt('last_scraped_at', oneHourAgo)
+            .lt('last_scraped_at', oneDayAgo)
             .limit(5);
 
         if (!stale || stale.length === 0) return;

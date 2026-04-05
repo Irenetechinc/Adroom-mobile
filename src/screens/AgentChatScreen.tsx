@@ -202,7 +202,7 @@ const ProductIntakeCard = ({ onUpload, onManual, onWebsite, onBack, disabled }: 
     </TouchableOpacity>
     <View style={{ flexDirection: 'row' }}>
       <TouchableOpacity onPress={onWebsite} disabled={disabled} style={[styles.cardHalfBtn, { borderRightWidth: 1, borderRightColor: 'rgba(0,240,255,0.1)' }, disabled && { opacity: 0.4 }]}>
-        <Text style={styles.cardHalfText}>Website URL</Text>
+        <Text style={styles.cardHalfText}>Connect Website</Text>
       </TouchableOpacity>
       <TouchableOpacity onPress={onManual} disabled={disabled} style={[styles.cardHalfBtn, disabled && { opacity: 0.4 }]}>
         <Text style={styles.cardHalfText}>Manual Entry</Text>
@@ -226,7 +226,7 @@ const WebsiteIntakeCard = ({ onSubmit, onBack, disabled }: { onSubmit: (url: str
         editable={!disabled}
       />
       <TouchableOpacity onPress={() => onSubmit(url)} disabled={disabled || !url.trim()} style={[styles.primaryBtn, (disabled || !url.trim()) && { opacity: 0.4 }]}>
-        <Text style={styles.primaryBtnText}>Scan Website</Text>
+        <Text style={styles.primaryBtnText}>Connect Website</Text>
       </TouchableOpacity>
       <BackToMenuButton onPress={onBack!} disabled={disabled} />
     </View>
@@ -837,7 +837,7 @@ export default function AgentChatScreen({ navigation, route }: Props) {
 
   const handleWebsiteEntry = () => {
     setInputDisabled(true);
-    addMessage('Website Scan', 'user');
+    addMessage('Website Connect', 'user');
     addMessage('Please provide your store or product URL below.', 'agent', undefined, 'website_intake_form' as any);
   };
 
