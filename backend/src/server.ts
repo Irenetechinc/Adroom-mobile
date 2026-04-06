@@ -13,6 +13,7 @@ import { SchedulerService } from './services/scheduler';
 import { energyService, PLANS, TOPUP_PACKS } from './services/energyService';
 import { flutterwaveService } from './services/flutterwaveService';
 import { energyCheck, deductEnergyForUser } from './services/energyMiddleware';
+import { checkFeatureAccess, getSubscriptionGuard, SUBSCRIPTION_PLAN_LIMITS } from './services/subscriptionGuard';
 
 dotenv.config();
 
@@ -278,12 +279,12 @@ app.delete('/api/platform-configs/:platform', async (req, res) => {
 });
 
 /**
- * Scrape Website for Products
+ * Scrape Website for Products — Pro/Pro+ only
  */
 app.post('/api/scrape', async (req, res) => {
     const { url } = req.body;
     const authHeader = req.headers.authorization;
-    
+
     if (!url) return res.status(400).json({ error: 'URL is required.' });
     if (!authHeader) return res.status(401).json({ error: 'Unauthorized.' });
 
@@ -291,6 +292,17 @@ app.post('/api/scrape', async (req, res) => {
         const supabase = getSupabaseClient(req as any);
         const { data: { user } } = await supabase.auth.getUser();
         if (!user) return res.status(401).json({ error: 'Invalid session.' });
+
+        // Enforce subscription: only Pro/Pro+ can scrape websites
+        const access = await checkFeatureAccess(user.id, 'websiteScraping', supabase);
+        if (!access.allowed) {
+            return res.status(403).json({
+                error: 'PLAN_LIMIT_EXCEEDED',
+                feature: 'websiteScraping',
+                plan: access.plan,
+                message: access.reason ?? 'Website scraping requires a Pro or Pro+ subscription.',
+            });
+        }
 
         const products = await scraperService.scrapeWebsite(url, user.id);
         res.status(200).json(products);
@@ -300,14 +312,91 @@ app.post('/api/scrape', async (req, res) => {
 });
 
 /**
- * Generate Professional Image
+ * Generate Professional Image — Pro/Pro+ only, subject to per-period limit
  */
 app.post('/api/creative/image', async (req, res) => {
     const { baseImageUri, productDetails } = req.body;
+    const authHeader = req.headers.authorization;
+    if (!authHeader) return res.status(401).json({ error: 'Unauthorized.' });
+
     try {
+        const supabase = getSupabaseClient(req as any);
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) return res.status(401).json({ error: 'Invalid session.' });
+
+        // Enforce subscription: check image asset limit for this billing period
+        const access = await checkFeatureAccess(user.id, 'image_asset', supabase);
+        if (!access.allowed) {
+            return res.status(403).json({
+                error: 'PLAN_LIMIT_EXCEEDED',
+                feature: 'image_asset',
+                plan: access.plan,
+                message: access.reason ?? 'Image generation limit reached for your plan.',
+                remaining: access.remaining ?? 0,
+            });
+        }
+
         const imageUrl = await creativeService.generateProfessionalImage(baseImageUri, productDetails);
-        res.status(200).json({ url: imageUrl });
+
+        // Deduct energy and record usage for limit tracking
+        await deductEnergyForUser(user.id, 'generate_image', { feature: 'image_asset' });
+
+        res.status(200).json({ url: imageUrl, remaining: (access.remaining ?? 1) - 1 });
     } catch (error: any) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+/**
+ * Generate AI Video Asset — Pro: 2/period, Pro+: 4/period, Starter: blocked
+ */
+app.post('/api/creative/generate-video-asset', async (req, res) => {
+    const { productName, prompt } = req.body;
+    const authHeader = req.headers.authorization;
+    if (!authHeader) return res.status(401).json({ error: 'Unauthorized.' });
+    if (!productName) return res.status(400).json({ error: 'productName is required.' });
+
+    try {
+        const supabase = getSupabaseClient(req as any);
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) return res.status(401).json({ error: 'Invalid session.' });
+
+        // Enforce subscription: check video asset limit for this billing period
+        const access = await checkFeatureAccess(user.id, 'video_asset', supabase);
+        if (!access.allowed) {
+            return res.status(403).json({
+                error: 'PLAN_LIMIT_EXCEEDED',
+                feature: 'video_asset',
+                plan: access.plan,
+                message: access.reason ?? 'Video generation limit reached for your plan.',
+                remaining: access.remaining ?? 0,
+            });
+        }
+
+        // Check energy before generating
+        const energyResult = await energyService.checkEnergy(user.id, 'generate_image');
+        if (!energyResult.allowed) {
+            return res.status(402).json({
+                error: 'INSUFFICIENT_ENERGY',
+                message: `Video generation requires ${energyResult.required} energy credits. Current balance: ${energyResult.balance.toFixed(2)}.`,
+                balance: energyResult.balance,
+                required: energyResult.required,
+            });
+        }
+
+        const videoUrl = await creativeService.generateVideoAsset(
+            { name: productName, description: prompt ?? `Compelling marketing video for ${productName}` },
+            'general',
+        );
+
+        // Deduct energy and record usage for limit tracking
+        await deductEnergyForUser(user.id, 'generate_video_asset', { feature: 'video_asset' });
+
+        console.log(`[VideoAsset] Generated for user ${user.id} (${access.plan} plan). Remaining this period: ${(access.remaining ?? 1) - 1}`);
+
+        res.status(200).json({ url: videoUrl, remaining: (access.remaining ?? 1) - 1 });
+    } catch (error: any) {
+        console.error('[VideoAsset] Error:', error.message);
         res.status(500).json({ error: error.message });
     }
 });
@@ -486,6 +575,42 @@ app.post('/api/ai/activate-agents', async (req, res) => {
           });
         }
 
+        // Check subscription plan limits for agents and platforms
+        const subGuard = await getSubscriptionGuard(user.id, supabase);
+        if (!subGuard.allowed) {
+          return res.status(403).json({
+            error: 'PLAN_LIMIT_EXCEEDED',
+            message: 'An active subscription is required to activate autonomous agents.',
+          });
+        }
+
+        const planLimits = subGuard.limits;
+
+        // Enforce: Sales agent requires Pro/Pro+
+        if (goal?.toLowerCase().includes('sales') || goal?.toLowerCase().includes('lead')) {
+          if (!planLimits.agents.sales) {
+            return res.status(403).json({
+              error: 'PLAN_LIMIT_EXCEEDED',
+              feature: 'sales_agent',
+              plan: subGuard.plan,
+              message: `The Sales Agent is not available on the ${subGuard.plan} plan. Upgrade to Pro or Pro+ to use the Sales Agent.`,
+            });
+          }
+        }
+
+        // Enforce: platform count limit
+        const requestedPlatforms: string[] = platforms || [];
+        if (requestedPlatforms.length > planLimits.platforms) {
+          return res.status(403).json({
+            error: 'PLAN_LIMIT_EXCEEDED',
+            feature: 'platforms',
+            plan: subGuard.plan,
+            message: `Your ${subGuard.plan} plan allows autonomous posting on ${planLimits.platforms} platform${planLimits.platforms === 1 ? '' : 's'}. You requested ${requestedPlatforms.length}. Upgrade your plan to add more platforms.`,
+            allowed_platforms: planLimits.platforms,
+            requested_platforms: requestedPlatforms.length,
+          });
+        }
+
         const { data: strategy } = await supabase
             .from('strategies')
             .select('*')
@@ -493,7 +618,7 @@ app.post('/api/ai/activate-agents', async (req, res) => {
             .single();
 
         const activeStrategy = strategy || { id: strategyId, goal, platforms, user_id: user.id, duration: 30 };
-        const activePlatforms = platforms || strategy?.platforms || ['facebook'];
+        const activePlatforms = (platforms || strategy?.platforms || ['facebook']).slice(0, planLimits.platforms);
 
         console.log(`[AgentActivation] [${ts()}] Launching orchestrator...`);
 
@@ -709,6 +834,32 @@ app.get('/api/billing/status', async (req, res) => {
 
     const summary = await energyService.getUsageSummary(user.id);
     res.status(200).json(summary);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * GET /api/billing/plan-limits — returns user's plan feature limits + current usage
+ */
+app.get('/api/billing/plan-limits', async (req, res) => {
+  try {
+    const supabase = getSupabaseClient(req as any);
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return res.status(401).json({ error: 'Unauthorized.' });
+
+    const guard = await getSubscriptionGuard(user.id, supabase);
+    res.status(200).json({
+      plan: guard.plan,
+      status: guard.status,
+      active: guard.allowed,
+      limits: guard.limits,
+      usage: guard.usage,
+      remaining: {
+        imageAssets: Math.max(0, guard.limits.imageAssets - guard.usage.imageAssets),
+        videoAssets: Math.max(0, guard.limits.videoAssets - guard.usage.videoAssets),
+      },
+    });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }

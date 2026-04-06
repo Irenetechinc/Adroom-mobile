@@ -110,7 +110,7 @@ export const PLAN_DETAILS: Record<string, PlanDetail> = {
     color: '#F59E0B',
     socialPlatforms: 99,
     imageAssets: 14,
-    videoAssets: 5,
+    videoAssets: 4,
     aiVideoGen: true,
     websiteScraping: true,
     agents: { sales: true, awareness: true, promotion: true, launch: true },
@@ -119,7 +119,7 @@ export const PLAN_DETAILS: Record<string, PlanDetail> = {
       'All platforms (X10 autonomy)',
       'All autonomous agents',
       '14 AI image assets/strategy',
-      '5 AI video assets/strategy',
+      '4 AI video assets/strategy',
       'Website scraping (Connect Website)',
       'Everything in Pro',
     ],
@@ -145,15 +145,32 @@ export const TOPUP_OPTIONS = [
   { id: 'topup_100', credits: 100, price: 25,  label: '100 Energy', best: false },
 ];
 
+export interface PlanLimitsUsage {
+  plan: string;
+  status: string;
+  active: boolean;
+  limits: {
+    imageAssets: number;
+    videoAssets: number;
+    platforms: number;
+    websiteScraping: boolean;
+    agents: { sales: boolean; awareness: boolean; promotion: boolean; launch: boolean };
+  };
+  usage: { imageAssets: number; videoAssets: number };
+  remaining: { imageAssets: number; videoAssets: number };
+}
+
 interface EnergyState {
   account: EnergyAccount | null;
   subscription: Subscription | null;
   transactions: EnergyTransaction[];
+  planLimitsUsage: PlanLimitsUsage | null;
   isLoading: boolean;
   lastFetched: number | null;
 
   fetchEnergy: () => Promise<void>;
   refreshBalance: () => Promise<void>;
+  fetchPlanLimits: () => Promise<void>;
   startTrial: () => Promise<{ success: boolean; message: string }>;
   cancelSubscription: (reason?: string) => Promise<{ success: boolean }>;
   toggleOnDemand: (enabled: boolean) => Promise<void>;
@@ -169,6 +186,7 @@ export const useEnergyStore = create<EnergyState>((set, get) => ({
   account: null,
   subscription: null,
   transactions: [],
+  planLimitsUsage: null,
   isLoading: false,
   lastFetched: null,
 
@@ -202,6 +220,22 @@ export const useEnergyStore = create<EnergyState>((set, get) => ({
     if (!session) return;
     const { data } = await supabase.from('energy_accounts').select('*').eq('user_id', session.user.id).single();
     if (data) set({ account: data });
+  },
+
+  fetchPlanLimits: async () => {
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) return;
+      const res = await fetch(`${API_URL}/api/billing/plan-limits`, {
+        headers: { Authorization: `Bearer ${session.access_token}` },
+      });
+      if (res.ok) {
+        const data = await res.json();
+        set({ planLimitsUsage: data });
+      }
+    } catch (err) {
+      console.error('[EnergyStore] fetchPlanLimits error:', err);
+    }
   },
 
   startTrial: async () => {
