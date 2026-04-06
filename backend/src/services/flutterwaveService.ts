@@ -1,7 +1,7 @@
 import dotenv from 'dotenv';
 dotenv.config();
 
-const FLW_SECRET_KEY = process.env.FLW_SECRET_KEY || '';
+const FLW_SECRET_KEY = process.env.FLW_SECRET_KEY || process.env.FLUTTERWAVE_SECRET_KEY || '';
 const FLW_BASE_URL   = 'https://api.flutterwave.com/v3';
 
 interface FlwChargeResponse {
