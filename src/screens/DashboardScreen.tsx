@@ -11,14 +11,16 @@ import Animated, { FadeInDown, FadeInRight } from 'react-native-reanimated';
 import { DrawerActions } from '@react-navigation/native';
 import {
   Zap, AlertTriangle, TrendingUp, Plus, Activity,
-  Target, Eye, MousePointer, Menu, RefreshCw,
+  Target, Eye, MousePointer, Menu, RefreshCw, Crown,
 } from 'lucide-react-native';
+import { useEnergyStore, PLAN_DETAILS } from '../store/energyStore';
 
 
 export default function DashboardScreen() {
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const { session } = useAuthStore();
   const insets = useSafeAreaInsets();
+  const { account, subscription, fetchEnergy } = useEnergyStore();
 
   const [activeStrategies, setActiveStrategies] = useState<any[]>([]);
   const [alerts, setAlerts] = useState<any[]>([]);
@@ -62,8 +64,8 @@ export default function DashboardScreen() {
     }
   };
 
-  useEffect(() => { fetchData(); }, [session]);
-  const onRefresh = () => { setRefreshing(true); fetchData(); };
+  useEffect(() => { fetchData(); fetchEnergy(); }, [session]);
+  const onRefresh = () => { setRefreshing(true); fetchData(); fetchEnergy(); };
 
 
   const totalImpressions = activeStrategies.reduce((a, s) => a + (s.total_impressions || 0), 0);
@@ -116,6 +118,51 @@ export default function DashboardScreen() {
           </Text>
           <Text style={styles.statusCount}>{activeStrategies.length} active</Text>
         </Animated.View>
+
+        {/* Energy Widget */}
+        {(() => {
+          const balance = parseFloat(String(account?.balance_credits ?? '0'));
+          const plan = subscription?.plan ?? 'none';
+          const planInfo = PLAN_DETAILS[plan as keyof typeof PLAN_DETAILS];
+          const maxCredits = planInfo?.credits || 100;
+          const pct = Math.min(1, balance / Math.max(maxCredits, 1));
+          const barColor = pct > 0.5 ? '#00F0FF' : pct > 0.2 ? '#F59E0B' : '#EF4444';
+          const isLow = balance < 10;
+          return (
+            <Animated.View entering={FadeInDown.delay(120).springify()}>
+              <TouchableOpacity
+                onPress={() => navigation.navigate('Subscription')}
+                activeOpacity={0.85}
+                style={[styles.energyCard, isLow && { borderColor: '#F59E0B40' }]}
+              >
+                <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                    <Zap size={14} color={barColor} />
+                    <Text style={{ color: '#64748B', fontSize: 11, fontWeight: '600', textTransform: 'uppercase', letterSpacing: 0.8 }}>AdRoom Energy</Text>
+                  </View>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                    <Crown size={11} color={planInfo?.color ?? '#64748B'} />
+                    <Text style={{ color: planInfo?.color ?? '#64748B', fontSize: 11, fontWeight: '700' }}>{planInfo?.name ?? 'No Plan'}</Text>
+                    {isLow && <Text style={{ color: '#F59E0B', fontSize: 10, fontWeight: '600', marginLeft: 4 }}>Low!</Text>}
+                  </View>
+                </View>
+                <View style={{ flexDirection: 'row', alignItems: 'flex-end', gap: 4, marginBottom: 6 }}>
+                  <Text style={{ color: barColor, fontSize: 28, fontWeight: '900', letterSpacing: -1 }}>{balance.toFixed(1)}</Text>
+                  <Text style={{ color: '#64748B', fontSize: 13, marginBottom: 3 }}>credits</Text>
+                </View>
+                <View style={{ height: 5, backgroundColor: '#1E293B', borderRadius: 3, overflow: 'hidden' }}>
+                  <View style={{ width: `${pct * 100}%`, height: '100%', backgroundColor: barColor, borderRadius: 3 }} />
+                </View>
+                {balance <= 0 && (
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 8, backgroundColor: '#EF444415', borderRadius: 6, padding: 6 }}>
+                    <AlertTriangle size={12} color="#EF4444" />
+                    <Text style={{ color: '#EF4444', fontSize: 11 }}>AI features paused — tap to top up</Text>
+                  </View>
+                )}
+              </TouchableOpacity>
+            </Animated.View>
+          );
+        })()}
 
         {/* Stats Row */}
         <Animated.View entering={FadeInDown.delay(150).springify()} style={styles.statsRow}>
@@ -287,6 +334,10 @@ const styles = StyleSheet.create({
     backgroundColor: '#151B2B', borderRadius: 12,
     borderWidth: 1, borderColor: '#1E293B',
     paddingHorizontal: 14, paddingVertical: 10, marginBottom: 12,
+  },
+  energyCard: {
+    backgroundColor: '#151B2B', borderRadius: 14, borderWidth: 1, borderColor: '#1E293B',
+    padding: 14, marginBottom: 12,
   },
   statusDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: '#10B981', marginRight: 8 },
   statusText: { flex: 1, color: '#94A3B8', fontSize: 13, fontWeight: '500' },

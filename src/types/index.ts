@@ -15,6 +15,7 @@ export type RootStackParamList = {
     connectTwitter?: boolean;
   };
   ConnectedAccounts: undefined;
+  Subscription: undefined;
   
   // Strategy Creation Wizard
   StrategyWizard_ProductIntake: undefined;
