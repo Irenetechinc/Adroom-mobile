@@ -374,7 +374,7 @@ app.post('/api/creative/generate-video-asset', async (req, res) => {
         }
 
         // Check energy before generating
-        const energyResult = await energyService.checkEnergy(user.id, 'generate_image');
+        const energyResult = await energyService.checkEnergy(user.id, 'generate_video_asset');
         if (!energyResult.allowed) {
             return res.status(402).json({
                 error: 'INSUFFICIENT_ENERGY',

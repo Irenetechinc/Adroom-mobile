@@ -46,8 +46,8 @@ export default function SubscriptionScreen() {
   const scrollToPlan = route.params?.scrollToPlan ?? null;
   const insets = useSafeAreaInsets();
   const {
-    account, subscription, transactions, isLoading,
-    fetchEnergy, startTrial, cancelSubscription, toggleOnDemand, verifyAndApplyPayment,
+    account, subscription, transactions, planLimitsUsage, isLoading,
+    fetchEnergy, fetchPlanLimits, startTrial, cancelSubscription, toggleOnDemand, verifyAndApplyPayment,
   } = useEnergyStore();
   const [refreshing, setRefreshing] = useState(false);
   const [paymentLoading, setPaymentLoading] = useState(false);
@@ -58,6 +58,7 @@ export default function SubscriptionScreen() {
 
   useEffect(() => {
     fetchEnergy();
+    fetchPlanLimits();
   }, []);
 
   // 72h grace period countdown: shown when trial just ended (within 72h)
@@ -95,7 +96,7 @@ export default function SubscriptionScreen() {
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
-    await fetchEnergy();
+    await Promise.all([fetchEnergy(), fetchPlanLimits()]);
     setRefreshing(false);
   }, []);
 
@@ -472,6 +473,73 @@ export default function SubscriptionScreen() {
               <UsageStat label="Total Consumed" value={parseFloat(String(account?.lifetime_consumed ?? '0')).toFixed(1)} unit="credits" />
               <UsageStat label="Operations Run" value={`${Math.round(parseFloat(String(account?.lifetime_consumed ?? '0')))}`} unit="" />
             </View>
+
+            {/* Current Period Asset Usage — real-time from backend */}
+            {planLimitsUsage && isActive && (
+              <View style={[styles.sectionCard, { marginBottom: 4 }]}>
+                <Text style={[styles.sectionTitle, { marginBottom: 12 }]}>Current Period Asset Usage</Text>
+
+                {/* Image Assets */}
+                {planLimitsUsage.limits.imageAssets > 0 && (
+                  <View style={{ marginBottom: 14 }}>
+                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 6 }}>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                        <ImageIcon size={14} color={COLORS.purple} />
+                        <Text style={{ color: COLORS.text, fontSize: 13, fontWeight: '600' }}>AI Image Assets</Text>
+                      </View>
+                      <Text style={{ color: COLORS.muted, fontSize: 12 }}>
+                        {planLimitsUsage.usage.imageAssets} / {planLimitsUsage.limits.imageAssets} used
+                      </Text>
+                    </View>
+                    <View style={{ height: 6, backgroundColor: COLORS.border, borderRadius: 3, overflow: 'hidden' }}>
+                      <View style={{
+                        width: `${Math.min(100, (planLimitsUsage.usage.imageAssets / Math.max(planLimitsUsage.limits.imageAssets, 1)) * 100)}%`,
+                        height: '100%', borderRadius: 3,
+                        backgroundColor: planLimitsUsage.remaining.imageAssets > 0 ? COLORS.purple : COLORS.danger,
+                      }} />
+                    </View>
+                    <Text style={{ color: planLimitsUsage.remaining.imageAssets > 0 ? COLORS.neon : COLORS.danger, fontSize: 11, marginTop: 4 }}>
+                      {planLimitsUsage.remaining.imageAssets > 0
+                        ? `${planLimitsUsage.remaining.imageAssets} remaining this billing period`
+                        : 'Limit reached for this billing period'}
+                    </Text>
+                  </View>
+                )}
+
+                {/* Video Assets */}
+                {planLimitsUsage.limits.videoAssets > 0 && (
+                  <View>
+                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 6 }}>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                        <Video size={14} color={COLORS.amber} />
+                        <Text style={{ color: COLORS.text, fontSize: 13, fontWeight: '600' }}>AI Video Assets</Text>
+                      </View>
+                      <Text style={{ color: COLORS.muted, fontSize: 12 }}>
+                        {planLimitsUsage.usage.videoAssets} / {planLimitsUsage.limits.videoAssets} used
+                      </Text>
+                    </View>
+                    <View style={{ height: 6, backgroundColor: COLORS.border, borderRadius: 3, overflow: 'hidden' }}>
+                      <View style={{
+                        width: `${Math.min(100, (planLimitsUsage.usage.videoAssets / Math.max(planLimitsUsage.limits.videoAssets, 1)) * 100)}%`,
+                        height: '100%', borderRadius: 3,
+                        backgroundColor: planLimitsUsage.remaining.videoAssets > 0 ? COLORS.amber : COLORS.danger,
+                      }} />
+                    </View>
+                    <Text style={{ color: planLimitsUsage.remaining.videoAssets > 0 ? COLORS.neon : COLORS.danger, fontSize: 11, marginTop: 4 }}>
+                      {planLimitsUsage.remaining.videoAssets > 0
+                        ? `${planLimitsUsage.remaining.videoAssets} remaining this billing period`
+                        : 'Limit reached for this billing period'}
+                    </Text>
+                  </View>
+                )}
+
+                {planLimitsUsage.limits.imageAssets === 0 && planLimitsUsage.limits.videoAssets === 0 && (
+                  <Text style={{ color: COLORS.muted, fontSize: 13 }}>
+                    AI asset generation is not included in the Starter plan. Upgrade to Pro or Pro+ for image and video generation.
+                  </Text>
+                )}
+              </View>
+            )}
 
             <Text style={styles.sectionHeader}>Transaction History</Text>
             {transactions.length === 0 ? (
