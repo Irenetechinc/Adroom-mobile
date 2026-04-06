@@ -42,17 +42,107 @@ export interface EnergyTransaction {
   created_at: string;
 }
 
-export const PLAN_DETAILS = {
-  starter: { name: 'Starter', price: 20, credits: 100, actualBudget: 9, color: '#00F0FF' },
-  pro:     { name: 'Pro',     price: 45, credits: 300, actualBudget: 25, color: '#7C3AED' },
-  pro_plus:{ name: 'Pro+',   price: 100, credits: 600, actualBudget: 45, color: '#F59E0B' },
-  none:    { name: 'Free',    price: 0,  credits: 0,   actualBudget: 0,  color: '#64748B' },
+export interface PlanDetail {
+  name: string;
+  price: number;
+  credits: number;
+  color: string;
+  socialPlatforms: number;
+  imageAssets: number;
+  videoAssets: number;
+  aiVideoGen: boolean;
+  websiteScraping: boolean;
+  agents: {
+    sales: boolean;
+    awareness: boolean;
+    promotion: boolean;
+    launch: boolean;
+  };
+  features: string[];
+}
+
+export const PLAN_DETAILS: Record<string, PlanDetail> = {
+  starter: {
+    name: 'Starter',
+    price: 20,
+    credits: 100,
+    color: '#00F0FF',
+    socialPlatforms: 1,
+    imageAssets: 0,
+    videoAssets: 0,
+    aiVideoGen: false,
+    websiteScraping: false,
+    agents: { sales: false, awareness: true, promotion: true, launch: true },
+    features: [
+      '100 energy credits/month',
+      '1 social platform autonomy',
+      'Awareness Agent',
+      'Promotion Agent',
+      'Launch Agent',
+      'User video upload supported',
+    ],
+  },
+  pro: {
+    name: 'Pro',
+    price: 45,
+    credits: 300,
+    color: '#7C3AED',
+    socialPlatforms: 2,
+    imageAssets: 6,
+    videoAssets: 2,
+    aiVideoGen: true,
+    websiteScraping: true,
+    agents: { sales: true, awareness: true, promotion: true, launch: true },
+    features: [
+      '300 energy credits/month',
+      '2 social platforms autonomy',
+      'All autonomous agents (incl. Sales)',
+      '6 AI image assets/strategy',
+      '2 AI video assets/strategy',
+      'Website scraping (Connect Website)',
+      'Everything in Starter',
+    ],
+  },
+  pro_plus: {
+    name: 'Pro+',
+    price: 100,
+    credits: 600,
+    color: '#F59E0B',
+    socialPlatforms: 99,
+    imageAssets: 14,
+    videoAssets: 5,
+    aiVideoGen: true,
+    websiteScraping: true,
+    agents: { sales: true, awareness: true, promotion: true, launch: true },
+    features: [
+      '600 energy credits/month',
+      'All platforms (X10 autonomy)',
+      'All autonomous agents',
+      '14 AI image assets/strategy',
+      '5 AI video assets/strategy',
+      'Website scraping (Connect Website)',
+      'Everything in Pro',
+    ],
+  },
+  none: {
+    name: 'Free',
+    price: 0,
+    credits: 0,
+    color: '#64748B',
+    socialPlatforms: 0,
+    imageAssets: 0,
+    videoAssets: 0,
+    aiVideoGen: false,
+    websiteScraping: false,
+    agents: { sales: false, awareness: false, promotion: false, launch: false },
+    features: [],
+  },
 };
 
 export const TOPUP_OPTIONS = [
-  { id: 'topup_600', credits: 600, price: 120, label: '600 Energy',  best: true  },
-  { id: 'topup_300', credits: 300, price: 50,  label: '300 Energy',  best: false },
-  { id: 'topup_100', credits: 100, price: 25,  label: '100 Energy',  best: false },
+  { id: 'topup_600', credits: 600, price: 120, label: '600 Energy', best: true },
+  { id: 'topup_300', credits: 300, price: 50,  label: '300 Energy', best: false },
+  { id: 'topup_100', credits: 100, price: 25,  label: '100 Energy', best: false },
 ];
 
 interface EnergyState {
@@ -62,7 +152,6 @@ interface EnergyState {
   isLoading: boolean;
   lastFetched: number | null;
 
-  // Actions
   fetchEnergy: () => Promise<void>;
   refreshBalance: () => Promise<void>;
   startTrial: () => Promise<{ success: boolean; message: string }>;
