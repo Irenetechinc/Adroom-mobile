@@ -8,6 +8,7 @@ import { DecisionEngine } from './decisionEngine';
 import { ScraperService } from './scraperService';
 import { AgentOrchestrator } from '../agents/agentOrchestrator';
 import { getServiceSupabaseClient } from '../config/supabase';
+import { creditManagementAgent } from './creditManagementAgent';
 
 dotenv.config();
 
@@ -49,6 +50,8 @@ export class SchedulerService {
         cron.schedule(SCHED_IPE_CRON, async () => {
             console.log('[Scheduler] Running Platform Intelligence Engine...');
             try {
+                const cma = await creditManagementAgent.evaluate(null, 'ipe_cycle');
+                if (cma.decision === 'deny_cooldown') { console.log(`[Scheduler] IPE skipped — ${cma.reason}`); return; }
                 const result = await this.ipe.runCycle();
                 if (result && result.alerts && result.alerts.length > 0) await this.notifyBrain('platform', result.alerts);
             } catch (e: any) {
@@ -59,6 +62,8 @@ export class SchedulerService {
         cron.schedule(SCHED_SOCIAL_CRON, async () => {
             console.log('[Scheduler] Running Social Listening...');
             try {
+                const cma = await creditManagementAgent.evaluate(null, 'social_listening');
+                if (cma.decision === 'deny_cooldown') { console.log(`[Scheduler] Social skipped — ${cma.reason}`); return; }
                 const result = await this.social.runCycle();
                 if (result && result.alerts && result.alerts.length > 0) await this.notifyBrain('social', result.alerts);
                 if (result && result.conversations && result.conversations.length > 0) await this.runEmotionalCycle();
@@ -68,13 +73,19 @@ export class SchedulerService {
         });
 
         cron.schedule(SCHED_EMOTIONAL_CRON, async () => {
-            try { await this.runEmotionalCycle(); }
+            try {
+                const cma = await creditManagementAgent.evaluate(null, 'emotional_intel');
+                if (cma.decision === 'deny_cooldown') { console.log(`[Scheduler] Emotional skipped — ${cma.reason}`); return; }
+                await this.runEmotionalCycle();
+            }
             catch (e: any) { console.error('[Scheduler] Emotional cycle error:', e.message); }
         });
 
         cron.schedule(SCHED_GEO_CRON, async () => {
             console.log('[Scheduler] Running GEO Monitoring...');
             try {
+                const cma = await creditManagementAgent.evaluate(null, 'geo_monitoring');
+                if (cma.decision === 'deny_cooldown') { console.log(`[Scheduler] GEO skipped — ${cma.reason}`); return; }
                 const result = await this.geo.runCycle();
                 if (result?.alerts?.length > 0) await this.notifyBrain('geo', result.alerts);
             } catch (e: any) {

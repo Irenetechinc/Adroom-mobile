@@ -489,16 +489,31 @@ app.post('/api/ai/generate-strategy', async (req, res) => {
         console.log(`[Strategy] [${ts()}] STEP 1 — Authenticated user: ${user.id}`);
         console.log(`[Strategy] [${ts()}] STEP 2 — Retrieving memory context from all intelligence tables...`);
 
-        // Check energy before expensive AI pipeline
+        // CMA pre-flight: picks model based on tier and checks cap/cooldown
+        const { creditManagementAgent: cmaAgent } = await import('./services/creditManagementAgent');
+        const cmaResult = await cmaAgent.evaluate(user.id, 'generate_strategy');
+
+        if (cmaResult.decision === 'deny_tier') {
+          return res.status(403).json({ error: 'PLAN_REQUIRED', message: cmaResult.reason });
+        }
+        if (cmaResult.decision === 'deny_cap') {
+          return res.status(429).json({ error: 'DAILY_CAP_REACHED', message: cmaResult.reason });
+        }
+        if (cmaResult.decision === 'deny_cooldown') {
+          return res.status(429).json({ error: 'COOLDOWN_ACTIVE', message: cmaResult.reason });
+        }
+
+        // Balance check using CMA-determined cost (may be cheaper)
         const energyCheck2 = await energyService.checkEnergy(user.id, 'generate_strategy');
-        if (!energyCheck2.allowed) {
+        if (energyCheck2.balance < cmaResult.credits) {
           return res.status(402).json({
             error: 'INSUFFICIENT_ENERGY',
-            message: `Strategy generation requires ${energyCheck2.required} credits. Current balance: ${energyCheck2.balance.toFixed(2)}.`,
-            balance: energyCheck2.balance, required: energyCheck2.required,
+            message: `Strategy generation requires ${cmaResult.credits} credits. Current balance: ${energyCheck2.balance.toFixed(2)}.`,
+            balance: energyCheck2.balance, required: cmaResult.credits,
           });
         }
 
+        const economyMode = cmaResult.decision === 'allow_economy';
         const retriever = new MemoryRetriever(supabase);
         const context = await retriever.getAllContext(user.id, productId, 'product');
 
@@ -508,9 +523,13 @@ app.post('/api/ai/generate-strategy', async (req, res) => {
         console.log(`[Strategy]   Emotional Intelligence: ${context.emotionalIntelligence?.length || 0} entries`);
         console.log(`[Strategy]   GEO Narrative: ${context.geoNarrative?.length || 0} snapshots`);
         console.log(`[Strategy]   Strategy History: ${context.history?.length || 0} past strategies`);
-        console.log(`[Strategy] [${ts()}] STEP 4 — Passing context to DecisionEngine (GPT-4o)...`);
+        const modelLabel = economyMode ? 'Gemini Flash (economy)' : 'GPT-4o (premium)';
+        console.log(`[Strategy] [${ts()}] STEP 4 — Passing context to DecisionEngine [${modelLabel}]...`);
+        if (cmaResult.savedCredits > 0) {
+          console.log(`[CMA] Economy routing: saved ${cmaResult.savedCredits} credits for this user`);
+        }
 
-        const strategy = await decisionEngine.generateStrategy(context, goal, duration);
+        const strategy = await decisionEngine.generateStrategy(context, goal, duration, economyMode);
 
         console.log(`[Strategy] [${ts()}] STEP 5 — Strategy generated successfully`);
         console.log(`[Strategy]   Title: ${strategy.title}`);
@@ -539,8 +558,8 @@ app.post('/api/ai/generate-strategy', async (req, res) => {
             console.log(`[Strategy] [${ts()}] STEP 7 — Strategy saved with ID: ${savedStrategy?.id}`);
         }
 
-        // Deduct energy after successful strategy generation
-        await deductEnergyForUser(user.id, 'generate_strategy');
+        // Deduct energy after successful generation (CMA-routed — uses economy cost if applicable)
+        await deductEnergyForUser(user.id, 'generate_strategy', { economy_mode: economyMode });
         console.log(`[Strategy] ═══════════════════════════════════════\n`);
         res.status(200).json({ strategy, strategyId: savedStrategy?.id });
     } catch (error: any) {
@@ -1224,6 +1243,21 @@ app.post('/api/chat/history', async (req, res) => {
 
     if (error) return res.status(500).json({ error: error.message });
     res.json({ success: true });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * Credit Management Agent — Stats endpoint (admin-level)
+ * Returns total credits saved, USD saved, and per-operation breakdown.
+ */
+app.get('/api/admin/cma/stats', async (req, res) => {
+  try {
+    const { creditManagementAgent: cmaAgent } = await import('./services/creditManagementAgent');
+    const days = parseInt(String(req.query.days ?? '7'));
+    const stats = await cmaAgent.getSavingsSummary(Math.min(days, 90));
+    res.json({ ok: true, ...stats });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }

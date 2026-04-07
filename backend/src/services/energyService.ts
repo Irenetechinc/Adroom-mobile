@@ -1,4 +1,5 @@
 import { getServiceSupabaseClient } from '../config/supabase';
+import { creditManagementAgent, CMAResult } from './creditManagementAgent';
 
 // ══════════════════════════════════════════════════════════════
 // ADROOM ENERGY ECONOMICS
@@ -188,6 +189,84 @@ export class EnergyService {
     }
 
     return newBalance;
+  }
+
+  /**
+   * CMA-powered deduction:
+   * 1. Asks the Credit Management Agent which model to use + actual cost
+   * 2. If denied (cap / cooldown / tier), throws with the reason
+   * 3. If allowed (possibly at economy rate), deducts the CMA-determined credits
+   * Returns { newBalance, cma } so callers can route to the correct model.
+   */
+  async deductEnergyWithRouting(
+    userId: string,
+    operation: string,
+    metadata?: any,
+  ): Promise<{ newBalance: number; cma: CMAResult }> {
+    const cma = await creditManagementAgent.evaluate(userId, operation);
+
+    if (cma.decision === 'deny_cap') {
+      throw new Error(`DAILY_CAP_REACHED: ${cma.reason}`);
+    }
+    if (cma.decision === 'deny_cooldown') {
+      throw new Error(`COOLDOWN_ACTIVE: ${cma.reason}`);
+    }
+    if (cma.decision === 'deny_tier') {
+      throw new Error(`TIER_RESTRICTED: ${cma.reason}`);
+    }
+    if (cma.decision === 'deny_insufficient') {
+      throw new Error(`INSUFFICIENT_ENERGY: ${cma.reason}`);
+    }
+
+    // Build an overridden op using CMA values
+    const op = { credits: cma.credits, model: cma.model, actual_usd: cma.actual_usd };
+    const account = await this.getAccount(userId);
+    const currentBalance = parseFloat(account?.balance_credits ?? '0');
+
+    if (currentBalance < op.credits) {
+      throw new Error(`INSUFFICIENT_ENERGY: Need ${op.credits} credits, have ${currentBalance.toFixed(2)}`);
+    }
+
+    const newBalance = currentBalance - op.credits;
+
+    await this.supabase
+      .from('energy_accounts')
+      .update({
+        balance_credits: newBalance,
+        lifetime_consumed: parseFloat(account.lifetime_consumed ?? '0') + op.credits,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('user_id', userId);
+
+    await this.supabase.from('energy_transactions').insert({
+      user_id: userId,
+      type: 'debit',
+      credits: -op.credits,
+      balance_after: newBalance,
+      description: `AI operation: ${operation} [CMA:${cma.decision}]`,
+      operation,
+      actual_cost_usd: op.actual_usd,
+      energy_rate: ENERGY_RATE.ACTUAL_COST_PER_CREDIT,
+      metadata: { ...(metadata ?? {}), cma_model: cma.model, cma_saved: cma.savedCredits },
+    });
+
+    await this.supabase.from('ai_usage_logs').insert({
+      user_id: userId,
+      model: op.model,
+      operation,
+      actual_cost_usd: op.actual_usd,
+      energy_debited: op.credits,
+      ...(metadata ?? {}),
+    });
+
+    if (newBalance <= ON_DEMAND_THRESHOLD) {
+      await this.checkAndTriggerOnDemand(userId, newBalance);
+    }
+
+    const savedMsg = cma.savedCredits > 0 ? ` [CMA saved ${cma.savedCredits} credits]` : '';
+    console.log(`[CMA] ${operation} → ${cma.model} | charged ${cma.credits} credits${savedMsg}`);
+
+    return { newBalance, cma };
   }
 
   /** Credit energy to a user's account */

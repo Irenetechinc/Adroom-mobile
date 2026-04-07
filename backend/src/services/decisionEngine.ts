@@ -22,7 +22,7 @@ export class DecisionEngine {
     this.supabase = getServiceSupabaseClient();
   }
 
-  async generateStrategy(memory: MemoryContext, goal: string, duration: number): Promise<AIStrategy> {
+  async generateStrategy(memory: MemoryContext, goal: string, duration: number, economyMode = false): Promise<AIStrategy> {
     console.log('AI Brain: Generating Dynamic Strategy with Intelligent Weighting...');
 
     // 1. GATHER all relevant intelligence sources
@@ -76,7 +76,9 @@ export class DecisionEngine {
       }
     `;
 
-    const response = await this.ai.generateStrategy({}, prompt);
+    const response = economyMode
+      ? await this.ai.generateStrategyEconomy({}, prompt)
+      : await this.ai.generateStrategy({}, prompt);
     const strategy: AIStrategy = response.parsedJson;
 
     if (!strategy) throw new Error('AI Brain failed to generate strategy.');
