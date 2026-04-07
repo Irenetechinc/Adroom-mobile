@@ -302,6 +302,90 @@ router.post('/api/users/:id/unsuspend', auth, async (req, res) => {
   }
 });
 
+// ─── CHANGE SUBSCRIPTION PLAN ────────────────────────────────────────────────
+router.post('/api/users/:id/plan', auth, async (req, res) => {
+  try {
+    const sb = getServiceSupabaseClient();
+    const { id } = req.params;
+    const { plan, status, grantCredits } = req.body;
+
+    const validPlans = ['starter', 'pro', 'pro_plus', 'none'];
+    const validStatuses = ['active', 'inactive', 'trialing', 'cancelled', 'expired'];
+    if (!validPlans.includes(plan)) return res.status(400).json({ error: 'Invalid plan. Must be: starter, pro, pro_plus, none' });
+    if (!validStatuses.includes(status || 'active')) return res.status(400).json({ error: 'Invalid status' });
+
+    const { data: { user } } = await sb.auth.admin.getUserById(id);
+    if (!user) return res.status(404).json({ error: 'User not found' });
+
+    const PLAN_CREDITS: Record<string, number> = { starter: 100, pro: 300, pro_plus: 600, none: 0 };
+    const planCredits = PLAN_CREDITS[plan] ?? 0;
+    const effectiveStatus = plan === 'none' ? 'inactive' : (status || 'active');
+    const now = new Date().toISOString();
+    const periodEnd = new Date(Date.now() + 30 * 86400000).toISOString();
+
+    const { data: existingSub } = await sb.from('subscriptions').select('plan, status').eq('user_id', id).single();
+
+    await sb.from('subscriptions').upsert({
+      user_id: id,
+      plan,
+      status: effectiveStatus,
+      current_period_start: plan !== 'none' ? now : null,
+      current_period_end: plan !== 'none' ? periodEnd : null,
+      updated_at: now,
+    }, { onConflict: 'user_id' });
+
+    let newBalance: number | null = null;
+    if (grantCredits && plan !== 'none' && planCredits > 0) {
+      const { data: account } = await sb.from('energy_accounts').select('*').eq('user_id', id).single();
+      if (account) {
+        const updatedBalance = Number(account.balance_credits) + planCredits;
+        await sb.from('energy_accounts').update({
+          balance_credits: updatedBalance,
+          lifetime_credits: Number(account.lifetime_credits) + planCredits,
+          updated_at: now,
+        }).eq('user_id', id);
+
+        await sb.from('energy_transactions').insert({
+          user_id: id,
+          type: 'subscription_grant',
+          credits: planCredits,
+          balance_after: updatedBalance,
+          description: `Admin plan change to ${plan} — ${planCredits} credits granted`,
+          operation: 'admin_plan_change',
+        });
+        newBalance = updatedBalance;
+      }
+    }
+
+    await logAction('plan_change', id, user.email || null, {
+      from_plan: existingSub?.plan || 'none',
+      to_plan: plan,
+      status: effectiveStatus,
+      credits_granted: grantCredits && planCredits > 0 ? planCredits : 0,
+    });
+
+    broadcast('plan_changed', {
+      userId: id,
+      email: user.email,
+      from: existingSub?.plan || 'none',
+      to: plan,
+      status: effectiveStatus,
+      creditsGranted: grantCredits ? planCredits : 0,
+      newBalance,
+    });
+
+    res.json({
+      success: true,
+      plan,
+      status: effectiveStatus,
+      credits_granted: grantCredits && planCredits > 0 ? planCredits : 0,
+      new_balance: newBalance,
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ─── TERMINATE USER ───────────────────────────────────────────────────────────
 router.delete('/api/users/:id', auth, async (req, res) => {
   try {
@@ -829,12 +913,14 @@ label{font-size:12px;color:#94A3B8;font-weight:600}
       <div class="user-actions" id="modal-actions"></div>
       <div class="tabs" id="modal-tabs">
         <button class="tab active" onclick="showModalTab('overview')">Overview</button>
+        <button class="tab" onclick="showModalTab('plan')" style="color:#00F0FF">🎯 Plan</button>
         <button class="tab" onclick="showModalTab('strategies')">Strategies</button>
         <button class="tab" onclick="showModalTab('agents')">Agent Tasks</button>
         <button class="tab" onclick="showModalTab('ai')">AI Usage</button>
         <button class="tab" onclick="showModalTab('transactions')">Transactions</button>
       </div>
       <div id="modal-overview" class="section active"></div>
+      <div id="modal-plan" class="section"></div>
       <div id="modal-strategies" class="section"></div>
       <div id="modal-agents" class="section"></div>
       <div id="modal-ai" class="section"></div>
@@ -1057,7 +1143,7 @@ function closeModal() {
 }
 
 function showModalTab(name) {
-  ['overview', 'strategies', 'agents', 'ai', 'transactions'].forEach(t => {
+  ['overview', 'plan', 'strategies', 'agents', 'ai', 'transactions'].forEach(t => {
     document.getElementById('modal-' + t).classList.toggle('active', t === name);
   });
   document.querySelectorAll('#modal-tabs .tab').forEach(t => {
@@ -1077,6 +1163,7 @@ function renderUserModal(d) {
   const isSuspended = override?.status === 'suspended';
   document.getElementById('modal-actions').innerHTML = \`
     <button class="btn btn-ghost btn-sm" onclick="openCreditModal('\${u.id}', '\${u.email}')">⚡ Adjust Credits</button>
+    <button class="btn btn-primary btn-sm" onclick="showModalTab('plan')">🎯 Change Plan</button>
     \${isSuspended
       ? \`<button class="btn btn-warn btn-sm" onclick="unsuspendUser('\${u.id}')">✅ Unsuspend</button>\`
       : \`<button class="btn btn-warn btn-sm" onclick="suspendUser('\${u.id}')">🚫 Suspend</button>\`
@@ -1119,6 +1206,71 @@ function renderUserModal(d) {
       }
     </div>
   \`;
+
+  // Plan Management
+  const PLAN_DEFS = [
+    { key: 'none',     label: 'No Plan (Free)',  credits: 0,   color: '#475569', icon: '⭕', price: '$0/mo' },
+    { key: 'starter',  label: 'Starter',         credits: 100, color: '#00F0FF', icon: '🌱', price: '$20/mo' },
+    { key: 'pro',      label: 'Pro',             credits: 300, color: '#7C3AED', icon: '🚀', price: '$45/mo' },
+    { key: 'pro_plus', label: 'Pro+',            credits: 600, color: '#F59E0B', icon: '⭐', price: '$100/mo' },
+  ];
+  const currentPlanKey = sub?.plan || 'none';
+  document.getElementById('modal-plan').innerHTML = \`
+    <div style="margin-bottom:18px;padding:16px;background:#0B0F19;border-radius:12px;border:1px solid #1E293B">
+      <div style="font-size:11px;color:#64748B;font-weight:700;margin-bottom:6px">CURRENT PLAN</div>
+      <div style="display:flex;align-items:center;gap:10px">
+        \${planBadge(currentPlanKey, sub?.status)}
+        \${statusBadge(sub?.status || 'inactive')}
+        <span style="font-size:12px;color:#64748B">Period end: \${sub?.current_period_end ? new Date(sub.current_period_end).toLocaleDateString() : '—'}</span>
+      </div>
+    </div>
+
+    <div style="font-size:13px;font-weight:700;margin-bottom:12px;color:#E2E8F0">Select New Plan</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:18px" id="plan-selector">
+      \${PLAN_DEFS.map(p => \`
+        <div onclick="selectPlanCard('\${p.key}')" id="plancard-\${p.key}" style="
+          cursor:pointer;border:2px solid \${p.key === currentPlanKey ? p.color : '#1E293B'};
+          border-radius:12px;padding:14px;background:\${p.key === currentPlanKey ? p.color + '15' : '#0B0F19'};
+          transition:all .15s;position:relative
+        ">
+          \${p.key === currentPlanKey ? \`<div style="position:absolute;top:8px;right:8px;font-size:10px;background:\${p.color};color:#020617;padding:2px 6px;border-radius:4px;font-weight:700">CURRENT</div>\` : ''}
+          <div style="font-size:20px;margin-bottom:6px">\${p.icon}</div>
+          <div style="font-weight:800;color:\${p.color};font-size:14px">\${p.label}</div>
+          <div style="font-size:12px;color:#64748B;margin-top:2px">\${p.price}</div>
+          <div style="font-size:12px;color:#94A3B8;margin-top:6px">\${p.credits > 0 ? p.credits + ' credits / period' : 'No credits'}</div>
+        </div>
+      \`).join('')}
+    </div>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:18px">
+      <div>
+        <label style="display:block;font-size:12px;color:#94A3B8;font-weight:600;margin-bottom:6px">Account Status</label>
+        <select class="input" id="plan-status-select" onchange="updatePlanSummary()" style="cursor:pointer">
+          <option value="active">Active (full access)</option>
+          <option value="trialing">Trialing</option>
+          <option value="inactive">Inactive (no access)</option>
+          <option value="cancelled">Cancelled</option>
+          <option value="expired">Expired</option>
+        </select>
+      </div>
+      <div style="display:flex;align-items:center;gap:10px;padding-top:22px">
+        <input type="checkbox" id="plan-grant-credits" checked onchange="updatePlanSummary()" style="width:16px;height:16px;cursor:pointer;accent-color:#00F0FF"/>
+        <label for="plan-grant-credits" style="font-size:13px;color:#E2E8F0;cursor:pointer">Grant plan credits to user</label>
+      </div>
+    </div>
+
+    <div style="background:#00F0FF10;border:1px solid #00F0FF30;border-radius:8px;padding:12px;margin-bottom:16px;font-size:12px;color:#94A3B8" id="plan-summary">
+      Select a plan above to see a summary of changes.
+    </div>
+
+    <button class="btn btn-primary" style="width:100%;justify-content:center;padding:11px" onclick="applyPlanChange()">
+      Apply Plan Change
+    </button>
+  \`;
+
+  window._selectedPlan = currentPlanKey;
+  document.getElementById('plan-status-select').value = sub?.status === 'active' || sub?.status === 'trialing' ? sub.status : 'active';
+  updatePlanSummary();
 
   // Strategies
   document.getElementById('modal-strategies').innerHTML = d.strategies.length === 0
@@ -1179,6 +1331,78 @@ function renderUserModal(d) {
         </tr>\`;
       }).join('')}
       </tbody></table>\`;
+}
+
+// ── Plan Management ───────────────────────────────────────────────────────────
+const PLAN_CREDITS_MAP = { none: 0, starter: 100, pro: 300, pro_plus: 600 };
+const PLAN_COLORS_MAP = { none: '#475569', starter: '#00F0FF', pro: '#7C3AED', pro_plus: '#F59E0B' };
+const PLAN_LABELS_MAP = { none: 'No Plan', starter: 'Starter', pro: 'Pro', pro_plus: 'Pro+' };
+
+function selectPlanCard(planKey) {
+  if (!window._selectedPlan) window._selectedPlan = 'none';
+  const oldKey = window._selectedPlan;
+  const allKeys = ['none', 'starter', 'pro', 'pro_plus'];
+  const colors = PLAN_COLORS_MAP;
+
+  allKeys.forEach(k => {
+    const el = document.getElementById('plancard-' + k);
+    if (!el) return;
+    if (k === planKey) {
+      el.style.borderColor = colors[k];
+      el.style.background = colors[k] + '20';
+    } else {
+      el.style.borderColor = '#1E293B';
+      el.style.background = '#0B0F19';
+    }
+  });
+
+  window._selectedPlan = planKey;
+  if (planKey === 'none') {
+    const sel = document.getElementById('plan-status-select');
+    if (sel) sel.value = 'inactive';
+    const cb = document.getElementById('plan-grant-credits');
+    if (cb) cb.checked = false;
+  }
+  updatePlanSummary();
+}
+
+function updatePlanSummary() {
+  const el = document.getElementById('plan-summary');
+  if (!el) return;
+  const plan = window._selectedPlan || 'none';
+  const status = document.getElementById('plan-status-select')?.value || 'active';
+  const grantCredits = document.getElementById('plan-grant-credits')?.checked;
+  const credits = PLAN_CREDITS_MAP[plan] || 0;
+  const color = PLAN_COLORS_MAP[plan];
+  const label = PLAN_LABELS_MAP[plan];
+
+  const creditsLine = grantCredits && credits > 0
+    ? '✅ Will grant <strong style="color:#00F0FF">' + credits + ' credits</strong> to the user energy balance'
+    : credits > 0 ? '⚠️ Credits will NOT be granted (checkbox unchecked)' : '⭕ No credits for this plan';
+  const periodLine = plan !== 'none' ? '<div style="color:#64748B;font-size:11px;margin-top:4px">Billing period set to today + 30 days</div>' : '';
+  el.innerHTML = \`
+    <div style="font-weight:700;color:\${color};margin-bottom:6px">→ \${label} · \${status}</div>
+    <div style="color:#94A3B8">\${creditsLine}</div>
+    \${periodLine}
+  \`;
+}
+
+async function applyPlanChange() {
+  if (!currentUserId) return;
+  const plan = window._selectedPlan || 'none';
+  const status = document.getElementById('plan-status-select')?.value || 'active';
+  const grantCredits = document.getElementById('plan-grant-credits')?.checked || false;
+  const label = PLAN_LABELS_MAP[plan];
+
+  if (!confirm(\`Change plan to \${label} (\${status})?\${grantCredits && PLAN_CREDITS_MAP[plan] > 0 ? \`\\nThis will also grant \${PLAN_CREDITS_MAP[plan]} credits to the user.\` : ''}\`)) return;
+
+  try {
+    const d = await api('POST', '/api/users/' + currentUserId + '/plan', { plan, status, grantCredits });
+    toast(\`Plan changed to \${label}\${d.credits_granted > 0 ? ' + ' + d.credits_granted + ' credits granted' : ''}\`, 'success');
+    openUserModal(currentUserId);
+    loadUsers();
+    loadStats();
+  } catch (e) { toast(e.message, 'error'); }
 }
 
 // ── User Actions ──────────────────────────────────────────────────────────────
@@ -1401,6 +1625,13 @@ function connectSSE() {
     const d = JSON.parse(e.data);
     addActivityEvent({ type: 'notification_sent', payload: d });
   });
+
+  evtSource.addEventListener('plan_changed', e => {
+    const d = JSON.parse(e.data);
+    addActivityEvent({ type: 'plan_changed', payload: d });
+    loadStats();
+    loadUsers();
+  });
 }
 
 function addActivityEvent(ev) {
@@ -1417,6 +1648,7 @@ function addActivityEvent(ev) {
     user_terminated: { icon: '🗑️', color: '#EF4444', label: 'Account terminated' },
     user_unsuspended: { icon: '✅', color: '#10B981', label: 'User unsuspended' },
     notification_sent: { icon: '🔔', color: '#3B82F6', label: 'Notification sent' },
+    plan_changed: { icon: '🎯', color: '#00F0FF', label: 'Plan changed' },
   };
   const cfg = icons[ev.type] || { icon: '📌', color: '#64748B', label: ev.type };
   const p = ev.payload;
