@@ -112,6 +112,36 @@ export class AIEngine {
     }
   }
 
+  /**
+   * Economy strategy generation using Gemini Flash.
+   * Used by the Credit Management Agent for non-Pro users.
+   * Produces the same JSON structure as generateStrategy.
+   */
+  async generateStrategyEconomy(context: any, prompt: string): Promise<AIResponse> {
+    aiLog('GEMINI-FLASH', `generateStrategyEconomy START (economy routing)`);
+    try {
+      const model = genAI.getGenerativeModel({ model: GEMINI_FLASH_MODEL });
+      const fullPrompt = [
+        'You are AdRoom AI Core Brain — a world-class marketing strategist.',
+        'Return ONLY valid JSON, no markdown, no code blocks.',
+        `Context: ${JSON.stringify(context)}`,
+        `Task: ${prompt}`,
+      ].join('\n\n');
+      const result = await model.generateContent(fullPrompt);
+      const response = await result.response;
+      const raw = response.text().trim();
+      const jsonMatch = raw.match(/```json?\s*([\s\S]*?)\s*```/);
+      const text = jsonMatch ? jsonMatch[1] : raw.replace(/^```json?\s*/i, '').replace(/```\s*$/i, '');
+      let parsedJson;
+      try { parsedJson = JSON.parse(text); } catch (_e) {}
+      aiLog('GEMINI-FLASH', 'generateStrategyEconomy SUCCESS', { textLength: text.length });
+      return { text, parsedJson };
+    } catch (error: any) {
+      aiLog('GEMINI-FLASH', 'generateStrategyEconomy ERROR', error.message);
+      throw new Error(`Gemini Economy Strategy Failed: ${error.message}`);
+    }
+  }
+
   async generateJson(prompt: string): Promise<any> {
     aiLog('GEMINI-FLASH', `generateJson START — model: ${GEMINI_FLASH_MODEL}`);
     try {
