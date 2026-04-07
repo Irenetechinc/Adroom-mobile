@@ -188,7 +188,7 @@ const WatermarkOverlay = ({ visible }: { visible: boolean }) => {
 
 // ─── Interactive Cards ────────────────────────────────────────────────────────
 
-const ProductIntakeCard = ({ onUpload, onManual, onWebsite, onBack, disabled }: { onUpload: () => void; onManual: () => void; onWebsite: () => void; onBack?: () => void; disabled?: boolean }) => (
+const ProductIntakeCard = ({ onUpload, onManual, onWebsite, onWebsiteUpgrade, isWebsiteRestricted, onBack, disabled }: { onUpload: () => void; onManual: () => void; onWebsite: () => void; onWebsiteUpgrade?: () => void; isWebsiteRestricted?: boolean; onBack?: () => void; disabled?: boolean }) => (
   <View style={[styles.card, disabled && styles.cardDisabled]}>
     <TouchableOpacity
       onPress={onUpload}
@@ -203,8 +203,20 @@ const ProductIntakeCard = ({ onUpload, onManual, onWebsite, onBack, disabled }: 
       <Text style={styles.cardSub}>AI will scan for attributes automatically</Text>
     </TouchableOpacity>
     <View style={{ flexDirection: 'row' }}>
-      <TouchableOpacity onPress={onWebsite} disabled={disabled} style={[styles.cardHalfBtn, { borderRightWidth: 1, borderRightColor: 'rgba(0,240,255,0.1)' }, disabled && { opacity: 0.4 }]}>
-        <Text style={styles.cardHalfText}>Connect Website</Text>
+      <TouchableOpacity
+        onPress={isWebsiteRestricted ? onWebsiteUpgrade : onWebsite}
+        disabled={disabled}
+        style={[
+          styles.cardHalfBtn,
+          { borderRightWidth: 1, borderRightColor: 'rgba(0,240,255,0.1)' },
+          disabled && { opacity: 0.4 },
+          isWebsiteRestricted && { opacity: 0.5 },
+        ]}
+      >
+        <Text style={[styles.cardHalfText, isWebsiteRestricted && { color: '#7C3AED' }]}>Connect Website</Text>
+        {isWebsiteRestricted && !disabled && (
+          <Text style={{ color: '#7C3AED', fontSize: 9, fontWeight: '800', marginTop: 2 }}>UPGRADE TO PRO</Text>
+        )}
       </TouchableOpacity>
       <TouchableOpacity onPress={onManual} disabled={disabled} style={[styles.cardHalfBtn, disabled && { opacity: 0.4 }]}>
         <Text style={styles.cardHalfText}>Manual Entry</Text>
@@ -805,6 +817,8 @@ export default function AgentChatScreen({ navigation, route }: Props) {
   } = useAgentStore();
 
   const { user } = useAuthStore();
+  const { subscription: userSubscription } = useEnergyStore();
+  const isProOrAboveUser = userSubscription?.status === 'active' && (userSubscription?.plan === 'pro' || userSubscription?.plan === 'pro_plus');
   const insets = useSafeAreaInsets();
   const flatListRef = useRef<FlatList>(null);
   const [historyLoaded, setHistoryLoaded] = useState(false);
@@ -934,7 +948,15 @@ export default function AgentChatScreen({ navigation, route }: Props) {
           </Text>
 
           {item.uiType === 'product_intake_form' && (
-            <ProductIntakeCard onUpload={handleImageUpload} onManual={handleManualEntry} onWebsite={handleWebsiteEntry} onBack={goBackToMenu} disabled={isDisabled} />
+            <ProductIntakeCard
+              onUpload={handleImageUpload}
+              onManual={handleManualEntry}
+              onWebsite={handleWebsiteEntry}
+              isWebsiteRestricted={!isProOrAboveUser}
+              onWebsiteUpgrade={() => navigation.navigate('Subscription', { scrollToPlan: 'pro' })}
+              onBack={goBackToMenu}
+              disabled={isDisabled}
+            />
           )}
           {item.uiType === 'website_intake_form' && (
             <WebsiteIntakeCard onSubmit={handleWebsiteIntake} onBack={goBackToMenu} disabled={isDisabled} />

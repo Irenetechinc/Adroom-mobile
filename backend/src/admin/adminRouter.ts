@@ -129,11 +129,12 @@ router.get('/api/users', auth, async (req, res) => {
     }
 
     const userIds = filtered.map(u => u.id);
-    const [energyRes, subRes, statusRes, stratRes] = await Promise.all([
+    const [energyRes, subRes, statusRes, stratRes, platformRes] = await Promise.all([
       sb.from('energy_accounts').select('user_id, balance_credits, lifetime_consumed').in('user_id', userIds),
       sb.from('subscriptions').select('user_id, plan, status, current_period_end').in('user_id', userIds),
       sb.from('user_status_overrides').select('user_id, status, reason, applied_at').in('user_id', userIds),
       sb.from('strategies').select('user_id').in('user_id', userIds),
+      sb.from('platform_configs').select('user_id, platform').in('user_id', userIds),
     ]);
 
     const energyMap: Record<string, any> = {};
@@ -144,6 +145,8 @@ router.get('/api/users', auth, async (req, res) => {
     (statusRes.data || []).forEach(s => { statusMap[s.user_id] = s; });
     const stratCount: Record<string, number> = {};
     (stratRes.data || []).forEach(s => { stratCount[s.user_id] = (stratCount[s.user_id] || 0) + 1; });
+    const platformCount: Record<string, number> = {};
+    (platformRes.data || []).forEach(p => { platformCount[p.user_id] = (platformCount[p.user_id] || 0) + 1; });
 
     const enriched = filtered.map(u => ({
       id: u.id,
@@ -156,6 +159,7 @@ router.get('/api/users', auth, async (req, res) => {
       override_status: statusMap[u.id]?.status || 'active',
       override_reason: statusMap[u.id]?.reason || null,
       strategy_count: stratCount[u.id] || 0,
+      connected_accounts: platformCount[u.id] || 0,
     }));
 
     res.json({ users: enriched, total: filtered.length, page, limit });
@@ -769,7 +773,7 @@ label{font-size:12px;color:#94A3B8;font-weight:600}
           <table>
             <thead>
               <tr>
-                <th>User</th><th>Plan</th><th>Status</th><th>Credits</th><th>Strategies</th><th>Joined</th><th>Actions</th>
+                <th>User</th><th>Plan</th><th>Status</th><th>Credits</th><th>Strategies</th><th>Connected</th><th>Joined</th><th>Actions</th>
               </tr>
             </thead>
             <tbody id="users-table-body">
@@ -1114,6 +1118,7 @@ function renderUsers(list) {
         <span style="color:#64748B;font-size:11px"> credits</span>
       </td>
       <td style="color:#94A3B8">\${u.strategy_count}</td>
+      <td style="color:#00F0FF;font-weight:600">\${u.connected_accounts || 0}</td>
       <td style="color:#64748B;font-size:11px">\${timeAgo(u.created_at)}</td>
       <td>
         <button class="btn btn-ghost btn-sm" onclick="openUserModal('\${u.id}')">View</button>

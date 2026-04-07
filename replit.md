@@ -112,6 +112,13 @@ Key tables:
 - `emotional_ownership` — Emotional category analysis
 - `narrative_snapshots` — GEO monitoring data
 
+## Recent Feature Additions
+- **Plan Gating**: "Sales" and "Leads" goals are Pro-only; "Connect Website" in ProductIntakeCard is Pro-only — shows dimmed UPGRADE TO PRO label and routes to Subscription screen
+- **MemPalace Integration**: `agentStore` saves every chat message to backend `/api/chat/history` (POST with `role`/`content`/`metadata`) and loads history from backend first, falling back to Supabase. Messages are mapped between agent format (text/sender/ui_type/ui_data) and backend format (content/role/metadata)
+- **Currency Sync**: `handleProductIntake` and `handleServiceIntake` in agentStore sync `currency`/`name`/`price` to `strategyCreationStore` so PaidEquivalentValue displays the correct currency symbol
+- **Admin Panel**: `/api/users` fetches `platform_configs` count per user (exposed as `connected_accounts`); admin HTML table now shows a "Connected" column in the user list (both thead and tbody row)
+- **First-launch Permissions**: `OnboardingScreen` requests notification and location permissions on first mount (iOS: alert/badge/sound/announcements; both platforms: foreground location). `expo-notifications` and `expo-location` added to dependencies and configured in `app.json` plugins with custom permission strings
+
 ## Running the Mobile App Locally
 ```bash
 # Install dependencies
