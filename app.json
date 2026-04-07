@@ -32,6 +32,21 @@
       "expo-secure-store",
       "expo-web-browser",
       [
+        "expo-notifications",
+        {
+          "icon": "./assets/icon.png",
+          "color": "#00F0FF",
+          "defaultChannel": "default"
+        }
+      ],
+      [
+        "expo-location",
+        {
+          "locationAlwaysAndWhenInUsePermission": "AdRoom uses your location to find local trends and optimize campaign targeting.",
+          "locationWhenInUsePermission": "AdRoom uses your location to find local trends and optimize campaign targeting."
+        }
+      ],
+      [
         "expo-build-properties",
         {
           "android": {

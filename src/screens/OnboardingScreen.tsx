@@ -1,5 +1,5 @@
 import React, { useEffect, useRef } from 'react';
-import { View, Text, TouchableOpacity, ScrollView, Dimensions, StyleSheet } from 'react-native';
+import { View, Text, TouchableOpacity, ScrollView, Dimensions, StyleSheet, Platform } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../types';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -8,6 +8,8 @@ import Animated, {
   FadeInDown, FadeInUp, useSharedValue, useAnimatedStyle,
   withRepeat, withTiming, withSequence, interpolate, Easing,
 } from 'react-native-reanimated';
+import * as Notifications from 'expo-notifications';
+import * as Location from 'expo-location';
 
 const { width, height } = Dimensions.get('window');
 
@@ -104,6 +106,26 @@ function FeatureRow({ icon: Icon, title, description, color, bg, border, delay }
 }
 
 export default function OnboardingScreen({ navigation }: Props) {
+  useEffect(() => {
+    (async () => {
+      try {
+        if (Platform.OS !== 'web') {
+          await Notifications.requestPermissionsAsync({
+            ios: {
+              allowAlert: true,
+              allowBadge: true,
+              allowSound: true,
+              allowAnnouncements: true,
+            },
+          });
+        }
+      } catch {}
+      try {
+        await Location.requestForegroundPermissionsAsync();
+      } catch {}
+    })();
+  }, []);
+
   return (
     <SafeAreaView style={styles.container}>
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scroll}>
