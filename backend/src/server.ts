@@ -1067,6 +1067,169 @@ app.get('/api/billing/flw-callback', async (req, res) => {
 });
 
 /**
+ * POST /api/billing/charge-card — charge card details directly via Flutterwave card API.
+ * User enters card details in-app; only OTP/3DS requires a redirect URL (returned as auth_url).
+ */
+app.post('/api/billing/charge-card', async (req, res) => {
+  try {
+    const supabase = getSupabaseClient(req as any);
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return res.status(401).json({ error: 'Unauthorized.' });
+
+    const { cardNumber, cvv, expiryMonth, expiryYear, fullname, type, id } = req.body;
+    if (!cardNumber || !cvv || !expiryMonth || !expiryYear || !fullname || !type || !id) {
+      return res.status(400).json({ error: 'cardNumber, cvv, expiryMonth, expiryYear, fullname, type, id required.' });
+    }
+
+    const plan = PLANS[id as keyof typeof PLANS];
+    const amount = type === 'subscription' ? (plan?.price_usd ?? 0) : (id === 'starter_topup' ? 5 : id === 'boost_topup' ? 10 : 20);
+    if (amount <= 0) return res.status(400).json({ error: 'Invalid plan/pack.' });
+
+    const txRef = flutterwaveService.generateTxRef('ADROOM');
+    const email = user.email || '';
+    const redirectUrl = `${process.env.EXPO_PUBLIC_API_URL || 'https://adroom.railway.app'}/api/billing/flw-callback?type=${type}&id=${id}&user_id=${user.id}&tx_ref=${txRef}`;
+
+    const chargeResult = await flutterwaveService.chargeCard({
+      cardNumber, cvv, expiryMonth, expiryYear,
+      email, fullname, amount,
+      currency: 'USD',
+      tx_ref: txRef,
+      redirect_url: redirectUrl,
+      enckey: process.env.FLW_ENCRYPTION_KEY || '',
+    });
+
+    if (chargeResult.status === 'success' && chargeResult.data?.status === 'successful') {
+      // Payment captured immediately — no 3DS needed
+      const transactionId = String(chargeResult.data.id);
+      const cardLast4 = chargeResult.data.card?.last_4digits;
+      const cardBrand = chargeResult.data.card?.type;
+      const cardToken = chargeResult.data.card?.token;
+      const svc = getServiceSupabaseClient();
+      if (type === 'subscription') {
+        await energyService.applySubscription(user.id, id, transactionId, txRef, cardToken, cardLast4, cardBrand, email);
+      } else {
+        const topupPack = TOPUP_PACKS[id as keyof typeof TOPUP_PACKS];
+        if (topupPack) await energyService.applyTopUp(user.id, topupPack.credits, transactionId, txRef);
+        if (cardToken) {
+          await svc.from('user_subscriptions').upsert({ user_id: user.id, flw_card_token: cardToken, flw_card_last4: cardLast4, flw_card_brand: cardBrand, billing_email: email }, { onConflict: 'user_id' });
+        }
+      }
+      return res.json({ success: true, mode: 'success', transaction_id: transactionId });
+    }
+
+    if (chargeResult.status === 'success' && chargeResult.meta?.authorization?.mode === 'redirect') {
+      return res.json({
+        success: true,
+        mode: 'redirect',
+        auth_url: chargeResult.meta.authorization.redirect,
+        tx_ref: txRef,
+      });
+    }
+
+    if (chargeResult.status === 'success' && chargeResult.meta?.authorization?.mode === 'pin') {
+      return res.json({ success: true, mode: 'pin', flw_ref: chargeResult.data?.flw_ref, tx_ref: txRef });
+    }
+
+    return res.status(402).json({ error: chargeResult.message || 'Card charge failed.', details: chargeResult });
+  } catch (err: any) {
+    console.error('[charge-card]', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * POST /api/billing/charge-card/validate-pin — validate OTP/PIN after pin charge
+ */
+app.post('/api/billing/charge-card/validate-pin', async (req, res) => {
+  try {
+    const supabase = getSupabaseClient(req as any);
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return res.status(401).json({ error: 'Unauthorized.' });
+
+    const { otp, flw_ref, type, id, tx_ref } = req.body;
+    if (!otp || !flw_ref) return res.status(400).json({ error: 'otp and flw_ref required.' });
+
+    const validationRes = await fetch('https://api.flutterwave.com/v3/validate-charge', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${process.env.FLW_SECRET_KEY || process.env.FLUTTERWAVE_SECRET_KEY}` },
+      body: JSON.stringify({ otp, flw_ref, type: 'card' }),
+    });
+    const validation: any = await validationRes.json();
+
+    if (validation.status === 'success' && validation.data?.status === 'successful') {
+      const transactionId = String(validation.data.id);
+      const cardLast4 = validation.data.card?.last_4digits;
+      const cardBrand = validation.data.card?.type;
+      const cardToken = validation.data.card?.token;
+      const email = user.email || '';
+      if (type === 'subscription') {
+        await energyService.applySubscription(user.id, id, transactionId, tx_ref, cardToken, cardLast4, cardBrand, email);
+      } else {
+        const topupPack = TOPUP_PACKS[id as keyof typeof TOPUP_PACKS];
+        if (topupPack) await energyService.applyTopUp(user.id, topupPack.credits, transactionId, tx_ref);
+      }
+      return res.json({ success: true, transaction_id: transactionId });
+    }
+
+    return res.status(402).json({ error: validation.message || 'OTP validation failed.' });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * GET /api/chat/history — fetch MemPalace conversation history for the current user
+ */
+app.get('/api/chat/history', async (req, res) => {
+  try {
+    const supabase = getSupabaseClient(req as any);
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return res.status(401).json({ error: 'Unauthorized.' });
+
+    const limit = parseInt(String(req.query.limit ?? '50'));
+    const svc = getServiceSupabaseClient();
+    const { data, error } = await svc
+      .from('ai_conversation_memory')
+      .select('id, role, content, metadata, created_at')
+      .eq('user_id', user.id)
+      .order('created_at', { ascending: false })
+      .limit(Math.min(limit, 200));
+
+    if (error) return res.status(500).json({ error: error.message });
+    res.json({ messages: (data || []).reverse() });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * POST /api/chat/history — save a message to MemPalace conversation memory
+ */
+app.post('/api/chat/history', async (req, res) => {
+  try {
+    const supabase = getSupabaseClient(req as any);
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return res.status(401).json({ error: 'Unauthorized.' });
+
+    const { role, content, metadata } = req.body;
+    if (!role || !content) return res.status(400).json({ error: 'role and content required.' });
+
+    const svc = getServiceSupabaseClient();
+    const { error } = await svc.from('ai_conversation_memory').insert({
+      user_id: user.id,
+      role,
+      content,
+      metadata: metadata ?? {},
+    });
+
+    if (error) return res.status(500).json({ error: error.message });
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
  * Remote Logging — receives logs from the Expo app and prints them to Railway terminal
  */
 app.post('/api/logs', (req, res) => {
