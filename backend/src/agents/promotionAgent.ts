@@ -283,7 +283,7 @@ Return JSON:
         }
     }
 
-    private async getEmotionalOwnership(category: string): Promise<any[]> {
+    protected async getEmotionalOwnership(category: string): Promise<any[]> {
         const { data } = await this.supabase
             .from('emotional_ownership')
             .select('*')

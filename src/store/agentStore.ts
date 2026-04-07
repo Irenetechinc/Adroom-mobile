@@ -10,6 +10,56 @@ import { ProductService } from '../services/product';
 import { StrategyService, GeneratedStrategy } from '../services/strategy';
 import { VisionService } from '../services/vision';
 import { IntegrityService } from '../services/integrity';
+import { useStrategyCreationStore } from './strategyCreationStore';
+
+const BACKEND_URL = process.env.EXPO_PUBLIC_API_URL || '';
+
+async function getAuthToken(): Promise<string | null> {
+  try {
+    const { data: { session } } = await supabase.auth.getSession();
+    return session?.access_token ?? null;
+  } catch {
+    return null;
+  }
+}
+
+async function memPalaceSave(_userId: string, text: string, sender: string, uiType?: string, uiData?: any): Promise<void> {
+  const token = await getAuthToken();
+  if (!token || !BACKEND_URL) return;
+  const role = sender === 'user' ? 'user' : 'assistant';
+  await fetch(`${BACKEND_URL}/api/chat/history`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      role,
+      content: text,
+      metadata: { ui_type: uiType, ui_data: uiData, sender },
+    }),
+  }).catch(() => {});
+}
+
+async function memPalaceLoad(_userId: string): Promise<any[] | null> {
+  const token = await getAuthToken();
+  if (!token || !BACKEND_URL) return null;
+  try {
+    const res = await fetch(`${BACKEND_URL}/api/chat/history`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    if (!Array.isArray(data.messages)) return null;
+    return data.messages.map((m: any) => ({
+      id: m.id,
+      text: m.content,
+      sender: m.role === 'user' ? 'user' : 'agent',
+      ui_type: m.metadata?.ui_type,
+      ui_data: m.metadata?.ui_data,
+      created_at: m.created_at,
+    }));
+  } catch {
+    return null;
+  }
+}
 
 type ExtendedProductDetails = ProductDetails & {
   id?: string;
@@ -63,6 +113,7 @@ interface AgentState {
   restoreSession: () => Promise<void>;
   startNewSession: () => Promise<void>;
   goBackToMenu: () => void;
+  dismissStrategyFlow: () => void;
   
   // Unified Connection Actions
   initiateConnection: (platform: string, fromFlow?: boolean) => void;
@@ -123,6 +174,7 @@ export const useAgentStore = create<AgentState>((set, get) => ({
                     ui_type: uiType,
                     ui_data: uiData
                 });
+                memPalaceSave(user.id, text, sender, uiType, uiData);
             }
         } catch (e) {
             console.error('Failed to save message:', e);
@@ -157,7 +209,12 @@ export const useAgentStore = create<AgentState>((set, get) => ({
 
   handleStrategyTypeSelection: (type: string) => {
     const { addMessage, setTyping } = get();
-    set({ flowState: type.toUpperCase() === 'PRODUCT' ? 'PRODUCT_INTAKE' : 'SERVICE_INTAKE' as any, isInputDisabled: true });
+    const flowStateMap: Record<string, FlowState> = {
+      product: 'PRODUCT_INTAKE',
+      service: 'SERVICE_INTAKE',
+      brand: 'BRAND_INTAKE',
+    };
+    set({ flowState: flowStateMap[type] ?? 'PRODUCT_INTAKE', isInputDisabled: true });
     
     addMessage(`${type.toUpperCase()} Strategy`, 'user');
     setTyping(true);
@@ -211,6 +268,13 @@ export const useAgentStore = create<AgentState>((set, get) => ({
 
         const productId = await ProductService.saveProduct(validatedData);
         updateProductDetails({ ...validatedData, id: productId });
+        useStrategyCreationStore.getState().setProductData({
+          name: validatedData.name || '',
+          description: validatedData.description || '',
+          currency: (validatedData as any).currency || 'USD',
+          price: String((validatedData as any).price || ''),
+          category: (validatedData as any).category || '',
+        });
         set({ flowState: 'GOAL_SELECTION', isInputDisabled: true });
         
         setTimeout(() => {
@@ -254,6 +318,13 @@ export const useAgentStore = create<AgentState>((set, get) => ({
             baseImageUri: '' 
         });
         updateProductDetails({ ...validatedData, id: serviceId });
+        useStrategyCreationStore.getState().setProductData({
+          name: validatedData.name || '',
+          description: validatedData.description || '',
+          currency: validatedData.currency || 'USD',
+          price: String(validatedData.price || ''),
+          category: validatedData.category || '',
+        });
         set({ flowState: 'GOAL_SELECTION', isInputDisabled: true });
         
         setTimeout(() => {
@@ -346,7 +417,7 @@ export const useAgentStore = create<AgentState>((set, get) => ({
 
         if (products.length > 0) {
             addMessage(
-                `Successfully scraped ${products.length} product${products.length > 1 ? 's' : ''} from your website! Here are the details I found:`,
+                `Successfully discovered ${products.length} product${products.length > 1 ? 's' : ''} from your website! Here are the details I found:`,
                 'agent'
             );
             addMessage(
@@ -579,6 +650,39 @@ export const useAgentStore = create<AgentState>((set, get) => ({
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
 
+    const activeInteractiveTypes = [
+      'strategy_type_selection', 'product_intake_form', 'product_manual_form',
+      'service_intake_form', 'brand_intake_form', 'goal_selection',
+      'duration_selection', 'strategy_comparison', 'facebook_connect',
+      'page_selection', 'retry_action',
+    ];
+
+    const processRows = (rows: any[]) => {
+      const filtered = rows.filter((m: any) => m.ui_type !== 'session_restore');
+      if (filtered.length === 0) return null;
+      const lastMessage = filtered[filtered.length - 1];
+      const isCompleted = lastMessage.ui_type === 'completion_card';
+      if (isCompleted) return 'completed' as const;
+      const loadedMessages: ChatMessage[] = filtered.map((m: any) => ({
+        id: m.id,
+        text: m.text,
+        sender: m.sender as 'user' | 'agent',
+        timestamp: new Date(m.created_at).getTime(),
+        imageUri: m.image_uri,
+        uiType: m.ui_type,
+        uiData: m.ui_data,
+      }));
+      const needsDisabled = activeInteractiveTypes.includes(lastMessage.ui_type);
+      return { messages: loadedMessages, needsDisabled };
+    };
+
+    const memHistory = await memPalaceLoad(user.id);
+    if (memHistory && memHistory.length > 0) {
+      const result = processRows(memHistory);
+      if (result === 'completed') { await get().startNewSession(); return; }
+      if (result) { set({ messages: result.messages, isTyping: false, isInputDisabled: result.needsDisabled }); return; }
+    }
+
     const { data } = await supabase
       .from('chat_history')
       .select('*')
@@ -586,42 +690,12 @@ export const useAgentStore = create<AgentState>((set, get) => ({
       .order('created_at', { ascending: true });
 
     if (data && data.length > 0) {
-      // Filter out any previous session_restore messages so they don't show again
-      const filtered = data.filter((m: any) => m.ui_type !== 'session_restore');
-      const lastMessage = filtered.length > 0 ? filtered[filtered.length - 1] : data[data.length - 1];
-      const isCompleted = lastMessage.ui_type === 'completion_card';
-
-      if (!isCompleted) {
-        // Restore all messages directly — no modal, just pick up where we left off
-        const loadedMessages: ChatMessage[] = filtered.map((m: any) => ({
-          id: m.id,
-          text: m.text,
-          sender: m.sender as 'user' | 'agent',
-          timestamp: new Date(m.created_at).getTime(),
-          imageUri: m.image_uri,
-          uiType: m.ui_type,
-          uiData: m.ui_data,
-        }));
-
-        const activeInteractiveTypes = [
-          'strategy_type_selection', 'product_intake_form', 'product_manual_form',
-          'service_intake_form', 'brand_intake_form', 'goal_selection',
-          'duration_selection', 'strategy_comparison', 'facebook_connect',
-          'page_selection', 'retry_action',
-        ];
-        const needsDisabled = activeInteractiveTypes.includes(lastMessage.ui_type);
-
-        set({
-          messages: loadedMessages,
-          isTyping: false,
-          isInputDisabled: needsDisabled,
-        });
-      } else {
-        await get().startNewSession();
-      }
-    } else {
-      await get().startNewSession();
+      const result = processRows(data);
+      if (result === 'completed') { await get().startNewSession(); return; }
+      if (result) { set({ messages: result.messages, isTyping: false, isInputDisabled: result.needsDisabled }); return; }
     }
+
+    await get().startNewSession();
   },
 
   restoreSession: async () => {
@@ -705,6 +779,17 @@ export const useAgentStore = create<AgentState>((set, get) => ({
     });
     startStrategyFlow();
   },
+
+  dismissStrategyFlow: () => {
+    const { addMessage } = get();
+    set({ flowState: 'IDLE', isInputDisabled: false, isTyping: false });
+    addMessage(
+      "No problem! Whenever you're ready to create a strategy, just let me know.",
+      'agent',
+      undefined,
+      'create_strategy_prompt'
+    );
+  },
   
   // --- Unified Connection Flow ---
 
@@ -777,9 +862,18 @@ export const useAgentStore = create<AgentState>((set, get) => ({
               } else {
                   addMessage(`Connected, but no ${platform} accounts were found.`, 'agent');
               }
+          } else {
+              set({ isTyping: false, connectionState: 'IDLE', isInputDisabled: false });
+              addMessage(
+                  `${platform.charAt(0).toUpperCase() + platform.slice(1)} connection was cancelled. You can try again or connect a different account.`,
+                  'agent',
+                  undefined,
+                  'facebook_connect',
+                  { platform }
+              );
           }
       } catch (error: any) {
-          set({ isTyping: false });
+          set({ isTyping: false, connectionState: 'IDLE', isInputDisabled: false });
           addMessage(`${platform.toUpperCase()} connection failed: ${error.message}`, 'agent', undefined, 'retry_action', { action: 'LOGIN', data: platform });
       }
   },

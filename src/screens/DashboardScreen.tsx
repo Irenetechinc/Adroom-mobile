@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { View, Text, ScrollView, RefreshControl, TouchableOpacity, StyleSheet } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
@@ -7,86 +7,116 @@ import { RootStackParamList } from '../types';
 import { supabase } from '../services/supabase';
 import { useAuthStore } from '../store/authStore';
 import Animated, { FadeInDown, FadeInRight } from 'react-native-reanimated';
-
 import { DrawerActions } from '@react-navigation/native';
 import {
   Zap, AlertTriangle, TrendingUp, Plus, Activity,
-  Target, Eye, MousePointer, Menu, RefreshCw,
+  Target, Eye, MousePointer, Menu, RefreshCw, Crown, Bot, Wifi,
 } from 'lucide-react-native';
+import { useEnergyStore, PLAN_DETAILS } from '../store/energyStore';
 
+interface AgentTask {
+  id: string;
+  agent_type: string;
+  platform: string;
+  status: string;
+  strategy_id?: string;
+  started_at?: string;
+  strategy_name?: string;
+}
 
 export default function DashboardScreen() {
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const { session } = useAuthStore();
   const insets = useSafeAreaInsets();
+  const { account, subscription, fetchEnergy } = useEnergyStore();
 
   const [activeStrategies, setActiveStrategies] = useState<any[]>([]);
   const [alerts, setAlerts] = useState<any[]>([]);
-  const [interventions, setInterventions] = useState<any[]>([]);
+  const [activeAgentTasks, setActiveAgentTasks] = useState<AgentTask[]>([]);
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
-
-  const [stats, setStats] = useState({
-    reach: 0,
-    engagements: 0,
-    conversations: 0,
-    activeCount: 0
-  });
+  const agentSubRef = useRef<any>(null);
 
   const fetchData = async () => {
     if (!session?.user) return;
     setLoading(true);
     try {
+      const [strategiesRes, logsRes, tasksRes] = await Promise.all([
+        supabase
+          .from('strategy_memory')
+          .select('*')
+          .eq('user_id', session.user.id)
+          .eq('status', 'active')
+          .order('created_at', { ascending: false }),
+        supabase
+          .from('ipe_intelligence_log')
+          .select('*')
+          .gte('priority', 1)
+          .order('timestamp', { ascending: false })
+          .limit(5),
+        supabase
+          .from('agent_tasks')
+          .select('id, agent_type, platform, status, strategy_id, started_at')
+          .eq('user_id', session.user.id)
+          .in('status', ['running', 'pending'])
+          .order('started_at', { ascending: false })
+          .limit(8),
+      ]);
 
-      const { data: strategies } = await supabase
-        .from('strategy_memory')
-        .select('*')
-        .eq('user_id', session.user.id)
-        .eq('status', 'active')
-        .order('created_at', { ascending: false });
-      setActiveStrategies(strategies || []);
+      setActiveStrategies(strategiesRes.data || []);
+      setAlerts(logsRes.data || []);
 
-      const { data: ipeLogs } = await supabase
-        .from('ipe_intelligence_log')
-        .select('*')
-        .gte('priority', 1)
-        .order('timestamp', { ascending: false })
-        .limit(5);
-      setAlerts(ipeLogs || []);
+      const tasks: AgentTask[] = (tasksRes.data || []).map((t: any) => ({
+        ...t,
+        strategy_name: strategiesRes.data?.find((s: any) => s.strategy_id === t.strategy_id)?.strategy_name ?? null,
+      }));
+      setActiveAgentTasks(tasks);
     } catch (e) {
       console.error('Dashboard error:', e);
-
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
   };
 
-  useEffect(() => { fetchData(); }, [session]);
-  const onRefresh = () => { setRefreshing(true); fetchData(); };
+  // Realtime agent task subscription
+  useEffect(() => {
+    if (!session?.user) return;
+    const channel = supabase
+      .channel('agent_tasks_live')
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'agent_tasks',
+          filter: `user_id=eq.${session.user.id}`,
+        },
+        () => { fetchData(); },
+      )
+      .subscribe();
+    agentSubRef.current = channel;
+    return () => { supabase.removeChannel(channel); };
+  }, [session?.user?.id]);
 
+  useEffect(() => { fetchData(); fetchEnergy(); }, [session]);
+  const onRefresh = () => { setRefreshing(true); fetchData(); fetchEnergy(); };
 
   const totalImpressions = activeStrategies.reduce((a, s) => a + (s.total_impressions || 0), 0);
   const totalClicks = activeStrategies.reduce((a, s) => a + (s.total_clicks || 0), 0);
   const totalConversions = activeStrategies.reduce((a, s) => a + (s.total_conversions || 0), 0);
 
-
-  const InterventionCard = ({ item }: { item: any }) => (
-    <View className="bg-adroom-card p-4 rounded-xl border border-adroom-neon/10 mb-3">
-      <View className="flex-row items-center mb-2">
-        <Activity size={14} color="#00F0FF" />
-        <Text className="text-adroom-neon text-[10px] font-bold uppercase ml-2">Agent Intervention</Text>
-      </View>
-      <Text className="text-white font-bold text-sm mb-1">{item.action_taken}</Text>
-      <Text className="text-adroom-text-muted text-xs leading-4">{item.problem_detected}</Text>
-      <Text className="text-adroom-text-muted/40 text-[10px] mt-2 italic">Strategy: {item.strategies?.title}</Text>
-    </View>
-  );
+  const agentLabel = (type: string) => {
+    const map: Record<string, string> = {
+      sales: 'Sales Agent', content: 'Content Agent',
+      engagement: 'Engagement Agent', analytics: 'Analytics Agent',
+      optimization: 'Optimization Agent',
+    };
+    return map[type?.toLowerCase()] ?? `${type} Agent`;
+  };
 
   return (
-
     <SafeAreaView style={styles.safe} edges={['top']}>
-      {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity onPress={() => navigation.dispatch(DrawerActions.openDrawer())} style={styles.menuBtn}>
           <Menu color="#E2E8F0" size={22} />
@@ -94,13 +124,11 @@ export default function DashboardScreen() {
         <View style={{ flex: 1 }}>
           <Text style={styles.headerLabel}>AdRoom AI</Text>
           <Text style={styles.headerTitle}>Dashboard</Text>
-
         </View>
         <TouchableOpacity onPress={fetchData} style={styles.refreshBtn}>
           <RefreshCw size={18} color={loading ? '#00F0FF' : '#64748B'} />
         </TouchableOpacity>
       </View>
-
 
       <ScrollView
         style={{ flex: 1 }}
@@ -116,6 +144,81 @@ export default function DashboardScreen() {
           </Text>
           <Text style={styles.statusCount}>{activeStrategies.length} active</Text>
         </Animated.View>
+
+        {/* Real-time Agent Activity Panel */}
+        {activeAgentTasks.length > 0 && (
+          <Animated.View entering={FadeInDown.delay(110).springify()} style={styles.agentPanel}>
+            <View style={styles.agentPanelHeader}>
+              <Wifi size={13} color="#00F0FF" />
+              <Text style={styles.agentPanelTitle}>AI Agents Working Now</Text>
+              <View style={styles.agentLiveDot} />
+              <Text style={styles.agentLiveText}>LIVE</Text>
+            </View>
+            {activeAgentTasks.map((task) => (
+              <View key={task.id} style={styles.agentTaskRow}>
+                <View style={styles.agentAvatarSmall}>
+                  <Bot size={13} color="#00F0FF" />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.agentTaskLabel}>{agentLabel(task.agent_type)}</Text>
+                  <Text style={styles.agentTaskSub}>
+                    {task.platform ? `${task.platform}` : 'Running'}{task.strategy_name ? ` · ${task.strategy_name}` : ''}
+                  </Text>
+                </View>
+                <View style={[styles.agentStatusBadge, task.status === 'running' ? styles.agentRunning : styles.agentPending]}>
+                  <Text style={[styles.agentStatusText, task.status === 'running' ? { color: '#10B981' } : { color: '#F59E0B' }]}>
+                    {task.status === 'running' ? '● Running' : '◌ Pending'}
+                  </Text>
+                </View>
+              </View>
+            ))}
+          </Animated.View>
+        )}
+
+        {/* Energy Widget */}
+        {(() => {
+          const balance = parseFloat(String(account?.balance_credits ?? '0'));
+          const plan = subscription?.plan ?? 'none';
+          const planInfo = PLAN_DETAILS[plan as keyof typeof PLAN_DETAILS];
+          const maxCredits = planInfo?.credits || 100;
+          const pct = Math.min(1, balance / Math.max(maxCredits, 1));
+          const barColor = pct > 0.5 ? '#00F0FF' : pct > 0.2 ? '#F59E0B' : '#EF4444';
+          const isLow = balance < 10;
+          return (
+            <Animated.View entering={FadeInDown.delay(120).springify()}>
+              <TouchableOpacity
+                onPress={() => navigation.navigate('Subscription')}
+                activeOpacity={0.85}
+                style={[styles.energyCard, isLow && { borderColor: '#F59E0B40' }]}
+              >
+                <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                    <Zap size={14} color={barColor} />
+                    <Text style={{ color: '#64748B', fontSize: 11, fontWeight: '600', textTransform: 'uppercase', letterSpacing: 0.8 }}>AdRoom Energy</Text>
+                  </View>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                    <Crown size={11} color={planInfo?.color ?? '#64748B'} />
+                    <Text style={{ color: planInfo?.color ?? '#64748B', fontSize: 11, fontWeight: '700' }}>{planInfo?.name ?? 'No Plan'}</Text>
+                    {isLow && <Text style={{ color: '#F59E0B', fontSize: 10, fontWeight: '600', marginLeft: 4 }}>Low!</Text>}
+                  </View>
+                </View>
+                <View style={{ flexDirection: 'row', alignItems: 'flex-end', gap: 4, marginBottom: 6 }}>
+                  <Text style={{ color: barColor, fontSize: 28, fontWeight: '900', letterSpacing: -1 }}>{balance.toFixed(1)}</Text>
+                  <Text style={{ color: '#64748B', fontSize: 13, marginBottom: 3 }}>credits</Text>
+                </View>
+                <View style={{ height: 5, backgroundColor: '#1E293B', borderRadius: 3, overflow: 'hidden' }}>
+                  <View style={{ width: `${pct * 100}%`, height: '100%', backgroundColor: barColor, borderRadius: 3 }} />
+                </View>
+                {balance <= 0 && (
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 8, backgroundColor: '#EF444415', borderRadius: 6, padding: 6 }}>
+                    <AlertTriangle size={12} color="#EF4444" />
+                    <Text style={{ color: '#EF4444', fontSize: 11 }}>AI features paused — tap to top up</Text>
+                  </View>
+                )}
+              </TouchableOpacity>
+            </Animated.View>
+          );
+        })()}
 
         {/* Stats Row */}
         <Animated.View entering={FadeInDown.delay(150).springify()} style={styles.statsRow}>
@@ -160,7 +263,6 @@ export default function DashboardScreen() {
               <Text style={styles.sectionTitle}>Active Strategies</Text>
             </View>
             <Text style={styles.sectionCount}>{activeStrategies.length}</Text>
-
           </View>
 
           {activeStrategies.length > 0 ? (
@@ -178,20 +280,30 @@ export default function DashboardScreen() {
                     </View>
                     <View style={[
                       styles.strategyBadge,
-                      { backgroundColor: strategy.strategy_version === 'paid' ? 'rgba(112,0,255,0.15)' : 'rgba(16,185,129,0.15)' }
+                      { backgroundColor: strategy.strategy_version === 'paid' ? 'rgba(112,0,255,0.15)' : 'rgba(16,185,129,0.15)' },
                     ]}>
                       <View style={[
                         styles.strategyBadgeDot,
-                        { backgroundColor: strategy.strategy_version === 'paid' ? '#7000FF' : '#10B981' }
+                        { backgroundColor: strategy.strategy_version === 'paid' ? '#7000FF' : '#10B981' },
                       ]} />
                       <Text style={[
                         styles.strategyBadgeText,
-                        { color: strategy.strategy_version === 'paid' ? '#A78BFA' : '#34D399' }
+                        { color: strategy.strategy_version === 'paid' ? '#A78BFA' : '#34D399' },
                       ]}>
                         {strategy.strategy_version?.toUpperCase()}
                       </Text>
                     </View>
                   </View>
+
+                  {/* Per-strategy active agent indicator */}
+                  {activeAgentTasks.filter(t => t.strategy_id === strategy.strategy_id).map(task => (
+                    <View key={task.id} style={styles.strategyAgentRow}>
+                      <Bot size={11} color="#00F0FF" />
+                      <Text style={styles.strategyAgentText}>
+                        {agentLabel(task.agent_type)} · {task.platform || 'Active'}
+                      </Text>
+                    </View>
+                  ))}
 
                   <View style={styles.strategyStats}>
                     {[
@@ -206,7 +318,6 @@ export default function DashboardScreen() {
                     ))}
                   </View>
 
-                  {/* Live indicator */}
                   <View style={styles.liveIndicator}>
                     <View style={styles.liveDot} />
                     <Text style={styles.liveText}>AI Monitor Active</Text>
@@ -219,11 +330,9 @@ export default function DashboardScreen() {
               <Zap size={32} color="#1E293B" />
               <Text style={styles.emptyTitle}>No active strategies</Text>
               <Text style={styles.emptySubtitle}>Tap "Create New Strategy" to get started</Text>
-
             </View>
           )}
         </Animated.View>
-
 
         {/* Intelligence Feed */}
         <Animated.View entering={FadeInDown.delay(340).springify()} style={styles.section}>
@@ -235,7 +344,6 @@ export default function DashboardScreen() {
           </View>
 
           <View style={styles.alertsCard}>
-
             {alerts.length > 0 ? (
               alerts.map((alert, i) => (
                 <View key={alert.id} style={[styles.alertItem, i < alerts.length - 1 && styles.alertBorder]}>
@@ -252,12 +360,10 @@ export default function DashboardScreen() {
                 </View>
               ))
             ) : (
-
               <View style={styles.noAlerts}>
                 <Activity size={20} color="#1E293B" />
                 <Text style={styles.noAlertsText}>No intelligence alerts detected</Text>
               </View>
-
             )}
           </View>
         </Animated.View>
@@ -286,14 +392,51 @@ const styles = StyleSheet.create({
     flexDirection: 'row', alignItems: 'center',
     backgroundColor: '#151B2B', borderRadius: 12,
     borderWidth: 1, borderColor: '#1E293B',
-    paddingHorizontal: 14, paddingVertical: 10, marginBottom: 12,
+    paddingHorizontal: 14, paddingVertical: 10, marginBottom: 10,
   },
   statusDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: '#10B981', marginRight: 8 },
   statusText: { flex: 1, color: '#94A3B8', fontSize: 13, fontWeight: '500' },
   statusCount: { color: '#00F0FF', fontSize: 13, fontWeight: '700' },
-  statsRow: {
-    flexDirection: 'row', gap: 8, marginBottom: 16,
+  agentPanel: {
+    backgroundColor: 'rgba(0,240,255,0.04)', borderRadius: 14,
+    borderWidth: 1, borderColor: 'rgba(0,240,255,0.18)', marginBottom: 10, overflow: 'hidden',
   },
+  agentPanelHeader: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    paddingHorizontal: 14, paddingTop: 12, paddingBottom: 8,
+    borderBottomWidth: 1, borderBottomColor: 'rgba(0,240,255,0.1)',
+  },
+  agentPanelTitle: { flex: 1, color: '#00F0FF', fontWeight: '700', fontSize: 12, textTransform: 'uppercase', letterSpacing: 0.8 },
+  agentLiveDot: { width: 7, height: 7, borderRadius: 4, backgroundColor: '#EF4444' },
+  agentLiveText: { color: '#EF4444', fontSize: 10, fontWeight: '800', letterSpacing: 1 },
+  agentTaskRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 10,
+    paddingHorizontal: 14, paddingVertical: 10,
+    borderBottomWidth: 1, borderBottomColor: 'rgba(0,240,255,0.06)',
+  },
+  agentAvatarSmall: {
+    width: 28, height: 28, borderRadius: 8,
+    backgroundColor: 'rgba(0,240,255,0.1)',
+    alignItems: 'center', justifyContent: 'center',
+  },
+  agentTaskLabel: { color: '#E2E8F0', fontWeight: '700', fontSize: 13 },
+  agentTaskSub: { color: '#64748B', fontSize: 11, marginTop: 1 },
+  agentStatusBadge: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 20 },
+  agentRunning: { backgroundColor: 'rgba(16,185,129,0.1)' },
+  agentPending: { backgroundColor: 'rgba(245,158,11,0.1)' },
+  agentStatusText: { fontSize: 11, fontWeight: '700' },
+  strategyAgentRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    paddingHorizontal: 16, paddingVertical: 6,
+    backgroundColor: 'rgba(0,240,255,0.04)',
+    borderTopWidth: 1, borderTopColor: 'rgba(0,240,255,0.08)',
+  },
+  strategyAgentText: { color: '#00F0FF', fontSize: 11, fontWeight: '600' },
+  energyCard: {
+    backgroundColor: '#151B2B', borderRadius: 14, borderWidth: 1, borderColor: '#1E293B',
+    padding: 14, marginBottom: 12,
+  },
+  statsRow: { flexDirection: 'row', gap: 8, marginBottom: 16 },
   statCard: {
     flex: 1, backgroundColor: '#151B2B', borderRadius: 14,
     borderWidth: 1, borderColor: '#1E293B', padding: 14, alignItems: 'center',
@@ -312,9 +455,7 @@ const styles = StyleSheet.create({
   },
   ctaText: { flex: 1, color: '#0B0F19', fontWeight: '800', fontSize: 16 },
   section: { marginBottom: 20 },
-  sectionHeader: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12,
-  },
+  sectionHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 },
   sectionTitle: { color: '#FFFFFF', fontWeight: '700', fontSize: 16, marginLeft: 8 },
   sectionCount: {
     color: '#00F0FF', fontWeight: '700', fontSize: 13,
@@ -324,23 +465,15 @@ const styles = StyleSheet.create({
     backgroundColor: '#151B2B', borderRadius: 16,
     borderWidth: 1, borderColor: '#1E293B', marginBottom: 10, overflow: 'hidden',
   },
-  strategyCardTop: {
-    flexDirection: 'row', alignItems: 'flex-start',
-    padding: 16, paddingBottom: 12,
-  },
+  strategyCardTop: { flexDirection: 'row', alignItems: 'flex-start', padding: 16, paddingBottom: 12 },
   strategyName: { color: '#FFFFFF', fontWeight: '700', fontSize: 15, marginBottom: 4 },
   strategyMeta: { flexDirection: 'row', alignItems: 'center' },
   strategyMetaText: { color: '#64748B', fontSize: 12, textTransform: 'capitalize' },
   strategyMetaDot: { color: '#334155', marginHorizontal: 6, fontSize: 12 },
-  strategyBadge: {
-    flexDirection: 'row', alignItems: 'center',
-    paddingHorizontal: 10, paddingVertical: 4, borderRadius: 20,
-  },
+  strategyBadge: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 20 },
   strategyBadgeDot: { width: 5, height: 5, borderRadius: 2.5, marginRight: 5 },
   strategyBadgeText: { fontSize: 10, fontWeight: '700' },
-  strategyStats: {
-    flexDirection: 'row', borderTopWidth: 1, borderTopColor: '#1E293B',
-  },
+  strategyStats: { flexDirection: 'row', borderTopWidth: 1, borderTopColor: '#1E293B' },
   strategyStatItem: { flex: 1, alignItems: 'center', paddingVertical: 12 },
   strategyStatBorder: { borderRightWidth: 1, borderRightColor: '#1E293B' },
   strategyStatValue: { color: '#FFFFFF', fontWeight: '700', fontSize: 15, marginBottom: 2 },
