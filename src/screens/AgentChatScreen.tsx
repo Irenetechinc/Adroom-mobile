@@ -26,6 +26,8 @@ import {
 import { IntegrityService } from '../services/integrity';
 import { VisionService } from '../services/vision';
 import ImageUploadComponent from '../components/ImageUploadComponent';
+import { useEnergyStore } from '../store/energyStore';
+import { useStrategyCreationStore } from '../store/strategyCreationStore';
 
 // ─── Currency Data ────────────────────────────────────────────────────────────
 
@@ -335,36 +337,59 @@ const AttributeEditorCard = ({ product, onSave, onBack, disabled }: { product: a
 };
 
 const GOALS = [
-  { id: 'sales', name: 'Sales', icon: DollarSign, color: '#10B981' },
-  { id: 'awareness', name: 'Awareness', icon: Eye, color: '#3B82F6' },
-  { id: 'promotional', name: 'Promo', icon: Tag, color: '#F59E0B' },
-  { id: 'launch', name: 'Launch', icon: Rocket, color: '#8B5CF6' },
+  { id: 'sales', name: 'Sales', icon: DollarSign, color: '#10B981', proOnly: true },
+  { id: 'awareness', name: 'Awareness', icon: Eye, color: '#3B82F6', proOnly: false },
+  { id: 'promotional', name: 'Promo', icon: Tag, color: '#F59E0B', proOnly: false },
+  { id: 'launch', name: 'Launch', icon: Rocket, color: '#8B5CF6', proOnly: false },
+  { id: 'leads', name: 'Leads', icon: Users, color: '#06B6D4', proOnly: true },
 ];
 
-const GoalSelectionCard = ({ onSelect, onBack, disabled }: { onSelect: (goal: string) => void; onBack?: () => void; disabled?: boolean }) => (
-  <View style={{ marginTop: 8 }}>
-    <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
-      {GOALS.map((goal) => {
-        const Icon = goal.icon;
-        return (
-          <TouchableOpacity
-            key={goal.id}
-            onPress={() => onSelect(goal.id)}
-            disabled={disabled}
-            style={[styles.goalCard, disabled && styles.cardDisabled]}
-            activeOpacity={0.75}
-          >
-            <View style={[styles.goalIcon, { backgroundColor: `${goal.color}20` }]}>
-              <Icon size={20} color={disabled ? '#334155' : goal.color} />
-            </View>
-            <Text style={[styles.goalText, disabled && { color: '#334155' }]}>{goal.name}</Text>
-          </TouchableOpacity>
-        );
-      })}
+const GoalSelectionCard = ({ onSelect, onBack, disabled, navigation }: { onSelect: (goal: string) => void; onBack?: () => void; disabled?: boolean; navigation?: any }) => {
+  const { subscription } = useEnergyStore();
+  const plan = subscription?.plan ?? 'none';
+  const isProOrAbove = subscription?.status === 'active' && (plan === 'pro' || plan === 'pro_plus');
+
+  return (
+    <View style={{ marginTop: 8 }}>
+      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+        {GOALS.map((goal) => {
+          const Icon = goal.icon;
+          const isLocked = goal.proOnly && !isProOrAbove;
+          return (
+            <TouchableOpacity
+              key={goal.id}
+              onPress={() => {
+                if (disabled) return;
+                if (isLocked) {
+                  navigation?.navigate('Subscription', { scrollToPlan: 'pro' });
+                  return;
+                }
+                onSelect(goal.id);
+              }}
+              style={[
+                styles.goalCard,
+                disabled && styles.cardDisabled,
+                isLocked && { opacity: 0.55, borderColor: 'rgba(124,58,237,0.3)' },
+              ]}
+              activeOpacity={0.75}
+            >
+              <View style={[styles.goalIcon, { backgroundColor: `${goal.color}20` }]}>
+                <Icon size={20} color={disabled ? '#334155' : isLocked ? '#7C3AED' : goal.color} />
+              </View>
+              <Text style={[styles.goalText, disabled && { color: '#334155' }, isLocked && { color: '#7C3AED' }]}>
+                {goal.name}
+              </Text>
+              {isLocked && !disabled && (
+                <Text style={{ fontSize: 8, color: '#7C3AED', fontWeight: '800', marginTop: 1 }}>PRO</Text>
+              )}
+            </TouchableOpacity>
+          );
+        })}
+      </View>
+      <BackToMenuButton onPress={onBack!} disabled={disabled} />
     </View>
-    <BackToMenuButton onPress={onBack!} disabled={disabled} />
-  </View>
-);
+  );
+};
 
 const DURATIONS = [
   { days: 7, label: '7 Days', icon: Zap },
@@ -447,6 +472,18 @@ const StrategyTypeSelectionCard = ({ onSelect, onCancel, disabled }: { onSelect:
   </View>
 );
 
+const PaidEquivalentValue = ({ strategy }: { strategy: any }) => {
+  const { productData } = useStrategyCreationStore();
+  const currencyCode = productData?.currency ?? 'USD';
+  const currencySymbol = CURRENCIES.find(c => c.code === currencyCode)?.symbol ?? '$';
+  const value = strategy.estimated_outcomes?.paid_equivalent_value_usd || 0;
+  return (
+    <Text style={{ color: '#10B981', fontWeight: '700', fontSize: 16 }}>
+      {currencySymbol}{value.toLocaleString()}
+    </Text>
+  );
+};
+
 const StrategyPreviewCard = ({ strategy, onLaunch, onBack, disabled }: { strategy: any; onLaunch: () => void; onBack?: () => void; disabled?: boolean }) => (
   <View style={[styles.card, { padding: 14 }, disabled && styles.cardDisabled]}>
     <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 12 }}>
@@ -456,9 +493,7 @@ const StrategyPreviewCard = ({ strategy, onLaunch, onBack, disabled }: { strateg
       </View>
       <View style={{ alignItems: 'flex-end' }}>
         <Text style={styles.fieldLabel}>PAID EQUIVALENT</Text>
-        <Text style={{ color: '#10B981', fontWeight: '700', fontSize: 16 }}>
-          ${(strategy.estimated_outcomes?.paid_equivalent_value_usd || 0).toLocaleString()}
-        </Text>
+        <PaidEquivalentValue strategy={strategy} />
       </View>
     </View>
     <View style={styles.stratRationale}>
@@ -557,6 +592,7 @@ const ServiceIntakeCard = ({ onSubmit, onBack, disabled }: { onSubmit: (data: an
   const [price, setPrice] = useState('');
   const [currency, setCurrency] = useState('USD');
   const [description, setDescription] = useState('');
+  const [portfolioUrl, setPortfolioUrl] = useState('');
   const [images, setImages] = useState<{ uri: string; base64: string | null }[]>([]);
 
   const currencySymbol = CURRENCIES.find(c => c.code === currency)?.symbol || '$';
@@ -572,10 +608,24 @@ const ServiceIntakeCard = ({ onSubmit, onBack, disabled }: { onSubmit: (data: an
           <CurrencySelector value={currency} onChange={setCurrency} disabled={disabled} />
           <TextInput placeholder="Amount or rate (e.g. 100/hr)" placeholderTextColor="#475569" style={[styles.input, { flex: 1 }]} value={price} onChangeText={setPrice} editable={!disabled} />
         </View>
-        <TextInput placeholder="Service Description" placeholderTextColor="#475569" multiline style={[styles.input, { height: 70, marginBottom: 12 }]} value={description} onChangeText={setDescription} editable={!disabled} />
+        <TextInput placeholder="Service Description" placeholderTextColor="#475569" multiline style={[styles.input, { height: 70, marginBottom: 10 }]} value={description} onChangeText={setDescription} editable={!disabled} />
+        <TextInput
+          placeholder="Portfolio Link (optional — e.g. https://yourportfolio.com)"
+          placeholderTextColor="#475569"
+          keyboardType="url"
+          autoCapitalize="none"
+          style={[styles.input, { marginBottom: 12 }]}
+          value={portfolioUrl}
+          onChangeText={setPortfolioUrl}
+          editable={!disabled}
+        />
         {!disabled && <ImageUploadComponent onImagesSelected={setImages} maxImages={5} />}
         {!disabled && (
-          <TouchableOpacity onPress={() => onSubmit({ name, category, price: `${currencySymbol}${price}`, currency, description, images })} style={[styles.primaryBtn, { marginTop: 12 }]} disabled={!name.trim()}>
+          <TouchableOpacity
+            onPress={() => onSubmit({ name, category, price: `${currencySymbol}${price}`, currency, description, portfolioUrl: portfolioUrl.trim() || null, images })}
+            style={[styles.primaryBtn, { marginTop: 12 }]}
+            disabled={!name.trim()}
+          >
             <Text style={styles.primaryBtnText}>Save Service</Text>
           </TouchableOpacity>
         )}
@@ -905,7 +955,7 @@ export default function AgentChatScreen({ navigation, route }: Props) {
             <StrategyTypeSelectionCard onSelect={handleStrategyTypeSelection} onCancel={isDisabled ? undefined : dismissStrategyFlow} disabled={isDisabled} />
           )}
           {item.uiType === 'goal_selection' && (
-            <GoalSelectionCard onSelect={handleGoalSelection} onBack={goBackToMenu} disabled={isDisabled} />
+            <GoalSelectionCard onSelect={handleGoalSelection} onBack={goBackToMenu} disabled={isDisabled} navigation={navigation} />
           )}
           {item.uiType === 'duration_selection' && (
             <DurationSelectionCard onSelect={handleDurationSelection} recommended={item.uiData?.recommended} onBack={goBackToMenu} disabled={isDisabled} />

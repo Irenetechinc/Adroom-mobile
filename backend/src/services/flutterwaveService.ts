@@ -40,6 +40,46 @@ export class FlutterwaveService {
     };
   }
 
+  /**
+   * Directly charge a card (card-not-present flow).
+   * On 3DS auth_model, returns { mode: 'redirect', auth_url }
+   * On pin, returns { mode: 'pin' }
+   * On success, returns { mode: 'success', data }
+   */
+  async chargeCard(params: {
+    cardNumber: string;
+    cvv: string;
+    expiryMonth: string;
+    expiryYear: string;
+    email: string;
+    fullname: string;
+    amount: number;
+    currency: string;
+    tx_ref: string;
+    redirect_url: string;
+    enckey: string;
+  }): Promise<any> {
+    const payload = {
+      card_number: params.cardNumber.replace(/\s/g, ''),
+      cvv: params.cvv,
+      expiry_month: params.expiryMonth,
+      expiry_year: params.expiryYear,
+      currency: params.currency,
+      amount: params.amount,
+      email: params.email,
+      fullname: params.fullname,
+      tx_ref: params.tx_ref,
+      redirect_url: params.redirect_url,
+      encryptedcard: '',
+    };
+    const res = await fetch(`${FLW_BASE_URL}/charges?type=card`, {
+      method: 'POST',
+      headers: this.headers(),
+      body: JSON.stringify(payload),
+    });
+    return res.json();
+  }
+
   /** Verify a transaction by ID — used after user completes payment on the frontend */
   async verifyTransaction(transactionId: string): Promise<FlwChargeResponse> {
     const res = await fetch(`${FLW_BASE_URL}/transactions/${transactionId}/verify`, {
