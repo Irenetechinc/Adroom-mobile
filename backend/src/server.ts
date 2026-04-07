@@ -3,7 +3,7 @@ import bodyParser from 'body-parser';
 import dotenv from 'dotenv';
 import { EngagementService } from './services/engagement';
 import { CreativeService } from './services/creativeService';
-import { getSupabaseClient } from './config/supabase';
+import { getSupabaseClient, getServiceSupabaseClient } from './config/supabase';
 import { MemoryRetriever, type MemoryContext } from './services/memoryRetriever';
 import { DecisionEngine, type AIStrategy } from './services/decisionEngine';
 import { AIEngine } from './config/ai-models';
@@ -14,6 +14,7 @@ import { energyService, PLANS, TOPUP_PACKS } from './services/energyService';
 import { flutterwaveService } from './services/flutterwaveService';
 import { energyCheck, deductEnergyForUser } from './services/energyMiddleware';
 import { checkFeatureAccess, getSubscriptionGuard, SUBSCRIPTION_PLAN_LIMITS } from './services/subscriptionGuard';
+import adminRouter from './admin/adminRouter';
 
 dotenv.config();
 
@@ -49,6 +50,9 @@ function buildDeepLink(platform: OAuthPlatform, query: Record<string, string | u
 
 // Middleware to parse JSON bodies
 app.use(bodyParser.json({ limit: '10mb' }));
+
+// Admin panel
+app.use('/admin', adminRouter);
 
 // Root endpoint
 app.get('/', (_req, res) => {
@@ -1080,6 +1084,30 @@ app.post('/api/logs', (req, res) => {
   }
 
   res.status(200).json({ ok: true });
+});
+
+/**
+ * Push Token Registration — called by the Expo app to register device push tokens
+ */
+app.post('/api/push/register', async (req, res) => {
+  try {
+    const supabase = getSupabaseClient(req);
+    const { data: { user }, error: authErr } = await supabase.auth.getUser();
+    if (authErr || !user) return res.status(401).json({ error: 'Unauthorized' });
+
+    const { token, platform, app_version } = req.body;
+    if (!token || typeof token !== 'string') return res.status(400).json({ error: 'token required' });
+
+    const svc = getServiceSupabaseClient();
+    await svc.from('device_push_tokens').upsert(
+      { user_id: user.id, token, platform: platform || 'unknown', app_version: app_version || null, updated_at: new Date().toISOString() },
+      { onConflict: 'user_id,token' }
+    );
+
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 app.listen(PORT, () => {
