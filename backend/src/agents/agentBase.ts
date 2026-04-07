@@ -796,7 +796,7 @@ Return JSON:
         return Object.entries(freq).sort((a, b) => b[1] - a[1]).slice(0, 10).map(([t]) => t);
     }
 
-    async getEmotionalOwnership(category: string): Promise<any[]> {
+    protected async getEmotionalOwnership(category: string): Promise<any[]> {
         const { data } = await this.supabase
             .from('emotional_ownership')
             .select('*')

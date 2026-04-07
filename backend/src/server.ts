@@ -3,13 +3,18 @@ import bodyParser from 'body-parser';
 import dotenv from 'dotenv';
 import { EngagementService } from './services/engagement';
 import { CreativeService } from './services/creativeService';
-import { getSupabaseClient } from './config/supabase';
+import { getSupabaseClient, getServiceSupabaseClient } from './config/supabase';
 import { MemoryRetriever, type MemoryContext } from './services/memoryRetriever';
 import { DecisionEngine, type AIStrategy } from './services/decisionEngine';
 import { AIEngine } from './config/ai-models';
 import { ScraperService } from './services/scraperService';
 import { AgentOrchestrator } from './agents/agentOrchestrator';
 import { SchedulerService } from './services/scheduler';
+import { energyService, PLANS, TOPUP_PACKS } from './services/energyService';
+import { flutterwaveService } from './services/flutterwaveService';
+import { energyCheck, deductEnergyForUser } from './services/energyMiddleware';
+import { checkFeatureAccess, getSubscriptionGuard, SUBSCRIPTION_PLAN_LIMITS } from './services/subscriptionGuard';
+import adminRouter from './admin/adminRouter';
 
 dotenv.config();
 
@@ -45,6 +50,9 @@ function buildDeepLink(platform: OAuthPlatform, query: Record<string, string | u
 
 // Middleware to parse JSON bodies
 app.use(bodyParser.json({ limit: '10mb' }));
+
+// Admin panel
+app.use('/admin', adminRouter);
 
 // Root endpoint
 app.get('/', (_req, res) => {
@@ -275,12 +283,12 @@ app.delete('/api/platform-configs/:platform', async (req, res) => {
 });
 
 /**
- * Scrape Website for Products
+ * Scrape Website for Products — Pro/Pro+ only
  */
 app.post('/api/scrape', async (req, res) => {
     const { url } = req.body;
     const authHeader = req.headers.authorization;
-    
+
     if (!url) return res.status(400).json({ error: 'URL is required.' });
     if (!authHeader) return res.status(401).json({ error: 'Unauthorized.' });
 
@@ -288,6 +296,17 @@ app.post('/api/scrape', async (req, res) => {
         const supabase = getSupabaseClient(req as any);
         const { data: { user } } = await supabase.auth.getUser();
         if (!user) return res.status(401).json({ error: 'Invalid session.' });
+
+        // Enforce subscription: only Pro/Pro+ can scrape websites
+        const access = await checkFeatureAccess(user.id, 'websiteScraping', supabase);
+        if (!access.allowed) {
+            return res.status(403).json({
+                error: 'PLAN_LIMIT_EXCEEDED',
+                feature: 'websiteScraping',
+                plan: access.plan,
+                message: access.reason ?? 'Website scraping requires a Pro or Pro+ subscription.',
+            });
+        }
 
         const products = await scraperService.scrapeWebsite(url, user.id);
         res.status(200).json(products);
@@ -297,14 +316,91 @@ app.post('/api/scrape', async (req, res) => {
 });
 
 /**
- * Generate Professional Image
+ * Generate Professional Image — Pro/Pro+ only, subject to per-period limit
  */
 app.post('/api/creative/image', async (req, res) => {
     const { baseImageUri, productDetails } = req.body;
+    const authHeader = req.headers.authorization;
+    if (!authHeader) return res.status(401).json({ error: 'Unauthorized.' });
+
     try {
+        const supabase = getSupabaseClient(req as any);
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) return res.status(401).json({ error: 'Invalid session.' });
+
+        // Enforce subscription: check image asset limit for this billing period
+        const access = await checkFeatureAccess(user.id, 'image_asset', supabase);
+        if (!access.allowed) {
+            return res.status(403).json({
+                error: 'PLAN_LIMIT_EXCEEDED',
+                feature: 'image_asset',
+                plan: access.plan,
+                message: access.reason ?? 'Image generation limit reached for your plan.',
+                remaining: access.remaining ?? 0,
+            });
+        }
+
         const imageUrl = await creativeService.generateProfessionalImage(baseImageUri, productDetails);
-        res.status(200).json({ url: imageUrl });
+
+        // Deduct energy and record usage for limit tracking
+        await deductEnergyForUser(user.id, 'generate_image', { feature: 'image_asset' });
+
+        res.status(200).json({ url: imageUrl, remaining: (access.remaining ?? 1) - 1 });
     } catch (error: any) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+/**
+ * Generate AI Video Asset — Pro: 2/period, Pro+: 4/period, Starter: blocked
+ */
+app.post('/api/creative/generate-video-asset', async (req, res) => {
+    const { productName, prompt } = req.body;
+    const authHeader = req.headers.authorization;
+    if (!authHeader) return res.status(401).json({ error: 'Unauthorized.' });
+    if (!productName) return res.status(400).json({ error: 'productName is required.' });
+
+    try {
+        const supabase = getSupabaseClient(req as any);
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) return res.status(401).json({ error: 'Invalid session.' });
+
+        // Enforce subscription: check video asset limit for this billing period
+        const access = await checkFeatureAccess(user.id, 'video_asset', supabase);
+        if (!access.allowed) {
+            return res.status(403).json({
+                error: 'PLAN_LIMIT_EXCEEDED',
+                feature: 'video_asset',
+                plan: access.plan,
+                message: access.reason ?? 'Video generation limit reached for your plan.',
+                remaining: access.remaining ?? 0,
+            });
+        }
+
+        // Check energy before generating
+        const energyResult = await energyService.checkEnergy(user.id, 'generate_video_asset');
+        if (!energyResult.allowed) {
+            return res.status(402).json({
+                error: 'INSUFFICIENT_ENERGY',
+                message: `Video generation requires ${energyResult.required} energy credits. Current balance: ${energyResult.balance.toFixed(2)}.`,
+                balance: energyResult.balance,
+                required: energyResult.required,
+            });
+        }
+
+        const videoUrl = await creativeService.generateVideoAsset(
+            { name: productName, description: prompt ?? `Compelling marketing video for ${productName}` },
+            'general',
+        );
+
+        // Deduct energy and record usage for limit tracking
+        await deductEnergyForUser(user.id, 'generate_video_asset', { feature: 'video_asset' });
+
+        console.log(`[VideoAsset] Generated for user ${user.id} (${access.plan} plan). Remaining this period: ${(access.remaining ?? 1) - 1}`);
+
+        res.status(200).json({ url: videoUrl, remaining: (access.remaining ?? 1) - 1 });
+    } catch (error: any) {
+        console.error('[VideoAsset] Error:', error.message);
         res.status(500).json({ error: error.message });
     }
 });
@@ -344,7 +440,19 @@ app.post('/api/ai/scan-product', async (req, res) => {
   "description": "detailed product description"
 }`;
 
+    // Check energy before AI call
+    const energyCheck = await energyService.checkEnergy(user.id, 'scan_product');
+    if (!energyCheck.allowed) {
+      return res.status(402).json({
+        error: 'INSUFFICIENT_ENERGY',
+        message: `You need ${energyCheck.required} energy credits for product scanning. Current balance: ${energyCheck.balance.toFixed(2)}.`,
+        balance: energyCheck.balance, required: energyCheck.required,
+      });
+    }
+
     const result = await aiEngine.analyzeImage(imageBase64, scanPrompt);
+    // Deduct energy after successful call
+    await deductEnergyForUser(user.id, 'scan_product');
 
     if (result.parsedJson) {
       return res.status(200).json(result.parsedJson);
@@ -381,6 +489,31 @@ app.post('/api/ai/generate-strategy', async (req, res) => {
         console.log(`[Strategy] [${ts()}] STEP 1 — Authenticated user: ${user.id}`);
         console.log(`[Strategy] [${ts()}] STEP 2 — Retrieving memory context from all intelligence tables...`);
 
+        // CMA pre-flight: picks model based on tier and checks cap/cooldown
+        const { creditManagementAgent: cmaAgent } = await import('./services/creditManagementAgent');
+        const cmaResult = await cmaAgent.evaluate(user.id, 'generate_strategy');
+
+        if (cmaResult.decision === 'deny_tier') {
+          return res.status(403).json({ error: 'PLAN_REQUIRED', message: cmaResult.reason });
+        }
+        if (cmaResult.decision === 'deny_cap') {
+          return res.status(429).json({ error: 'DAILY_CAP_REACHED', message: cmaResult.reason });
+        }
+        if (cmaResult.decision === 'deny_cooldown') {
+          return res.status(429).json({ error: 'COOLDOWN_ACTIVE', message: cmaResult.reason });
+        }
+
+        // Balance check using CMA-determined cost (may be cheaper)
+        const energyCheck2 = await energyService.checkEnergy(user.id, 'generate_strategy');
+        if (energyCheck2.balance < cmaResult.credits) {
+          return res.status(402).json({
+            error: 'INSUFFICIENT_ENERGY',
+            message: `Strategy generation requires ${cmaResult.credits} credits. Current balance: ${energyCheck2.balance.toFixed(2)}.`,
+            balance: energyCheck2.balance, required: cmaResult.credits,
+          });
+        }
+
+        const economyMode = cmaResult.decision === 'allow_economy';
         const retriever = new MemoryRetriever(supabase);
         const context = await retriever.getAllContext(user.id, productId, 'product');
 
@@ -390,9 +523,13 @@ app.post('/api/ai/generate-strategy', async (req, res) => {
         console.log(`[Strategy]   Emotional Intelligence: ${context.emotionalIntelligence?.length || 0} entries`);
         console.log(`[Strategy]   GEO Narrative: ${context.geoNarrative?.length || 0} snapshots`);
         console.log(`[Strategy]   Strategy History: ${context.history?.length || 0} past strategies`);
-        console.log(`[Strategy] [${ts()}] STEP 4 — Passing context to DecisionEngine (GPT-4o)...`);
+        const modelLabel = economyMode ? 'Gemini Flash (economy)' : 'GPT-4o (premium)';
+        console.log(`[Strategy] [${ts()}] STEP 4 — Passing context to DecisionEngine [${modelLabel}]...`);
+        if (cmaResult.savedCredits > 0) {
+          console.log(`[CMA] Economy routing: saved ${cmaResult.savedCredits} credits for this user`);
+        }
 
-        const strategy = await decisionEngine.generateStrategy(context, goal, duration);
+        const strategy = await decisionEngine.generateStrategy(context, goal, duration, economyMode);
 
         console.log(`[Strategy] [${ts()}] STEP 5 — Strategy generated successfully`);
         console.log(`[Strategy]   Title: ${strategy.title}`);
@@ -421,6 +558,8 @@ app.post('/api/ai/generate-strategy', async (req, res) => {
             console.log(`[Strategy] [${ts()}] STEP 7 — Strategy saved with ID: ${savedStrategy?.id}`);
         }
 
+        // Deduct energy after successful generation (CMA-routed — uses economy cost if applicable)
+        await deductEnergyForUser(user.id, 'generate_strategy', { economy_mode: economyMode });
         console.log(`[Strategy] ═══════════════════════════════════════\n`);
         res.status(200).json({ strategy, strategyId: savedStrategy?.id });
     } catch (error: any) {
@@ -449,6 +588,52 @@ app.post('/api/ai/activate-agents', async (req, res) => {
         const { data: { user } } = await supabase.auth.getUser();
         if (!user) return res.status(401).json({ error: 'Unauthorized.' });
 
+        // Check energy before agent activation
+        const agentEnergyCheck = await energyService.checkEnergy(user.id, 'activate_agents');
+        if (!agentEnergyCheck.allowed) {
+          return res.status(402).json({
+            error: 'INSUFFICIENT_ENERGY',
+            message: `Agent activation requires ${agentEnergyCheck.required} credits. Current balance: ${agentEnergyCheck.balance.toFixed(2)}.`,
+            balance: agentEnergyCheck.balance, required: agentEnergyCheck.required,
+          });
+        }
+
+        // Check subscription plan limits for agents and platforms
+        const subGuard = await getSubscriptionGuard(user.id, supabase);
+        if (!subGuard.allowed) {
+          return res.status(403).json({
+            error: 'PLAN_LIMIT_EXCEEDED',
+            message: 'An active subscription is required to activate autonomous agents.',
+          });
+        }
+
+        const planLimits = subGuard.limits;
+
+        // Enforce: Sales agent requires Pro/Pro+
+        if (goal?.toLowerCase().includes('sales') || goal?.toLowerCase().includes('lead')) {
+          if (!planLimits.agents.sales) {
+            return res.status(403).json({
+              error: 'PLAN_LIMIT_EXCEEDED',
+              feature: 'sales_agent',
+              plan: subGuard.plan,
+              message: `The Sales Agent is not available on the ${subGuard.plan} plan. Upgrade to Pro or Pro+ to use the Sales Agent.`,
+            });
+          }
+        }
+
+        // Enforce: platform count limit
+        const requestedPlatforms: string[] = platforms || [];
+        if (requestedPlatforms.length > planLimits.platforms) {
+          return res.status(403).json({
+            error: 'PLAN_LIMIT_EXCEEDED',
+            feature: 'platforms',
+            plan: subGuard.plan,
+            message: `Your ${subGuard.plan} plan allows autonomous posting on ${planLimits.platforms} platform${planLimits.platforms === 1 ? '' : 's'}. You requested ${requestedPlatforms.length}. Upgrade your plan to add more platforms.`,
+            allowed_platforms: planLimits.platforms,
+            requested_platforms: requestedPlatforms.length,
+          });
+        }
+
         const { data: strategy } = await supabase
             .from('strategies')
             .select('*')
@@ -456,7 +641,7 @@ app.post('/api/ai/activate-agents', async (req, res) => {
             .single();
 
         const activeStrategy = strategy || { id: strategyId, goal, platforms, user_id: user.id, duration: 30 };
-        const activePlatforms = platforms || strategy?.platforms || ['facebook'];
+        const activePlatforms = (platforms || strategy?.platforms || ['facebook']).slice(0, planLimits.platforms);
 
         console.log(`[AgentActivation] [${ts()}] Launching orchestrator...`);
 
@@ -657,6 +842,427 @@ app.post('/webhooks/database', async (req, res) => {
   }
 });
 
+// ══════════════════════════════════════════════════════════════
+// ADROOM ENERGY & BILLING ROUTES
+// ══════════════════════════════════════════════════════════════
+
+/**
+ * GET /api/billing/status — user's energy balance + subscription info
+ */
+app.get('/api/billing/status', async (req, res) => {
+  try {
+    const supabase = getSupabaseClient(req as any);
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return res.status(401).json({ error: 'Unauthorized.' });
+
+    const summary = await energyService.getUsageSummary(user.id);
+    res.status(200).json(summary);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * GET /api/billing/plan-limits — returns user's plan feature limits + current usage
+ */
+app.get('/api/billing/plan-limits', async (req, res) => {
+  try {
+    const supabase = getSupabaseClient(req as any);
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return res.status(401).json({ error: 'Unauthorized.' });
+
+    const guard = await getSubscriptionGuard(user.id, supabase);
+    res.status(200).json({
+      plan: guard.plan,
+      status: guard.status,
+      active: guard.allowed,
+      limits: guard.limits,
+      usage: guard.usage,
+      remaining: {
+        imageAssets: Math.max(0, guard.limits.imageAssets - guard.usage.imageAssets),
+        videoAssets: Math.max(0, guard.limits.videoAssets - guard.usage.videoAssets),
+      },
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * POST /api/billing/start-trial — grant 14-day trial (requires card on file)
+ */
+app.post('/api/billing/start-trial', async (req, res) => {
+  try {
+    const supabase = getSupabaseClient(req as any);
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return res.status(401).json({ error: 'Unauthorized.' });
+
+    const result = await energyService.grantTrial(user.id);
+    res.status(result.success ? 200 : 400).json(result);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * POST /api/billing/payment-link — generate a Flutterwave payment link
+ */
+app.post('/api/billing/payment-link', async (req, res) => {
+  try {
+    const supabase = getSupabaseClient(req as any);
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return res.status(401).json({ error: 'Unauthorized.' });
+
+    const { amount, type, id } = req.body;
+    if (!amount || !type || !id) return res.status(400).json({ error: 'amount, type, id required.' });
+
+    const txRef = flutterwaveService.generateTxRef('ADROOM');
+    const email = user.email || '';
+
+    // Build Flutterwave hosted page URL
+    const payload = flutterwaveService.buildPaymentPayload({
+      amount,
+      currency: 'USD',
+      email,
+      name: email,
+      tx_ref: txRef,
+      redirect_url: `${process.env.EXPO_PUBLIC_API_URL || 'https://adroom.app'}/api/billing/flw-callback`,
+      title: type === 'subscription' ? `AdRoom ${PLANS[id as keyof typeof PLANS]?.name ?? id} Plan` : 'AdRoom Energy Top-Up',
+      description: type === 'subscription' ? `Monthly subscription — ${id}` : `Energy top-up pack — ${id}`,
+      meta: { user_id: user.id, type, plan_or_pack_id: id },
+    });
+
+    // Build Flutterwave standard hosted link
+    const flwBaseUrl = 'https://checkout.flutterwave.com/v3/hosted/pay';
+    const params = new URLSearchParams({
+      public_key: payload.public_key,
+      tx_ref: payload.tx_ref,
+      amount: String(payload.amount),
+      currency: payload.currency,
+      customer_email: payload.customer.email,
+      customer_name: payload.customer.name,
+      redirect_url: payload.redirect_url,
+      customization_title: payload.customizations.title,
+    });
+
+    res.status(200).json({ payment_url: `${flwBaseUrl}?${params.toString()}`, tx_ref: txRef });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * POST /api/billing/verify-subscription — verify FLW payment and activate subscription
+ */
+app.post('/api/billing/verify-subscription', async (req, res) => {
+  try {
+    const supabase = getSupabaseClient(req as any);
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return res.status(401).json({ error: 'Unauthorized.' });
+
+    const { transaction_id, tx_ref, plan_id } = req.body;
+    if (!transaction_id || !plan_id) return res.status(400).json({ error: 'transaction_id and plan_id required.' });
+
+    const plan = PLANS[plan_id as keyof typeof PLANS];
+    if (!plan) return res.status(400).json({ error: `Unknown plan: ${plan_id}` });
+
+    // Verify with Flutterwave
+    const verification = await flutterwaveService.verifyTransaction(transaction_id);
+    if (verification.status !== 'success' || verification.data?.status !== 'successful') {
+      return res.status(402).json({ error: 'Payment verification failed.', details: verification.message });
+    }
+
+    // Confirm amount matches plan
+    const paidAmount = verification.data?.amount ?? 0;
+    if (paidAmount < plan.price_usd) {
+      return res.status(402).json({ error: `Paid amount ($${paidAmount}) is less than plan price ($${plan.price_usd}).` });
+    }
+
+    // Extract card token for future recurring charges
+    const cardToken = verification.data?.card?.token;
+    const cardLast4 = verification.data?.card?.last_4digits;
+    const cardBrand = verification.data?.card?.type;
+    const billingEmail = verification.data?.customer?.email;
+
+    const result = await energyService.applySubscription(
+      user.id, plan_id,
+      String(verification.data?.id),
+      tx_ref ?? '',
+      cardToken, cardLast4, cardBrand, billingEmail,
+    );
+
+    res.status(200).json({ ...result, message: `${plan.name} plan activated! ${plan.energy_credits} energy credits added.` });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * POST /api/billing/verify-topup — verify FLW payment and apply top-up credits
+ */
+app.post('/api/billing/verify-topup', async (req, res) => {
+  try {
+    const supabase = getSupabaseClient(req as any);
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return res.status(401).json({ error: 'Unauthorized.' });
+
+    const { transaction_id, tx_ref, pack_id } = req.body;
+    if (!transaction_id || !pack_id) return res.status(400).json({ error: 'transaction_id and pack_id required.' });
+
+    const pack = TOPUP_PACKS[pack_id as keyof typeof TOPUP_PACKS];
+    if (!pack) return res.status(400).json({ error: `Unknown pack: ${pack_id}` });
+
+    const verification = await flutterwaveService.verifyTransaction(transaction_id);
+    if (verification.status !== 'success' || verification.data?.status !== 'successful') {
+      return res.status(402).json({ error: 'Payment verification failed.', details: verification.message });
+    }
+
+    const paidAmount = verification.data?.amount ?? 0;
+    if (paidAmount < pack.price_usd) {
+      return res.status(402).json({ error: `Paid amount ($${paidAmount}) is less than pack price ($${pack.price_usd}).` });
+    }
+
+    const result = await energyService.applyTopUp(user.id, pack_id, String(verification.data?.id), tx_ref ?? '');
+    res.status(200).json({ ...result, message: `${pack.energy_credits} energy credits added!` });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * POST /api/billing/cancel-subscription
+ */
+app.post('/api/billing/cancel-subscription', async (req, res) => {
+  try {
+    const supabase = getSupabaseClient(req as any);
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return res.status(401).json({ error: 'Unauthorized.' });
+
+    await energyService.cancelSubscription(user.id, req.body.reason);
+    res.status(200).json({ success: true });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * GET /api/billing/check/:operation — check if user has energy for an operation
+ */
+app.get('/api/billing/check/:operation', async (req, res) => {
+  try {
+    const supabase = getSupabaseClient(req as any);
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return res.status(401).json({ error: 'Unauthorized.' });
+
+    const check = await energyService.checkEnergy(user.id, req.params.operation);
+    res.status(200).json(check);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * POST /api/billing/flw-callback — Flutterwave redirect callback (handles redirect after payment)
+ */
+app.get('/api/billing/flw-callback', async (req, res) => {
+  const { status, tx_ref, transaction_id } = req.query;
+  if (status === 'successful') {
+    res.send(`
+      <html><body style="font-family:sans-serif;text-align:center;padding:40px;background:#0B0F19;color:#E2E8F0">
+        <h2 style="color:#00F0FF">Payment Successful!</h2>
+        <p>Your AdRoom Energy has been credited.</p>
+        <p style="color:#64748B">Transaction: ${transaction_id}</p>
+        <p>Return to the AdRoom app to verify and activate your credits.</p>
+      </body></html>
+    `);
+  } else {
+    res.send(`
+      <html><body style="font-family:sans-serif;text-align:center;padding:40px;background:#0B0F19;color:#E2E8F0">
+        <h2 style="color:#EF4444">Payment Failed</h2>
+        <p>Please return to the app and try again.</p>
+      </body></html>
+    `);
+  }
+});
+
+/**
+ * POST /api/billing/charge-card — charge card details directly via Flutterwave card API.
+ * User enters card details in-app; only OTP/3DS requires a redirect URL (returned as auth_url).
+ */
+app.post('/api/billing/charge-card', async (req, res) => {
+  try {
+    const supabase = getSupabaseClient(req as any);
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return res.status(401).json({ error: 'Unauthorized.' });
+
+    const { cardNumber, cvv, expiryMonth, expiryYear, fullname, type, id } = req.body;
+    if (!cardNumber || !cvv || !expiryMonth || !expiryYear || !fullname || !type || !id) {
+      return res.status(400).json({ error: 'cardNumber, cvv, expiryMonth, expiryYear, fullname, type, id required.' });
+    }
+
+    const plan = PLANS[id as keyof typeof PLANS];
+    const amount = type === 'subscription' ? (plan?.price_usd ?? 0) : (id === 'starter_topup' ? 5 : id === 'boost_topup' ? 10 : 20);
+    if (amount <= 0) return res.status(400).json({ error: 'Invalid plan/pack.' });
+
+    const txRef = flutterwaveService.generateTxRef('ADROOM');
+    const email = user.email || '';
+    const redirectUrl = `${process.env.EXPO_PUBLIC_API_URL || 'https://adroom.railway.app'}/api/billing/flw-callback?type=${type}&id=${id}&user_id=${user.id}&tx_ref=${txRef}`;
+
+    const chargeResult = await flutterwaveService.chargeCard({
+      cardNumber, cvv, expiryMonth, expiryYear,
+      email, fullname, amount,
+      currency: 'USD',
+      tx_ref: txRef,
+      redirect_url: redirectUrl,
+      enckey: process.env.FLW_ENCRYPTION_KEY || '',
+    });
+
+    if (chargeResult.status === 'success' && chargeResult.data?.status === 'successful') {
+      // Payment captured immediately — no 3DS needed
+      const transactionId = String(chargeResult.data.id);
+      const cardLast4 = chargeResult.data.card?.last_4digits;
+      const cardBrand = chargeResult.data.card?.type;
+      const cardToken = chargeResult.data.card?.token;
+      const svc = getServiceSupabaseClient();
+      if (type === 'subscription') {
+        await energyService.applySubscription(user.id, id, transactionId, txRef, cardToken, cardLast4, cardBrand, email);
+      } else {
+        const topupPack = TOPUP_PACKS[id as keyof typeof TOPUP_PACKS];
+        if (topupPack) await energyService.applyTopUp(user.id, topupPack.id, transactionId, txRef);
+        if (cardToken) {
+          await svc.from('user_subscriptions').upsert({ user_id: user.id, flw_card_token: cardToken, flw_card_last4: cardLast4, flw_card_brand: cardBrand, billing_email: email }, { onConflict: 'user_id' });
+        }
+      }
+      return res.json({ success: true, mode: 'success', transaction_id: transactionId });
+    }
+
+    if (chargeResult.status === 'success' && chargeResult.meta?.authorization?.mode === 'redirect') {
+      return res.json({
+        success: true,
+        mode: 'redirect',
+        auth_url: chargeResult.meta.authorization.redirect,
+        tx_ref: txRef,
+      });
+    }
+
+    if (chargeResult.status === 'success' && chargeResult.meta?.authorization?.mode === 'pin') {
+      return res.json({ success: true, mode: 'pin', flw_ref: chargeResult.data?.flw_ref, tx_ref: txRef });
+    }
+
+    return res.status(402).json({ error: chargeResult.message || 'Card charge failed.', details: chargeResult });
+  } catch (err: any) {
+    console.error('[charge-card]', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * POST /api/billing/charge-card/validate-pin — validate OTP/PIN after pin charge
+ */
+app.post('/api/billing/charge-card/validate-pin', async (req, res) => {
+  try {
+    const supabase = getSupabaseClient(req as any);
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return res.status(401).json({ error: 'Unauthorized.' });
+
+    const { otp, flw_ref, type, id, tx_ref } = req.body;
+    if (!otp || !flw_ref) return res.status(400).json({ error: 'otp and flw_ref required.' });
+
+    const validationRes = await fetch('https://api.flutterwave.com/v3/validate-charge', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${process.env.FLW_SECRET_KEY || process.env.FLUTTERWAVE_SECRET_KEY}` },
+      body: JSON.stringify({ otp, flw_ref, type: 'card' }),
+    });
+    const validation: any = await validationRes.json();
+
+    if (validation.status === 'success' && validation.data?.status === 'successful') {
+      const transactionId = String(validation.data.id);
+      const cardLast4 = validation.data.card?.last_4digits;
+      const cardBrand = validation.data.card?.type;
+      const cardToken = validation.data.card?.token;
+      const email = user.email || '';
+      if (type === 'subscription') {
+        await energyService.applySubscription(user.id, id, transactionId, tx_ref, cardToken, cardLast4, cardBrand, email);
+      } else {
+        const topupPack = TOPUP_PACKS[id as keyof typeof TOPUP_PACKS];
+        if (topupPack) await energyService.applyTopUp(user.id, topupPack.id, transactionId, tx_ref);
+      }
+      return res.json({ success: true, transaction_id: transactionId });
+    }
+
+    return res.status(402).json({ error: validation.message || 'OTP validation failed.' });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * GET /api/chat/history — fetch MemPalace conversation history for the current user
+ */
+app.get('/api/chat/history', async (req, res) => {
+  try {
+    const supabase = getSupabaseClient(req as any);
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return res.status(401).json({ error: 'Unauthorized.' });
+
+    const limit = parseInt(String(req.query.limit ?? '50'));
+    const svc = getServiceSupabaseClient();
+    const { data, error } = await svc
+      .from('ai_conversation_memory')
+      .select('id, role, content, metadata, created_at')
+      .eq('user_id', user.id)
+      .order('created_at', { ascending: false })
+      .limit(Math.min(limit, 200));
+
+    if (error) return res.status(500).json({ error: error.message });
+    res.json({ messages: (data || []).reverse() });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * POST /api/chat/history — save a message to MemPalace conversation memory
+ */
+app.post('/api/chat/history', async (req, res) => {
+  try {
+    const supabase = getSupabaseClient(req as any);
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return res.status(401).json({ error: 'Unauthorized.' });
+
+    const { role, content, metadata } = req.body;
+    if (!role || !content) return res.status(400).json({ error: 'role and content required.' });
+
+    const svc = getServiceSupabaseClient();
+    const { error } = await svc.from('ai_conversation_memory').insert({
+      user_id: user.id,
+      role,
+      content,
+      metadata: metadata ?? {},
+    });
+
+    if (error) return res.status(500).json({ error: error.message });
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * Credit Management Agent — Stats endpoint (admin-level)
+ * Returns total credits saved, USD saved, and per-operation breakdown.
+ */
+app.get('/api/admin/cma/stats', async (req, res) => {
+  try {
+    const { creditManagementAgent: cmaAgent } = await import('./services/creditManagementAgent');
+    const days = parseInt(String(req.query.days ?? '7'));
+    const stats = await cmaAgent.getSavingsSummary(Math.min(days, 90));
+    res.json({ ok: true, ...stats });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 /**
  * Remote Logging — receives logs from the Expo app and prints them to Railway terminal
  */
@@ -675,6 +1281,30 @@ app.post('/api/logs', (req, res) => {
   }
 
   res.status(200).json({ ok: true });
+});
+
+/**
+ * Push Token Registration — called by the Expo app to register device push tokens
+ */
+app.post('/api/push/register', async (req, res) => {
+  try {
+    const supabase = getSupabaseClient(req);
+    const { data: { user }, error: authErr } = await supabase.auth.getUser();
+    if (authErr || !user) return res.status(401).json({ error: 'Unauthorized' });
+
+    const { token, platform, app_version } = req.body;
+    if (!token || typeof token !== 'string') return res.status(400).json({ error: 'token required' });
+
+    const svc = getServiceSupabaseClient();
+    await svc.from('device_push_tokens').upsert(
+      { user_id: user.id, token, platform: platform || 'unknown', app_version: app_version || null, updated_at: new Date().toISOString() },
+      { onConflict: 'user_id,token' }
+    );
+
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 app.listen(PORT, () => {

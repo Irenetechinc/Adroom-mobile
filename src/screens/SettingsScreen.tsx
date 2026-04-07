@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { View, Text, TouchableOpacity, Alert, StyleSheet, ScrollView } from 'react-native';
 import { useAuthStore } from '../store/authStore';
 import { useNavigation } from '@react-navigation/native';
@@ -7,16 +7,25 @@ import { RootStackParamList } from '../types';
 import { DrawerActions } from '@react-navigation/native';
 import {
   Menu, Link, LogOut, User, Shield, ChevronRight,
-  Bell, HelpCircle, Info, Settings as SettingsIcon,
+  Bell, HelpCircle, Info, Settings as SettingsIcon, Zap,
 } from 'lucide-react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import Animated, { FadeInDown } from 'react-native-reanimated';
+import { useEnergyStore, PLAN_DETAILS } from '../store/energyStore';
 
 export default function SettingsScreen() {
   const { signOut, user } = useAuthStore();
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const [signingOut, setSigningOut] = useState(false);
   const insets = useSafeAreaInsets();
+  const { account, subscription, fetchEnergy } = useEnergyStore();
+
+  useEffect(() => { fetchEnergy(); }, []);
+
+  const balance = parseFloat(String(account?.balance_credits ?? '0'));
+  const plan = subscription?.plan ?? 'none';
+  const planInfo = PLAN_DETAILS[plan as keyof typeof PLAN_DETAILS];
+  const balanceColor = balance > 20 ? '#00F0FF' : balance > 5 ? '#F59E0B' : '#EF4444';
 
   const handleSignOut = async () => {
     Alert.alert('Sign Out', 'Are you sure you want to sign out?', [
@@ -44,6 +53,13 @@ export default function SettingsScreen() {
     {
       title: 'Account',
       items: [
+        {
+          icon: Zap,
+          label: 'AdRoom Energy',
+          sublabel: `${balance.toFixed(1)} credits • ${planInfo?.name ?? 'No plan'}`,
+          color: balanceColor,
+          onPress: () => navigation.navigate('Subscription'),
+        },
         {
           icon: Link,
           label: 'Connected Accounts',

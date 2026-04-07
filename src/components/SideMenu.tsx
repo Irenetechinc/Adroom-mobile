@@ -1,9 +1,12 @@
 import React from 'react';
 import { View, Text, TouchableOpacity } from 'react-native';
 import { DrawerContentComponentProps } from '@react-navigation/drawer';
-
+import { useNavigation } from '@react-navigation/native';
 import { useAuthStore } from '../store/authStore';
-import { Bot, LayoutDashboard, Settings, LogOut, X, History, ChevronRight, Users, MessageSquare } from 'lucide-react-native';
+import {
+  Bot, LayoutDashboard, Settings, LogOut, X, History,
+  ChevronRight, Users, MessageSquare, Zap,
+} from 'lucide-react-native';
 import Animated, { FadeInLeft } from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
@@ -18,11 +21,10 @@ const menuItems = [
 
 export default function SideMenu(props: DrawerContentComponentProps) {
   const { signOut, user } = useAuthStore();
-
+  const navigation = useNavigation<any>();
 
   const userInitial = user?.email ? user.email.charAt(0).toUpperCase() : 'U';
   const userEmail = user?.email || '';
-
 
   return (
     <View style={{ flex: 1, backgroundColor: '#050B14' }}>
@@ -48,10 +50,7 @@ export default function SideMenu(props: DrawerContentComponentProps) {
                 </Text>
               </View>
             </View>
-            <TouchableOpacity
-              onPress={() => props.navigation.closeDrawer()}
-              style={{ padding: 4 }}
-            >
+            <TouchableOpacity onPress={() => props.navigation.closeDrawer()} style={{ padding: 4 }}>
               <X color="#64748B" size={20} />
             </TouchableOpacity>
           </View>
@@ -71,13 +70,11 @@ export default function SideMenu(props: DrawerContentComponentProps) {
           </View>
         </View>
 
-
         {/* Nav Items */}
         <View style={{ flex: 1, paddingHorizontal: 12, paddingTop: 4 }}>
           {menuItems.map((item, index) => {
             const activeRoute = props.state.routes[props.state.index]?.name;
             const isFocused = activeRoute === item.route;
-
             const Icon = item.icon;
 
             return (
@@ -104,11 +101,7 @@ export default function SideMenu(props: DrawerContentComponentProps) {
                     <Icon color={isFocused ? '#00F0FF' : '#64748B'} size={18} strokeWidth={isFocused ? 2.5 : 2} />
                   </View>
                   <View style={{ flex: 1, marginLeft: 12 }}>
-                    <Text style={{
-                      color: isFocused ? '#FFFFFF' : '#94A3B8',
-                      fontWeight: isFocused ? '700' : '500',
-                      fontSize: 15,
-                    }}>
+                    <Text style={{ color: isFocused ? '#FFFFFF' : '#94A3B8', fontWeight: isFocused ? '700' : '500', fontSize: 15 }}>
                       {item.label}
                     </Text>
                     <Text style={{ color: '#475569', fontSize: 11, marginTop: 1 }}>
@@ -120,6 +113,38 @@ export default function SideMenu(props: DrawerContentComponentProps) {
               </Animated.View>
             );
           })}
+
+          {/* Energy — navigates to Subscription screen */}
+          <Animated.View entering={FadeInLeft.delay(menuItems.length * 60).springify()}>
+            <TouchableOpacity
+              onPress={() => navigation.navigate('Subscription')}
+              style={{
+                flexDirection: 'row', alignItems: 'center',
+                paddingHorizontal: 14, paddingVertical: 13,
+                borderRadius: 14, marginBottom: 4,
+                backgroundColor: 'rgba(245,158,11,0.07)',
+                borderWidth: 1, borderColor: 'rgba(245,158,11,0.2)',
+              }}
+              activeOpacity={0.7}
+            >
+              <View style={{
+                width: 36, height: 36, borderRadius: 10,
+                backgroundColor: 'rgba(245,158,11,0.12)',
+                alignItems: 'center', justifyContent: 'center',
+              }}>
+                <Zap color="#F59E0B" size={18} strokeWidth={2} />
+              </View>
+              <View style={{ flex: 1, marginLeft: 12 }}>
+                <Text style={{ color: '#F59E0B', fontWeight: '700', fontSize: 15 }}>
+                  Energy
+                </Text>
+                <Text style={{ color: '#475569', fontSize: 11, marginTop: 1 }}>
+                  Credits & Subscription
+                </Text>
+              </View>
+              <ChevronRight color="#F59E0B" size={14} />
+            </TouchableOpacity>
+          </Animated.View>
         </View>
 
         {/* Footer */}

@@ -17,6 +17,7 @@ import OnboardingScreen from '../screens/OnboardingScreen';
 // Agent Chat handles the entire strategy wizard flow now
 import AgentChatScreen from '../screens/AgentChatScreen';
 import ConnectedAccountsScreen from '../screens/ConnectedAccountsScreen';
+import SubscriptionScreen from '../screens/SubscriptionScreen';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
@@ -94,6 +95,11 @@ export default function AppNavigator() {
               name="ConnectedAccounts" 
               component={ConnectedAccountsScreen} 
               options={{ title: 'Connected Accounts', headerShown: false }}
+            />
+            <Stack.Screen 
+              name="Subscription" 
+              component={SubscriptionScreen} 
+              options={{ headerShown: false }}
             />
           </>
         )}
