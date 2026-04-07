@@ -1109,7 +1109,7 @@ app.post('/api/billing/charge-card', async (req, res) => {
         await energyService.applySubscription(user.id, id, transactionId, txRef, cardToken, cardLast4, cardBrand, email);
       } else {
         const topupPack = TOPUP_PACKS[id as keyof typeof TOPUP_PACKS];
-        if (topupPack) await energyService.applyTopUp(user.id, topupPack.credits, transactionId, txRef);
+        if (topupPack) await energyService.applyTopUp(user.id, topupPack.id, transactionId, txRef);
         if (cardToken) {
           await svc.from('user_subscriptions').upsert({ user_id: user.id, flw_card_token: cardToken, flw_card_last4: cardLast4, flw_card_brand: cardBrand, billing_email: email }, { onConflict: 'user_id' });
         }
@@ -1166,7 +1166,7 @@ app.post('/api/billing/charge-card/validate-pin', async (req, res) => {
         await energyService.applySubscription(user.id, id, transactionId, tx_ref, cardToken, cardLast4, cardBrand, email);
       } else {
         const topupPack = TOPUP_PACKS[id as keyof typeof TOPUP_PACKS];
-        if (topupPack) await energyService.applyTopUp(user.id, topupPack.credits, transactionId, tx_ref);
+        if (topupPack) await energyService.applyTopUp(user.id, topupPack.id, transactionId, tx_ref);
       }
       return res.json({ success: true, transaction_id: transactionId });
     }
