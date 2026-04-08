@@ -409,8 +409,38 @@ const DURATIONS = [
   { days: 30, label: '30 Days', icon: TrendingUp },
 ];
 
-const DurationSelectionCard = ({ onSelect, recommended, onBack, disabled }: { onSelect: (days: number) => void; recommended?: number; onBack?: () => void; disabled?: boolean }) => (
+const DurationSelectionCard = ({
+  onSelect, recommended, onBack, disabled,
+  productName, price, currencySymbol, currencyCode,
+}: {
+  onSelect: (days: number) => void;
+  recommended?: number;
+  onBack?: () => void;
+  disabled?: boolean;
+  productName?: string;
+  price?: string;
+  currencySymbol?: string;
+  currencyCode?: string;
+}) => (
   <View>
+    {/* Product + price summary strip */}
+    {(productName || price) && (
+      <View style={{
+        backgroundColor: 'rgba(0,240,255,0.06)', borderRadius: 12,
+        borderWidth: 1, borderColor: 'rgba(0,240,255,0.15)',
+        padding: 10, marginBottom: 8, flexDirection: 'row', alignItems: 'center', gap: 8,
+      }}>
+        <View style={{ flex: 1 }}>
+          {productName ? <Text style={{ color: '#E2E8F0', fontWeight: '700', fontSize: 13 }} numberOfLines={1}>{productName}</Text> : null}
+          {price ? (
+            <Text style={{ color: '#94A3B8', fontSize: 12 }}>
+              Price: <Text style={{ color: '#00F0FF', fontWeight: '700' }}>{currencySymbol}{price}</Text>
+              {currencyCode ? <Text style={{ color: '#475569' }}> {currencyCode}</Text> : null}
+            </Text>
+          ) : null}
+        </View>
+      </View>
+    )}
     <View style={[styles.card, { overflow: 'hidden' }, disabled && styles.cardDisabled]}>
       {recommended && (
         <TouchableOpacity
@@ -422,7 +452,7 @@ const DurationSelectionCard = ({ onSelect, recommended, onBack, disabled }: { on
             <Zap size={18} color="#00F0FF" />
             <View style={{ marginLeft: 10 }}>
               <Text style={{ color: '#00F0FF', fontWeight: '700' }}>Recommended: {recommended} Days</Text>
-              <Text style={{ color: 'rgba(0,240,255,0.5)', fontSize: 11 }}>Optimised for your goal and price</Text>
+              <Text style={{ color: 'rgba(0,240,255,0.5)', fontSize: 11 }}>Optimised for your goal and market</Text>
             </View>
           </View>
           {!disabled && <Text style={{ color: '#00F0FF', fontWeight: '700' }}>Select ›</Text>}
@@ -980,7 +1010,16 @@ export default function AgentChatScreen({ navigation, route }: Props) {
             <GoalSelectionCard onSelect={handleGoalSelection} onBack={goBackToMenu} disabled={isDisabled} navigation={navigation} />
           )}
           {item.uiType === 'duration_selection' && (
-            <DurationSelectionCard onSelect={handleDurationSelection} recommended={item.uiData?.recommended} onBack={goBackToMenu} disabled={isDisabled} />
+            <DurationSelectionCard
+              onSelect={handleDurationSelection}
+              recommended={item.uiData?.recommended}
+              onBack={goBackToMenu}
+              disabled={isDisabled}
+              productName={item.uiData?.productName}
+              price={item.uiData?.price}
+              currencySymbol={item.uiData?.currencySymbol}
+              currencyCode={item.uiData?.currencyCode}
+            />
           )}
           {item.uiType === 'strategy_preview' && item.uiData?.strategy && (
             <StrategyPreviewCard strategy={item.uiData.strategy} onLaunch={handleStrategySelection} onBack={goBackToMenu} disabled={isDisabled} />
