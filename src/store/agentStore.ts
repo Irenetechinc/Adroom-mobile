@@ -283,7 +283,13 @@ export const useAgentStore = create<AgentState>((set, get) => ({
                 "Product saved. What is the primary objective for this campaign?",
                 'agent',
                 undefined,
-                'goal_selection'
+                'goal_selection',
+                {
+                    productId,
+                    currency: (validatedData as any).currency || 'USD',
+                    price: String((validatedData as any).price || ''),
+                    name: validatedData.name,
+                }
             );
         }, 1500);
         
@@ -333,7 +339,13 @@ export const useAgentStore = create<AgentState>((set, get) => ({
                 "Service registered. What is your campaign goal?",
                 'agent',
                 undefined,
-                'goal_selection'
+                'goal_selection',
+                {
+                    productId: serviceId,
+                    currency: validatedData.currency || 'USD',
+                    price: String(validatedData.price || ''),
+                    name: validatedData.name,
+                }
             );
         }, 1500);
     } catch (error: any) {
@@ -377,7 +389,13 @@ export const useAgentStore = create<AgentState>((set, get) => ({
                 "Brand identity established. Select your campaign goal:",
                 'agent',
                 undefined,
-                'goal_selection'
+                'goal_selection',
+                {
+                    productId: brandId,
+                    currency: 'USD',
+                    price: '0',
+                    name: data.name,
+                }
             );
         }, 1500);
     } catch (error: any) {
@@ -488,18 +506,41 @@ export const useAgentStore = create<AgentState>((set, get) => ({
   },
 
   handleGoalSelection: (goal: string) => {
-      const { addMessage, setTyping, updateProductDetails, productDetails } = get();
+      const { addMessage, setTyping, updateProductDetails, productDetails, messages } = get();
       updateProductDetails({ selectedGoal: goal });
       set({ flowState: 'DURATION_SELECTION', isTyping: true, isInputDisabled: true });
 
       addMessage(`${goal.replace(/_/g, ' ')}`, 'user');
 
-      const rawPrice = productDetails.price || '0';
+      // If productDetails currency is missing (e.g. after session restore), recover from goal_selection uiData
+      let resolvedCurrency = productDetails.currency;
+      let resolvedPrice = productDetails.price || '';
+      let resolvedName = productDetails.name || '';
+      let resolvedProductId = productDetails.id;
+      if (!resolvedCurrency) {
+          const goalMsg = [...messages].reverse().find(
+              (m) => m.uiType === 'goal_selection' && m.uiData?.currency
+          );
+          if (goalMsg?.uiData) {
+              resolvedCurrency = goalMsg.uiData.currency;
+              resolvedPrice = goalMsg.uiData.price || '';
+              resolvedName = goalMsg.uiData.name || '';
+              resolvedProductId = goalMsg.uiData.productId;
+              updateProductDetails({
+                  id: resolvedProductId,
+                  currency: resolvedCurrency,
+                  price: resolvedPrice,
+                  name: resolvedName,
+              });
+          }
+      }
+
+      const rawPrice = resolvedPrice || '0';
       const numericOnly = rawPrice.replace(/[^0-9.]/g, '');
       const priceNum = parseFloat(numericOnly || '0');
 
       // Resolve currency symbol from the user's selected currency
-      const currencyCode = productDetails.currency || 'USD';
+      const currencyCode = resolvedCurrency || 'USD';
       const CURRENCY_SYMBOLS: Record<string, string> = {
           USD: '$', EUR: '€', GBP: '£', NGN: '₦', GHS: '₵', ZAR: 'R',
           KES: 'KSh', AED: 'د.إ', CAD: 'C$', AUD: 'A$', INR: '₹', BRL: 'R$',
@@ -529,7 +570,9 @@ export const useAgentStore = create<AgentState>((set, get) => ({
               'duration_selection',
               {
                   recommended: rec,
-                  productName: productDetails.name,
+                  productId: resolvedProductId,
+                  selectedGoal: goal,
+                  productName: resolvedName || productDetails.name,
                   price: priceNum > 0 ? String(priceNum) : undefined,
                   currencySymbol,
                   currencyCode,
@@ -539,21 +582,35 @@ export const useAgentStore = create<AgentState>((set, get) => ({
   },
 
   handleDurationSelection: async (duration: number) => {
-      const { addMessage, updateProductDetails, productDetails } = get();
+      const { addMessage, updateProductDetails, productDetails, messages } = get();
       updateProductDetails({ selectedDuration: duration });
       set({ flowState: 'STRATEGY_GENERATION', isTyping: true, isInputDisabled: true });
-      
+
       addMessage(`${duration} days`, 'user');
       addMessage("Analyzing historical data and global trends to generate optimal strategies...", 'agent');
-      
+
+      // Recover productId and selectedGoal from duration_selection uiData if missing (session restore)
+      let resolvedProductId = productDetails.id;
+      let resolvedGoal = productDetails.selectedGoal;
+      if (!resolvedProductId || !resolvedGoal) {
+          const durMsg = [...messages].reverse().find(
+              (m) => m.uiType === 'duration_selection' && m.uiData?.productId
+          );
+          if (durMsg?.uiData) {
+              resolvedProductId = durMsg.uiData.productId;
+              resolvedGoal = durMsg.uiData.selectedGoal;
+              updateProductDetails({ id: resolvedProductId, selectedGoal: resolvedGoal });
+          }
+      }
+
       try {
-          if (!productDetails.id || !productDetails.selectedGoal) {
-              throw new Error("Missing product ID or goal.");
+          if (!resolvedProductId || !resolvedGoal) {
+              throw new Error("Missing product ID or goal. Please start a new strategy.");
           }
 
           const strategies = await StrategyService.generateStrategies(
-              productDetails.id, 
-              productDetails.selectedGoal, 
+              resolvedProductId,
+              resolvedGoal,
               duration
           );
           
