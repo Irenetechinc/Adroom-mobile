@@ -164,6 +164,19 @@ export class SchedulerService {
             }
         });
 
+        // CMA self-monitor — every 10 minutes: analyses real-time burn rate
+        // and dynamically adjusts economy routing thresholds
+        cron.schedule('*/10 * * * *', async () => {
+            try {
+                const status = await creditManagementAgent.selfMonitor();
+                if (status.dynamicEconomyActive) {
+                    console.log(`[CMA:Scheduler] 💰 Economy override ACTIVE — burn rate: ${status.systemBurnRate.toFixed(1)} credits/hr, cost: $${status.totalCostUsdLastHour.toFixed(4)}`);
+                }
+            } catch (e: any) {
+                console.error('[Scheduler] CMA self-monitor error:', e.message);
+            }
+        });
+
         console.log('[Scheduler] ✓ All loops started:');
         console.log('[Scheduler]   Intelligence: IPE, Social, Emotional, GEO — every 15 min');
         console.log('[Scheduler]   Agent Execution: Content posts — every 5 min');

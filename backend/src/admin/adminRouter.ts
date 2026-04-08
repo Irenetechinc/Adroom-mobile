@@ -485,6 +485,21 @@ router.get('/api/action-logs', auth, async (req, res) => {
   }
 });
 
+// ─── CMA SAVINGS STATS ────────────────────────────────────────────────────────
+router.get('/api/cma/stats', auth, async (req, res) => {
+  try {
+    const { creditManagementAgent: cmaAgent } = await import('../services/creditManagementAgent');
+    const days = Math.min(parseInt(String(req.query.days || '7')), 90);
+    const [stats, liveStatus] = await Promise.all([
+      cmaAgent.getSavingsSummary(days),
+      Promise.resolve(cmaAgent.getLiveStatus()),
+    ]);
+    res.json({ ...stats, liveStatus, days });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ─── NOTIFICATION HISTORY ─────────────────────────────────────────────────────
 router.get('/api/notifications', auth, async (req, res) => {
   try {
@@ -713,6 +728,9 @@ label{font-size:12px;color:#94A3B8;font-weight:600}
     <button class="nav-item" onclick="showSection('logs')" id="nav-logs">
       <span>📋</span> Admin Logs
     </button>
+    <button class="nav-item" onclick="showSection('cma')" id="nav-cma">
+      <span>💰</span> CMA Savings
+    </button>
     <div style="margin-top:auto;padding:16px 8px">
       <button class="nav-item" onclick="doLogout()" style="color:#EF4444">
         <span>🚪</span> Sign Out
@@ -899,6 +917,59 @@ label{font-size:12px;color:#94A3B8;font-weight:600}
         </div>
       </div>
 
+      <!-- ───────────── CMA SAVINGS ───────────── -->
+      <div id="section-cma" class="section">
+        <div class="section-header">
+          <div class="section-title">Credit Management Agent — Savings Dashboard</div>
+          <div style="display:flex;gap:8px;align-items:center">
+            <select id="cma-days-select" class="input" style="width:120px;padding:4px 8px;font-size:12px" onchange="loadCMAStats()">
+              <option value="7">Last 7 days</option>
+              <option value="14">Last 14 days</option>
+              <option value="30">Last 30 days</option>
+              <option value="90">Last 90 days</option>
+            </select>
+            <button class="btn btn-ghost btn-sm" onclick="loadCMAStats()">↺ Refresh</button>
+          </div>
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:16px">
+          <div class="stat-card">
+            <div class="stat-label">Credits Saved</div>
+            <div class="stat-value" id="cma-saved-credits" style="color:#10B981">—</div>
+            <div class="stat-sub">via economy routing</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">USD Saved</div>
+            <div class="stat-value" id="cma-saved-usd" style="color:#10B981">—</div>
+            <div class="stat-sub">actual model cost</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">Economy Events</div>
+            <div class="stat-value" id="cma-events" style="color:#00F0FF">—</div>
+            <div class="stat-sub">total routing decisions</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">Economy Ratio</div>
+            <div class="stat-value" id="cma-ratio" style="color:#F59E0B">—</div>
+            <div class="stat-sub">% ops routed to cheap model</div>
+          </div>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px">
+          <div class="card">
+            <div class="section-header"><div class="section-title" style="font-size:14px">Live System Status</div></div>
+            <div id="cma-live-status" style="font-size:13px;color:#94A3B8">Loading…</div>
+          </div>
+          <div class="card">
+            <div class="section-header"><div class="section-title" style="font-size:14px">Savings by Operation</div></div>
+            <div id="cma-by-op" style="font-size:13px;color:#94A3B8">Loading…</div>
+          </div>
+        </div>
+        <div class="card">
+          <div class="section-header"><div class="section-title" style="font-size:14px">System Burn Rate (last 1h)</div></div>
+          <div id="cma-burn-rate" style="font-size:24px;font-weight:800;color:#00F0FF">—</div>
+          <div style="font-size:11px;color:#64748B;margin-top:4px">credits consumed in the last 60 minutes across all users</div>
+        </div>
+      </div>
+
     </div><!-- /content -->
   </div><!-- /main -->
 </div><!-- /app -->
@@ -1031,8 +1102,8 @@ if (TOKEN) {
 }
 
 // ── Navigation ────────────────────────────────────────────────────────────────
-const SECTIONS = ['dashboard', 'users', 'credits', 'notifications', 'activity', 'logs'];
-const TITLES = { dashboard: 'Dashboard', users: 'All Users', credits: 'Credit Management', notifications: 'Push Notifications', activity: 'Live Activity', logs: 'Admin Logs' };
+const SECTIONS = ['dashboard', 'users', 'credits', 'notifications', 'activity', 'logs', 'cma'];
+const TITLES = { dashboard: 'Dashboard', users: 'All Users', credits: 'Credit Management', notifications: 'Push Notifications', activity: 'Live Activity', logs: 'Admin Logs', cma: 'CMA Savings Dashboard' };
 
 function showSection(name) {
   SECTIONS.forEach(s => {
@@ -1041,6 +1112,7 @@ function showSection(name) {
     if (nav) nav.classList.toggle('active', s === name);
   });
   document.getElementById('page-title').textContent = TITLES[name] || name;
+  if (name === 'cma') loadCMAStats();
 }
 
 // ── Stats ─────────────────────────────────────────────────────────────────────
@@ -1583,6 +1655,51 @@ async function loadAdminLogs() {
       <td style="font-size:11px;color:#64748B">\${JSON.stringify(l.details).substring(0, 100)}</td>
     </tr>\`).join('');
   } catch {}
+}
+
+async function loadCMAStats() {
+  try {
+    const days = document.getElementById('cma-days-select')?.value || '7';
+    const d = await api('GET', \`/api/cma/stats?days=\${days}\`);
+
+    const setEl = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val; };
+
+    setEl('cma-saved-credits', fmtN(Math.round(d.totalSavedCredits)));
+    setEl('cma-saved-usd',    '$' + (d.totalSavedUsd || 0).toFixed(4));
+    setEl('cma-events',       fmtN(d.events));
+    setEl('cma-ratio',        Math.round((d.economyRatio || 0) * 100) + '%');
+    setEl('cma-burn-rate',    fmtN(Math.round(d.systemBurnRate)) + ' credits/hr');
+
+    // Live status
+    const ls = d.liveStatus || {};
+    const liveEl = document.getElementById('cma-live-status');
+    if (liveEl) {
+      const overrideColor = ls.dynamicEconomyOverride ? '#F59E0B' : '#10B981';
+      const overrideLabel = ls.dynamicEconomyOverride ? '⚠️ Economy Override ACTIVE — all eligible ops routed to cheap models' : '✓ Standard routing — economy override inactive';
+      liveEl.innerHTML = \`
+        <div style="margin-bottom:8px;color:\${overrideColor};font-weight:700">\${overrideLabel}</div>
+        <div style="color:#64748B;font-size:11px">Active cooldowns: \${ls.activeSystemCooldowns?.length || 0} operations</div>
+        \${(ls.activeSystemCooldowns || []).map(c => \`<div style="font-size:11px;color:#94A3B8;margin-top:4px">• \${c.operation}: \${c.cooldownEndsIn}s remaining</div>\`).join('')}
+      \`;
+    }
+
+    // By operation
+    const opEl = document.getElementById('cma-by-op');
+    if (opEl) {
+      const ops = d.byOperation || {};
+      const opKeys = Object.keys(ops).sort((a, b) => ops[b] - ops[a]);
+      opEl.innerHTML = opKeys.length
+        ? opKeys.map(op => \`
+          <div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid #1E293B">
+            <span style="color:#CBD5E1">\${op}</span>
+            <span style="color:#10B981;font-weight:700">\${ops[op]} credits saved</span>
+          </div>
+        \`).join('')
+        : '<div style="color:#64748B">No economy routing events yet</div>';
+    }
+  } catch (e) {
+    console.error('CMA stats error:', e);
+  }
 }
 
 // ── SSE ───────────────────────────────────────────────────────────────────────

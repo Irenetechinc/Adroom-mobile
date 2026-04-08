@@ -1,15 +1,20 @@
 /**
  * ══════════════════════════════════════════════════════════════════
- * ADROOM CREDIT MANAGEMENT AGENT (CMA)
+ * ADROOM CREDIT MANAGEMENT AGENT (CMA) — PRODUCTION v2
  *
- * The CMA is AdRoom's internal cost-optimizer. Before any AI
- * operation fires, the CMA decides:
+ * The CMA is AdRoom's internal AI cost-optimizer. It runs BEFORE
+ * every AI operation and decides in real-time:
  *   • Which model to actually use (GPT-4o vs Gemini Flash)
  *   • Whether the user has headroom (daily cap + balance check)
  *   • Whether a system-level cooldown applies (intelligence cycles)
  *   • How many credits to charge (possibly cheaper than list price)
+ *   • Whether to tighten spend rate based on burn velocity
  *
- * Savings are logged to `cma_savings_log` so admins can see ROI.
+ * Real-time monitoring loop: every 10 minutes the CMA reviews the
+ * system-wide spend velocity and dynamically adjusts economy routing
+ * thresholds. Users spending fast get routed to economy models sooner.
+ *
+ * Savings are logged to `cma_savings_log` for admin visibility.
  * ══════════════════════════════════════════════════════════════════
  */
 
@@ -25,16 +30,18 @@ const TIER_RANK: Record<string, number> = {
   pro_plus: 4,
 };
 
-// ─── Model routing ────────────────────────────────────────────────
-// Operations that CAN run on Gemini Flash when the user's tier is
-// below the premium threshold. Savings = full cost - economy cost.
-const ECONOMY_ROUTING: Record<string, {
-  economyModel:  string;
-  economyCredits: number;
-  economyUsd:    number;
-  minTierForPremium: string; // tier at or above this gets the default model
-  blockedBelow?: string;    // tier below this gets denied entirely
-}> = {
+// ─── Base economy routing table ────────────────────────────────────
+// Defines which operations can be routed to a cheaper model for
+// lower-tier users — or when system burn rate is high.
+interface EconomyRoute {
+  economyModel:      string;
+  economyCredits:    number;
+  economyUsd:        number;
+  minTierForPremium: string;
+  blockedBelow?:     string;
+}
+
+const BASE_ECONOMY_ROUTING: Record<string, EconomyRoute> = {
   generate_strategy:    { economyModel: 'gemini-flash', economyCredits: 3,  economyUsd: 0.010, minTierForPremium: 'pro' },
   generate_copy:        { economyModel: 'gemini-flash', economyCredits: 1,  economyUsd: 0.004, minTierForPremium: 'starter' },
   generate_reply:       { economyModel: 'gemini-flash', economyCredits: 1,  economyUsd: 0.004, minTierForPremium: 'starter' },
@@ -42,6 +49,7 @@ const ECONOMY_ROUTING: Record<string, {
   chat:                 { economyModel: 'gemini-flash', economyCredits: 1,  economyUsd: 0.003, minTierForPremium: 'pro' },
   geo_monitoring:       { economyModel: 'gemini-flash', economyCredits: 1,  economyUsd: 0.004, minTierForPremium: 'pro' },
   activate_agents:      { economyModel: 'gemini-flash', economyCredits: 2,  economyUsd: 0.008, minTierForPremium: 'pro' },
+  scan_product:         { economyModel: 'gemini-flash', economyCredits: 1,  economyUsd: 0.004, minTierForPremium: 'pro' },
   generate_image:       { economyModel: 'imagen-3',     economyCredits: 4,  economyUsd: 0.036, minTierForPremium: 'pro',      blockedBelow: 'pro' },
   generate_video_asset: { economyModel: 'imagen-3',     economyCredits: 6,  economyUsd: 0.054, minTierForPremium: 'pro_plus', blockedBelow: 'pro_plus' },
 };
@@ -61,39 +69,70 @@ const USER_COOLDOWNS_SEC: Record<string, number> = {
   generate_image:       3 * 60,   // 3 min
   generate_video_asset: 5 * 60,   // 5 min
   activate_agents:      10 * 60,  // 10 min
+  scan_product:         2 * 60,   // 2 min
 };
 
 // ─── System-level cooldowns for intelligence cycles (seconds) ─────
 const SYSTEM_COOLDOWNS_SEC: Record<string, number> = {
-  ipe_cycle:       13 * 60,   // 13 min (scheduler fires every 15 min)
+  ipe_cycle:        13 * 60,
   social_listening: 13 * 60,
-  emotional_intel: 13 * 60,
-  geo_monitoring:  13 * 60,
+  emotional_intel:  13 * 60,
+  geo_monitoring:   13 * 60,
 };
 
-export type CMADecision = 'allow' | 'allow_economy' | 'deny_insufficient' | 'deny_cap' | 'deny_cooldown' | 'deny_tier';
+// ─── Burn-rate thresholds that trigger aggressive economy routing ──
+// If a user burns > X credits/hour, every qualifying operation gets
+// routed to the economy model regardless of tier.
+const BURN_RATE_ECONOMY_THRESHOLD = 30; // credits/hour
+
+export type CMADecision =
+  | 'allow'
+  | 'allow_economy'
+  | 'deny_insufficient'
+  | 'deny_cap'
+  | 'deny_cooldown'
+  | 'deny_tier';
 
 export interface CMAResult {
-  decision:      CMADecision;
-  model:         string;
-  credits:       number;
-  actual_usd:    number;
-  savedCredits:  number;
-  savedUsd:      number;
-  reason:        string;
+  decision:     CMADecision;
+  model:        string;
+  credits:      number;
+  actual_usd:   number;
+  savedCredits: number;
+  savedUsd:     number;
+  reason:       string;
 }
 
-// In-memory cooldown tracker: key → last-run timestamp (ms)
-const systemCooldownMap   = new Map<string, number>();
-const userCooldownMap     = new Map<string, number>(); // `${userId}:${operation}` → ms
+export interface CMAStats {
+  totalSavedCredits: number;
+  totalSavedUsd:     number;
+  byOperation:       Record<string, number>;
+  events:            number;
+  systemBurnRate:    number;  // credits/hour in last 1h
+  economyRatio:      number;  // % of ops routed to economy
+}
+
+// In-memory cooldown + velocity trackers
+const systemCooldownMap  = new Map<string, number>();            // operation → last run ms
+const userCooldownMap    = new Map<string, number>();            // `${uid}:op` → last run ms
+const userHourlyBurnMap  = new Map<string, number[]>();         // uid → [timestamps of deductions]
+const systemHourlyCredits: number[] = [];                        // timestamps of system-level ops
+
+// Dynamic economy override — set by selfMonitor if system burn is high
+let dynamicEconomyOverride = false;
+
+// ────────────────────────────────────────────────────────────────────────────
 
 export class CreditManagementAgent {
   private static instance: CreditManagementAgent;
   private supabase = getServiceSupabaseClient();
 
   private constructor() {}
+
   public static getInstance(): CreditManagementAgent {
-    if (!CreditManagementAgent.instance) CreditManagementAgent.instance = new CreditManagementAgent();
+    if (!CreditManagementAgent.instance) {
+      CreditManagementAgent.instance = new CreditManagementAgent();
+    }
     return CreditManagementAgent.instance;
   }
 
@@ -103,15 +142,13 @@ export class CreditManagementAgent {
    * including the model to use, credits to charge, and any savings.
    *
    * @param userId   null for system-level operations (scheduler)
-   * @param operation  one of the OPERATION_COST keys
+   * @param operation  key from OPERATION_COST
    */
   async evaluate(userId: string | null, operation: string): Promise<CMAResult> {
     const defaultOp = OPERATION_COST[operation] ?? OPERATION_COST['agent_task'];
-    const defaultCredits = defaultOp.credits;
-    const defaultModel   = defaultOp.model;
-    const defaultUsd     = defaultOp.actual_usd;
+    const { credits: defaultCredits, model: defaultModel, actual_usd: defaultUsd } = defaultOp;
 
-    // ── 1. System cooldown check (no user needed) ─────────────────
+    // ── 1. System cooldown check (scheduler cycles) ───────────────
     const sysCooldown = SYSTEM_COOLDOWNS_SEC[operation];
     if (sysCooldown !== undefined) {
       const last = systemCooldownMap.get(operation) ?? 0;
@@ -126,15 +163,15 @@ export class CreditManagementAgent {
     // System-level operations (no user = skip per-user checks)
     if (!userId) {
       this.markSystemCooldown(operation);
-      return this.allow(defaultModel, defaultCredits, defaultUsd, 0, 0,
-        'System operation — approved');
+      this.trackSystemOp();
+      return this.allow(defaultModel, defaultCredits, defaultUsd, 0, 0, 'System operation — approved');
     }
 
     // ── 2. Load user tier ─────────────────────────────────────────
     const tier = await this.getUserTier(userId);
 
     // ── 3. Tier blocking (e.g. images are Pro-only) ────────────────
-    const routing = ECONOMY_ROUTING[operation];
+    const routing = BASE_ECONOMY_ROUTING[operation];
     if (routing?.blockedBelow && TIER_RANK[tier] < TIER_RANK[routing.blockedBelow]) {
       return this.deny('deny_tier', defaultModel, defaultCredits, defaultUsd,
         `${operation} requires ${routing.blockedBelow} plan (user has: ${tier})`);
@@ -166,28 +203,167 @@ export class CreditManagementAgent {
       }
     }
 
-    // ── 6. Model routing (economy vs premium) ─────────────────────
-    if (routing && TIER_RANK[tier] < TIER_RANK[routing.minTierForPremium]) {
+    // ── 6. Burn-rate check — high-velocity users get economy routing
+    const burnRate = this.getUserBurnRate(userId);
+    const highBurnUser = burnRate > BURN_RATE_ECONOMY_THRESHOLD;
+
+    // ── 7. Model routing (economy vs premium) ─────────────────────
+    const useEconomy = routing && (
+      TIER_RANK[tier] < TIER_RANK[routing.minTierForPremium]
+      || dynamicEconomyOverride
+      || highBurnUser
+    );
+
+    if (useEconomy && routing) {
       const savedCredits = defaultCredits - routing.economyCredits;
-      const savedUsd     = defaultUsd - routing.economyUsd;
+      const savedUsd     = defaultUsd     - routing.economyUsd;
 
       this.markUserCooldown(userId, operation);
       this.markSystemCooldown(operation);
+      this.trackUserBurn(userId);
 
-      // Log savings asynchronously
+      const reason = highBurnUser
+        ? `High burn rate (${burnRate.toFixed(1)}/hr) → economy routing: ${routing.economyModel}`
+        : `Economy routing: ${defaultModel} → ${routing.economyModel} (saved ${savedCredits} credits)`;
+
       this.logSavings(userId, operation, tier, savedCredits, savedUsd, routing.economyModel).catch(() => {});
 
-      return this.allowEconomy(routing.economyModel, routing.economyCredits, routing.economyUsd,
-        savedCredits, savedUsd,
-        `Economy routing: ${defaultModel} → ${routing.economyModel} (saved ${savedCredits} credits)`);
+      return this.allowEconomy(
+        routing.economyModel, routing.economyCredits, routing.economyUsd,
+        savedCredits, savedUsd, reason,
+      );
     }
 
-    // ── 7. Approved at full price ──────────────────────────────────
+    // ── 8. Approved at full price ──────────────────────────────────
     this.markUserCooldown(userId, operation);
     this.markSystemCooldown(operation);
+    this.trackUserBurn(userId);
 
     return this.allow(defaultModel, defaultCredits, defaultUsd, 0, 0,
-      `Approved (${tier} plan, ${defaultModel})`);
+      `Approved (${tier} plan, ${defaultModel}${highBurnUser ? ', high-burn override' : ''})`);
+  }
+
+  // ─── Real-time self-monitor — called by scheduler every 10 min ──
+  /**
+   * Analyses system-wide credit burn velocity and adjusts economy
+   * routing dynamically. If the system is burning too fast, sets
+   * dynamicEconomyOverride=true so ALL operations get cheaper routing.
+   */
+  async selfMonitor(): Promise<{
+    systemBurnRate: number;
+    dynamicEconomyActive: boolean;
+    totalCostUsdLastHour: number;
+    recommendation: string;
+  }> {
+    try {
+      const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+
+      // Pull last hour's AI usage from DB
+      const { data: recentUsage } = await this.supabase
+        .from('ai_usage_logs')
+        .select('energy_debited, actual_cost_usd, model, operation, created_at')
+        .gte('created_at', oneHourAgo);
+
+      const rows = recentUsage ?? [];
+      const totalCreditsLastHour = rows.reduce((s: number, r: any) => s + (parseFloat(r.energy_debited) || 0), 0);
+      const totalCostUsdLastHour = rows.reduce((s: number, r: any) => s + (parseFloat(r.actual_cost_usd) || 0), 0);
+
+      // Dynamic thresholds (per hour system-wide)
+      const HIGH_BURN_THRESHOLD = 500;   // credits/hour system-wide → tighten
+      const LOW_BURN_THRESHOLD  = 100;   // credits/hour → relax
+
+      let recommendation = 'System nominal — standard routing active';
+
+      if (totalCreditsLastHour > HIGH_BURN_THRESHOLD) {
+        dynamicEconomyOverride = true;
+        recommendation = `High system burn (${totalCreditsLastHour} credits/hr) — economy override ACTIVE. All eligible ops routed to cheap models.`;
+        console.log(`[CMA:Monitor] ⚠️  ${recommendation}`);
+      } else if (totalCreditsLastHour < LOW_BURN_THRESHOLD && dynamicEconomyOverride) {
+        dynamicEconomyOverride = false;
+        recommendation = `System burn normalised (${totalCreditsLastHour} credits/hr) — economy override RELEASED.`;
+        console.log(`[CMA:Monitor] ✓ ${recommendation}`);
+      }
+
+      // Build model breakdown for logging
+      const byModel: Record<string, number> = {};
+      for (const r of rows) {
+        byModel[r.model] = (byModel[r.model] ?? 0) + (parseFloat(r.energy_debited) || 0);
+      }
+
+      console.log(`[CMA:Monitor] Burn: ${totalCreditsLastHour.toFixed(1)} credits | $${totalCostUsdLastHour.toFixed(4)} | Models: ${JSON.stringify(byModel)}`);
+
+      // Persist monitoring snapshot to DB
+      await this.supabase.from('cma_monitor_log').upsert({
+        id: 'singleton',
+        system_burn_rate_1h: totalCreditsLastHour,
+        system_cost_usd_1h:  totalCostUsdLastHour,
+        economy_override:    dynamicEconomyOverride,
+        model_breakdown:     byModel,
+        recommendation,
+        updated_at:          new Date().toISOString(),
+      }, { onConflict: 'id' }).catch(() => {});
+
+      return {
+        systemBurnRate:       totalCreditsLastHour,
+        dynamicEconomyActive: dynamicEconomyOverride,
+        totalCostUsdLastHour,
+        recommendation,
+      };
+    } catch (err: any) {
+      console.error('[CMA:Monitor] selfMonitor error:', err.message);
+      return { systemBurnRate: 0, dynamicEconomyActive: false, totalCostUsdLastHour: 0, recommendation: 'Monitor error' };
+    }
+  }
+
+  // ─── Get savings summary for admin panel ──────────────────────
+  async getSavingsSummary(days = 7): Promise<CMAStats> {
+    try {
+      const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
+      const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+
+      const [{ data: savings }, { data: recentUsage }] = await Promise.all([
+        this.supabase
+          .from('cma_savings_log')
+          .select('operation, tier, saved_credits, saved_usd, model_used, created_at')
+          .gte('created_at', since)
+          .order('created_at', { ascending: false })
+          .limit(500),
+        this.supabase
+          .from('ai_usage_logs')
+          .select('energy_debited, model')
+          .gte('created_at', oneHourAgo),
+      ]);
+
+      const rows        = savings ?? [];
+      const usageRows   = recentUsage ?? [];
+
+      const totalSavedCredits = rows.reduce((s: number, r: any) => s + (r.saved_credits ?? 0), 0);
+      const totalSavedUsd     = rows.reduce((s: number, r: any) => s + (r.saved_usd ?? 0), 0);
+      const byOperation: Record<string, number> = {};
+      for (const r of rows) {
+        byOperation[r.operation] = (byOperation[r.operation] ?? 0) + (r.saved_credits ?? 0);
+      }
+
+      const systemBurnRate = usageRows.reduce((s: number, r: any) => s + (parseFloat(r.energy_debited) || 0), 0);
+      const economyRows    = rows.filter((r: any) => r.saved_credits > 0).length;
+      const economyRatio   = rows.length > 0 ? economyRows / rows.length : 0;
+
+      return { totalSavedCredits, totalSavedUsd, byOperation, events: rows.length, systemBurnRate, economyRatio };
+    } catch {
+      return { totalSavedCredits: 0, totalSavedUsd: 0, byOperation: {}, events: 0, systemBurnRate: 0, economyRatio: 0 };
+    }
+  }
+
+  // ─── Get live status ─────────────────────────────────────────
+  getLiveStatus() {
+    return {
+      dynamicEconomyOverride,
+      activeSystemCooldowns: [...systemCooldownMap.entries()].map(([op, ts]) => ({
+        operation: op,
+        cooldownEndsIn: Math.max(0, Math.ceil(((SYSTEM_COOLDOWNS_SEC[op] ?? 0) * 1000 - (Date.now() - ts)) / 1000)),
+      })).filter(c => c.cooldownEndsIn > 0),
+      trackedUsers: userCooldownMap.size,
+    };
   }
 
   // ─── Record that a system operation just ran ──────────────────
@@ -201,6 +377,31 @@ export class CreditManagementAgent {
     if (USER_COOLDOWNS_SEC[operation] !== undefined) {
       userCooldownMap.set(`${userId}:${operation}`, Date.now());
     }
+  }
+
+  // ─── Per-user burn rate (credits/hour from last hour) ──────────
+  private trackUserBurn(userId: string) {
+    const now = Date.now();
+    const arr = userHourlyBurnMap.get(userId) ?? [];
+    arr.push(now);
+    // keep only last 60 min
+    const filtered = arr.filter(t => now - t < 60 * 60 * 1000);
+    userHourlyBurnMap.set(userId, filtered);
+  }
+
+  private getUserBurnRate(userId: string): number {
+    const now = Date.now();
+    const arr = userHourlyBurnMap.get(userId) ?? [];
+    return arr.filter(t => now - t < 60 * 60 * 1000).length;
+  }
+
+  private trackSystemOp() {
+    const now = Date.now();
+    systemHourlyCredits.push(now);
+    // trim entries older than 1 hour
+    const cutoff = now - 60 * 60 * 1000;
+    const idx = systemHourlyCredits.findIndex(t => t > cutoff);
+    if (idx > 0) systemHourlyCredits.splice(0, idx);
   }
 
   // ─── Tier resolution ──────────────────────────────────────────
@@ -230,7 +431,7 @@ export class CreditManagementAgent {
         .eq('user_id', userId)
         .gte('created_at', startOfDay.toISOString());
 
-      return (data ?? []).reduce((sum: number, row: any) => sum + (parseFloat(row.energy_debited) || 0), 0);
+      return (data ?? []).reduce((s: number, r: any) => s + (parseFloat(r.energy_debited) || 0), 0);
     } catch {
       return 0;
     }
@@ -252,31 +453,6 @@ export class CreditManagementAgent {
         created_at:    new Date().toISOString(),
       });
     } catch {}
-  }
-
-  // ─── Get savings summary for admin panel ──────────────────────
-  async getSavingsSummary(days = 7) {
-    try {
-      const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
-      const { data } = await this.supabase
-        .from('cma_savings_log')
-        .select('operation, tier, saved_credits, saved_usd, model_used, created_at')
-        .gte('created_at', since)
-        .order('created_at', { ascending: false })
-        .limit(500);
-
-      const rows = data ?? [];
-      const totalSavedCredits = rows.reduce((s: number, r: any) => s + (r.saved_credits ?? 0), 0);
-      const totalSavedUsd     = rows.reduce((s: number, r: any) => s + (r.saved_usd ?? 0), 0);
-      const byOperation: Record<string, number> = {};
-      for (const r of rows) {
-        byOperation[r.operation] = (byOperation[r.operation] ?? 0) + (r.saved_credits ?? 0);
-      }
-
-      return { totalSavedCredits, totalSavedUsd, byOperation, events: rows.length };
-    } catch {
-      return { totalSavedCredits: 0, totalSavedUsd: 0, byOperation: {}, events: 0 };
-    }
   }
 
   // ─── Response builders ────────────────────────────────────────
