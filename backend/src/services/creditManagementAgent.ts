@@ -330,15 +330,19 @@ export class CreditManagementAgent {
       console.log(`[CMA:Monitor] Burn: ${totalCreditsLastHour.toFixed(1)} credits | $${totalCostUsdLastHour.toFixed(4)} | Models: ${JSON.stringify(byModel)}`);
 
       // Persist monitoring snapshot to DB
-      await this.supabase.from('cma_monitor_log').upsert({
-        id: 'singleton',
-        system_burn_rate_1h: totalCreditsLastHour,
-        system_cost_usd_1h:  totalCostUsdLastHour,
-        economy_override:    dynamicEconomyOverride,
-        model_breakdown:     byModel,
-        recommendation,
-        updated_at:          new Date().toISOString(),
-      }, { onConflict: 'id' }).catch(() => {});
+      try {
+        await this.supabase.from('cma_monitor_log').upsert({
+          id: 'singleton',
+          system_burn_rate_1h: totalCreditsLastHour,
+          system_cost_usd_1h:  totalCostUsdLastHour,
+          economy_override:    dynamicEconomyOverride,
+          model_breakdown:     byModel,
+          recommendation,
+          updated_at:          new Date().toISOString(),
+        }, { onConflict: 'id' });
+      } catch (_persistErr) {
+        // Non-fatal — monitoring continues even if DB write fails
+      }
 
       return {
         systemBurnRate:       totalCreditsLastHour,
