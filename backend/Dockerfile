@@ -8,14 +8,20 @@ WORKDIR /app
 COPY package*.json ./
 COPY tsconfig.json ./
 
-# Install dependencies
-RUN npm install
+# Install all dependencies (including devDeps needed for tsc)
+RUN npm install --legacy-peer-deps
 
 # Copy source code
 COPY src ./src
 
-# Build TypeScript
+# Build TypeScript code
 RUN npm run build
 
-# Start the worker
-CMD ["npm", "start"]
+# Remove devDependencies to reduce image size
+RUN npm prune --production
+
+# Expose the port the app runs on
+EXPOSE 8000
+
+# Start the server
+CMD ["node", "dist/server.js"]
