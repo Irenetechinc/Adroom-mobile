@@ -938,4 +938,12 @@ const styles = StyleSheet.create({
   modalDangerText: { color: '#fff', fontWeight: '800', fontSize: 15 },
   modalSecondary: { paddingVertical: 14, borderRadius: 12, alignItems: 'center', borderWidth: 1, borderColor: COLORS.border },
   modalSecondaryText: { color: COLORS.text, fontWeight: '600', fontSize: 14 },
+  cardLabel: { color: COLORS.muted, fontSize: 11, fontWeight: '600', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 6, marginTop: 12 },
+  cardInputRow: {
+    flexDirection: 'row', alignItems: 'center',
+    backgroundColor: COLORS.bg, borderWidth: 1, borderColor: COLORS.border,
+    borderRadius: 10, paddingHorizontal: 12, height: 48,
+    color: COLORS.text, fontSize: 15,
+  },
+  cardInput: { flex: 1, color: '#FFFFFF', fontSize: 15, marginLeft: 8 },
 });

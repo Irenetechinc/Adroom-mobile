@@ -1,19 +1,20 @@
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useCallback } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity,
   ActivityIndicator, Alert, StyleSheet,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../types';
 import {
   ChevronLeft, Link2, Link2Off, CheckCircle2,
-  ShieldCheck, RefreshCw, AlertCircle, ExternalLink,
+  ShieldCheck, RefreshCw, AlertCircle, ExternalLink, Lock, Zap,
 } from 'lucide-react-native';
 import Animated, { FadeInDown } from 'react-native-reanimated';
 import { supabase } from '../services/supabase';
+import { useEnergyStore } from '../store/energyStore';
 
 type Platform = {
   id: string;
@@ -41,6 +42,13 @@ export default function ConnectedAccountsScreen() {
   const [configs, setConfigs] = useState<Record<string, any>>({});
   const [disconnecting, setDisconnecting] = useState<string | null>(null);
 
+  const { subscription } = useEnergyStore();
+  const plan: string = (subscription as any)?.plan ?? 'none';
+  const isPro = plan === 'pro' || plan === 'pro_plus';
+
+  const connectedCount = PLATFORMS.filter(p => !p.comingSoon && !!configs[p.id]).length;
+  const isStarterLimited = !isPro && connectedCount >= 1;
+
   const loadConfigs = useCallback(async () => {
     setLoading(true);
     try {
@@ -53,14 +61,18 @@ export default function ConnectedAccountsScreen() {
       if (!res.ok) { setConfigs({}); return; }
       const data = await res.json();
       setConfigs(data.configs || {});
-    } catch (e) {
+    } catch {
       setConfigs({});
     } finally {
       setLoading(false);
     }
   }, []);
 
-  useEffect(() => { loadConfigs(); }, [loadConfigs]);
+  useFocusEffect(
+    useCallback(() => {
+      loadConfigs();
+    }, [loadConfigs])
+  );
 
   const isConnected = (id: string) => !!configs[id];
 
@@ -72,6 +84,10 @@ export default function ConnectedAccountsScreen() {
     else if (platform.id === 'linkedin') params.connectLinkedIn = true;
     else if (platform.id === 'twitter') params.connectTwitter = true;
     navigation.navigate('AgentChat', params);
+  };
+
+  const handleUpgrade = () => {
+    (navigation as any).navigate('Subscription', { scrollToPlan: 'pro' });
   };
 
   const handleDisconnect = (platform: Platform) => {
@@ -161,16 +177,31 @@ export default function ConnectedAccountsScreen() {
           Connect your social accounts so AdRoom can autonomously publish, reply, and engage on your behalf — across every platform.
         </Text>
 
+        {!isPro && (
+          <View style={styles.planBanner}>
+            <Zap size={14} color="#F59E0B" />
+            <Text style={styles.planBannerText}>
+              {connectedCount === 0
+                ? 'Free plan: Connect 1 account. Upgrade to Pro for unlimited.'
+                : 'You\'ve used your 1 free account slot. Upgrade to Pro to add more.'}
+            </Text>
+            <TouchableOpacity onPress={handleUpgrade} style={styles.planBannerBtn}>
+              <Text style={styles.planBannerBtnText}>Upgrade</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+
         {PLATFORMS.map((platform, index) => {
           const connected = isConnected(platform.id);
           const comingSoon = !!platform.comingSoon;
           const disc = disconnecting === platform.id;
+          const locked = !connected && !comingSoon && isStarterLimited;
 
           return (
             <Animated.View
               key={platform.id}
               entering={FadeInDown.delay(index * 60).springify()}
-              style={[styles.platformCard, comingSoon && styles.platformCardDim]}
+              style={[styles.platformCard, (comingSoon || locked) && styles.platformCardDim]}
             >
               <View style={styles.platformHeader}>
                 <View style={[styles.platformLogoWrap, { backgroundColor: platform.bg }]}>
@@ -179,12 +210,17 @@ export default function ConnectedAccountsScreen() {
                   </Text>
                 </View>
                 <View style={{ flex: 1, marginLeft: 12 }}>
-                  <Text style={[styles.platformName, comingSoon && { opacity: 0.5 }]}>{platform.name}</Text>
+                  <Text style={[styles.platformName, (comingSoon || locked) && { opacity: 0.5 }]}>{platform.name}</Text>
                   <Text style={styles.platformSub}>{platform.sub}</Text>
                 </View>
                 {comingSoon ? (
                   <View style={styles.comingSoonBadge}>
                     <Text style={styles.comingSoonText}>SOON</Text>
+                  </View>
+                ) : locked ? (
+                  <View style={styles.lockedBadge}>
+                    <Lock size={10} color="#F59E0B" />
+                    <Text style={styles.lockedBadgeText}>PRO</Text>
                   </View>
                 ) : (
                   <View style={[styles.statusBadge, connected
@@ -200,7 +236,19 @@ export default function ConnectedAccountsScreen() {
               </View>
 
               {!comingSoon && (
-                connected ? (
+                locked ? (
+                  <View style={styles.lockedBody}>
+                    <Lock size={28} color="#F59E0B" />
+                    <Text style={styles.lockedTitle}>Pro Feature</Text>
+                    <Text style={styles.lockedDesc}>
+                      Upgrade to Pro to connect {platform.name} and run autonomous campaigns across multiple platforms simultaneously.
+                    </Text>
+                    <TouchableOpacity onPress={handleUpgrade} style={styles.upgradeBtn} activeOpacity={0.85}>
+                      <Zap size={16} color="#000" />
+                      <Text style={styles.upgradeBtnText}>Upgrade to Pro</Text>
+                    </TouchableOpacity>
+                  </View>
+                ) : connected ? (
                   <View style={styles.connectedBody}>
                     <View style={styles.accountInfoRow}>
                       <View style={styles.accountAvatar}>
@@ -285,13 +333,25 @@ const styles = StyleSheet.create({
     alignItems: 'center', justifyContent: 'center',
   },
   scroll: { padding: 16 },
-  pageDesc: { color: '#64748B', fontSize: 13, lineHeight: 20, marginBottom: 20 },
+  pageDesc: { color: '#64748B', fontSize: 13, lineHeight: 20, marginBottom: 16 },
+
+  planBanner: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    backgroundColor: 'rgba(245,158,11,0.08)', borderWidth: 1, borderColor: 'rgba(245,158,11,0.25)',
+    borderRadius: 14, padding: 12, marginBottom: 16,
+  },
+  planBannerText: { flex: 1, color: '#F59E0B', fontSize: 12, lineHeight: 17 },
+  planBannerBtn: {
+    backgroundColor: '#F59E0B', borderRadius: 8,
+    paddingHorizontal: 12, paddingVertical: 6,
+  },
+  planBannerBtnText: { color: '#000', fontWeight: '800', fontSize: 11 },
 
   platformCard: {
     backgroundColor: '#151B2B', borderRadius: 18, borderWidth: 1, borderColor: '#1E293B',
     overflow: 'hidden', marginBottom: 12,
   },
-  platformCardDim: { opacity: 0.45 },
+  platformCardDim: { opacity: 0.6 },
   platformHeader: {
     flexDirection: 'row', alignItems: 'center',
     padding: 16, borderBottomWidth: 1, borderBottomColor: '#1E293B',
@@ -314,6 +374,12 @@ const styles = StyleSheet.create({
     borderWidth: 1, paddingHorizontal: 10, paddingVertical: 5, borderRadius: 20,
   },
   comingSoonText: { color: '#7000FF', fontSize: 10, fontWeight: '700' },
+  lockedBadge: {
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    backgroundColor: 'rgba(245,158,11,0.1)', borderColor: 'rgba(245,158,11,0.3)',
+    borderWidth: 1, paddingHorizontal: 10, paddingVertical: 5, borderRadius: 20,
+  },
+  lockedBadgeText: { color: '#F59E0B', fontSize: 10, fontWeight: '700' },
 
   connectedBody: { padding: 16 },
   accountInfoRow: {
@@ -347,6 +413,16 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(239,68,68,0.08)', borderWidth: 1, borderColor: 'rgba(239,68,68,0.2)',
     alignItems: 'center', justifyContent: 'center',
   },
+
+  lockedBody: { padding: 24, alignItems: 'center' },
+  lockedTitle: { color: '#F59E0B', fontWeight: '800', fontSize: 16, marginTop: 12, marginBottom: 8 },
+  lockedDesc: { color: '#64748B', fontSize: 13, textAlign: 'center', lineHeight: 20, marginBottom: 20 },
+  upgradeBtn: {
+    backgroundColor: '#F59E0B', borderRadius: 14, flexDirection: 'row',
+    alignItems: 'center', justifyContent: 'center',
+    paddingHorizontal: 24, paddingVertical: 13, gap: 8,
+  },
+  upgradeBtnText: { color: '#000', fontWeight: '800', fontSize: 14 },
 
   notConnectedBody: { padding: 24, alignItems: 'center' },
   warningIcon: {
