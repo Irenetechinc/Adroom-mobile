@@ -805,6 +805,66 @@ const CreateStrategyPromptCard = ({ onStartStrategy, disabled }: { onStartStrate
   </View>
 );
 
+const EXPAND_THRESHOLD = 220;
+
+const ProgressiveAgentBubble = React.memo(({
+  text,
+  isNew,
+  textStyle,
+}: {
+  text: string;
+  isNew: boolean;
+  textStyle: any;
+}) => {
+  const words = text.split(' ');
+  const [displayCount, setDisplayCount] = useState(isNew ? 0 : words.length);
+  const [expanded, setExpanded] = useState(false);
+  const isLong = words.length > 30 || text.length > EXPAND_THRESHOLD;
+  const isComplete = displayCount >= words.length;
+
+  useEffect(() => {
+    if (!isNew || displayCount >= words.length) return;
+    const interval = setInterval(() => {
+      setDisplayCount(prev => {
+        if (prev >= words.length) {
+          clearInterval(interval);
+          return prev;
+        }
+        return prev + 2;
+      });
+    }, 28);
+    return () => clearInterval(interval);
+  }, [isNew]);
+
+  const displayedText = words.slice(0, displayCount).join(' ');
+  const summaryText = isLong && !expanded && isComplete
+    ? text.slice(0, EXPAND_THRESHOLD) + '…'
+    : displayedText || '';
+  const showText = isComplete ? summaryText : displayedText;
+
+  return (
+    <View>
+      <Text style={textStyle}>
+        {showText}
+        {!isComplete && (
+          <Text style={{ color: '#00F0FF', opacity: 0.7 }}> ●●●</Text>
+        )}
+      </Text>
+      {isLong && isComplete && (
+        <TouchableOpacity
+          onPress={() => setExpanded(e => !e)}
+          style={{ marginTop: 8, flexDirection: 'row', alignItems: 'center', gap: 4 }}
+          activeOpacity={0.7}
+        >
+          <Text style={{ color: '#00F0FF', fontSize: 12, fontWeight: '700' }}>
+            {expanded ? 'Show less ↑' : 'Read more ↓'}
+          </Text>
+        </TouchableOpacity>
+      )}
+    </View>
+  );
+});
+
 const TypingIndicator = () => {
   const dot1 = useSharedValue(0.3);
   const dot2 = useSharedValue(0.3);
@@ -855,6 +915,7 @@ export default function AgentChatScreen({ navigation, route }: Props) {
   const [uploading, setUploading] = useState(false);
   const [isActive, setIsActive] = useState(false);
   const activityTimer = useRef<NodeJS.Timeout | null>(null);
+  const seenMsgIds = useRef<Set<string>>(new Set());
 
   const markActive = () => {
     setIsActive(true);
@@ -868,7 +929,10 @@ export default function AgentChatScreen({ navigation, route }: Props) {
       route.params?.connectLinkedIn || route.params?.connectTwitter);
 
     if (!skipLoad) {
-      loadMessages().then(() => setHistoryLoaded(true));
+      loadMessages().then(() => {
+        useAgentStore.getState().messages.forEach(m => seenMsgIds.current.add(m.id));
+        setHistoryLoaded(true);
+      });
     } else {
       setHistoryLoaded(true);
     }
@@ -955,6 +1019,9 @@ export default function AgentChatScreen({ navigation, route }: Props) {
     const isLast = isLastInteractiveMessage(index, item.uiType || '');
     const isDisabled = item.uiType && !isLast;
 
+    const isNewMsg = item.sender === 'agent' && !seenMsgIds.current.has(item.id);
+    if (item.sender === 'agent') seenMsgIds.current.add(item.id);
+
     return (
       <Animated.View
         entering={item.sender === 'user' ? FadeInRight.duration(300) : FadeInLeft.duration(300)}
@@ -973,9 +1040,16 @@ export default function AgentChatScreen({ navigation, route }: Props) {
           {item.imageUri ? (
             <Image source={{ uri: item.imageUri }} style={styles.messageImage} resizeMode="cover" />
           ) : null}
-          <Text style={item.sender === 'user' ? styles.userBubbleText : styles.agentBubbleText}>
-            {item.text}
-          </Text>
+          {item.sender === 'agent' ? (
+            <ProgressiveAgentBubble
+              key={item.id}
+              text={item.text}
+              isNew={isNewMsg}
+              textStyle={styles.agentBubbleText}
+            />
+          ) : (
+            <Text style={styles.userBubbleText}>{item.text}</Text>
+          )}
 
           {item.uiType === 'product_intake_form' && (
             <ProductIntakeCard
