@@ -1,6 +1,6 @@
 -- ══════════════════════════════════════════════════════
--- AdRoom CMA Database Migration
--- Run this in your Supabase SQL editor
+-- AdRoom CMA Database Migration — FIXED
+-- Run this in your Supabase SQL Editor
 -- ══════════════════════════════════════════════════════
 
 -- 1. CMA Savings Log
@@ -16,20 +16,20 @@ CREATE TABLE IF NOT EXISTS cma_savings_log (
   created_at    timestamptz NOT NULL DEFAULT now()
 );
 
-CREATE INDEX IF NOT EXISTS cma_savings_log_user_id_idx  ON cma_savings_log(user_id);
+CREATE INDEX IF NOT EXISTS cma_savings_log_user_id_idx   ON cma_savings_log(user_id);
 CREATE INDEX IF NOT EXISTS cma_savings_log_created_at_idx ON cma_savings_log(created_at DESC);
-CREATE INDEX IF NOT EXISTS cma_savings_log_operation_idx ON cma_savings_log(operation);
+CREATE INDEX IF NOT EXISTS cma_savings_log_operation_idx  ON cma_savings_log(operation);
 
 -- 2. CMA Monitor Log (singleton row — updated every 10 min by selfMonitor)
 -- Tracks real-time system burn rate, economy override status, and cost
 CREATE TABLE IF NOT EXISTS cma_monitor_log (
-  id                      text PRIMARY KEY DEFAULT 'singleton',
-  system_burn_rate_1h     numeric(10,4) NOT NULL DEFAULT 0,
-  system_cost_usd_1h      numeric(12,6) NOT NULL DEFAULT 0,
-  economy_override        boolean NOT NULL DEFAULT false,
-  model_breakdown         jsonb,
-  recommendation          text,
-  updated_at              timestamptz NOT NULL DEFAULT now()
+  id                  text PRIMARY KEY DEFAULT 'singleton',
+  system_burn_rate_1h numeric(10,4) NOT NULL DEFAULT 0,
+  system_cost_usd_1h  numeric(12,6) NOT NULL DEFAULT 0,
+  economy_override    boolean NOT NULL DEFAULT false,
+  model_breakdown     jsonb,
+  recommendation      text,
+  updated_at          timestamptz NOT NULL DEFAULT now()
 );
 
 -- Insert the singleton row if it doesn't exist
@@ -54,11 +54,27 @@ CREATE INDEX IF NOT EXISTS ai_usage_logs_operation_idx  ON ai_usage_logs(operati
 
 -- 4. Row Level Security for cma_savings_log
 ALTER TABLE cma_savings_log ENABLE ROW LEVEL SECURITY;
-CREATE POLICY IF NOT EXISTS "Service role bypass" ON cma_savings_log USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Service role bypass" ON cma_savings_log;
+CREATE POLICY "Service role bypass" ON cma_savings_log
+  USING (true)
+  WITH CHECK (true);
 
 -- 5. Row Level Security for cma_monitor_log
 ALTER TABLE cma_monitor_log ENABLE ROW LEVEL SECURITY;
-CREATE POLICY IF NOT EXISTS "Service role bypass" ON cma_monitor_log USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Service role bypass" ON cma_monitor_log;
+CREATE POLICY "Service role bypass" ON cma_monitor_log
+  USING (true)
+  WITH CHECK (true);
+
+-- 6. Row Level Security for ai_usage_logs (if not already set)
+ALTER TABLE ai_usage_logs ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Service role bypass" ON ai_usage_logs;
+CREATE POLICY "Service role bypass" ON ai_usage_logs
+  USING (true)
+  WITH CHECK (true);
 
 -- Done!
 SELECT 'CMA migration complete' AS status;
