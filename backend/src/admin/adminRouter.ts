@@ -500,6 +500,132 @@ router.get('/api/cma/stats', auth, async (req, res) => {
   }
 });
 
+// ─── CMA: REAL-TIME AI PROVIDER CREDITS ────────────────────────────────────────
+// Returns actual spend tracked in ai_usage_logs plus live OpenAI billing API data.
+// Google/Gemini doesn't expose balance via API key so we use internal tracking.
+router.get('/api/cma/model-credits', auth, async (req, res) => {
+  try {
+    const sb = getServiceSupabaseClient();
+
+    // Pull all ai_usage_logs for this calendar month
+    const startOfMonth = new Date();
+    startOfMonth.setDate(1);
+    startOfMonth.setHours(0, 0, 0, 0);
+
+    const { data: usageLogs } = await sb
+      .from('ai_usage_logs')
+      .select('model, operation, actual_cost_usd, energy_debited, created_at')
+      .gte('created_at', startOfMonth.toISOString())
+      .order('created_at', { ascending: false });
+
+    const rows = usageLogs || [];
+
+    // Classify rows by provider
+    const isOpenAI  = (m: string) => m.startsWith('gpt') || m.includes('openai');
+    const isGoogle  = (m: string) => m.startsWith('gemini') || m.startsWith('imagen') || m.includes('google');
+
+    const openaiRows  = rows.filter(r => isOpenAI(r.model));
+    const googleRows  = rows.filter(r => isGoogle(r.model));
+
+    const sum = (arr: any[]) => arr.reduce((s, r) => s + (parseFloat(r.actual_cost_usd) || 0), 0);
+
+    const openaiInternalSpend = sum(openaiRows);
+    const googleInternalSpend = sum(googleRows);
+
+    // Model-level breakdown
+    const modelBreakdown = (arr: any[]) => {
+      const map: Record<string, { calls: number; usd: number }> = {};
+      for (const r of arr) {
+        if (!map[r.model]) map[r.model] = { calls: 0, usd: 0 };
+        map[r.model].calls++;
+        map[r.model].usd += parseFloat(r.actual_cost_usd) || 0;
+      }
+      return map;
+    };
+
+    // ── OpenAI live billing API ─────────────────────────────────────
+    let openaiLiveSpend: number | null = null;
+    let openaiHardLimitUsd: number | null = null;
+    let openaiSoftLimitUsd: number | null = null;
+    let openaiApiError: string | null = null;
+
+    try {
+      const OPENAI_KEY = process.env.OPENAI_API_KEY || '';
+      const today = new Date();
+      const yyyy  = today.getFullYear();
+      const mm    = String(today.getMonth() + 1).padStart(2, '0');
+      const dd    = String(today.getDate() + 1).padStart(2, '0'); // tomorrow as end
+      const start = `${yyyy}-${mm}-01`;
+      const end   = `${yyyy}-${mm}-${dd}`;
+
+      const [usageResp, subResp] = await Promise.allSettled([
+        fetch(`https://api.openai.com/v1/dashboard/billing/usage?start_date=${start}&end_date=${end}`, {
+          headers: { Authorization: `Bearer ${OPENAI_KEY}` },
+        }),
+        fetch('https://api.openai.com/v1/dashboard/billing/subscription', {
+          headers: { Authorization: `Bearer ${OPENAI_KEY}` },
+        }),
+      ]);
+
+      if (usageResp.status === 'fulfilled' && usageResp.value.ok) {
+        const data: any = await usageResp.value.json();
+        openaiLiveSpend = (data.total_usage || 0) / 100; // cents → USD
+      } else if (usageResp.status === 'fulfilled') {
+        const errData: any = await usageResp.value.json().catch(() => ({}));
+        openaiApiError = errData?.error?.message || `HTTP ${usageResp.value.status}`;
+      }
+
+      if (subResp.status === 'fulfilled' && subResp.value.ok) {
+        const data: any = await subResp.value.json();
+        openaiHardLimitUsd = data.hard_limit_usd ?? null;
+        openaiSoftLimitUsd = data.soft_limit_usd ?? null;
+      }
+    } catch (e: any) {
+      openaiApiError = e.message;
+    }
+
+    const now = new Date().toISOString();
+    res.json({
+      ok: true,
+      period: { start: startOfMonth.toISOString(), end: now },
+      providers: [
+        {
+          id:         'openai',
+          name:       'OpenAI',
+          color:      '#10A37F',
+          textColor:  '#FFFFFF',
+          models:     ['gpt-4o'],
+          internalSpendUsd:  openaiInternalSpend,
+          internalCallCount: openaiRows.length,
+          liveSpendUsd:      openaiLiveSpend,
+          hardLimitUsd:      openaiHardLimitUsd,
+          softLimitUsd:      openaiSoftLimitUsd,
+          apiError:          openaiApiError,
+          modelBreakdown:    modelBreakdown(openaiRows),
+        },
+        {
+          id:         'google',
+          name:       'Google',
+          color:      '#4285F4',
+          textColor:  '#FFFFFF',
+          models:     ['gemini-2.0-flash', 'imagen-3.0-generate-001'],
+          internalSpendUsd:  googleInternalSpend,
+          internalCallCount: googleRows.length,
+          liveSpendUsd:      null,   // Google AI Studio API key has no billing endpoint
+          hardLimitUsd:      null,
+          softLimitUsd:      null,
+          apiError:          null,
+          modelBreakdown:    modelBreakdown(googleRows),
+          note:              'Balance via Google Cloud Console — internal tracking shown',
+        },
+      ],
+      totalSpendUsd: openaiInternalSpend + googleInternalSpend,
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ─── NOTIFICATION HISTORY ─────────────────────────────────────────────────────
 router.get('/api/notifications', auth, async (req, res) => {
   try {
