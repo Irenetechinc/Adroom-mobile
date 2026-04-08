@@ -491,29 +491,49 @@ export const useAgentStore = create<AgentState>((set, get) => ({
       const { addMessage, setTyping, updateProductDetails, productDetails } = get();
       updateProductDetails({ selectedGoal: goal });
       set({ flowState: 'DURATION_SELECTION', isTyping: true, isInputDisabled: true });
-      
-      addMessage(`${goal.replace('_', ' ')}`, 'user');
-      
+
+      addMessage(`${goal.replace(/_/g, ' ')}`, 'user');
+
       const rawPrice = productDetails.price || '0';
       const numericOnly = rawPrice.replace(/[^0-9.]/g, '');
-      const price = parseFloat(numericOnly || '0');
-      let rec = 21; 
+      const priceNum = parseFloat(numericOnly || '0');
+
+      // Resolve currency symbol from the user's selected currency
+      const currencyCode = productDetails.currency || 'USD';
+      const CURRENCY_SYMBOLS: Record<string, string> = {
+          USD: '$', EUR: '€', GBP: '£', NGN: '₦', GHS: '₵', ZAR: 'R',
+          KES: 'KSh', AED: 'د.إ', CAD: 'C$', AUD: 'A$', INR: '₹', BRL: 'R$',
+      };
+      const currencySymbol = CURRENCY_SYMBOLS[currencyCode] ?? currencyCode;
+
+      let rec = 21;
       if (goal === 'sales') rec = 21;
       else if (goal === 'awareness') rec = 30;
       else if (goal === 'promotional') rec = 14;
       else if (goal === 'launch') rec = 30;
 
-      if (price > 100) rec += 7;
-      if (price < 20) rec -= 3;
+      if (priceNum > 100) rec += 7;
+      if (priceNum < 20 && priceNum > 0) rec -= 3;
+      rec = Math.max(7, rec);
+
+      const priceDisplay = priceNum > 0 ? `${currencySymbol}${priceNum.toLocaleString()}` : null;
 
       setTimeout(() => {
           setTyping(false);
           addMessage(
-              `Goal set. Based on your product price of $${price}, I recommend a ${rec}-day duration.`,
+              priceDisplay
+                  ? `Goal set. Based on your ${currencyCode} pricing of ${priceDisplay}, I recommend a ${rec}-day duration.`
+                  : `Goal set. I recommend a ${rec}-day duration for this campaign.`,
               'agent',
               undefined,
               'duration_selection',
-              { recommended: rec }
+              {
+                  recommended: rec,
+                  productName: productDetails.name,
+                  price: priceNum > 0 ? String(priceNum) : undefined,
+                  currencySymbol,
+                  currencyCode,
+              }
           );
       }, 1000);
   },
@@ -754,7 +774,16 @@ export const useAgentStore = create<AgentState>((set, get) => ({
 
     const { data: { user } } = await supabase.auth.getUser();
     if (user) {
-        await supabase.from('chat_history').delete().eq('user_id', user.id);
+        // Clear chat_history (local Supabase table)
+        await supabase.from('chat_history').delete().eq('user_id', user.id).catch(() => {});
+        // Clear ai_conversation_memory (MemPalace — backend)
+        const token = await getAuthToken();
+        if (token && BACKEND_URL) {
+            await fetch(`${BACKEND_URL}/api/chat/history`, {
+                method: 'DELETE',
+                headers: { Authorization: `Bearer ${token}` },
+            }).catch(() => {});
+        }
     }
 
     const { addMessage, setTyping, startStrategyFlow } = get();

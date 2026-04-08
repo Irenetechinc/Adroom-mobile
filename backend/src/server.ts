@@ -1277,6 +1277,28 @@ app.post('/api/chat/history', async (req, res) => {
 });
 
 /**
+ * DELETE /api/chat/history — clear all MemPalace conversation history for the current user
+ */
+app.delete('/api/chat/history', async (req, res) => {
+  try {
+    const supabase = getSupabaseClient(req as any);
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return res.status(401).json({ error: 'Unauthorized.' });
+
+    const svc = getServiceSupabaseClient();
+    const { error } = await svc
+      .from('ai_conversation_memory')
+      .delete()
+      .eq('user_id', user.id);
+
+    if (error) return res.status(500).json({ error: error.message });
+    res.json({ success: true, cleared: true });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
  * Credit Management Agent — Stats endpoint (admin-level)
  * Returns total credits saved, USD saved, and per-operation breakdown.
  */

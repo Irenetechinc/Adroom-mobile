@@ -1,14 +1,14 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity, Alert, ActivityIndicator,
-  Linking, Switch, RefreshControl, StyleSheet, Modal,
+  Linking, Switch, RefreshControl, StyleSheet, Modal, TextInput, KeyboardAvoidingView, Platform,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import Animated, { FadeInDown } from 'react-native-reanimated';
 import {
   Zap, Crown, ArrowLeft, CheckCircle, AlertCircle,
-  RefreshCw, ChevronRight, Star, Shield, X, Bot, Video, Image as ImageIcon, Globe,
+  RefreshCw, ChevronRight, Star, Shield, X, Bot, Video, Image as ImageIcon, Globe, CreditCard, Lock,
 } from 'lucide-react-native';
 import { useEnergyStore, PLAN_DETAILS, TOPUP_OPTIONS } from '../store/energyStore';
 import Constants from 'expo-constants';
@@ -55,6 +55,21 @@ export default function SubscriptionScreen() {
   const [tab, setTab] = useState<'plans' | 'topup' | 'usage'>('plans');
   const [countdown, setCountdown] = useState<string | null>(null);
   const [graceActive, setGraceActive] = useState(false);
+
+  // Direct card charging state
+  const [showCardModal, setShowCardModal] = useState(false);
+  const [cardPending, setCardPending] = useState<{ type: 'subscription' | 'topup'; id: string; amount: number } | null>(null);
+  const [cardNumber, setCardNumber] = useState('');
+  const [cardExpiry, setCardExpiry] = useState('');
+  const [cardCvv, setCardCvv] = useState('');
+  const [cardName, setCardName] = useState('');
+  const [cardLoading, setCardLoading] = useState(false);
+  // PIN validation state (for OTP-based charges)
+  const [showPinModal, setShowPinModal] = useState(false);
+  const [pinFlwRef, setPinFlwRef] = useState('');
+  const [pinTxRef, setPinTxRef] = useState('');
+  const [pin, setPin] = useState('');
+  const [pinLoading, setPinLoading] = useState(false);
 
   useEffect(() => {
     fetchEnergy();
@@ -112,61 +127,146 @@ export default function SubscriptionScreen() {
 
   const maxCredits = planInfo?.credits || 100;
 
-  const openFlutterwavePayment = async (amount: number, type: 'subscription' | 'topup', id: string) => {
+  const openCardModal = (amount: number, type: 'subscription' | 'topup', id: string) => {
+    setCardPending({ type, id, amount });
+    setCardNumber('');
+    setCardExpiry('');
+    setCardCvv('');
+    setCardName('');
+    setPin('');
+    setShowCardModal(true);
+  };
+
+  const formatCardNumber = (text: string) => {
+    const digits = text.replace(/\D/g, '').slice(0, 16);
+    return digits.replace(/(.{4})/g, '$1 ').trim();
+  };
+
+  const formatExpiry = (text: string) => {
+    const digits = text.replace(/\D/g, '').slice(0, 4);
+    if (digits.length >= 3) return `${digits.slice(0, 2)}/${digits.slice(2)}`;
+    return digits;
+  };
+
+  const handleCardCharge = async () => {
+    if (!cardPending) return;
+    const rawCard = cardNumber.replace(/\s/g, '');
+    if (rawCard.length < 15) { Alert.alert('Invalid card', 'Enter a valid card number.'); return; }
+    if (!cardExpiry.includes('/')) { Alert.alert('Invalid expiry', 'Format: MM/YY'); return; }
+    if (cardCvv.length < 3) { Alert.alert('Invalid CVV', 'Enter the 3 or 4 digit security code.'); return; }
+    if (cardName.trim().length < 2) { Alert.alert('Name required', 'Enter the name on the card.'); return; }
+
+    const [expiryMonth, expiryYear] = cardExpiry.split('/');
+    setCardLoading(true);
     try {
-      setPaymentLoading(true);
       const { data: { session } } = await (await import('../services/supabase')).supabase.auth.getSession();
       if (!session) { Alert.alert('Error', 'Please sign in again.'); return; }
 
-      const res = await fetch(`${API_URL}/api/billing/payment-link`, {
+      const res = await fetch(`${API_URL}/api/billing/charge-card`, {
         method: 'POST',
         headers: { Authorization: `Bearer ${session.access_token}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ amount, type, id }),
+        body: JSON.stringify({
+          cardNumber: rawCard,
+          cvv: cardCvv,
+          expiryMonth: expiryMonth.trim(),
+          expiryYear: expiryYear.trim(),
+          fullname: cardName.trim(),
+          type: cardPending.type,
+          id: cardPending.id,
+        }),
       });
       const data = await res.json();
-      if (!data.payment_url) throw new Error('Could not generate payment link');
-      await Linking.openURL(data.payment_url);
-      setTimeout(() => {
-        Alert.alert(
-          'Complete Payment',
-          'Once your payment is confirmed, tap Verify to activate your plan.',
-          [
-            { text: 'Verify Payment', onPress: () => showVerifyDialog(data.tx_ref, type, id) },
-            { text: 'Later', style: 'cancel' },
-          ],
-        );
-      }, 2000);
+
+      if (!res.ok) {
+        Alert.alert('Payment Failed', data.error || 'Card was declined. Check your details and try again.');
+        return;
+      }
+
+      if (data.mode === 'success') {
+        setShowCardModal(false);
+        await fetchEnergy();
+        Alert.alert('Payment Successful!', cardPending.type === 'subscription'
+          ? 'Your subscription is now active. Energy credits have been added.'
+          : 'Energy credits added to your account.');
+        return;
+      }
+
+      if (data.mode === 'redirect' && data.auth_url) {
+        setShowCardModal(false);
+        await Linking.openURL(data.auth_url);
+        setTimeout(() => {
+          Alert.alert('3D Secure Required', 'Complete authentication in your browser, then return here and tap Verify.',
+            [
+              { text: 'Verify', onPress: async () => {
+                const result = await verifyAndApplyPayment('manual', data.tx_ref, cardPending.type, cardPending.id);
+                if (result.success) {
+                  await fetchEnergy();
+                  Alert.alert('Success!', result.message || 'Payment verified.');
+                } else {
+                  Alert.alert('Verification Failed', result.message || 'Try again or contact support.');
+                }
+              }},
+              { text: 'Later', style: 'cancel' },
+            ]
+          );
+        }, 2000);
+        return;
+      }
+
+      if (data.mode === 'pin') {
+        setShowCardModal(false);
+        setPinFlwRef(data.flw_ref);
+        setPinTxRef(data.tx_ref);
+        setPin('');
+        setShowPinModal(true);
+        return;
+      }
+
+      Alert.alert('Payment Error', data.error || 'Unexpected response. Please try again.');
     } catch (err: any) {
-      Alert.alert('Payment Error', err.message);
+      Alert.alert('Payment Error', err.message || 'Network error. Check your connection.');
     } finally {
-      setPaymentLoading(false);
+      setCardLoading(false);
     }
   };
 
-  const showVerifyDialog = (txRef: string, type: 'subscription' | 'topup', id: string) => {
-    Alert.prompt(
-      'Enter Transaction ID',
-      'Paste the Flutterwave transaction ID from your confirmation email or SMS.',
-      async (txId) => {
-        if (!txId) return;
-        const result = await verifyAndApplyPayment(txId, txRef, type, id);
-        if (result.success) {
-          Alert.alert('Success!', result.message || `${result.credits} energy credits added.`);
-        } else {
-          Alert.alert('Verification Failed', result.message || 'Could not verify payment. Contact support.');
-        }
-      },
-      'plain-text',
-    );
+  const handlePinValidation = async () => {
+    if (pin.trim().length < 4) { Alert.alert('Invalid PIN', 'Enter the OTP or PIN sent to you.'); return; }
+    if (!cardPending) return;
+    setPinLoading(true);
+    try {
+      const { data: { session } } = await (await import('../services/supabase')).supabase.auth.getSession();
+      if (!session) { Alert.alert('Error', 'Please sign in again.'); return; }
+
+      const res = await fetch(`${API_URL}/api/billing/charge-card/validate-pin`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${session.access_token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ otp: pin.trim(), flw_ref: pinFlwRef, tx_ref: pinTxRef, type: cardPending.type, id: cardPending.id }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setShowPinModal(false);
+        await fetchEnergy();
+        Alert.alert('Payment Successful!', cardPending.type === 'subscription'
+          ? 'Subscription activated. Energy credits added.'
+          : 'Energy credits added to your account.');
+      } else {
+        Alert.alert('PIN Failed', data.error || 'Incorrect OTP or PIN. Try again.');
+      }
+    } catch (err: any) {
+      Alert.alert('Error', err.message);
+    } finally {
+      setPinLoading(false);
+    }
   };
 
   const handleStartTrial = async () => {
     if (!subscription?.flw_card_last4 && !subscription?.billing_email) {
       Alert.alert(
-        'Add Payment Method First',
-        'You need a payment method before starting your free trial. You will not be charged for 14 days.',
+        'Add Card to Start Free Trial',
+        'Enter your card details to start your 14-day free trial. You will not be charged until the trial ends.',
         [
-          { text: 'Add Payment Method', onPress: () => openFlutterwavePayment(1, 'subscription', 'starter') },
+          { text: 'Add Card', onPress: () => openCardModal(0, 'subscription', 'starter') },
           { text: 'Cancel', style: 'cancel' },
         ],
       );
@@ -180,9 +280,9 @@ export default function SubscriptionScreen() {
     const p = PLAN_DETAILS[planId];
     Alert.alert(
       `Subscribe to ${p.name}`,
-      `${p.credits} energy credits per month.\n\nYou'll be redirected to complete payment securely.`,
+      `${p.credits} energy credits/month — $${p.price}/mo.\n\nPay securely with your card directly in the app.`,
       [
-        { text: 'Proceed to Payment', onPress: () => openFlutterwavePayment(p.price, 'subscription', planId) },
+        { text: 'Pay with Card', onPress: () => openCardModal(p.price, 'subscription', planId) },
         { text: 'Cancel', style: 'cancel' },
       ],
     );
@@ -191,9 +291,9 @@ export default function SubscriptionScreen() {
   const handleTopUp = (pack: typeof TOPUP_OPTIONS[0]) => {
     Alert.alert(
       `Buy ${pack.label}`,
-      `Add ${pack.credits} energy credits.\n\nInstant credit after payment.`,
+      `Add ${pack.credits} energy credits — $${pack.price}.\n\nInstant credit after payment.`,
       [
-        { text: 'Buy Now', onPress: () => openFlutterwavePayment(pack.price, 'topup', pack.id) },
+        { text: 'Pay with Card', onPress: () => openCardModal(pack.price, 'topup', pack.id) },
         { text: 'Cancel', style: 'cancel' },
       ],
     );
@@ -587,6 +687,148 @@ export default function SubscriptionScreen() {
             </TouchableOpacity>
           </View>
         </View>
+      </Modal>
+
+      {/* Direct Card Charge Modal */}
+      <Modal visible={showCardModal} transparent animationType="slide">
+        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
+          <View style={styles.modalOverlay}>
+            <View style={[styles.modalCard, { maxHeight: '90%' }]}>
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                  <Lock size={16} color={COLORS.neon} />
+                  <Text style={styles.modalTitle}>Secure Card Payment</Text>
+                </View>
+                <TouchableOpacity onPress={() => setShowCardModal(false)}>
+                  <X size={20} color={COLORS.muted} />
+                </TouchableOpacity>
+              </View>
+
+              {cardPending && (
+                <View style={{ backgroundColor: COLORS.bg, borderRadius: 10, padding: 12, marginBottom: 16 }}>
+                  <Text style={{ color: COLORS.muted, fontSize: 11, textTransform: 'uppercase' }}>Charging</Text>
+                  <Text style={{ color: COLORS.text, fontWeight: '700', fontSize: 15 }}>
+                    {cardPending.amount > 0 ? `$${cardPending.amount}/month` : 'Free Trial (card verification)'}
+                  </Text>
+                </View>
+              )}
+
+              <Text style={styles.cardLabel}>Card Number</Text>
+              <View style={styles.cardInputRow}>
+                <CreditCard size={16} color={COLORS.muted} />
+                <TextInput
+                  style={styles.cardInput}
+                  placeholder="1234 5678 9012 3456"
+                  placeholderTextColor={COLORS.muted}
+                  keyboardType="numeric"
+                  value={cardNumber}
+                  onChangeText={(t) => setCardNumber(formatCardNumber(t))}
+                  maxLength={19}
+                />
+              </View>
+
+              <View style={{ flexDirection: 'row', gap: 12 }}>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.cardLabel}>Expiry</Text>
+                  <TextInput
+                    style={[styles.cardInputRow, { paddingHorizontal: 12, color: COLORS.text }]}
+                    placeholder="MM/YY"
+                    placeholderTextColor={COLORS.muted}
+                    keyboardType="numeric"
+                    value={cardExpiry}
+                    onChangeText={(t) => setCardExpiry(formatExpiry(t))}
+                    maxLength={5}
+                  />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.cardLabel}>CVV</Text>
+                  <TextInput
+                    style={[styles.cardInputRow, { paddingHorizontal: 12, color: COLORS.text }]}
+                    placeholder="123"
+                    placeholderTextColor={COLORS.muted}
+                    keyboardType="numeric"
+                    secureTextEntry
+                    value={cardCvv}
+                    onChangeText={setCardCvv}
+                    maxLength={4}
+                  />
+                </View>
+              </View>
+
+              <Text style={styles.cardLabel}>Name on Card</Text>
+              <TextInput
+                style={[styles.cardInputRow, { paddingHorizontal: 12, color: COLORS.text }]}
+                placeholder="Full name"
+                placeholderTextColor={COLORS.muted}
+                autoCapitalize="words"
+                value={cardName}
+                onChangeText={setCardName}
+              />
+
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 12, marginBottom: 4 }}>
+                <Shield size={12} color={COLORS.muted} />
+                <Text style={{ color: COLORS.muted, fontSize: 11 }}>Secured by Flutterwave · 256-bit SSL encryption</Text>
+              </View>
+
+              <TouchableOpacity
+                onPress={handleCardCharge}
+                disabled={cardLoading}
+                style={[styles.modalDanger, { backgroundColor: COLORS.neon, marginTop: 12 }]}
+              >
+                {cardLoading
+                  ? <ActivityIndicator color="#000" size="small" />
+                  : <Text style={[styles.modalDangerText, { color: '#000' }]}>
+                      {cardPending?.amount === 0 ? 'Verify Card & Start Trial' : `Pay $${cardPending?.amount}`}
+                    </Text>
+                }
+              </TouchableOpacity>
+              <TouchableOpacity onPress={() => setShowCardModal(false)} style={styles.modalSecondary}>
+                <Text style={styles.modalSecondaryText}>Cancel</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
+
+      {/* PIN / OTP Validation Modal */}
+      <Modal visible={showPinModal} transparent animationType="fade">
+        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
+          <View style={styles.modalOverlay}>
+            <View style={styles.modalCard}>
+              <TouchableOpacity onPress={() => setShowPinModal(false)} style={styles.modalClose}>
+                <X size={20} color={COLORS.muted} />
+              </TouchableOpacity>
+              <Lock size={36} color={COLORS.neon} style={{ alignSelf: 'center', marginBottom: 12 }} />
+              <Text style={styles.modalTitle}>Enter OTP / PIN</Text>
+              <Text style={styles.modalDesc}>
+                Your bank sent a one-time password to your registered phone or email. Enter it below to complete payment.
+              </Text>
+              <TextInput
+                style={[styles.cardInputRow, { paddingHorizontal: 16, color: COLORS.text, textAlign: 'center', fontSize: 22, letterSpacing: 8, marginBottom: 16 }]}
+                placeholder="• • • • • •"
+                placeholderTextColor={COLORS.muted}
+                keyboardType="numeric"
+                secureTextEntry
+                value={pin}
+                onChangeText={setPin}
+                maxLength={8}
+              />
+              <TouchableOpacity
+                onPress={handlePinValidation}
+                disabled={pinLoading}
+                style={[styles.modalDanger, { backgroundColor: COLORS.neon }]}
+              >
+                {pinLoading
+                  ? <ActivityIndicator color="#000" size="small" />
+                  : <Text style={[styles.modalDangerText, { color: '#000' }]}>Confirm Payment</Text>
+                }
+              </TouchableOpacity>
+              <TouchableOpacity onPress={() => setShowPinModal(false)} style={styles.modalSecondary}>
+                <Text style={styles.modalSecondaryText}>Cancel</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </KeyboardAvoidingView>
       </Modal>
     </SafeAreaView>
   );
