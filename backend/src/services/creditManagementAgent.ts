@@ -136,6 +136,43 @@ export class CreditManagementAgent {
     return CreditManagementAgent.instance;
   }
 
+  // ─── Startup init — restores persisted state from DB ──────────
+  /**
+   * Call once on server start. Reads the last known economy override
+   * state from `cma_monitor_log` so the CMA survives server restarts.
+   */
+  async init(): Promise<void> {
+    try {
+      const { data } = await this.supabase
+        .from('cma_monitor_log')
+        .select('economy_override, system_burn_rate_1h, recommendation, updated_at')
+        .eq('id', 'singleton')
+        .single();
+
+      if (data) {
+        dynamicEconomyOverride = data.economy_override ?? false;
+        console.log(`[CMA:Init] Restored state — economy_override=${dynamicEconomyOverride}, burn_rate=${data.system_burn_rate_1h}, last_updated=${data.updated_at}`);
+        if (dynamicEconomyOverride) {
+          console.log(`[CMA:Init] ⚠️  Economy override is ACTIVE from previous session: ${data.recommendation}`);
+        }
+      } else {
+        // Insert the singleton row if missing (first run)
+        await this.supabase.from('cma_monitor_log').upsert({
+          id: 'singleton',
+          system_burn_rate_1h: 0,
+          system_cost_usd_1h: 0,
+          economy_override: false,
+          model_breakdown: {},
+          recommendation: 'CMA initialised',
+          updated_at: new Date().toISOString(),
+        }, { onConflict: 'id' });
+        console.log('[CMA:Init] First run — singleton row created');
+      }
+    } catch (err: any) {
+      console.error('[CMA:Init] Failed to restore state:', err.message, '— starting with defaults');
+    }
+  }
+
   // ─── Main entry point ──────────────────────────────────────────
   /**
    * Called BEFORE any AI operation. Returns the routing decision
