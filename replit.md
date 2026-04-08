@@ -11,14 +11,28 @@ AdRoom is a **React Native (Expo) mobile app** with a Node.js/Express backend. I
 - **State**: Zustand
 - **Auth**: Supabase Auth
 - **Platforms**: iOS, Android (run locally with Expo Go)
-- **NOT a web app** — Replit hosts the backend only
+- **NOT a web app** — Replit hosts the backend only. Backend runs on Railway, DB on Supabase.
 
-### Backend (Node.js / Express on Replit)
+### Backend (Node.js / Express on Railway)
 - **Framework**: Express.js on port 8000
 - **Language**: TypeScript (ts-node)
 - **AI**: OpenAI GPT-4o (strategy) + Google Gemini 2.0 Flash (text) + Imagen 3 (creative)
 - **Database**: Supabase (PostgreSQL)
 - **Scheduler**: Autonomous task execution every 5 min
+- **Credit Management Agent (CMA)**: AI cost optimizer — runs before every AI operation, routes to economy model, persists state to DB
+
+### Credit Management Agent (CMA)
+- Intercepts all AI operations before they run (evaluate → route → deduct)
+- Economy routing table: lower-tier users get Gemini Flash instead of GPT-4o
+- Dynamic override: if system burns > 500 credits/hour, ALL users get economy routing
+- Per-user cooldowns: prevents abuse on expensive operations
+- Daily caps by tier (none=10, trial=20, starter=50, pro=250, pro_plus=∞)
+- Saves to `cma_savings_log` + `cma_monitor_log` (Supabase)
+- Restores economy_override state on server restart from DB
+- Self-monitor loop every 10 min (scheduler) adjusts routing dynamically
+- Admin stats: `GET /api/admin/cma/stats`
+- Live status: `GET /api/cma/live-status`
+- DB migration: `backend/cma_migration.sql`
 
 ## Autonomous Agent System
 

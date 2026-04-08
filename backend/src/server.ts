@@ -1335,11 +1335,51 @@ app.post('/api/push/register', async (req, res) => {
   }
 });
 
-app.listen(PORT, () => {
+/**
+ * GET /api/cma/live-status — real-time CMA state for mobile monitoring
+ * Returns economy override status, current savings, cooldowns, and burn rate.
+ * No auth required — lightweight polling endpoint.
+ */
+app.get('/api/cma/live-status', async (_req, res) => {
+  try {
+    const { creditManagementAgent: cmaAgent } = await import('./services/creditManagementAgent');
+    const [liveStatus, stats] = await Promise.all([
+      Promise.resolve(cmaAgent.getLiveStatus()),
+      cmaAgent.getSavingsSummary(1), // last 24h
+    ]);
+    res.json({
+      ok: true,
+      timestamp: new Date().toISOString(),
+      economyOverrideActive: liveStatus.dynamicEconomyOverride,
+      activeCooldowns: liveStatus.activeSystemCooldowns,
+      trackedUsers: liveStatus.trackedUsers,
+      last24h: {
+        savedCredits: stats.totalSavedCredits,
+        savedUsd: stats.totalSavedUsd,
+        economyRatio: stats.economyRatio,
+        systemBurnRate: stats.systemBurnRate,
+        events: stats.events,
+      },
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.listen(PORT, async () => {
   console.log(`[AdRoom Server] Running on port ${PORT} — ${new Date().toISOString()}`);
   console.log(`[AdRoom Server] AI Engines: GPT-4o (strategy) | Gemini 2.0 Flash (text) | Imagen 3 (creative)`);
   console.log(`[AdRoom Server] Agents: SALESMAN | AWARENESS | PROMOTION | LAUNCH`);
   console.log(`[AdRoom Server] Features: Autonomous Execution | Lead Capture | Performance Monitoring | Self-Optimization`);
+
+  // Restore CMA persisted state (economy override etc) before starting loops
+  try {
+    const { creditManagementAgent: cmaAgent } = await import('./services/creditManagementAgent');
+    await cmaAgent.init();
+    console.log('[AdRoom Server] CMA state restored from database');
+  } catch (e: any) {
+    console.warn('[AdRoom Server] CMA init failed (non-fatal):', e.message);
+  }
 
   // Start all background intelligence + agent execution loops
   const scheduler = new SchedulerService();
