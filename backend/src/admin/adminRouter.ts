@@ -1094,6 +1094,93 @@ label{font-size:12px;color:#94A3B8;font-weight:600}
           <div id="cma-burn-rate" style="font-size:24px;font-weight:800;color:#00F0FF">—</div>
           <div style="font-size:11px;color:#64748B;margin-top:4px">credits consumed in the last 60 minutes across all users</div>
         </div>
+
+        <!-- ── AI PROVIDER BALANCES ─────────────────────────────────────── -->
+        <div style="margin-top:16px">
+          <div class="section-header" style="margin-bottom:12px">
+            <div class="section-title" style="font-size:14px">AI Provider Balances — This Month</div>
+            <div style="display:flex;gap:8px;align-items:center">
+              <span style="font-size:11px;color:#64748B" id="mc-updated">—</span>
+              <button class="btn btn-ghost btn-sm" onclick="loadModelCredits()">↺ Refresh</button>
+            </div>
+          </div>
+          <div id="mc-error" style="display:none;color:#EF4444;font-size:13px;margin-bottom:8px"></div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px" id="mc-grid">
+
+            <!-- OpenAI card -->
+            <div class="card" style="border:1px solid #10A37F33;padding:20px">
+              <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px">
+                <div style="background:#10A37F;border-radius:8px;padding:6px 12px;font-size:12px;font-weight:800;color:#fff;letter-spacing:0.5px">OpenAI</div>
+                <div>
+                  <div style="font-size:14px;font-weight:700;color:#E2E8F0">GPT-4o</div>
+                  <div style="font-size:11px;color:#64748B">OpenAI API</div>
+                </div>
+              </div>
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px">
+                <div style="background:#0F1929;border-radius:8px;padding:10px">
+                  <div style="font-size:10px;color:#64748B;text-transform:uppercase;letter-spacing:0.5px">Internal Tracked</div>
+                  <div style="font-size:20px;font-weight:800;color:#10B981" id="mc-oai-internal">—</div>
+                  <div style="font-size:10px;color:#64748B">from ai_usage_logs</div>
+                </div>
+                <div style="background:#0F1929;border-radius:8px;padding:10px">
+                  <div style="font-size:10px;color:#64748B;text-transform:uppercase;letter-spacing:0.5px">Live API Spend</div>
+                  <div style="font-size:20px;font-weight:800;color:#00F0FF" id="mc-oai-live">—</div>
+                  <div style="font-size:10px;color:#64748B">from OpenAI billing</div>
+                </div>
+              </div>
+              <div style="margin-bottom:12px" id="mc-oai-limits-row" style="display:none">
+                <div style="display:flex;justify-content:space-between;font-size:12px;color:#94A3B8;margin-bottom:4px">
+                  <span>Soft limit</span><span id="mc-oai-soft">—</span>
+                </div>
+                <div style="display:flex;justify-content:space-between;font-size:12px;color:#94A3B8;margin-bottom:4px">
+                  <span>Hard limit</span><span id="mc-oai-hard">—</span>
+                </div>
+                <div style="height:6px;background:#1E293B;border-radius:3px;overflow:hidden;margin-top:8px">
+                  <div id="mc-oai-bar" style="height:100%;background:linear-gradient(90deg,#10A37F,#00F0FF);border-radius:3px;width:0%;transition:width 0.5s"></div>
+                </div>
+                <div style="font-size:10px;color:#64748B;margin-top:3px" id="mc-oai-pct">0% of hard limit used</div>
+              </div>
+              <div id="mc-oai-api-error" style="display:none;font-size:11px;color:#F59E0B;margin-bottom:10px"></div>
+              <div style="font-size:11px;font-weight:700;color:#64748B;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px">Model Breakdown</div>
+              <div id="mc-oai-breakdown" style="font-size:12px;color:#94A3B8">—</div>
+            </div>
+
+            <!-- Google card -->
+            <div class="card" style="border:1px solid #4285F433;padding:20px">
+              <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px">
+                <div style="background:linear-gradient(135deg,#4285F4,#34A853);border-radius:8px;padding:6px 12px;font-size:12px;font-weight:800;color:#fff;letter-spacing:0.5px">Google</div>
+                <div>
+                  <div style="font-size:14px;font-weight:700;color:#E2E8F0">Gemini + Imagen</div>
+                  <div style="font-size:11px;color:#64748B">Google AI Studio</div>
+                </div>
+              </div>
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px">
+                <div style="background:#0F1929;border-radius:8px;padding:10px">
+                  <div style="font-size:10px;color:#64748B;text-transform:uppercase;letter-spacing:0.5px">Internal Tracked</div>
+                  <div style="font-size:20px;font-weight:800;color:#10B981" id="mc-goog-internal">—</div>
+                  <div style="font-size:10px;color:#64748B">from ai_usage_logs</div>
+                </div>
+                <div style="background:#0F1929;border-radius:8px;padding:10px">
+                  <div style="font-size:10px;color:#64748B;text-transform:uppercase;letter-spacing:0.5px">API Balance</div>
+                  <div style="font-size:20px;font-weight:800;color:#94A3B8" id="mc-goog-live">N/A</div>
+                  <div style="font-size:10px;color:#64748B">no balance API</div>
+                </div>
+              </div>
+              <div style="font-size:11px;color:#F59E0B;background:#F59E0B11;border-radius:6px;padding:8px 10px;margin-bottom:12px">
+                ℹ️ Google AI Studio does not expose a credit balance via API key. Spend is tracked internally from usage logs. Check your quota at <a href="https://console.cloud.google.com/billing" target="_blank" style="color:#4285F4">Google Cloud Console</a>.
+              </div>
+              <div style="font-size:11px;font-weight:700;color:#64748B;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px">Model Breakdown</div>
+              <div id="mc-goog-breakdown" style="font-size:12px;color:#94A3B8">—</div>
+            </div>
+
+          </div><!-- /mc-grid -->
+
+          <!-- Total row -->
+          <div class="card" style="margin-top:12px;display:flex;align-items:center;justify-content:space-between;padding:14px 20px">
+            <div style="font-size:13px;color:#94A3B8">Total AI spend this month (all providers)</div>
+            <div style="font-size:20px;font-weight:800;color:#00F0FF" id="mc-total">—</div>
+          </div>
+        </div>
       </div>
 
     </div><!-- /content -->
@@ -1238,7 +1325,7 @@ function showSection(name) {
     if (nav) nav.classList.toggle('active', s === name);
   });
   document.getElementById('page-title').textContent = TITLES[name] || name;
-  if (name === 'cma') loadCMAStats();
+  if (name === 'cma') { loadCMAStats(); loadModelCredits(); }
 }
 
 // ── Stats ─────────────────────────────────────────────────────────────────────
@@ -1825,6 +1912,92 @@ async function loadCMAStats() {
     }
   } catch (e) {
     console.error('CMA stats error:', e);
+  }
+}
+
+// ── AI PROVIDER MODEL CREDITS ─────────────────────────────────────────────────
+async function loadModelCredits() {
+  const errEl = document.getElementById('mc-error');
+  const updEl = document.getElementById('mc-updated');
+  if (updEl) updEl.textContent = 'Loading…';
+  if (errEl) { errEl.style.display = 'none'; errEl.textContent = ''; }
+
+  try {
+    const d = await api('GET', '/api/cma/model-credits');
+    if (updEl) updEl.textContent = 'Updated ' + new Date().toLocaleTimeString();
+
+    const fmt = v => v == null ? '—' : '$' + Number(v).toFixed(4);
+    const fmtC = n => n === 0 ? '$0.0000' : '$' + Number(n).toFixed(4);
+
+    // ── OpenAI ──────────────────────────────────────────────────────
+    const oai = (d.providers || []).find(p => p.id === 'openai') || {};
+    const setEl = (id, val) => { const e = document.getElementById(id); if (e) e.textContent = val; };
+
+    setEl('mc-oai-internal', fmtC(oai.internalSpendUsd ?? 0));
+    setEl('mc-oai-live',     oai.liveSpendUsd != null ? fmt(oai.liveSpendUsd) : '—');
+
+    // Limits + progress bar
+    const limRow = document.getElementById('mc-oai-limits-row');
+    if (oai.hardLimitUsd != null) {
+      if (limRow) limRow.style.display = 'block';
+      setEl('mc-oai-soft', oai.softLimitUsd != null ? fmt(oai.softLimitUsd) : '—');
+      setEl('mc-oai-hard', fmt(oai.hardLimitUsd));
+      const pct = oai.liveSpendUsd != null ? Math.min(100, (oai.liveSpendUsd / oai.hardLimitUsd) * 100) : 0;
+      const bar = document.getElementById('mc-oai-bar');
+      const pctEl = document.getElementById('mc-oai-pct');
+      if (bar) bar.style.width = pct + '%';
+      if (pctEl) pctEl.textContent = pct.toFixed(1) + '% of hard limit used';
+    } else {
+      if (limRow) limRow.style.display = 'none';
+    }
+
+    // API error message
+    const oaiErrEl = document.getElementById('mc-oai-api-error');
+    if (oaiErrEl) {
+      if (oai.apiError) {
+        oaiErrEl.style.display = 'block';
+        oaiErrEl.textContent = '⚠ OpenAI billing API: ' + oai.apiError;
+      } else {
+        oaiErrEl.style.display = 'none';
+      }
+    }
+
+    // Model breakdown
+    const oaiBd = document.getElementById('mc-oai-breakdown');
+    if (oaiBd) {
+      const bd = oai.modelBreakdown || {};
+      const keys = Object.keys(bd);
+      oaiBd.innerHTML = keys.length ? keys.map(m => \`
+        <div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid #1E293B">
+          <span style="color:#CBD5E1">\${m}</span>
+          <span style="color:#10B981">\${fmt(bd[m].usd)} &nbsp; <span style="color:#64748B">\${bd[m].calls} calls</span></span>
+        </div>
+      \`).join('') : '<span style="color:#64748B">No usage this month</span>';
+    }
+
+    // ── Google ──────────────────────────────────────────────────────
+    const goog = (d.providers || []).find(p => p.id === 'google') || {};
+    setEl('mc-goog-internal', fmtC(goog.internalSpendUsd ?? 0));
+
+    const googBd = document.getElementById('mc-goog-breakdown');
+    if (googBd) {
+      const bd = goog.modelBreakdown || {};
+      const keys = Object.keys(bd);
+      googBd.innerHTML = keys.length ? keys.map(m => \`
+        <div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid #1E293B">
+          <span style="color:#CBD5E1">\${m}</span>
+          <span style="color:#10B981">\${fmt(bd[m].usd)} &nbsp; <span style="color:#64748B">\${bd[m].calls} calls</span></span>
+        </div>
+      \`).join('') : '<span style="color:#64748B">No usage this month</span>';
+    }
+
+    // ── Total ───────────────────────────────────────────────────────
+    setEl('mc-total', '$' + Number(d.totalSpendUsd ?? 0).toFixed(4));
+
+  } catch (e) {
+    if (errEl) { errEl.style.display = 'block'; errEl.textContent = 'Failed to load provider balances: ' + e.message; }
+    if (updEl) updEl.textContent = 'Error';
+    console.error('Model credits error:', e);
   }
 }
 
