@@ -4,6 +4,8 @@ import { AwarenessAgent } from './awarenessAgent';
 import { PromotionAgent } from './promotionAgent';
 import { LaunchAgent } from './launchAgent';
 import { getServiceSupabaseClient } from '../config/supabase';
+import { creditManagementAgent } from '../services/creditManagementAgent';
+import { energyService } from '../services/energyService';
 
 type GoalType = 'SALESMAN' | 'AWARENESS' | 'PROMOTION' | 'LAUNCH' | string;
 
@@ -156,8 +158,32 @@ export class AgentOrchestrator {
 
         for (const task of dueTasks) {
             try {
+                // CMA pre-check for this user's autonomous task
+                const cma = await creditManagementAgent.evaluate(task.user_id, 'agent_task');
+                if (cma.decision === 'deny_cap') {
+                    console.log(`[Orchestrator] Task ${task.id} skipped — daily cap reached for user ${task.user_id}`);
+                    await this.supabase.from('agent_tasks').update({ status: 'skipped', error_message: cma.reason }).eq('id', task.id);
+                    continue;
+                }
+                // Check user balance
+                const account = await energyService.getAccount(task.user_id);
+                const balance = parseFloat(account?.balance_credits ?? '0');
+                if (balance < cma.credits) {
+                    console.log(`[Orchestrator] Task ${task.id} skipped — insufficient credits for user ${task.user_id}`);
+                    await this.supabase.from('agent_tasks').update({ status: 'skipped', error_message: 'Insufficient credits' }).eq('id', task.id);
+                    continue;
+                }
+
                 const agent = this.getAgent(task.agent_type as any);
                 await agent.executeTask(task.id);
+
+                // Deduct agent_task credit after successful execution
+                await energyService.deductEnergyWithRouting(task.user_id, 'agent_task', {
+                    task_id: task.id,
+                    platform: task.platform,
+                    agent_type: task.agent_type,
+                }).catch((e: any) => console.error(`[Orchestrator] Energy deduction failed for task ${task.id}:`, e.message));
+
                 executed++;
             } catch (err: any) {
                 console.error(`[Orchestrator] Task ${task.id} execution error: ${err.message}`);

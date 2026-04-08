@@ -440,19 +440,30 @@ app.post('/api/ai/scan-product', async (req, res) => {
   "description": "detailed product description"
 }`;
 
-    // Check energy before AI call
-    const energyCheck = await energyService.checkEnergy(user.id, 'scan_product');
-    if (!energyCheck.allowed) {
+    // CMA pre-flight: check tier, cap, cooldown, and route to best model
+    const { creditManagementAgent: cmaAgent } = await import('./services/creditManagementAgent');
+    const cmaScan = await cmaAgent.evaluate(user.id, 'scan_product');
+    if (cmaScan.decision === 'deny_tier') {
+      return res.status(403).json({ error: 'PLAN_REQUIRED', message: cmaScan.reason });
+    }
+    if (cmaScan.decision === 'deny_cap') {
+      return res.status(429).json({ error: 'DAILY_CAP_REACHED', message: cmaScan.reason });
+    }
+    if (cmaScan.decision === 'deny_cooldown') {
+      return res.status(429).json({ error: 'COOLDOWN_ACTIVE', message: cmaScan.reason });
+    }
+    const scanEnergyCheck = await energyService.checkEnergy(user.id, 'scan_product');
+    if (scanEnergyCheck.balance < cmaScan.credits) {
       return res.status(402).json({
         error: 'INSUFFICIENT_ENERGY',
-        message: `You need ${energyCheck.required} energy credits for product scanning. Current balance: ${energyCheck.balance.toFixed(2)}.`,
-        balance: energyCheck.balance, required: energyCheck.required,
+        message: `Product scan requires ${cmaScan.credits} credits. Current balance: ${scanEnergyCheck.balance.toFixed(2)}.`,
+        balance: scanEnergyCheck.balance, required: cmaScan.credits,
       });
     }
 
     const result = await aiEngine.analyzeImage(imageBase64, scanPrompt);
-    // Deduct energy after successful call
-    await deductEnergyForUser(user.id, 'scan_product');
+    // Deduct energy after successful call (CMA-routed cost)
+    await deductEnergyForUser(user.id, 'scan_product', { cma_model: cmaScan.model });
 
     if (result.parsedJson) {
       return res.status(200).json(result.parsedJson);
@@ -588,13 +599,26 @@ app.post('/api/ai/activate-agents', async (req, res) => {
         const { data: { user } } = await supabase.auth.getUser();
         if (!user) return res.status(401).json({ error: 'Unauthorized.' });
 
-        // Check energy before agent activation
+        // CMA pre-flight: check tier, daily cap, cooldown, and pick model
+        const { creditManagementAgent: cmaActivate } = await import('./services/creditManagementAgent');
+        const cmaActivateResult = await cmaActivate.evaluate(user.id, 'activate_agents');
+        if (cmaActivateResult.decision === 'deny_tier') {
+          return res.status(403).json({ error: 'PLAN_REQUIRED', message: cmaActivateResult.reason });
+        }
+        if (cmaActivateResult.decision === 'deny_cap') {
+          return res.status(429).json({ error: 'DAILY_CAP_REACHED', message: cmaActivateResult.reason });
+        }
+        if (cmaActivateResult.decision === 'deny_cooldown') {
+          return res.status(429).json({ error: 'COOLDOWN_ACTIVE', message: cmaActivateResult.reason });
+        }
+
+        // Balance check using CMA-determined cost
         const agentEnergyCheck = await energyService.checkEnergy(user.id, 'activate_agents');
-        if (!agentEnergyCheck.allowed) {
+        if (agentEnergyCheck.balance < cmaActivateResult.credits) {
           return res.status(402).json({
             error: 'INSUFFICIENT_ENERGY',
-            message: `Agent activation requires ${agentEnergyCheck.required} credits. Current balance: ${agentEnergyCheck.balance.toFixed(2)}.`,
-            balance: agentEnergyCheck.balance, required: agentEnergyCheck.required,
+            message: `Agent activation requires ${cmaActivateResult.credits} credits. Current balance: ${agentEnergyCheck.balance.toFixed(2)}.`,
+            balance: agentEnergyCheck.balance, required: cmaActivateResult.credits,
           });
         }
 
@@ -656,6 +680,10 @@ app.post('/api/ai/activate-agents', async (req, res) => {
         });
 
         console.log(`[AgentActivation] [${ts()}] ✓ ${result.agentType} agent active — ${result.tasksScheduled} tasks scheduled`);
+
+        // Deduct activation credits via CMA routing
+        await deductEnergyForUser(user.id, 'activate_agents', { agent_type: result.agentType, cma_economy: cmaActivateResult.decision === 'allow_economy' });
+
         console.log(`[AgentActivation] ═══════════════════════════════════════\n`);
 
         res.status(200).json({

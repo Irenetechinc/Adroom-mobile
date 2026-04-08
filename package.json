@@ -25,7 +25,7 @@
     "expo-file-system": "~19.0.21",
     "expo-image-picker": "~17.0.10",
     "expo-location": "~19.0.8",
-    "expo-notifications": "~0.32.16",
+    "expo-notifications": "^0.32.16",
     "expo-secure-store": "~15.0.8",
     "expo-status-bar": "~3.0.9",
     "expo-web-browser": "~15.0.10",
@@ -60,5 +60,9 @@
   "private": true,
   "engines": {
     "node": ">=20.0.0"
+  },
+  "overrides": {
+    "expo-constants": "~18.0.13",
+    "expo-application": "~6.0.2"
   }
 }
