@@ -182,7 +182,6 @@ export class FlutterwaveService {
     const payload = {
       token: params.token,
       currency: params.currency ?? 'USD',
-      country: 'NG',
       amount: params.amount,
       email: params.email,
       tx_ref: params.tx_ref,

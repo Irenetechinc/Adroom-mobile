@@ -941,8 +941,15 @@ app.post('/api/billing/payment-link', async (req, res) => {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return res.status(401).json({ error: 'Unauthorized.' });
 
-    const { amount, type, id } = req.body;
-    if (!amount || !type || !id) return res.status(400).json({ error: 'amount, type, id required.' });
+    const { amount: rawAmount, type, id } = req.body;
+    if (!rawAmount || !type || !id) return res.status(400).json({ error: 'amount, type, id required.' });
+
+    // Ensure amount is always a positive number to avoid Flutterwave treating
+    // it as a string or defaulting to a wrong currency amount.
+    const amount = Number(rawAmount);
+    if (!Number.isFinite(amount) || amount <= 0) {
+      return res.status(400).json({ error: 'amount must be a positive number.' });
+    }
 
     const txRef = flutterwaveService.generateTxRef('ADROOM');
     const email = user.email || '';
@@ -972,7 +979,9 @@ app.post('/api/billing/payment-link', async (req, res) => {
           description: type === 'subscription'
             ? `Monthly subscription — ${id}`
             : `Energy top-up pack — ${id}`,
+          logo: 'https://adroom.app/logo.png',
         },
+        payment_options: 'card',
         meta: { user_id: user.id, type, plan_or_pack_id: id },
       }),
     });

@@ -828,58 +828,63 @@ export const useAgentStore = create<AgentState>()(
   },
 
   startNewSession: async () => {
-    // Refresh platform connection state from backend in the background.
-    // AsyncStorage persistence already ensures the last-known state is
-    // available immediately, so we don't need to block the greeting on this.
-    get().loadConnectedPlatforms().catch(() => {});
-
-    const { connectedPlatforms } = get();
-    const persistedTokens: Record<string, string | null> = {};
-    for (const platform of Object.keys(connectedPlatforms)) {
-      persistedTokens[platform] = 'connected';
-    }
-
-    // Reset all chat/flow state but keep connection tokens so the connected
-    // accounts badge and in-chat connection checks remain accurate.
+    // ── Step 1: reset UI state IMMEDIATELY ──────────────────────────────────
+    // `tokens` and `connectedPlatforms` are intentionally NOT reset here.
+    // They are persisted via AsyncStorage and must survive session resets so
+    // that the Connected Accounts screen always reflects the true connection
+    // state without flickering back to "Not Linked".
     set({
-        messages: [],
-        isTyping: true,
-        isInputDisabled: true,
-        productDetails: { name: '', description: '' },
-        generatedStrategies: null,
-        activeStrategy: null,
-        connectionState: 'IDLE',
-        flowState: 'IDLE',
-        tokens: persistedTokens,
-        fetchedAccounts: {},
-        selectedAccounts: {},
+      messages: [],
+      isTyping: true,
+      isInputDisabled: true,
+      productDetails: { name: '', description: '' },
+      generatedStrategies: null,
+      activeStrategy: null,
+      connectionState: 'IDLE',
+      flowState: 'IDLE',
+      fetchedAccounts: {},
+      selectedAccounts: {},
     });
 
-    // Best-effort history cleanup — failures are swallowed so the greeting
-    // always fires regardless.
+    // ── Step 2: refresh connection state from backend in background ──────────
+    get().loadConnectedPlatforms().catch(() => {});
+
+    // ── Step 3: resolve username from local session cache (no network call) ──
+    // getSession() reads from AsyncStorage — fast and offline-safe.
+    // Race with a 2-second hard timeout so the greeting is never blocked.
     let userName = 'there';
     try {
-        const { data: { user } } = await supabase.auth.getUser();
-        if (user) {
-            userName = user.email?.split('@')[0] || 'there';
-            supabase.from('chat_history').delete().eq('user_id', user.id).catch(() => {});
-            const authToken = await getAuthToken();
-            if (authToken && BACKEND_URL) {
-                fetch(`${BACKEND_URL}/api/chat/history`, {
-                    method: 'DELETE',
-                    headers: { Authorization: `Bearer ${authToken}` },
-                }).catch(() => {});
-            }
-        }
-    } catch { /* non-fatal — proceed to greeting */ }
+      const result = await Promise.race<any>([
+        supabase.auth.getSession(),
+        new Promise<null>(resolve => setTimeout(() => resolve(null), 2000)),
+      ]);
+      const email = result?.data?.session?.user?.email;
+      if (email) userName = email.split('@')[0] || 'there';
+    } catch { /* use default name */ }
 
+    // ── Step 4: delete history in background — never block the greeting ──────
+    (async () => {
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) return;
+        supabase.from('chat_history').delete().eq('user_id', user.id).catch(() => {});
+        const authToken = await getAuthToken();
+        if (authToken && BACKEND_URL) {
+          fetch(`${BACKEND_URL}/api/chat/history`, {
+            method: 'DELETE',
+            headers: { Authorization: `Bearer ${authToken}` },
+          }).catch(() => {});
+        }
+      } catch { /* non-fatal */ }
+    })();
+
+    // ── Step 5: send greeting and kick off strategy flow ─────────────────────
     const { addMessage, setTyping, startStrategyFlow } = get();
     setTyping(true);
-
     setTimeout(() => {
-        addMessage(`Hello ${userName}. I am AdRoom AI. Ready to strategize?`, 'agent');
-        setTyping(false);
-        setTimeout(() => startStrategyFlow(), 1000);
+      addMessage(`Hello ${userName}. I am AdRoom AI. Ready to strategize?`, 'agent');
+      setTyping(false);
+      setTimeout(() => startStrategyFlow(), 1000);
     }, 800);
   },
 
