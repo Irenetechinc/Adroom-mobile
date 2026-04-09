@@ -178,7 +178,14 @@ export default function SubscriptionScreen() {
       const data = await res.json();
 
       if (!res.ok) {
-        Alert.alert('Payment Failed', data.error || 'Card was declined. Check your details and try again.');
+        const errMsg: string = data.error || 'Card was declined. Check your details and try again.';
+        const isNotEnabled = errMsg.toLowerCase().includes('not enabled') || errMsg.toLowerCase().includes('rave v3');
+        Alert.alert(
+          'Payment Failed',
+          isNotEnabled
+            ? 'Direct card charging is not yet enabled on this account. Please contact Flutterwave support to activate it, or use a different payment method.'
+            : errMsg,
+        );
         return;
       }
 
@@ -324,7 +331,15 @@ export default function SubscriptionScreen() {
         </TouchableOpacity>
       </View>
 
-      <ScrollView
+      {/* Initial loading state — prevents flashing empty/free state before data loads */}
+      {isLoading && !account && (
+        <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', gap: 14 }}>
+          <ActivityIndicator size="large" color={COLORS.neon} />
+          <Text style={{ color: COLORS.muted, fontSize: 13 }}>Loading your account…</Text>
+        </View>
+      )}
+
+      {(!isLoading || account) && <ScrollView
         showsVerticalScrollIndicator={false}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={COLORS.neon} />}
         contentContainerStyle={{ paddingBottom: insets.bottom + 24 }}
@@ -662,7 +677,7 @@ export default function SubscriptionScreen() {
             )}
           </Animated.View>
         )}
-      </ScrollView>
+      </ScrollView>}
 
       {/* Cancel Modal */}
       <Modal visible={showCancelModal} transparent animationType="fade">

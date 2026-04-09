@@ -1,5 +1,5 @@
 import dotenv from 'dotenv';
-import * as crypto from 'crypto';
+import forge from 'node-forge';
 dotenv.config();
 
 const FLW_SECRET_KEY = process.env.FLW_SECRET_KEY || process.env.FLUTTERWAVE_SECRET_KEY || '';
@@ -50,27 +50,30 @@ export class FlutterwaveService {
   }
 
   /**
-   * Encrypt card payload using 3DES-ECB (required by Flutterwave direct card charge API).
-   * Key is padded/trimmed to 24 bytes as required by Triple DES.
+   * Encrypt card payload using 3DES-ECB — exactly matching the official Flutterwave Node.js SDK.
+   * Uses node-forge to ensure byte-perfect compatibility with Flutterwave's decryption.
    */
   private encrypt3DES(data: string, encryptionKey: string): string {
-    const keyBuf = Buffer.alloc(24);
-    const rawKey = Buffer.from(encryptionKey, 'utf-8');
-    rawKey.copy(keyBuf, 0, 0, Math.min(24, rawKey.length));
-    const cipher = crypto.createCipheriv('des-ede3', keyBuf, '');
-    const encrypted = Buffer.concat([
-      cipher.update(Buffer.from(data, 'utf-8')),
-      cipher.final(),
-    ]);
-    return encrypted.toString('base64');
+    const key = forge.util.createBuffer(encryptionKey);
+    const cipher = forge.cipher.createCipher('3DES-ECB', key);
+    cipher.start({ iv: '' });
+    cipher.update(forge.util.createBuffer(data, 'utf8'));
+    cipher.finish();
+    return forge.util.encode64(cipher.output.getBytes());
   }
 
   /**
-   * Directly charge a card (card-not-present flow) with Flutterwave 3DES-24 encryption.
-   * Returns:
-   *   { mode: 'success' }  — payment captured
-   *   { mode: 'redirect', auth_url } — 3DS authentication needed
-   *   { mode: 'pin', flw_ref } — OTP/PIN needed
+   * Directly charge a card via Flutterwave's card charge endpoint.
+   * The card payload is encrypted with 3DES-ECB using the Flutterwave encryption key.
+   *
+   * NOTE: Flutterwave requires merchants to contact support to enable direct card charging
+   * on their account. If you receive "merchant is not enabled for Rave v3", please contact
+   * Flutterwave support and request activation of the "Direct Charge" feature.
+   *
+   * Returns one of:
+   *   { mode: 'success' }  — payment captured immediately
+   *   { mode: 'redirect', auth_url } — 3DS redirect needed (open in WebView)
+   *   { mode: 'pin', flw_ref } — OTP/PIN required (show in-app modal)
    */
   async chargeCard(params: {
     cardNumber: string;
@@ -88,7 +91,13 @@ export class FlutterwaveService {
     const encryptionKey = params.enckey || FLW_ENCRYPTION_KEY;
 
     if (!encryptionKey) {
-      throw new Error('Flutterwave encryption key (FLW_ENCRYPTION_KEY) is not configured.');
+      throw new Error(
+        'FLW_ENCRYPTION_KEY is not configured. Please add your Flutterwave encryption key to the environment variables.',
+      );
+    }
+
+    if (!FLW_SECRET_KEY) {
+      throw new Error('FLW_SECRET_KEY is not configured.');
     }
 
     const cardPayload = {
@@ -112,7 +121,20 @@ export class FlutterwaveService {
       body: JSON.stringify({ client: encryptedClient }),
     });
 
-    return res.json();
+    const result = await res.json();
+
+    if (result.message && typeof result.message === 'string') {
+      const msg = result.message.toLowerCase();
+      if (msg.includes('not enabled') || msg.includes('rave v3')) {
+        console.error(
+          '[Flutterwave] Direct card charge not enabled for this merchant.',
+          'Please contact Flutterwave support to activate the Direct Charge feature.',
+          'Error:', result.message,
+        );
+      }
+    }
+
+    return result;
   }
 
   /** Verify a transaction by ID */
