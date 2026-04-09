@@ -947,33 +947,39 @@ app.post('/api/billing/payment-link', async (req, res) => {
     const txRef = flutterwaveService.generateTxRef('ADROOM');
     const email = user.email || '';
 
-    // Build Flutterwave hosted page URL
-    const payload = flutterwaveService.buildPaymentPayload({
-      amount,
-      currency: 'USD',
-      email,
-      name: email,
-      tx_ref: txRef,
-      redirect_url: `adroom://payment-callback`,
-      title: type === 'subscription' ? `AdRoom ${PLANS[id as keyof typeof PLANS]?.name ?? id} Plan` : 'AdRoom Energy Top-Up',
-      description: type === 'subscription' ? `Monthly subscription — ${id}` : `Energy top-up pack — ${id}`,
-      meta: { user_id: user.id, type, plan_or_pack_id: id },
+    // Call Flutterwave API to generate a properly signed hosted payment link
+    const FLW_SECRET_KEY = process.env.FLW_SECRET_KEY || process.env.FLUTTERWAVE_SECRET_KEY || '';
+    const flwRes = await fetch('https://api.flutterwave.com/v3/payments', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${FLW_SECRET_KEY}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        tx_ref: txRef,
+        amount,
+        currency: 'NGN',
+        redirect_url: 'adroom://payment-callback',
+        customer: { email, name: email },
+        customizations: {
+          title: type === 'subscription'
+            ? `AdRoom ${PLANS[id as keyof typeof PLANS]?.name ?? id} Plan`
+            : 'AdRoom Energy Top-Up',
+          description: type === 'subscription'
+            ? `Monthly subscription — ${id}`
+            : `Energy top-up pack — ${id}`,
+        },
+        meta: { user_id: user.id, type, plan_or_pack_id: id },
+      }),
     });
 
-    // Build Flutterwave standard hosted link
-    const flwBaseUrl = 'https://checkout.flutterwave.com/v3/hosted/pay';
-    const params = new URLSearchParams({
-      public_key: payload.public_key,
-      tx_ref: payload.tx_ref,
-      amount: String(payload.amount),
-      currency: payload.currency,
-      customer_email: payload.customer.email,
-      customer_name: payload.customer.name,
-      redirect_url: payload.redirect_url,
-      customization_title: payload.customizations.title,
-    });
+    const flwData = await flwRes.json();
+    if (flwData.status !== 'success' || !flwData.data?.link) {
+      console.error('[PaymentLink] Flutterwave error:', JSON.stringify(flwData));
+      return res.status(502).json({ error: flwData.message || 'Failed to generate payment link from Flutterwave.' });
+    }
 
-    res.status(200).json({ payment_url: `${flwBaseUrl}?${params.toString()}`, tx_ref: txRef });
+    res.status(200).json({ payment_url: flwData.data.link, tx_ref: txRef });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }

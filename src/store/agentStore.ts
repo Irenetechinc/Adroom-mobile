@@ -820,6 +820,14 @@ export const useAgentStore = create<AgentState>((set, get) => ({
   },
 
   startNewSession: async () => {
+    // Preserve connection status — rebuild tokens from connectedPlatforms so
+    // platforms remain shown as connected even after the chat session resets.
+    const { connectedPlatforms } = get();
+    const persistedTokens: Record<string, string | null> = {};
+    for (const platform of Object.keys(connectedPlatforms)) {
+      persistedTokens[platform] = 'connected';
+    }
+
     set({
         messages: [],
         isTyping: false,
@@ -828,7 +836,7 @@ export const useAgentStore = create<AgentState>((set, get) => ({
         activeStrategy: null,
         connectionState: 'IDLE',
         flowState: 'IDLE',
-        tokens: {},
+        tokens: persistedTokens,
         fetchedAccounts: {},
         selectedAccounts: {}
     });
@@ -984,6 +992,16 @@ export const useAgentStore = create<AgentState>((set, get) => ({
 
           set((state) => ({
               selectedAccounts: { ...state.selectedAccounts, [platform]: account },
+              // Persist connection metadata so it survives session resets
+              connectedPlatforms: {
+                  ...state.connectedPlatforms,
+                  [platform]: {
+                      platform,
+                      page_id: account.id,
+                      page_name: account.name || account.username || account.displayName || null,
+                      connected: true,
+                  },
+              },
               isTyping: false
           }));
 

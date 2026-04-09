@@ -55,6 +55,15 @@
         }
       ]
     ],
-   
+    "extra": {
+      "supabaseUrl": "https://mrrgjvrntenlkvslfvfh.supabase.co",
+      "supabaseAnonKey": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1ycmdqdnJudGVubGt2c2xmdmZoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njk1NzIxMzgsImV4cCI6MjA4NTE0ODEzOH0.wIwrxgBTsYsx1jGSDDgNw3iPPHN0TZ8v7psen51Z9ks",
+      "apiUrl": "http://localhost:8000",
+      "facebookAppId": "1536532767602012",
+      "eas": {
+        "projectId": "db165cb5-331a-4921-9125-f975565c2aa1"
+      }
+    },
+    "owner": "iamdivinedavid"
   }
 }
