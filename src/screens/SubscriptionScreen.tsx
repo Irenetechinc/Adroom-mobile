@@ -1,8 +1,9 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity, Alert, ActivityIndicator,
   Linking, Switch, RefreshControl, StyleSheet, Modal, TextInput, KeyboardAvoidingView, Platform,
 } from 'react-native';
+import { WebView } from 'react-native-webview';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import Animated, { FadeInDown } from 'react-native-reanimated';
@@ -11,7 +12,6 @@ import {
   RefreshCw, ChevronRight, Star, Shield, X, Bot, Video, Image as ImageIcon, Globe, CreditCard, Lock,
 } from 'lucide-react-native';
 import { useEnergyStore, PLAN_DETAILS, TOPUP_OPTIONS } from '../store/energyStore';
-import * as WebBrowser from 'expo-web-browser';
 import Constants from 'expo-constants';
 
 const API_URL = process.env.EXPO_PUBLIC_API_URL || Constants.expoConfig?.extra?.apiUrl || 'http://localhost:8000';
@@ -71,6 +71,14 @@ export default function SubscriptionScreen() {
   const [pinTxRef, setPinTxRef] = useState('');
   const [pin, setPin] = useState('');
   const [pinLoading, setPinLoading] = useState(false);
+
+  // In-app WebView payment modal state
+  const [showPaymentWebView, setShowPaymentWebView] = useState(false);
+  const [paymentWebUrl, setPaymentWebUrl] = useState('');
+  const [paymentTxRef, setPaymentTxRef] = useState('');
+  const [paymentType, setPaymentType] = useState<'subscription' | 'topup'>('subscription');
+  const [paymentId, setPaymentId] = useState('');
+  const [webViewLoading, setWebViewLoading] = useState(true);
 
   useEffect(() => {
     fetchEnergy();
@@ -296,48 +304,47 @@ export default function SubscriptionScreen() {
       });
       const data = await res.json();
       if (!res.ok || !data.payment_url) {
-        Alert.alert('Error', data.error || 'Could not generate payment link. Please try again.');
+        Alert.alert('Payment Error', data.error || 'Could not generate payment link. Please try again.');
         return;
       }
 
-      const result = await WebBrowser.openAuthSessionAsync(data.payment_url, 'adroom://payment-callback');
-
-      if (result.type === 'success' || result.type === 'dismiss') {
-        let txRef = data.tx_ref;
-        if (result.type === 'success' && result.url) {
-          const parsed = new URL(result.url);
-          txRef = parsed.searchParams.get('tx_ref') || txRef;
-          const status = parsed.searchParams.get('status');
-          if (status === 'cancelled') {
-            Alert.alert('Payment Cancelled', 'You cancelled the payment.');
-            return;
-          }
-        }
-
-        Alert.alert(
-          'Verify Payment',
-          'Did you complete the payment? Tap Verify to confirm and activate your credits.',
-          [
-            {
-              text: 'Verify', onPress: async () => {
-                const verify = await verifyAndApplyPayment('manual', txRef, type, id);
-                if (verify.success) {
-                  await fetchEnergy();
-                  Alert.alert('Payment Successful!', type === 'subscription'
-                    ? 'Your subscription is now active. Energy credits have been added.'
-                    : 'Energy credits added to your account.');
-                } else {
-                  Alert.alert('Not Verified', verify.message || 'Payment could not be confirmed. If you paid, please contact support.');
-                }
-              },
-            },
-            { text: 'Cancel', style: 'cancel' },
-          ],
-        );
-      }
+      // Open Flutterwave checkout in-app using a WebView modal so the user
+      // never leaves the app. The WebView intercepts the redirect to
+      // adroom://payment-callback to know when payment is complete.
+      setPaymentWebUrl(data.payment_url);
+      setPaymentTxRef(data.tx_ref);
+      setPaymentType(type);
+      setPaymentId(id);
+      setWebViewLoading(true);
+      setShowPaymentWebView(true);
     } catch (err: any) {
       Alert.alert('Payment Error', err.message || 'Something went wrong. Please try again.');
     }
+  };
+
+  const handlePaymentComplete = async (txRef: string, type: 'subscription' | 'topup', id: string) => {
+    setShowPaymentWebView(false);
+    Alert.alert(
+      'Verify Payment',
+      'Tap Verify to confirm your payment and activate your credits.',
+      [
+        {
+          text: 'Verify',
+          onPress: async () => {
+            const verify = await verifyAndApplyPayment('manual', txRef, type, id);
+            if (verify.success) {
+              await fetchEnergy();
+              Alert.alert('Payment Successful!', type === 'subscription'
+                ? 'Your subscription is now active. Energy credits have been added.'
+                : 'Energy credits added to your account.');
+            } else {
+              Alert.alert('Not Verified', verify.message || 'Payment could not be confirmed. If you paid, please contact support.');
+            }
+          },
+        },
+        { text: 'Cancel', style: 'cancel' },
+      ],
+    );
   };
 
   const handleSubscribe = (planId: string) => {
@@ -860,6 +867,42 @@ export default function SubscriptionScreen() {
             </View>
           </View>
         </KeyboardAvoidingView>
+      </Modal>
+
+      {/* In-App Flutterwave Payment WebView Modal */}
+      <Modal visible={showPaymentWebView} animationType="slide" onRequestClose={() => setShowPaymentWebView(false)}>
+        <SafeAreaView style={{ flex: 1, backgroundColor: '#000' }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: COLORS.border }}>
+            <TouchableOpacity onPress={() => setShowPaymentWebView(false)} style={{ padding: 4, marginRight: 12 }}>
+              <X size={22} color={COLORS.text} />
+            </TouchableOpacity>
+            <Text style={{ color: COLORS.text, fontSize: 16, fontWeight: '600', flex: 1 }}>Secure Payment</Text>
+            {webViewLoading && <ActivityIndicator size="small" color={COLORS.neon} />}
+          </View>
+          {paymentWebUrl ? (
+            <WebView
+              source={{ uri: paymentWebUrl }}
+              onLoadStart={() => setWebViewLoading(true)}
+              onLoadEnd={() => setWebViewLoading(false)}
+              onNavigationStateChange={(navState) => {
+                const url = navState.url || '';
+                if (url.startsWith('adroom://payment-callback') || url.startsWith('adroom://payment')) {
+                  handlePaymentComplete(paymentTxRef, paymentType, paymentId);
+                }
+              }}
+              style={{ flex: 1, backgroundColor: '#fff' }}
+              javaScriptEnabled
+              domStorageEnabled
+              startInLoadingState
+              renderLoading={() => (
+                <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#fff' }}>
+                  <ActivityIndicator size="large" color={COLORS.neon} />
+                  <Text style={{ marginTop: 12, color: '#333', fontSize: 14 }}>Loading payment page…</Text>
+                </View>
+              )}
+            />
+          ) : null}
+        </SafeAreaView>
       </Modal>
 
       {/* PIN / OTP Validation Modal */}
