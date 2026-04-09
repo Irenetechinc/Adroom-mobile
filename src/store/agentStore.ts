@@ -1,4 +1,6 @@
 import { create } from 'zustand';
+import { persist, createJSONStorage } from 'zustand/middleware';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { ChatMessage, ProductDetails, ConnectionState, FlowState } from '../types/agent';
 import { supabase } from '../services/supabase';
 import { FacebookService, FacebookPage } from '../services/facebook';
@@ -132,7 +134,9 @@ interface AgentState {
   fbAccessToken: string | null;
 }
 
-export const useAgentStore = create<AgentState>((set, get) => ({
+export const useAgentStore = create<AgentState>()(
+  persist(
+  (set, get) => ({
   messages: [],
   isTyping: false,
   isInputDisabled: false,
@@ -728,9 +732,9 @@ export const useAgentStore = create<AgentState>((set, get) => ({
   },
 
   loadMessages: async () => {
-    // Always ensure the latest platform connection state is loaded from the
-    // backend before restoring any session, so connection badges are correct.
-    await get().loadConnectedPlatforms();
+    // Refresh platform connection state from backend in background.
+    // AsyncStorage already hydrates the persisted state before this runs.
+    get().loadConnectedPlatforms().catch(() => {});
 
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
@@ -824,9 +828,10 @@ export const useAgentStore = create<AgentState>((set, get) => ({
   },
 
   startNewSession: async () => {
-    // Fetch latest platform connection state first — never loses connection
-    // status even on session reset.
-    await get().loadConnectedPlatforms();
+    // Refresh platform connection state from backend in the background.
+    // AsyncStorage persistence already ensures the last-known state is
+    // available immediately, so we don't need to block the greeting on this.
+    get().loadConnectedPlatforms().catch(() => {});
 
     const { connectedPlatforms } = get();
     const persistedTokens: Record<string, string | null> = {};
@@ -1039,9 +1044,17 @@ export const useAgentStore = create<AgentState>((set, get) => ({
     try {
       const token = await getAuthToken();
       if (!token || !BACKEND_URL) return;
-      const res = await fetch(`${BACKEND_URL}/api/platform-configs`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 6000);
+      let res: Response;
+      try {
+        res = await fetch(`${BACKEND_URL}/api/platform-configs`, {
+          headers: { Authorization: `Bearer ${token}` },
+          signal: controller.signal,
+        });
+      } finally {
+        clearTimeout(timer);
+      }
       if (!res.ok) return;
       const data = await res.json();
       const configs: Record<string, any> = data.configs || {};
@@ -1088,4 +1101,13 @@ export const useAgentStore = create<AgentState>((set, get) => ({
   handlePageSelection: (page: FacebookPage) => get().handleAccountSelection('facebook', page),
   disconnectFacebook: () => get().disconnectPlatform('facebook')
 
-}));
+  }),
+  {
+    name: 'adroom-agent-store',
+    storage: createJSONStorage(() => AsyncStorage),
+    partialize: (state) => ({
+      connectedPlatforms: state.connectedPlatforms,
+      tokens: state.tokens,
+    }),
+  }
+));

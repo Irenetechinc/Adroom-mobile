@@ -895,19 +895,34 @@ export default function SubscriptionScreen() {
               onNavigationStateChange={(navState) => {
                 const url = navState.url || '';
                 if (url.startsWith('adroom://payment-callback') || url.startsWith('adroom://payment')) {
-                  // Extract the real transaction_id Flutterwave appends to the
-                  // redirect URL: adroom://payment-callback?status=successful
-                  //   &tx_ref=ADROOM-xxx&transaction_id=12345678
+                  // Extract transaction_id Flutterwave appends to the redirect URL:
+                  //   adroom://payment-callback?status=successful&tx_ref=ADROOM-xxx&transaction_id=12345678
+                  // Uses URLSearchParams first; falls back to a manual regex in
+                  // case URLSearchParams is unavailable in the RN version.
+                  let realTxId: string | undefined;
                   try {
                     const queryStart = url.indexOf('?');
                     if (queryStart !== -1) {
-                      const params = new URLSearchParams(url.substring(queryStart + 1));
-                      const realTxId = params.get('transaction_id') ?? undefined;
-                      handlePaymentComplete(paymentTxRef, paymentType, paymentId, realTxId);
-                      return;
+                      const qs = url.substring(queryStart + 1);
+                      try {
+                        const params = new URLSearchParams(qs);
+                        realTxId = params.get('transaction_id') ?? undefined;
+                      } catch {
+                        // Manual fallback — split on & and = without URLSearchParams
+                        for (const pair of qs.split('&')) {
+                          const eqIdx = pair.indexOf('=');
+                          if (eqIdx !== -1) {
+                            const key = decodeURIComponent(pair.slice(0, eqIdx));
+                            if (key === 'transaction_id') {
+                              realTxId = decodeURIComponent(pair.slice(eqIdx + 1));
+                              break;
+                            }
+                          }
+                        }
+                      }
                     }
-                  } catch { /* fall through to no transaction_id */ }
-                  handlePaymentComplete(paymentTxRef, paymentType, paymentId);
+                  } catch { /* ignore — realTxId stays undefined */ }
+                  handlePaymentComplete(paymentTxRef, paymentType, paymentId, realTxId);
                 }
               }}
               style={{ flex: 1, backgroundColor: '#fff' }}

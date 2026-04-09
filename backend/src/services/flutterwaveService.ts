@@ -145,6 +145,31 @@ export class FlutterwaveService {
     return res.json() as Promise<FlwChargeResponse>;
   }
 
+  /**
+   * Look up and verify a transaction by tx_ref.
+   * Used as a fallback when the numeric transaction_id is not available
+   * (e.g. the mobile WebView couldn't extract it from the redirect URL).
+   * Returns the first matching successful transaction, or null.
+   */
+  async verifyByTxRef(txRef: string): Promise<FlwChargeResponse | null> {
+    if (!txRef) return null;
+    try {
+      const res = await fetch(
+        `${FLW_BASE_URL}/transactions?tx_ref=${encodeURIComponent(txRef)}`,
+        { headers: this.headers() },
+      );
+      const data: any = await res.json();
+      if (data.status !== 'success' || !Array.isArray(data.data) || data.data.length === 0) {
+        return null;
+      }
+      const tx = data.data.find((t: any) => t.status === 'successful') ?? data.data[0];
+      if (!tx?.id) return null;
+      return this.verifyTransaction(String(tx.id));
+    } catch {
+      return null;
+    }
+  }
+
   /** Charge a saved card token */
   async chargeToken(params: {
     token: string;
