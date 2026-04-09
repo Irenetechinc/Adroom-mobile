@@ -999,13 +999,20 @@ app.post('/api/billing/verify-subscription', async (req, res) => {
     if (!user) return res.status(401).json({ error: 'Unauthorized.' });
 
     const { transaction_id, tx_ref, plan_id } = req.body;
-    if (!transaction_id || !plan_id) return res.status(400).json({ error: 'transaction_id and plan_id required.' });
+    if (!plan_id) return res.status(400).json({ error: 'plan_id required.' });
+    if (!transaction_id && !tx_ref) return res.status(400).json({ error: 'transaction_id or tx_ref required.' });
 
     const plan = PLANS[plan_id as keyof typeof PLANS];
     if (!plan) return res.status(400).json({ error: `Unknown plan: ${plan_id}` });
 
-    // Verify with Flutterwave
-    const verification = await flutterwaveService.verifyTransaction(transaction_id);
+    // Verify with Flutterwave — fall back to tx_ref lookup when transaction_id is absent
+    let verification = transaction_id
+      ? await flutterwaveService.verifyTransaction(transaction_id)
+      : await flutterwaveService.verifyByTxRef(tx_ref);
+
+    if (!verification) {
+      return res.status(402).json({ error: 'Could not locate transaction via tx_ref.' });
+    }
     if (verification.status !== 'success' || verification.data?.status !== 'successful') {
       return res.status(402).json({ error: 'Payment verification failed.', details: verification.message });
     }
@@ -1045,12 +1052,19 @@ app.post('/api/billing/verify-topup', async (req, res) => {
     if (!user) return res.status(401).json({ error: 'Unauthorized.' });
 
     const { transaction_id, tx_ref, pack_id } = req.body;
-    if (!transaction_id || !pack_id) return res.status(400).json({ error: 'transaction_id and pack_id required.' });
+    if (!pack_id) return res.status(400).json({ error: 'pack_id required.' });
+    if (!transaction_id && !tx_ref) return res.status(400).json({ error: 'transaction_id or tx_ref required.' });
 
     const pack = TOPUP_PACKS[pack_id as keyof typeof TOPUP_PACKS];
     if (!pack) return res.status(400).json({ error: `Unknown pack: ${pack_id}` });
 
-    const verification = await flutterwaveService.verifyTransaction(transaction_id);
+    let verification = transaction_id
+      ? await flutterwaveService.verifyTransaction(transaction_id)
+      : await flutterwaveService.verifyByTxRef(tx_ref);
+
+    if (!verification) {
+      return res.status(402).json({ error: 'Could not locate transaction via tx_ref.' });
+    }
     if (verification.status !== 'success' || verification.data?.status !== 'successful') {
       return res.status(402).json({ error: 'Payment verification failed.', details: verification.message });
     }
