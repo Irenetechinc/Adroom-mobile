@@ -728,6 +728,10 @@ export const useAgentStore = create<AgentState>((set, get) => ({
   },
 
   loadMessages: async () => {
+    // Always ensure the latest platform connection state is loaded from the
+    // backend before restoring any session, so connection badges are correct.
+    await get().loadConnectedPlatforms();
+
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
 
@@ -820,8 +824,11 @@ export const useAgentStore = create<AgentState>((set, get) => ({
   },
 
   startNewSession: async () => {
-    // Preserve connection status — rebuild tokens from connectedPlatforms so
-    // platforms remain shown as connected even after the chat session resets.
+    // Always fetch the latest platform connection state from the backend BEFORE
+    // rebuilding tokens, so platforms never appear disconnected after a session
+    // reset (the in-memory connectedPlatforms could be empty on first mount).
+    await get().loadConnectedPlatforms();
+
     const { connectedPlatforms } = get();
     const persistedTokens: Record<string, string | null> = {};
     for (const platform of Object.keys(connectedPlatforms)) {

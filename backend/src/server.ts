@@ -949,6 +949,10 @@ app.post('/api/billing/payment-link', async (req, res) => {
 
     // Call Flutterwave API to generate a properly signed hosted payment link
     const FLW_SECRET_KEY = process.env.FLW_SECRET_KEY || process.env.FLUTTERWAVE_SECRET_KEY || '';
+    if (!FLW_SECRET_KEY) {
+      console.error('[PaymentLink] FLW_SECRET_KEY is not set.');
+      return res.status(503).json({ error: 'Payment gateway not configured. Please contact support.' });
+    }
     const flwRes = await fetch('https://api.flutterwave.com/v3/payments', {
       method: 'POST',
       headers: {
