@@ -52,16 +52,27 @@ export default function ConnectedAccountsScreen() {
   const loadConfigs = useCallback(async () => {
     setLoading(true);
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) return;
-      const BACKEND_URL = process.env.EXPO_PUBLIC_API_URL;
-      const res = await fetch(`${BACKEND_URL}/api/platform-configs`, {
-        headers: { 'Authorization': `Bearer ${session.access_token}` },
-      });
-      if (!res.ok) { setConfigs({}); return; }
-      const data = await res.json();
-      setConfigs(data.configs || {});
-    } catch {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
+      const { data: rows, error } = await supabase
+        .from('ad_configs')
+        .select('platform, page_id, page_name, ad_account_id, instagram_account_id, person_urn, org_urn, open_id, updated_at')
+        .eq('user_id', user.id);
+
+      if (error) {
+        console.error('[ConnectedAccounts] Supabase error:', error.message);
+        setConfigs({});
+        return;
+      }
+
+      const connected: Record<string, any> = {};
+      for (const row of rows || []) {
+        connected[row.platform] = { ...row, connected: true };
+      }
+      setConfigs(connected);
+    } catch (e: any) {
+      console.error('[ConnectedAccounts] load error:', e?.message);
       setConfigs({});
     } finally {
       setLoading(false);
@@ -102,17 +113,17 @@ export default function ConnectedAccountsScreen() {
           onPress: async () => {
             setDisconnecting(platform.id);
             try {
-              const { data: { session } } = await supabase.auth.getSession();
-              if (!session) throw new Error('Not authenticated');
-              const BACKEND_URL = process.env.EXPO_PUBLIC_API_URL;
-              const res = await fetch(`${BACKEND_URL}/api/platform-configs/${platform.id}`, {
-                method: 'DELETE',
-                headers: { 'Authorization': `Bearer ${session.access_token}` },
-              });
-              if (!res.ok) {
-                const err = await res.json();
-                throw new Error(err.error || 'Disconnect failed');
-              }
+              const { data: { user } } = await supabase.auth.getUser();
+              if (!user) throw new Error('Not authenticated');
+
+              const { error } = await supabase
+                .from('ad_configs')
+                .delete()
+                .eq('user_id', user.id)
+                .eq('platform', platform.id);
+
+              if (error) throw new Error(error.message);
+
               setConfigs(prev => {
                 const next = { ...prev };
                 delete next[platform.id];
