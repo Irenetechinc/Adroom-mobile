@@ -13,7 +13,7 @@ import {
   ShieldCheck, RefreshCw, AlertCircle, ExternalLink, Lock, Zap,
 } from 'lucide-react-native';
 import Animated, { FadeInDown } from 'react-native-reanimated';
-import { supabase } from '../services/supabase';
+import { useAgentStore } from '../store/agentStore';
 import { useEnergyStore } from '../store/energyStore';
 
 type Platform = {
@@ -38,54 +38,29 @@ const PLATFORMS: Platform[] = [
 export default function ConnectedAccountsScreen() {
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const insets = useSafeAreaInsets();
-  const [loading, setLoading] = useState(true);
-  const [configs, setConfigs] = useState<Record<string, any>>({});
+  const [loading, setLoading] = useState(false);
   const [disconnecting, setDisconnecting] = useState<string | null>(null);
 
+  const { tokens, connectedPlatforms, loadConnectedPlatforms, disconnectPlatform } = useAgentStore();
   const { subscription } = useEnergyStore();
   const plan: string = (subscription as any)?.plan ?? 'none';
   const isPro = plan === 'pro' || plan === 'pro_plus';
 
-  const connectedCount = PLATFORMS.filter(p => !p.comingSoon && !!configs[p.id]).length;
+  const isConnected = (id: string) => !!tokens[id];
+  const connectedCount = PLATFORMS.filter(p => !p.comingSoon && isConnected(p.id)).length;
   const isStarterLimited = !isPro && connectedCount >= 1;
 
-  const loadConfigs = useCallback(async () => {
+  const refresh = useCallback(async () => {
     setLoading(true);
-    try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
-
-      const { data: rows, error } = await supabase
-        .from('ad_configs')
-        .select('platform, page_id, page_name, ad_account_id, instagram_account_id, person_urn, org_urn, open_id, updated_at')
-        .eq('user_id', user.id);
-
-      if (error) {
-        console.error('[ConnectedAccounts] Supabase error:', error.message);
-        setConfigs({});
-        return;
-      }
-
-      const connected: Record<string, any> = {};
-      for (const row of rows || []) {
-        connected[row.platform] = { ...row, connected: true };
-      }
-      setConfigs(connected);
-    } catch (e: any) {
-      console.error('[ConnectedAccounts] load error:', e?.message);
-      setConfigs({});
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+    await loadConnectedPlatforms();
+    setLoading(false);
+  }, [loadConnectedPlatforms]);
 
   useFocusEffect(
     useCallback(() => {
-      loadConfigs();
-    }, [loadConfigs])
+      refresh();
+    }, [refresh])
   );
-
-  const isConnected = (id: string) => !!configs[id];
 
   const handleConnect = (platform: Platform) => {
     const params: any = {};
@@ -113,22 +88,7 @@ export default function ConnectedAccountsScreen() {
           onPress: async () => {
             setDisconnecting(platform.id);
             try {
-              const { data: { user } } = await supabase.auth.getUser();
-              if (!user) throw new Error('Not authenticated');
-
-              const { error } = await supabase
-                .from('ad_configs')
-                .delete()
-                .eq('user_id', user.id)
-                .eq('platform', platform.id);
-
-              if (error) throw new Error(error.message);
-
-              setConfigs(prev => {
-                const next = { ...prev };
-                delete next[platform.id];
-                return next;
-              });
+              await disconnectPlatform(platform.id);
             } catch (e: any) {
               Alert.alert('Error', e.message || 'Failed to disconnect. Please try again.');
             } finally {
@@ -141,8 +101,14 @@ export default function ConnectedAccountsScreen() {
   };
 
   const getConnectedLabel = (platform: Platform): string => {
-    const cfg = configs[platform.id];
-    if (!cfg) return '';
+    const cfg = connectedPlatforms[platform.id];
+    if (!cfg) {
+      if (platform.id === 'instagram') return 'Instagram Account';
+      if (platform.id === 'twitter') return 'X / Twitter Account';
+      if (platform.id === 'linkedin') return 'LinkedIn Profile';
+      if (platform.id === 'tiktok') return 'TikTok Creator';
+      return 'Account Connected';
+    }
     if (cfg.page_name) return cfg.page_name;
     if (platform.id === 'instagram') return 'Instagram Account';
     if (platform.id === 'twitter') return 'X / Twitter Account';
@@ -152,13 +118,13 @@ export default function ConnectedAccountsScreen() {
   };
 
   const getConnectedSub = (platform: Platform): string => {
-    const cfg = configs[platform.id];
-    if (!cfg) return '';
+    const cfg = connectedPlatforms[platform.id];
+    if (!cfg) return 'Account Linked';
     if (platform.id === 'facebook') return cfg.ad_account_id ? `Ad Account: ${cfg.ad_account_id}` : 'Business Page Linked';
-    if (platform.id === 'instagram') return cfg.instagram_account_id ? `IG Account: ${cfg.instagram_account_id}` : 'Account Linked';
+    if (platform.id === 'instagram') return cfg.instagram_account_id ? `IG: ${cfg.instagram_account_id}` : 'Account Linked';
     if (platform.id === 'twitter') return 'X Account Linked';
     if (platform.id === 'linkedin') return cfg.org_urn ? `Page: ${cfg.org_urn}` : (cfg.person_urn ? `Profile: ${cfg.person_urn}` : 'Profile Linked');
-    if (platform.id === 'tiktok') return cfg.open_id ? `ID: ${cfg.open_id.substring(0, 12)}...` : 'Creator Account Linked';
+    if (platform.id === 'tiktok') return cfg.open_id ? `ID: ${cfg.open_id.substring(0, 12)}…` : 'Creator Account Linked';
     return '';
   };
 
@@ -172,7 +138,7 @@ export default function ConnectedAccountsScreen() {
           <Text style={styles.headerLabel}>Settings</Text>
           <Text style={styles.headerTitle}>Connected Accounts</Text>
         </View>
-        <TouchableOpacity onPress={loadConfigs} style={styles.refreshBtn} disabled={loading}>
+        <TouchableOpacity onPress={refresh} style={styles.refreshBtn} disabled={loading}>
           {loading
             ? <ActivityIndicator color="#64748B" size="small" />
             : <RefreshCw size={16} color="#64748B" />}
@@ -194,7 +160,7 @@ export default function ConnectedAccountsScreen() {
             <Text style={styles.planBannerText}>
               {connectedCount === 0
                 ? 'Free plan: Connect 1 account. Upgrade to Pro for unlimited.'
-                : 'You\'ve used your 1 free account slot. Upgrade to Pro to add more.'}
+                : "You've used your 1 free account slot. Upgrade to Pro to add more."}
             </Text>
             <TouchableOpacity onPress={handleUpgrade} style={styles.planBannerBtn}>
               <Text style={styles.planBannerBtnText}>Upgrade</Text>

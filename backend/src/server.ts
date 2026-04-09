@@ -954,7 +954,7 @@ app.post('/api/billing/payment-link', async (req, res) => {
       email,
       name: email,
       tx_ref: txRef,
-      redirect_url: `${process.env.EXPO_PUBLIC_API_URL || 'https://adroom.app'}/api/billing/flw-callback`,
+      redirect_url: `adroom://payment-callback`,
       title: type === 'subscription' ? `AdRoom ${PLANS[id as keyof typeof PLANS]?.name ?? id} Plan` : 'AdRoom Energy Top-Up',
       description: type === 'subscription' ? `Monthly subscription — ${id}` : `Energy top-up pack — ${id}`,
       meta: { user_id: user.id, type, plan_or_pack_id: id },

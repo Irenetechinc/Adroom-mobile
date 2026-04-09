@@ -80,8 +80,10 @@ interface AgentState {
   connectionState: ConnectionState;
   connectionSource: 'flow' | 'settings' | null;
   
-  // Platform Access Tokens
+  // Platform Access Tokens (in-session OAuth tokens)
   tokens: Record<string, string | null>;
+  // Platform connection metadata (persisted, loaded from backend on startup)
+  connectedPlatforms: Record<string, any>;
   fetchedAccounts: Record<string, any[]>;
   selectedAccounts: Record<string, any>;
 
@@ -120,6 +122,7 @@ interface AgentState {
   handleLogin: (platform: string) => Promise<void>;
   handleAccountSelection: (platform: string, account: any) => Promise<void>;
   disconnectPlatform: (platform: string) => Promise<void>;
+  loadConnectedPlatforms: () => Promise<void>;
 
   // Legacy (Keep for compatibility if needed, but we'll use unified)
   initiateFacebookConnection: (fromFlow?: boolean) => void;
@@ -143,6 +146,7 @@ export const useAgentStore = create<AgentState>((set, get) => ({
   connectionState: 'IDLE',
   connectionSource: null,
   tokens: {},
+  connectedPlatforms: {},
   fetchedAccounts: {},
   selectedAccounts: {},
   fbAccessToken: null,
@@ -1001,12 +1005,49 @@ export const useAgentStore = create<AgentState>((set, get) => ({
       }
   },
 
-  disconnectPlatform: async (platform: string) => {
-      set((state) => {
-          const newTokens = { ...state.tokens };
-          delete newTokens[platform];
-          return { tokens: newTokens };
+  loadConnectedPlatforms: async () => {
+    try {
+      const token = await getAuthToken();
+      if (!token || !BACKEND_URL) return;
+      const res = await fetch(`${BACKEND_URL}/api/platform-configs`, {
+        headers: { Authorization: `Bearer ${token}` },
       });
+      if (!res.ok) return;
+      const data = await res.json();
+      const configs: Record<string, any> = data.configs || {};
+      set((state) => {
+        const newTokens = { ...state.tokens };
+        for (const platform of Object.keys(configs)) {
+          if (!newTokens[platform]) {
+            newTokens[platform] = 'connected';
+          }
+        }
+        for (const platform of Object.keys(newTokens)) {
+          if (!configs[platform]) {
+            delete newTokens[platform];
+          }
+        }
+        return { tokens: newTokens, connectedPlatforms: configs };
+      });
+    } catch {}
+  },
+
+  disconnectPlatform: async (platform: string) => {
+    set((state) => {
+      const newTokens = { ...state.tokens };
+      delete newTokens[platform];
+      const newConnected = { ...state.connectedPlatforms };
+      delete newConnected[platform];
+      return { tokens: newTokens, connectedPlatforms: newConnected };
+    });
+    try {
+      const token = await getAuthToken();
+      if (!token || !BACKEND_URL) return;
+      await fetch(`${BACKEND_URL}/api/platform-configs/${platform}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+    } catch {}
   },
 
   // Legacy Compatibility
