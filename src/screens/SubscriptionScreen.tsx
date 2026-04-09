@@ -322,7 +322,12 @@ export default function SubscriptionScreen() {
     }
   };
 
-  const handlePaymentComplete = async (txRef: string, type: 'subscription' | 'topup', id: string) => {
+  const handlePaymentComplete = async (
+    txRef: string,
+    type: 'subscription' | 'topup',
+    id: string,
+    transactionId?: string,
+  ) => {
     setShowPaymentWebView(false);
     Alert.alert(
       'Verify Payment',
@@ -331,7 +336,10 @@ export default function SubscriptionScreen() {
         {
           text: 'Verify',
           onPress: async () => {
-            const verify = await verifyAndApplyPayment('manual', txRef, type, id);
+            // Use the real transaction_id captured from the Flutterwave redirect
+            // URL if available. The backend will fall back to a tx_ref lookup
+            // when the id is absent.
+            const verify = await verifyAndApplyPayment(transactionId ?? '', txRef, type, id);
             if (verify.success) {
               await fetchEnergy();
               Alert.alert('Payment Successful!', type === 'subscription'
@@ -887,6 +895,18 @@ export default function SubscriptionScreen() {
               onNavigationStateChange={(navState) => {
                 const url = navState.url || '';
                 if (url.startsWith('adroom://payment-callback') || url.startsWith('adroom://payment')) {
+                  // Extract the real transaction_id Flutterwave appends to the
+                  // redirect URL: adroom://payment-callback?status=successful
+                  //   &tx_ref=ADROOM-xxx&transaction_id=12345678
+                  try {
+                    const queryStart = url.indexOf('?');
+                    if (queryStart !== -1) {
+                      const params = new URLSearchParams(url.substring(queryStart + 1));
+                      const realTxId = params.get('transaction_id') ?? undefined;
+                      handlePaymentComplete(paymentTxRef, paymentType, paymentId, realTxId);
+                      return;
+                    }
+                  } catch { /* fall through to no transaction_id */ }
                   handlePaymentComplete(paymentTxRef, paymentType, paymentId);
                 }
               }}

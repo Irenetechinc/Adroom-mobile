@@ -46,7 +46,10 @@ export default function ConnectedAccountsScreen() {
   const plan: string = (subscription as any)?.plan ?? 'none';
   const isPro = plan === 'pro' || plan === 'pro_plus';
 
-  const isConnected = (id: string) => !!tokens[id];
+  // Use connectedPlatforms (populated from backend AND from live OAuth flow) as
+  // the primary source of truth. Fall back to tokens for any connection made in
+  // the current session that hasn't been persisted to backend yet.
+  const isConnected = (id: string) => !!connectedPlatforms[id] || !!tokens[id];
   const connectedCount = PLATFORMS.filter(p => !p.comingSoon && isConnected(p.id)).length;
   const isStarterLimited = !isPro && connectedCount >= 1;
 
