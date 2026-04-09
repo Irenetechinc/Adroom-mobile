@@ -11,6 +11,7 @@ import {
   RefreshCw, ChevronRight, Star, Shield, X, Bot, Video, Image as ImageIcon, Globe, CreditCard, Lock,
 } from 'lucide-react-native';
 import { useEnergyStore, PLAN_DETAILS, TOPUP_OPTIONS } from '../store/energyStore';
+import * as WebBrowser from 'expo-web-browser';
 import Constants from 'expo-constants';
 
 const API_URL = process.env.EXPO_PUBLIC_API_URL || Constants.expoConfig?.extra?.apiUrl || 'http://localhost:8000';
@@ -283,13 +284,69 @@ export default function SubscriptionScreen() {
     Alert.alert(result.success ? 'Trial Started!' : 'Error', result.message);
   };
 
+  const initiateWebPayment = async (amount: number, type: 'subscription' | 'topup', id: string) => {
+    try {
+      const { data: { session } } = await (await import('../services/supabase')).supabase.auth.getSession();
+      if (!session) { Alert.alert('Error', 'Please sign in again.'); return; }
+
+      const res = await fetch(`${API_URL}/api/billing/payment-link`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${session.access_token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ amount, type, id }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.payment_url) {
+        Alert.alert('Error', data.error || 'Could not generate payment link. Please try again.');
+        return;
+      }
+
+      const result = await WebBrowser.openAuthSessionAsync(data.payment_url, 'adroom://payment-callback');
+
+      if (result.type === 'success' || result.type === 'dismiss') {
+        let txRef = data.tx_ref;
+        if (result.type === 'success' && result.url) {
+          const parsed = new URL(result.url);
+          txRef = parsed.searchParams.get('tx_ref') || txRef;
+          const status = parsed.searchParams.get('status');
+          if (status === 'cancelled') {
+            Alert.alert('Payment Cancelled', 'You cancelled the payment.');
+            return;
+          }
+        }
+
+        Alert.alert(
+          'Verify Payment',
+          'Did you complete the payment? Tap Verify to confirm and activate your credits.',
+          [
+            {
+              text: 'Verify', onPress: async () => {
+                const verify = await verifyAndApplyPayment('manual', txRef, type, id);
+                if (verify.success) {
+                  await fetchEnergy();
+                  Alert.alert('Payment Successful!', type === 'subscription'
+                    ? 'Your subscription is now active. Energy credits have been added.'
+                    : 'Energy credits added to your account.');
+                } else {
+                  Alert.alert('Not Verified', verify.message || 'Payment could not be confirmed. If you paid, please contact support.');
+                }
+              },
+            },
+            { text: 'Cancel', style: 'cancel' },
+          ],
+        );
+      }
+    } catch (err: any) {
+      Alert.alert('Payment Error', err.message || 'Something went wrong. Please try again.');
+    }
+  };
+
   const handleSubscribe = (planId: string) => {
     const p = PLAN_DETAILS[planId];
     Alert.alert(
       `Subscribe to ${p.name}`,
-      `${p.credits} energy credits/month — $${p.price}/mo.\n\nPay securely with your card directly in the app.`,
+      `${p.credits} energy credits/month — $${p.price}/mo.\n\nYou'll be taken to a secure payment page inside the app.`,
       [
-        { text: 'Pay with Card', onPress: () => openCardModal(p.price, 'subscription', planId) },
+        { text: 'Pay Now', onPress: () => initiateWebPayment(p.price, 'subscription', planId) },
         { text: 'Cancel', style: 'cancel' },
       ],
     );
@@ -300,7 +357,7 @@ export default function SubscriptionScreen() {
       `Buy ${pack.label}`,
       `Add ${pack.credits} energy credits — $${pack.price}.\n\nInstant credit after payment.`,
       [
-        { text: 'Pay with Card', onPress: () => openCardModal(pack.price, 'topup', pack.id) },
+        { text: 'Pay Now', onPress: () => initiateWebPayment(pack.price, 'topup', pack.id) },
         { text: 'Cancel', style: 'cancel' },
       ],
     );
