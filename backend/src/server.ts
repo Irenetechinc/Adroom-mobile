@@ -962,7 +962,7 @@ app.post('/api/billing/payment-link', async (req, res) => {
       body: JSON.stringify({
         tx_ref: txRef,
         amount,
-        currency: 'NGN',
+        currency: 'USD',
         redirect_url: 'adroom://payment-callback',
         customer: { email, name: email },
         customizations: {

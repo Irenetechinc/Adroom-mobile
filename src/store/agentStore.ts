@@ -824,9 +824,8 @@ export const useAgentStore = create<AgentState>((set, get) => ({
   },
 
   startNewSession: async () => {
-    // Always fetch the latest platform connection state from the backend BEFORE
-    // rebuilding tokens, so platforms never appear disconnected after a session
-    // reset (the in-memory connectedPlatforms could be empty on first mount).
+    // Fetch latest platform connection state first — never loses connection
+    // status even on session reset.
     await get().loadConnectedPlatforms();
 
     const { connectedPlatforms } = get();
@@ -835,9 +834,12 @@ export const useAgentStore = create<AgentState>((set, get) => ({
       persistedTokens[platform] = 'connected';
     }
 
+    // Reset all chat/flow state but keep connection tokens so the connected
+    // accounts badge and in-chat connection checks remain accurate.
     set({
         messages: [],
-        isTyping: false,
+        isTyping: true,
+        isInputDisabled: true,
         productDetails: { name: '', description: '' },
         generatedStrategies: null,
         activeStrategy: null,
@@ -845,32 +847,35 @@ export const useAgentStore = create<AgentState>((set, get) => ({
         flowState: 'IDLE',
         tokens: persistedTokens,
         fetchedAccounts: {},
-        selectedAccounts: {}
+        selectedAccounts: {},
     });
 
-    const { data: { user } } = await supabase.auth.getUser();
-    if (user) {
-        // Clear chat_history (local Supabase table)
-        await supabase.from('chat_history').delete().eq('user_id', user.id).catch(() => {});
-        // Clear ai_conversation_memory (MemPalace — backend)
-        const token = await getAuthToken();
-        if (token && BACKEND_URL) {
-            await fetch(`${BACKEND_URL}/api/chat/history`, {
-                method: 'DELETE',
-                headers: { Authorization: `Bearer ${token}` },
-            }).catch(() => {});
+    // Best-effort history cleanup — failures are swallowed so the greeting
+    // always fires regardless.
+    let userName = 'there';
+    try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (user) {
+            userName = user.email?.split('@')[0] || 'there';
+            supabase.from('chat_history').delete().eq('user_id', user.id).catch(() => {});
+            const authToken = await getAuthToken();
+            if (authToken && BACKEND_URL) {
+                fetch(`${BACKEND_URL}/api/chat/history`, {
+                    method: 'DELETE',
+                    headers: { Authorization: `Bearer ${authToken}` },
+                }).catch(() => {});
+            }
         }
-    }
+    } catch { /* non-fatal — proceed to greeting */ }
 
     const { addMessage, setTyping, startStrategyFlow } = get();
     setTyping(true);
-    
+
     setTimeout(() => {
-        const userName = user?.email?.split('@')[0] || 'User';
         addMessage(`Hello ${userName}. I am AdRoom AI. Ready to strategize?`, 'agent');
         setTyping(false);
         setTimeout(() => startStrategyFlow(), 1000);
-    }, 1000);
+    }, 800);
   },
 
   resetAgent: () => get().startNewSession(),
@@ -1042,17 +1047,19 @@ export const useAgentStore = create<AgentState>((set, get) => ({
       const configs: Record<string, any> = data.configs || {};
       set((state) => {
         const newTokens = { ...state.tokens };
+        // Only ADD tokens for platforms confirmed connected in the backend.
+        // Never delete — deletion happens only on explicit disconnectPlatform().
+        // This prevents any network hiccup or timing issue from wiping the
+        // in-memory connection state the user can clearly see is connected.
         for (const platform of Object.keys(configs)) {
           if (!newTokens[platform]) {
             newTokens[platform] = 'connected';
           }
         }
-        for (const platform of Object.keys(newTokens)) {
-          if (!configs[platform]) {
-            delete newTokens[platform];
-          }
-        }
-        return { tokens: newTokens, connectedPlatforms: configs };
+        // Merge backend configs ON TOP of existing connectedPlatforms so a
+        // successful reconnect also updates local metadata (page name etc).
+        const mergedPlatforms = { ...state.connectedPlatforms, ...configs };
+        return { tokens: newTokens, connectedPlatforms: mergedPlatforms };
       });
     } catch {}
   },
