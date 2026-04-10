@@ -1563,6 +1563,238 @@ app.get('/api/cma/live-status', async (_req, res) => {
   }
 });
 
+// ─── PUBLIC DELETE ACCOUNT PAGE (Google Play Store Compliance) ────────────────
+
+app.get('/delete-account', (req, res) => {
+  res.setHeader('Content-Type', 'text/html');
+  res.send(`<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Delete Account — AdRoom</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+      background: #0a0a0f;
+      color: #e0e0e0;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+    }
+    .card {
+      background: #13131a;
+      border: 1px solid #2a2a3a;
+      border-radius: 16px;
+      padding: 40px 36px;
+      max-width: 480px;
+      width: 100%;
+    }
+    .logo {
+      font-size: 26px;
+      font-weight: 800;
+      letter-spacing: -0.5px;
+      margin-bottom: 8px;
+      background: linear-gradient(90deg, #a78bfa, #6366f1);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+    h1 {
+      font-size: 20px;
+      font-weight: 700;
+      color: #ffffff;
+      margin-bottom: 10px;
+    }
+    p {
+      font-size: 14px;
+      color: #8888aa;
+      line-height: 1.6;
+      margin-bottom: 24px;
+    }
+    label {
+      display: block;
+      font-size: 13px;
+      font-weight: 600;
+      color: #aaaacc;
+      margin-bottom: 6px;
+    }
+    input, textarea {
+      width: 100%;
+      background: #1e1e2e;
+      border: 1px solid #2e2e4e;
+      border-radius: 10px;
+      color: #e0e0e0;
+      font-size: 15px;
+      padding: 12px 14px;
+      margin-bottom: 18px;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+    input:focus, textarea:focus { border-color: #6366f1; }
+    textarea { resize: vertical; min-height: 90px; font-family: inherit; }
+    button {
+      width: 100%;
+      background: linear-gradient(135deg, #6366f1, #a78bfa);
+      color: #fff;
+      border: none;
+      border-radius: 10px;
+      padding: 14px;
+      font-size: 15px;
+      font-weight: 700;
+      cursor: pointer;
+      transition: opacity 0.2s;
+    }
+    button:hover { opacity: 0.88; }
+    button:disabled { opacity: 0.5; cursor: not-allowed; }
+    .notice {
+      font-size: 12px;
+      color: #666688;
+      margin-top: 14px;
+      line-height: 1.5;
+    }
+    .success {
+      text-align: center;
+      padding: 16px 0;
+    }
+    .success-icon {
+      font-size: 48px;
+      margin-bottom: 16px;
+    }
+    .success h2 {
+      font-size: 20px;
+      font-weight: 700;
+      color: #fff;
+      margin-bottom: 10px;
+    }
+    .success p { margin-bottom: 0; }
+    .error-msg {
+      background: #2d1b1b;
+      border: 1px solid #6b2c2c;
+      border-radius: 8px;
+      color: #ff6b6b;
+      font-size: 13px;
+      padding: 10px 14px;
+      margin-bottom: 16px;
+    }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="logo">AdRoom</div>
+    <h1>Delete Your Account</h1>
+    <p>Submit your request below. Our team will process it within 30 days. All your personal data, campaigns, and account information will be permanently removed.</p>
+
+    <form id="deleteForm">
+      <label for="email">Email address on your account *</label>
+      <input type="email" id="email" name="email" placeholder="you@example.com" required />
+
+      <label for="reason">Reason (optional)</label>
+      <textarea id="reason" name="reason" placeholder="Let us know why you're leaving…"></textarea>
+
+      <div id="errorBox" class="error-msg" style="display:none"></div>
+
+      <button type="submit" id="submitBtn">Request Account Deletion</button>
+      <p class="notice">By submitting this form you confirm that you want your AdRoom account and all associated data permanently deleted. This action cannot be undone.</p>
+    </form>
+
+    <div class="success" id="successBox" style="display:none">
+      <div class="success-icon">✅</div>
+      <h2>Request Received</h2>
+      <p>We've received your deletion request. You'll receive a confirmation and your account will be permanently deleted within 30 days.</p>
+    </div>
+  </div>
+
+  <script>
+    document.getElementById('deleteForm').addEventListener('submit', async function(e) {
+      e.preventDefault();
+      const btn = document.getElementById('submitBtn');
+      const errorBox = document.getElementById('errorBox');
+      const email = document.getElementById('email').value.trim();
+      const reason = document.getElementById('reason').value.trim();
+      btn.disabled = true;
+      btn.textContent = 'Submitting…';
+      errorBox.style.display = 'none';
+      try {
+        const res = await fetch('/delete-account', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email, reason })
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Something went wrong. Please try again.');
+        document.getElementById('deleteForm').style.display = 'none';
+        document.getElementById('successBox').style.display = 'block';
+      } catch (err) {
+        errorBox.textContent = err.message;
+        errorBox.style.display = 'block';
+        btn.disabled = false;
+        btn.textContent = 'Request Account Deletion';
+      }
+    });
+  </script>
+</body>
+</html>`);
+});
+
+app.post('/delete-account', async (req, res) => {
+  try {
+    const { email, reason } = req.body;
+    if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      return res.status(400).json({ error: 'A valid email address is required.' });
+    }
+
+    const svc = getServiceSupabaseClient();
+
+    // Look up the user by email via auth admin API
+    const { data: { users }, error: lookupErr } = await svc.auth.admin.listUsers({ perPage: 1000 });
+    if (lookupErr) throw lookupErr;
+
+    const matched = users.find((u: any) => u.email?.toLowerCase() === email.toLowerCase());
+    const userId = matched?.id ?? null;
+
+    // Check for existing pending request by email (regardless of userId)
+    const { data: existing } = await svc
+      .from('account_deletion_requests')
+      .select('id')
+      .eq('user_email', email.toLowerCase())
+      .eq('status', 'pending')
+      .maybeSingle();
+
+    if (existing) {
+      return res.json({ success: true, already_pending: true });
+    }
+
+    const { error: insertErr } = await svc.from('account_deletion_requests').insert({
+      user_id: userId,
+      user_email: email.toLowerCase(),
+      reason: reason || null,
+      status: 'pending',
+      source: 'web',
+    });
+
+    if (insertErr) throw insertErr;
+
+    // Broadcast to admin dashboard
+    try {
+      const { adminBroadcast } = await import('./admin/adminRouter');
+      adminBroadcast('deletion_request', {
+        userId,
+        email: email.toLowerCase(),
+        reason: reason || null,
+        source: 'web',
+        createdAt: new Date().toISOString(),
+      });
+    } catch {}
+
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || 'Server error. Please try again later.' });
+  }
+});
+
 app.listen(PORT, async () => {
   console.log(`[AdRoom Server] Running on port ${PORT} — ${new Date().toISOString()}`);
   console.log(`[AdRoom Server] AI Engines: GPT-4o (strategy) | Gemini 2.0 Flash (text) | Imagen 3 (creative)`);
