@@ -1,11 +1,11 @@
 
 import React, { useEffect } from 'react';
-import { View } from 'react-native';
 import { NavigationContainer, DarkTheme, LinkingOptions } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import * as Linking from 'expo-linking';
 import { RootStackParamList } from '../types';
 import { useAuthStore } from '../store/authStore';
+import { registerPushToken, setupNotificationListeners } from '../services/notificationService';
 
 import LoginScreen from '../screens/LoginScreen';
 import SignupScreen from '../screens/SignupScreen';
@@ -18,6 +18,8 @@ import OnboardingScreen from '../screens/OnboardingScreen';
 import AgentChatScreen from '../screens/AgentChatScreen';
 import ConnectedAccountsScreen from '../screens/ConnectedAccountsScreen';
 import SubscriptionScreen from '../screens/SubscriptionScreen';
+import PrivacySecurityScreen from '../screens/PrivacySecurityScreen';
+import NotificationsScreen from '../screens/NotificationsScreen';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
@@ -67,6 +69,22 @@ export default function AppNavigator() {
     initialize();
   }, [initialize]);
 
+  // Register push token as soon as the user is authenticated
+  useEffect(() => {
+    if (!session) return;
+    // Small delay so auth is fully settled before requesting token
+    const timer = setTimeout(() => {
+      registerPushToken().catch(() => {});
+    }, 2000);
+    return () => clearTimeout(timer);
+  }, [session?.user?.id]);
+
+  // Set up global notification listeners (foreground handling)
+  useEffect(() => {
+    const cleanup = setupNotificationListeners();
+    return cleanup;
+  }, []);
+
   if (isLoading) {
     return (
       <AuthLoadingSkeleton />
@@ -99,6 +117,16 @@ export default function AppNavigator() {
             <Stack.Screen 
               name="Subscription" 
               component={SubscriptionScreen} 
+              options={{ headerShown: false }}
+            />
+            <Stack.Screen 
+              name="PrivacySecurity" 
+              component={PrivacySecurityScreen} 
+              options={{ headerShown: false }}
+            />
+            <Stack.Screen 
+              name="Notifications" 
+              component={NotificationsScreen} 
               options={{ headerShown: false }}
             />
           </>

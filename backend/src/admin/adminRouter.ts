@@ -16,6 +16,11 @@ function broadcast(event: string, data: unknown) {
   sseClients.forEach((c) => { try { c.write(msg); } catch { sseClients.delete(c); } });
 }
 
+// Exported so server.ts can broadcast from its own routes
+export function adminBroadcast(event: string, data: unknown) {
+  broadcast(event, data);
+}
+
 // ─── Token helpers ────────────────────────────────────────────────────────────
 function signToken(email: string): string {
   const payload = Buffer.from(JSON.stringify({ e: email, iat: Date.now(), exp: Date.now() + 86_400_000 })).toString('base64url');
@@ -466,6 +471,22 @@ router.post('/api/notifications', auth, async (req, res) => {
       delivery_results: { results, total_tokens: tokens.length },
     });
 
+    // Also save to user_notifications inbox so users can see in-app
+    const recipientUserIds = (tokenRows || []).map(r => r.user_id).filter(Boolean);
+    if (recipientUserIds.length > 0) {
+      const inboxRows = recipientUserIds.map(uid => ({
+        user_id: uid,
+        title,
+        body,
+        data: extraData || {},
+        sent_by: ADMIN_EMAIL,
+        is_read: false,
+      }));
+      await sb.from('user_notifications').insert(inboxRows).then(({ error: e }) => {
+        if (e && e.code !== '42P01') console.warn('[Admin] Failed to save to user_notifications:', e.message);
+      });
+    }
+
     await logAction('send_notification', null, null, { target, title, body, sent: successCount });
     broadcast('notification_sent', { target, title, sent: successCount });
     res.json({ success: true, sent: successCount, total_tokens: tokens.length });
@@ -621,6 +642,71 @@ router.get('/api/cma/model-credits', auth, async (req, res) => {
       ],
       totalSpendUsd: openaiInternalSpend + googleInternalSpend,
     });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── ACCOUNT DELETION REQUESTS ────────────────────────────────────────────────
+router.get('/api/account-deletions', auth, async (req, res) => {
+  try {
+    const sb = getServiceSupabaseClient();
+    const { data, error } = await sb
+      .from('account_deletion_requests')
+      .select('*')
+      .order('created_at', { ascending: false })
+      .limit(100);
+    if (error && error.code !== '42P01') throw error;
+    res.json(data || []);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.post('/api/account-deletions/:id/approve', auth, async (req, res) => {
+  try {
+    const sb = getServiceSupabaseClient();
+    const { id } = req.params;
+
+    const { data: req_data } = await sb.from('account_deletion_requests').select('*').eq('id', id).single();
+    if (!req_data) return res.status(404).json({ error: 'Request not found' });
+    if (req_data.status !== 'pending') return res.status(400).json({ error: 'Request already processed' });
+
+    // Delete the user account
+    const { error: delErr } = await sb.auth.admin.deleteUser(req_data.user_id);
+    if (delErr) throw delErr;
+
+    await sb.from('account_deletion_requests').update({
+      status: 'approved',
+      reviewed_by: ADMIN_EMAIL,
+      reviewed_at: new Date().toISOString(),
+    }).eq('id', id);
+
+    await logAction('approve_deletion', req_data.user_id, req_data.user_email, { request_id: id });
+    broadcast('deletion_approved', { id, userId: req_data.user_id, email: req_data.user_email });
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.post('/api/account-deletions/:id/dismiss', auth, async (req, res) => {
+  try {
+    const sb = getServiceSupabaseClient();
+    const { id } = req.params;
+
+    const { data: req_data } = await sb.from('account_deletion_requests').select('*').eq('id', id).single();
+    if (!req_data) return res.status(404).json({ error: 'Request not found' });
+
+    await sb.from('account_deletion_requests').update({
+      status: 'dismissed',
+      reviewed_by: ADMIN_EMAIL,
+      reviewed_at: new Date().toISOString(),
+    }).eq('id', id);
+
+    await logAction('dismiss_deletion', req_data.user_id, req_data.user_email, { request_id: id });
+    broadcast('deletion_dismissed', { id, userId: req_data.user_id, email: req_data.user_email });
+    res.json({ success: true });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
@@ -847,6 +933,9 @@ label{font-size:12px;color:#94A3B8;font-weight:600}
     <button class="nav-item" onclick="showSection('notifications')" id="nav-notifications">
       <span>🔔</span> Push Notifications
     </button>
+    <button class="nav-item" onclick="showSection('deletions')" id="nav-deletions">
+      <span>🗑️</span> Deletion Requests <span class="badge" id="deletion-badge" style="display:none">0</span>
+    </button>
     <div class="nav-section">MONITORING</div>
     <button class="nav-item" onclick="showSection('activity')" id="nav-activity">
       <span>📡</span> Live Activity
@@ -1006,6 +1095,24 @@ label{font-size:12px;color:#94A3B8;font-weight:600}
               <div class="empty">Loading…</div>
             </div>
           </div>
+        </div>
+      </div>
+
+      <!-- ───────────── DELETION REQUESTS ───────────── -->
+      <div id="section-deletions" class="section">
+        <div class="section-header">
+          <div class="section-title">Account Deletion Requests</div>
+          <button class="btn btn-ghost btn-sm" onclick="loadDeletionRequests()">↺ Refresh</button>
+        </div>
+        <div class="card" style="padding:0;overflow:hidden">
+          <table>
+            <thead>
+              <tr><th>User</th><th>Reason</th><th>Status</th><th>Requested</th><th>Actions</th></tr>
+            </thead>
+            <tbody id="deletions-table-body">
+              <tr><td colspan="5" class="empty">Loading…</td></tr>
+            </tbody>
+          </table>
         </div>
       </div>
 
@@ -1304,6 +1411,7 @@ function initApp() {
   loadNotifHistory();
   loadAdminLogs();
   loadCreditLog();
+  loadDeletionRequests();
   connectSSE();
 }
 
@@ -1315,8 +1423,8 @@ if (TOKEN) {
 }
 
 // ── Navigation ────────────────────────────────────────────────────────────────
-const SECTIONS = ['dashboard', 'users', 'credits', 'notifications', 'activity', 'logs', 'cma'];
-const TITLES = { dashboard: 'Dashboard', users: 'All Users', credits: 'Credit Management', notifications: 'Push Notifications', activity: 'Live Activity', logs: 'Admin Logs', cma: 'CMA Savings Dashboard' };
+const SECTIONS = ['dashboard', 'users', 'credits', 'notifications', 'deletions', 'activity', 'logs', 'cma'];
+const TITLES = { dashboard: 'Dashboard', users: 'All Users', credits: 'Credit Management', notifications: 'Push Notifications', deletions: 'Account Deletion Requests', activity: 'Live Activity', logs: 'Admin Logs', cma: 'CMA Savings Dashboard' };
 
 function showSection(name) {
   SECTIONS.forEach(s => {
@@ -1870,6 +1978,69 @@ async function loadAdminLogs() {
   } catch {}
 }
 
+// ── Deletion Requests ─────────────────────────────────────────────────────────
+async function loadDeletionRequests() {
+  try {
+    const requests = await api('GET', '/api/account-deletions');
+    const tbody = document.getElementById('deletions-table-body');
+    if (!tbody) return;
+    if (!requests.length) {
+      tbody.innerHTML = '<tr><td colspan="5" class="empty">No deletion requests yet</td></tr>';
+      const badge = document.getElementById('deletion-badge');
+      if (badge) badge.style.display = 'none';
+      return;
+    }
+    const pending = requests.filter(r => r.status === 'pending').length;
+    const badge = document.getElementById('deletion-badge');
+    if (badge) {
+      if (pending > 0) { badge.style.display = 'inline'; badge.textContent = pending; }
+      else badge.style.display = 'none';
+    }
+    tbody.innerHTML = requests.map(r => \`<tr>
+      <td>
+        <div style="font-weight:600;font-size:13px">\${r.user_email || '—'}</div>
+        <div style="font-size:11px;color:#64748B">\${r.user_id}</div>
+      </td>
+      <td style="font-size:12px;color:#94A3B8;max-width:200px">\${r.reason || '<span style="color:#334155">No reason given</span>'}</td>
+      <td><span class="badge \${r.status === 'pending' ? 'badge-red' : r.status === 'approved' ? 'badge-green' : 'badge-gray'}">\${r.status}</span></td>
+      <td style="font-size:11px;color:#64748B">\${fmtDate(r.created_at)}</td>
+      <td>
+        \${r.status === 'pending' ? \`
+          <div style="display:flex;gap:6px">
+            <button class="btn btn-danger btn-sm" onclick="approveDeletion('\${r.id}', '\${r.user_email || r.user_id}')">✓ Delete Account</button>
+            <button class="btn btn-ghost btn-sm" onclick="dismissDeletion('\${r.id}')">✕ Dismiss</button>
+          </div>
+        \` : \`<span style="font-size:11px;color:#475569">Reviewed by \${r.reviewed_by || '—'}</span>\`}
+      </td>
+    </tr>\`).join('');
+  } catch (e) {
+    const tbody = document.getElementById('deletions-table-body');
+    if (tbody) tbody.innerHTML = '<tr><td colspan="5" class="empty">Failed to load deletion requests</td></tr>';
+  }
+}
+
+async function approveDeletion(id, email) {
+  if (!confirm(\`PERMANENTLY DELETE account for \${email}?\\n\\nThis cannot be undone.\`)) return;
+  try {
+    await api('POST', \`/api/account-deletions/\${id}/approve\`);
+    showToast('Account deleted successfully', 'success');
+    loadDeletionRequests();
+    loadStats();
+  } catch (e) {
+    showToast('Error: ' + e.message, 'error');
+  }
+}
+
+async function dismissDeletion(id) {
+  try {
+    await api('POST', \`/api/account-deletions/\${id}/dismiss\`);
+    showToast('Deletion request dismissed', 'success');
+    loadDeletionRequests();
+  } catch (e) {
+    showToast('Error: ' + e.message, 'error');
+  }
+}
+
 async function loadCMAStats() {
   try {
     const days = document.getElementById('cma-days-select')?.value || '7';
@@ -2053,6 +2224,22 @@ function connectSSE() {
     loadStats();
     loadUsers();
   });
+
+  evtSource.addEventListener('deletion_request', e => {
+    const d = JSON.parse(e.data);
+    addActivityEvent({ type: 'deletion_request', payload: d });
+    loadDeletionRequests();
+    // Flash badge
+    const badge = document.getElementById('deletion-badge');
+    if (badge) {
+      badge.style.display = 'inline';
+      badge.textContent = (parseInt(badge.textContent || '0') + 1).toString();
+    }
+    showToast('⚠️ New deletion request from ' + (d.email || d.userId), 'error');
+  });
+
+  evtSource.addEventListener('deletion_approved', () => { loadDeletionRequests(); });
+  evtSource.addEventListener('deletion_dismissed', () => { loadDeletionRequests(); });
 }
 
 function addActivityEvent(ev) {
@@ -2069,6 +2256,7 @@ function addActivityEvent(ev) {
     user_terminated: { icon: '🗑️', color: '#EF4444', label: 'Account terminated' },
     user_unsuspended: { icon: '✅', color: '#10B981', label: 'User unsuspended' },
     notification_sent: { icon: '🔔', color: '#3B82F6', label: 'Notification sent' },
+    deletion_request: { icon: '⚠️', color: '#EF4444', label: 'Account deletion request' },
     plan_changed: { icon: '🎯', color: '#00F0FF', label: 'Plan changed' },
   };
   const cfg = icons[ev.type] || { icon: '📌', color: '#64748B', label: ev.type };

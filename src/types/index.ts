@@ -16,6 +16,8 @@ export type RootStackParamList = {
   };
   ConnectedAccounts: undefined;
   Subscription: { scrollToPlan?: string } | undefined;
+  PrivacySecurity: undefined;
+  Notifications: undefined;
   
   // Strategy Creation Wizard
   StrategyWizard_ProductIntake: undefined;

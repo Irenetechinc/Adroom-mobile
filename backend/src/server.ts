@@ -1366,9 +1366,151 @@ app.post('/api/logs', (req, res) => {
   res.status(200).json({ ok: true });
 });
 
-/**
- * Push Token Registration — called by the Expo app to register device push tokens
- */
+// ─── USER PROFILE & PASSWORD ──────────────────────────────────────────────────
+
+app.put('/api/user/profile', async (req, res) => {
+  try {
+    const supabase = getSupabaseClient(req as any);
+    const { data: { user }, error: authErr } = await supabase.auth.getUser();
+    if (authErr || !user) return res.status(401).json({ error: 'Unauthorized' });
+
+    const { display_name } = req.body;
+    if (!display_name || typeof display_name !== 'string') {
+      return res.status(400).json({ error: 'display_name required' });
+    }
+    const trimmed = display_name.trim();
+    if (trimmed.length < 2 || trimmed.length > 50) {
+      return res.status(400).json({ error: 'display_name must be 2–50 characters' });
+    }
+
+    const svc = getServiceSupabaseClient();
+    const { data, error } = await svc.auth.admin.updateUserById(user.id, {
+      user_metadata: { ...user.user_metadata, full_name: trimmed, display_name: trimmed },
+    });
+    if (error) throw error;
+    res.json({ success: true, display_name: trimmed });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/user/change-password', async (req, res) => {
+  try {
+    const supabase = getSupabaseClient(req as any);
+    const { data: { user }, error: authErr } = await supabase.auth.getUser();
+    if (authErr || !user) return res.status(401).json({ error: 'Unauthorized' });
+
+    const { new_password } = req.body;
+    if (!new_password || typeof new_password !== 'string' || new_password.length < 8) {
+      return res.status(400).json({ error: 'new_password must be at least 8 characters' });
+    }
+
+    const svc = getServiceSupabaseClient();
+    const { error } = await svc.auth.admin.updateUserById(user.id, { password: new_password });
+    if (error) throw error;
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/user/request-deletion', async (req, res) => {
+  try {
+    const supabase = getSupabaseClient(req as any);
+    const { data: { user }, error: authErr } = await supabase.auth.getUser();
+    if (authErr || !user) return res.status(401).json({ error: 'Unauthorized' });
+
+    const { reason } = req.body;
+    const svc = getServiceSupabaseClient();
+
+    // Check for existing pending request
+    const { data: existing } = await svc
+      .from('account_deletion_requests')
+      .select('id, status, created_at')
+      .eq('user_id', user.id)
+      .eq('status', 'pending')
+      .single();
+
+    if (existing) {
+      return res.json({ success: true, already_pending: true, id: existing.id });
+    }
+
+    const { data, error } = await svc.from('account_deletion_requests').insert({
+      user_id: user.id,
+      user_email: user.email,
+      reason: reason || null,
+      status: 'pending',
+    }).select('id').single();
+
+    if (error) throw error;
+
+    // Broadcast to admin dashboard in real time
+    try {
+      const { adminBroadcast } = await import('./admin/adminRouter');
+      adminBroadcast('deletion_request', {
+        id: data.id,
+        userId: user.id,
+        email: user.email,
+        reason: reason || null,
+        createdAt: new Date().toISOString(),
+      });
+    } catch {}
+
+    res.json({ success: true, id: data.id });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── USER NOTIFICATIONS INBOX ─────────────────────────────────────────────────
+
+app.get('/api/notifications/inbox', async (req, res) => {
+  try {
+    const supabase = getSupabaseClient(req as any);
+    const { data: { user }, error: authErr } = await supabase.auth.getUser();
+    if (authErr || !user) return res.status(401).json({ error: 'Unauthorized' });
+
+    const svc = getServiceSupabaseClient();
+    const { data, error } = await svc
+      .from('user_notifications')
+      .select('*')
+      .eq('user_id', user.id)
+      .order('created_at', { ascending: false })
+      .limit(50);
+
+    if (error) {
+      if (error.code === '42P01') return res.json({ notifications: [], unread: 0 });
+      throw error;
+    }
+
+    const unread = (data || []).filter(n => !n.is_read).length;
+    res.json({ notifications: data || [], unread });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.put('/api/notifications/inbox/:id/read', async (req, res) => {
+  try {
+    const supabase = getSupabaseClient(req as any);
+    const { data: { user }, error: authErr } = await supabase.auth.getUser();
+    if (authErr || !user) return res.status(401).json({ error: 'Unauthorized' });
+
+    const svc = getServiceSupabaseClient();
+    const { id } = req.params;
+
+    const query = id === 'all'
+      ? svc.from('user_notifications').update({ is_read: true }).eq('user_id', user.id)
+      : svc.from('user_notifications').update({ is_read: true }).eq('id', id).eq('user_id', user.id);
+
+    const { error } = await query;
+    if (error && error.code !== '42P01') throw error;
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 app.post('/api/push/register', async (req, res) => {
   try {
     const supabase = getSupabaseClient(req);
