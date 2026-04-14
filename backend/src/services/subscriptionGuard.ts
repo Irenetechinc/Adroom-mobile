@@ -4,6 +4,7 @@ export interface PlanLimits {
   imageAssets: number;
   videoAssets: number;
   platforms: number;
+  maxWebsites: number;
   websiteScraping: boolean;
   agents: {
     sales: boolean;
@@ -18,6 +19,7 @@ export const SUBSCRIPTION_PLAN_LIMITS: Record<string, PlanLimits> = {
     imageAssets: 0,
     videoAssets: 0,
     platforms: 1,
+    maxWebsites: 0,
     websiteScraping: false,
     agents: { sales: false, awareness: true, promotion: true, launch: true },
   },
@@ -25,6 +27,7 @@ export const SUBSCRIPTION_PLAN_LIMITS: Record<string, PlanLimits> = {
     imageAssets: 6,
     videoAssets: 2,
     platforms: 2,
+    maxWebsites: 1,
     websiteScraping: true,
     agents: { sales: true, awareness: true, promotion: true, launch: true },
   },
@@ -32,6 +35,7 @@ export const SUBSCRIPTION_PLAN_LIMITS: Record<string, PlanLimits> = {
     imageAssets: 14,
     videoAssets: 4,
     platforms: 99,
+    maxWebsites: 2,
     websiteScraping: true,
     agents: { sales: true, awareness: true, promotion: true, launch: true },
   },
@@ -39,6 +43,7 @@ export const SUBSCRIPTION_PLAN_LIMITS: Record<string, PlanLimits> = {
     imageAssets: 0,
     videoAssets: 0,
     platforms: 0,
+    maxWebsites: 0,
     websiteScraping: false,
     agents: { sales: false, awareness: false, promotion: false, launch: false },
   },

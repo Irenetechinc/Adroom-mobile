@@ -77,23 +77,6 @@ async function fetchRawHtml(url: string): Promise<{ text: string; rawHtml: strin
     }
 }
 
-async function fetchWithFirecrawl(url: string): Promise<string> {
-    const key = process.env.FIRECRAWL_API_KEY;
-    if (!key) throw new Error('No Firecrawl key');
-    scraperLog(`Firecrawl fetch: ${url}`);
-    const res = await fetch('https://api.firecrawl.dev/v1/scrape', {
-        method: 'POST',
-        headers: { 'Authorization': `Bearer ${key}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url, formats: ['markdown'] }),
-        signal: AbortSignal.timeout(25000),
-    });
-    if (!res.ok) throw new Error(`Firecrawl ${res.status}`);
-    const data: any = await res.json();
-    const text = data?.data?.markdown || '';
-    scraperLog(`Firecrawl OK: ${text.length} chars`);
-    return text;
-}
-
 async function getPageContent(url: string): Promise<{ text: string; rawHtml?: string }> {
     // Method 1: Jina AI reader (best for clean text extraction)
     try {
@@ -102,14 +85,7 @@ async function getPageContent(url: string): Promise<{ text: string; rawHtml?: st
     } catch (e: any) {
         scraperLog(`Jina failed: ${e.message}`);
     }
-    // Method 2: Firecrawl (handles JS-heavy sites)
-    try {
-        const text = await fetchWithFirecrawl(url);
-        if (text && text.length > 300) return { text: text.substring(0, 14000) };
-    } catch (e: any) {
-        scraperLog(`Firecrawl failed: ${e.message}`);
-    }
-    // Method 3: Raw HTML with our own cleaning
+    // Method 2: Raw HTML with our own cleaning
     try {
         const result = await fetchRawHtml(url);
         if (result.text && result.text.length > 50) return result;
@@ -465,14 +441,32 @@ Return ONLY JSON (no markdown):
 
     async refreshStaleProducts(): Promise<void> {
         const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+
+        // Only refresh products belonging to users with an active running strategy
+        const { data: activeUserIds } = await this.supabase
+            .from('strategy_memory')
+            .select('user_id')
+            .eq('status', 'active');
+
+        if (!activeUserIds || activeUserIds.length === 0) {
+            scraperLog('No active strategies found — skipping autonomous refresh');
+            return;
+        }
+
+        const userIds = [...new Set(activeUserIds.map((r: any) => r.user_id))];
+
         const { data: stale } = await this.supabase
             .from('product_memory')
             .select('product_id, website_url, user_id')
             .not('website_url', 'is', null)
             .lt('last_scraped_at', oneDayAgo)
+            .in('user_id', userIds)
             .limit(5);
 
-        if (!stale || stale.length === 0) return;
+        if (!stale || stale.length === 0) {
+            scraperLog('No stale products found for active strategy users');
+            return;
+        }
         for (const product of stale) {
             if (!product.website_url) continue;
             try {

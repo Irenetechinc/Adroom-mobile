@@ -1046,39 +1046,69 @@ export const useAgentStore = create<AgentState>()(
   },
 
   loadConnectedPlatforms: async () => {
-    try {
-      const token = await getAuthToken();
-      if (!token || !BACKEND_URL) return;
-      const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), 6000);
-      let res: Response;
-      try {
-        res = await fetch(`${BACKEND_URL}/api/platform-configs`, {
-          headers: { Authorization: `Bearer ${token}` },
-          signal: controller.signal,
-        });
-      } finally {
-        clearTimeout(timer);
-      }
-      if (!res.ok) return;
-      const data = await res.json();
-      const configs: Record<string, any> = data.configs || {};
+    const applyConfigs = (configs: Record<string, any>) => {
       set((state) => {
         const newTokens = { ...state.tokens };
-        // Only ADD tokens for platforms confirmed connected in the backend.
-        // Never delete — deletion happens only on explicit disconnectPlatform().
-        // This prevents any network hiccup or timing issue from wiping the
-        // in-memory connection state the user can clearly see is connected.
         for (const platform of Object.keys(configs)) {
           if (!newTokens[platform]) {
             newTokens[platform] = 'connected';
           }
         }
-        // Merge backend configs ON TOP of existing connectedPlatforms so a
-        // successful reconnect also updates local metadata (page name etc).
         const mergedPlatforms = { ...state.connectedPlatforms, ...configs };
         return { tokens: newTokens, connectedPlatforms: mergedPlatforms };
       });
+    };
+
+    // Primary: fetch from backend API
+    if (BACKEND_URL) {
+      try {
+        const token = await getAuthToken();
+        if (!token) throw new Error('No auth token');
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), 6000);
+        let res: Response;
+        try {
+          res = await fetch(`${BACKEND_URL}/api/platform-configs`, {
+            headers: { Authorization: `Bearer ${token}` },
+            signal: controller.signal,
+          });
+        } finally {
+          clearTimeout(timer);
+        }
+        if (res.ok) {
+          const data = await res.json();
+          const configs: Record<string, any> = data.configs || {};
+          applyConfigs(configs);
+          return;
+        }
+      } catch {}
+    }
+
+    // Fallback: query Supabase ad_configs directly (works cross-device without Railway)
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+      const { data: rows } = await supabase
+        .from('ad_configs')
+        .select('platform, page_id, page_name, ad_account_id, instagram_account_id, person_urn, org_urn, open_id, updated_at')
+        .eq('user_id', user.id);
+      if (!rows || rows.length === 0) return;
+      const configs: Record<string, any> = {};
+      for (const c of rows) {
+        configs[c.platform] = {
+          platform: c.platform,
+          page_id: c.page_id,
+          page_name: c.page_name,
+          ad_account_id: c.ad_account_id,
+          instagram_account_id: c.instagram_account_id,
+          person_urn: c.person_urn,
+          org_urn: c.org_urn,
+          open_id: c.open_id,
+          updated_at: c.updated_at,
+          connected: true,
+        };
+      }
+      applyConfigs(configs);
     } catch {}
   },
 

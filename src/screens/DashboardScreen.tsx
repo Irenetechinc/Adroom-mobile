@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { View, Text, ScrollView, RefreshControl, TouchableOpacity, StyleSheet } from 'react-native';
+import { Skeleton } from '../components/Skeleton';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -136,6 +137,22 @@ export default function DashboardScreen() {
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#00F0FF" />}
         contentContainerStyle={[styles.scrollContent, { paddingBottom: Math.max(40, insets.bottom + 20) }]}
       >
+        {/* Skeleton loading overlay (first load only, not on pull-to-refresh) */}
+        {loading && !refreshing && activeStrategies.length === 0 && (
+          <View style={{ paddingTop: 8 }}>
+            <Skeleton width="100%" height={44} borderRadius={14} style={{ marginBottom: 12 }} />
+            <View style={{ flexDirection: 'row', gap: 10, marginBottom: 12 }}>
+              <Skeleton width="33%" height={80} borderRadius={14} />
+              <Skeleton width="33%" height={80} borderRadius={14} />
+              <Skeleton width="33%" height={80} borderRadius={14} />
+            </View>
+            <Skeleton width="100%" height={110} borderRadius={16} style={{ marginBottom: 12 }} />
+            <Skeleton width="100%" height={58} borderRadius={14} style={{ marginBottom: 12 }} />
+            <Skeleton width="100%" height={120} borderRadius={16} style={{ marginBottom: 12 }} />
+            <Skeleton width="100%" height={120} borderRadius={16} style={{ marginBottom: 12 }} />
+          </View>
+        )}
+
         {/* Status bar */}
         <Animated.View entering={FadeInDown.delay(100).springify()} style={styles.statusBar}>
           <View style={styles.statusDot} />
