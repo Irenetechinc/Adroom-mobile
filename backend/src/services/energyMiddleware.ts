@@ -1,7 +1,53 @@
 import { Request, Response, NextFunction } from 'express';
 import { energyService, OPERATION_COST } from './energyService';
 import { creditManagementAgent } from './creditManagementAgent';
-import { getSupabaseClient } from '../config/supabase';
+import { getSupabaseClient, getServiceSupabaseClient } from '../config/supabase';
+
+const CREDIT_ALERT_THRESHOLDS = [10, 5, 0];
+
+async function sendCreditPushAlert(userId: string, balance: number): Promise<void> {
+  try {
+    const svc = getServiceSupabaseClient();
+    const { data: tokens } = await svc
+      .from('device_push_tokens')
+      .select('token')
+      .eq('user_id', userId)
+      .limit(3);
+
+    if (!tokens || tokens.length === 0) return;
+
+    let title: string;
+    let body: string;
+
+    if (balance <= 0) {
+      title = '⚡ AdRoom Energy Exhausted';
+      body = 'Your credits have run out. Your AI campaigns are now paused. Top up to resume.';
+    } else if (balance <= 5) {
+      title = '⚠️ Critical: Only ' + balance.toFixed(0) + ' credits left';
+      body = 'Your AdRoom AI campaigns will pause very soon. Top up now to keep them running.';
+    } else {
+      title = '🔋 Low Energy Warning — ' + balance.toFixed(0) + ' credits left';
+      body = 'Your AdRoom Energy is running low. Top up to ensure uninterrupted campaign execution.';
+    }
+
+    const messages = tokens.map((t: any) => ({
+      to: t.token,
+      title,
+      body,
+      data: { type: 'credit_alert', balance },
+      sound: 'default',
+      priority: balance <= 0 ? 'high' : 'normal',
+    }));
+
+    await fetch('https://exp.host/--/api/v2/push/send', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+      body: JSON.stringify(messages),
+    });
+  } catch (err: any) {
+    console.error('[EnergyMiddleware] Credit alert push failed:', err.message);
+  }
+}
 
 /**
  * Middleware factory — wraps a route to check & deduct energy before allowing AI usage.

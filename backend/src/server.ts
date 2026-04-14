@@ -308,6 +308,28 @@ app.post('/api/scrape', async (req, res) => {
             });
         }
 
+        // Enforce per-plan website connection limits (Pro: 1, Pro+: 2)
+        const svc = getServiceSupabaseClient();
+        const guard = await getSubscriptionGuard(user.id, svc as any);
+        const maxWebsites = guard.limits.maxWebsites ?? 0;
+        if (maxWebsites > 0) {
+            const { count: websiteCount } = await svc
+                .from('product_memory')
+                .select('product_id', { count: 'exact', head: true })
+                .eq('user_id', user.id)
+                .not('website_url', 'is', null);
+            const currentCount = websiteCount ?? 0;
+            if (currentCount >= maxWebsites) {
+                return res.status(403).json({
+                    error: 'WEBSITE_LIMIT_REACHED',
+                    plan: guard.plan,
+                    current: currentCount,
+                    max: maxWebsites,
+                    message: `Your ${guard.plan === 'pro' ? 'Pro' : 'Pro+'} plan allows up to ${maxWebsites} connected website${maxWebsites > 1 ? 's' : ''}. Disconnect an existing website first, or upgrade your plan.`,
+                });
+            }
+        }
+
         const products = await scraperService.scrapeWebsite(url, user.id);
         res.status(200).json(products);
     } catch (error: any) {
@@ -1259,6 +1281,7 @@ app.post('/api/billing/charge-card/validate-pin', async (req, res) => {
 
 /**
  * GET /api/chat/history — fetch MemPalace conversation history for the current user
+ * Automatically purges messages older than 7 days before returning.
  */
 app.get('/api/chat/history', async (req, res) => {
   try {
@@ -1268,6 +1291,16 @@ app.get('/api/chat/history', async (req, res) => {
 
     const limit = parseInt(String(req.query.limit ?? '50'));
     const svc = getServiceSupabaseClient();
+
+    // Purge messages older than 7 days (non-blocking, best-effort)
+    const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+    svc.from('ai_conversation_memory')
+      .delete()
+      .eq('user_id', user.id)
+      .lt('created_at', sevenDaysAgo)
+      .then(() => {})
+      .catch(() => {});
+
     const { data, error } = await svc
       .from('ai_conversation_memory')
       .select('id, role, content, metadata, created_at')

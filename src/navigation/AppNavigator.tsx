@@ -20,6 +20,7 @@ import ConnectedAccountsScreen from '../screens/ConnectedAccountsScreen';
 import SubscriptionScreen from '../screens/SubscriptionScreen';
 import PrivacySecurityScreen from '../screens/PrivacySecurityScreen';
 import NotificationsScreen from '../screens/NotificationsScreen';
+import AboutScreen from '../screens/AboutScreen';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
@@ -127,6 +128,11 @@ export default function AppNavigator() {
             <Stack.Screen 
               name="Notifications" 
               component={NotificationsScreen} 
+              options={{ headerShown: false }}
+            />
+            <Stack.Screen 
+              name="About" 
+              component={AboutScreen} 
               options={{ headerShown: false }}
             />
           </>

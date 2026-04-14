@@ -1,8 +1,9 @@
-import React, { useState } from 'react';
-import { View, Text, TouchableOpacity, ScrollView, Alert, Image } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import { View, Text, TouchableOpacity, ScrollView, Alert, Image, ActivityIndicator } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../types';
 import { useAgentStore } from '../store/agentStore';
+import { useEnergyStore } from '../store/energyStore';
 import { CreativeAsset } from '../types/agent';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'StrategyApproval'>;
@@ -39,6 +40,10 @@ function friendlyAction(action: string): string {
 
 export default function StrategyApprovalScreen({ navigation }: Props) {
   const { generatedStrategies, setActiveStrategy } = useAgentStore();
+  const { account, fetchEnergy } = useEnergyStore();
+  const [launching, setLaunching] = useState(false);
+
+  useEffect(() => { fetchEnergy(); }, []);
 
   if (!generatedStrategies) {
     return <View className="flex-1 bg-adroom-dark" />;
@@ -49,23 +54,61 @@ export default function StrategyApprovalScreen({ navigation }: Props) {
   const handleApprove = async () => {
     if (!activeStrategy) return;
 
+    const balance = parseFloat(String(account?.balance_credits ?? '0'));
+    const durationWeeks = activeStrategy.lifespanWeeks || activeStrategy.duration || 4;
+    const estimatedCost = Math.ceil(durationWeeks * 7 * 3);
+
+    if (balance <= 0) {
+      Alert.alert(
+        'No Energy Credits',
+        'You have no AdRoom Energy credits. Please top up or activate a plan to launch your strategy.',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Get Credits',
+            onPress: () => (navigation as any).navigate('Subscription'),
+          },
+        ]
+      );
+      return;
+    }
+
+    const lowCredits = balance < estimatedCost;
+
+    const confirmTitle = lowCredits
+      ? '⚠️ Low Energy Warning'
+      : 'Activate Strategy';
+
+    const confirmMessage = lowCredits
+      ? `You have ${balance.toFixed(1)} credits but this ${durationWeeks}-week strategy may use approximately ${estimatedCost} credits. Your strategy will pause if credits run out.\n\nActivate anyway?`
+      : `Confirm activation of "${activeStrategy.title}". Your AI will begin executing this plan automatically.`;
+
     Alert.alert(
-      'Activate Strategy',
-      `Confirm activation of "${activeStrategy.title}". Your AI will begin executing this plan automatically.`,
+      confirmTitle,
+      confirmMessage,
       [
         { text: 'Cancel', style: 'cancel' },
+        lowCredits
+          ? {
+              text: 'Top Up First',
+              onPress: () => (navigation as any).navigate('Subscription'),
+            }
+          : null,
         {
           text: 'Approve & Launch',
           onPress: async () => {
+            setLaunching(true);
             try {
               await setActiveStrategy(activeStrategy);
               navigation.navigate('AgentChat', { fromStrategyApproval: true } as any);
             } catch (error: any) {
               Alert.alert('Error', error.message);
+            } finally {
+              setLaunching(false);
             }
           },
         },
-      ]
+      ].filter(Boolean) as any[]
     );
   };
 
@@ -238,9 +281,15 @@ export default function StrategyApprovalScreen({ navigation }: Props) {
 
         <TouchableOpacity
           onPress={handleApprove}
+          disabled={launching}
           className="w-full bg-adroom-neon py-4 rounded-xl items-center shadow-lg shadow-adroom-neon/50 mb-8"
+          style={launching ? { opacity: 0.7 } : undefined}
         >
-          <Text className="text-adroom-dark font-bold text-lg uppercase tracking-widest">Approve & Launch</Text>
+          {launching ? (
+            <ActivityIndicator color="#0B0F19" />
+          ) : (
+            <Text className="text-adroom-dark font-bold text-lg uppercase tracking-widest">Approve & Launch</Text>
+          )}
         </TouchableOpacity>
       </ScrollView>
     </View>
