@@ -1,10 +1,11 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, TouchableOpacity, ScrollView, Alert, Image, ActivityIndicator } from 'react-native';
+import { View, Text, TouchableOpacity, ScrollView, Alert, Image, ActivityIndicator, Modal, StyleSheet } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../types';
 import { useAgentStore } from '../store/agentStore';
 import { useEnergyStore } from '../store/energyStore';
 import { CreativeAsset } from '../types/agent';
+import { Zap, AlertTriangle, X } from 'lucide-react-native';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'StrategyApproval'>;
 
@@ -42,6 +43,10 @@ export default function StrategyApprovalScreen({ navigation }: Props) {
   const { generatedStrategies, setActiveStrategy } = useAgentStore();
   const { account, fetchEnergy } = useEnergyStore();
   const [launching, setLaunching] = useState(false);
+  const [showCreditModal, setShowCreditModal] = useState(false);
+  const [creditModalData, setCreditModalData] = useState<{
+    balance: number; estimatedCost: number; durationWeeks: number; isExhausted: boolean;
+  } | null>(null);
 
   useEffect(() => { fetchEnergy(); }, []);
 
@@ -51,6 +56,19 @@ export default function StrategyApprovalScreen({ navigation }: Props) {
 
   const activeStrategy: any = (generatedStrategies as any)?.strategy || null;
 
+  const doLaunch = async () => {
+    setShowCreditModal(false);
+    setLaunching(true);
+    try {
+      await setActiveStrategy(activeStrategy);
+      navigation.navigate('AgentChat', { fromStrategyApproval: true } as any);
+    } catch (error: any) {
+      Alert.alert('Error', error.message);
+    } finally {
+      setLaunching(false);
+    }
+  };
+
   const handleApprove = async () => {
     if (!activeStrategy) return;
 
@@ -58,58 +76,13 @@ export default function StrategyApprovalScreen({ navigation }: Props) {
     const durationWeeks = activeStrategy.lifespanWeeks || activeStrategy.duration || 4;
     const estimatedCost = Math.ceil(durationWeeks * 7 * 3);
 
-    if (balance <= 0) {
-      Alert.alert(
-        'No Energy Credits',
-        'You have no AdRoom Energy credits. Please top up or activate a plan to launch your strategy.',
-        [
-          { text: 'Cancel', style: 'cancel' },
-          {
-            text: 'Get Credits',
-            onPress: () => (navigation as any).navigate('Subscription'),
-          },
-        ]
-      );
+    if (balance <= 0 || balance < estimatedCost) {
+      setCreditModalData({ balance, estimatedCost, durationWeeks, isExhausted: balance <= 0 });
+      setShowCreditModal(true);
       return;
     }
 
-    const lowCredits = balance < estimatedCost;
-
-    const confirmTitle = lowCredits
-      ? '⚠️ Low Energy Warning'
-      : 'Activate Strategy';
-
-    const confirmMessage = lowCredits
-      ? `You have ${balance.toFixed(1)} credits but this ${durationWeeks}-week strategy may use approximately ${estimatedCost} credits. Your strategy will pause if credits run out.\n\nActivate anyway?`
-      : `Confirm activation of "${activeStrategy.title}". Your AI will begin executing this plan automatically.`;
-
-    Alert.alert(
-      confirmTitle,
-      confirmMessage,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        lowCredits
-          ? {
-              text: 'Top Up First',
-              onPress: () => (navigation as any).navigate('Subscription'),
-            }
-          : null,
-        {
-          text: 'Approve & Launch',
-          onPress: async () => {
-            setLaunching(true);
-            try {
-              await setActiveStrategy(activeStrategy);
-              navigation.navigate('AgentChat', { fromStrategyApproval: true } as any);
-            } catch (error: any) {
-              Alert.alert('Error', error.message);
-            } finally {
-              setLaunching(false);
-            }
-          },
-        },
-      ].filter(Boolean) as any[]
-    );
+    await doLaunch();
   };
 
   if (!activeStrategy) return <View className="flex-1 bg-adroom-dark" />;
@@ -130,6 +103,75 @@ export default function StrategyApprovalScreen({ navigation }: Props) {
       <View className="bg-adroom-card px-4 py-3 border-b border-adroom-neon/20">
         <Text className="text-adroom-neon text-center font-bold uppercase tracking-widest">Strategy Preview</Text>
       </View>
+
+      {/* Credit Check Modal */}
+      <Modal visible={showCreditModal} transparent animationType="fade" onRequestClose={() => setShowCreditModal(false)}>
+        <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.8)', justifyContent: 'center', alignItems: 'center', paddingHorizontal: 24 }}>
+          <View style={{ backgroundColor: '#151B2B', borderRadius: 20, padding: 24, width: '100%', borderWidth: 1, borderColor: creditModalData?.isExhausted ? '#EF4444' : '#F59E0B' }}>
+            <View style={{ alignItems: 'center', marginBottom: 16 }}>
+              <View style={{ width: 56, height: 56, borderRadius: 28, backgroundColor: creditModalData?.isExhausted ? 'rgba(239,68,68,0.15)' : 'rgba(245,158,11,0.15)', alignItems: 'center', justifyContent: 'center', marginBottom: 12 }}>
+                <AlertTriangle size={28} color={creditModalData?.isExhausted ? '#EF4444' : '#F59E0B'} />
+              </View>
+              <Text style={{ color: '#FFFFFF', fontSize: 18, fontWeight: '800', textAlign: 'center' }}>
+                {creditModalData?.isExhausted ? 'No Energy Credits' : 'Low Energy Warning'}
+              </Text>
+            </View>
+
+            <View style={{ backgroundColor: '#0B0F19', borderRadius: 12, padding: 16, marginBottom: 16 }}>
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 8 }}>
+                <Text style={{ color: '#64748B', fontSize: 13 }}>Your Balance</Text>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                  <Zap size={13} color="#00F0FF" />
+                  <Text style={{ color: '#00F0FF', fontWeight: '700', fontSize: 13 }}>{creditModalData?.balance.toFixed(1)} credits</Text>
+                </View>
+              </View>
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 8 }}>
+                <Text style={{ color: '#64748B', fontSize: 13 }}>Estimated Cost ({creditModalData?.durationWeeks}wks)</Text>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                  <Zap size={13} color="#F59E0B" />
+                  <Text style={{ color: '#F59E0B', fontWeight: '700', fontSize: 13 }}>~{creditModalData?.estimatedCost} credits</Text>
+                </View>
+              </View>
+              <View style={{ height: 1, backgroundColor: '#1E293B', marginVertical: 8 }} />
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+                <Text style={{ color: '#64748B', fontSize: 13 }}>Credits Needed</Text>
+                <Text style={{ color: '#EF4444', fontWeight: '700', fontSize: 13 }}>
+                  +{Math.max(0, (creditModalData?.estimatedCost ?? 0) - (creditModalData?.balance ?? 0)).toFixed(0)} credits
+                </Text>
+              </View>
+            </View>
+
+            <Text style={{ color: '#94A3B8', fontSize: 13, textAlign: 'center', marginBottom: 20, lineHeight: 19 }}>
+              {creditModalData?.isExhausted
+                ? 'You have no credits. Top up to activate your strategy.'
+                : 'Your strategy may pause mid-campaign if credits run out. Top up for uninterrupted execution.'}
+            </Text>
+
+            <TouchableOpacity
+              onPress={() => { setShowCreditModal(false); (navigation as any).navigate('Subscription', { tab: 'topup' }); }}
+              style={{ backgroundColor: '#00F0FF', borderRadius: 12, paddingVertical: 14, alignItems: 'center', marginBottom: 10 }}
+            >
+              <Text style={{ color: '#0B0F19', fontWeight: '800', fontSize: 15 }}>Top Up Credits</Text>
+            </TouchableOpacity>
+
+            {!creditModalData?.isExhausted && (
+              <TouchableOpacity
+                onPress={doLaunch}
+                style={{ backgroundColor: 'rgba(255,255,255,0.05)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.15)', borderRadius: 12, paddingVertical: 14, alignItems: 'center', marginBottom: 10 }}
+              >
+                <Text style={{ color: '#94A3B8', fontWeight: '700', fontSize: 15 }}>Continue Anyway (Skip)</Text>
+              </TouchableOpacity>
+            )}
+
+            <TouchableOpacity
+              onPress={() => setShowCreditModal(false)}
+              style={{ alignItems: 'center', paddingVertical: 10 }}
+            >
+              <Text style={{ color: '#475569', fontSize: 14 }}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
 
       <ScrollView className="flex-1 p-4">
 

@@ -10,6 +10,16 @@ import { AgentOrchestrator } from '../agents/agentOrchestrator';
 import { getServiceSupabaseClient } from '../config/supabase';
 import { creditManagementAgent } from './creditManagementAgent';
 
+async function hasActiveStrategies(): Promise<boolean> {
+    const supabase = getServiceSupabaseClient();
+    const { count } = await supabase
+        .from('strategies')
+        .select('id', { count: 'exact', head: true })
+        .eq('is_active', true)
+        .eq('status', 'active');
+    return (count ?? 0) > 0;
+}
+
 dotenv.config();
 
 const SCHED_IPE_CRON          = process.env.SCHED_IPE_CRON          || '*/15 * * * *';
@@ -50,6 +60,7 @@ export class SchedulerService {
         cron.schedule(SCHED_IPE_CRON, async () => {
             console.log('[Scheduler] Running Platform Intelligence Engine...');
             try {
+                if (!(await hasActiveStrategies())) { console.log('[Scheduler] IPE skipped — no active strategies'); return; }
                 const cma = await creditManagementAgent.evaluate(null, 'ipe_cycle');
                 if (cma.decision === 'deny_cooldown') { console.log(`[Scheduler] IPE skipped — ${cma.reason}`); return; }
                 const result = await this.ipe.runCycle();
@@ -62,6 +73,7 @@ export class SchedulerService {
         cron.schedule(SCHED_SOCIAL_CRON, async () => {
             console.log('[Scheduler] Running Social Listening...');
             try {
+                if (!(await hasActiveStrategies())) { console.log('[Scheduler] Social skipped — no active strategies'); return; }
                 const cma = await creditManagementAgent.evaluate(null, 'social_listening');
                 if (cma.decision === 'deny_cooldown') { console.log(`[Scheduler] Social skipped — ${cma.reason}`); return; }
                 const result = await this.social.runCycle();
@@ -74,6 +86,7 @@ export class SchedulerService {
 
         cron.schedule(SCHED_EMOTIONAL_CRON, async () => {
             try {
+                if (!(await hasActiveStrategies())) { return; }
                 const cma = await creditManagementAgent.evaluate(null, 'emotional_intel');
                 if (cma.decision === 'deny_cooldown') { console.log(`[Scheduler] Emotional skipped — ${cma.reason}`); return; }
                 await this.runEmotionalCycle();
@@ -84,6 +97,7 @@ export class SchedulerService {
         cron.schedule(SCHED_GEO_CRON, async () => {
             console.log('[Scheduler] Running GEO Monitoring...');
             try {
+                if (!(await hasActiveStrategies())) { console.log('[Scheduler] GEO skipped — no active strategies'); return; }
                 const cma = await creditManagementAgent.evaluate(null, 'geo_monitoring');
                 if (cma.decision === 'deny_cooldown') { console.log(`[Scheduler] GEO skipped — ${cma.reason}`); return; }
                 const result = await this.geo.runCycle();
@@ -94,19 +108,9 @@ export class SchedulerService {
         });
 
         cron.schedule(SCHED_SCRAPE_CRON, async () => {
-            console.log('[Scheduler] Running Website Auto-Update Scrape...');
+            console.log('[Scheduler] Running On-Demand Website Scrape for Active Strategies...');
             try {
-                const supabase = getServiceSupabaseClient();
-                const { data: products } = await supabase
-                    .from('product_memory')
-                    .select('website_url, user_id')
-                    .not('website_url', 'is', null);
-
-                if (products) {
-                    for (const p of products) {
-                        if (p.website_url) await this.scraper.scrapeWebsite(p.website_url, p.user_id);
-                    }
-                }
+                await this.scraper.refreshStaleProducts();
             } catch (e: any) {
                 console.error('[Scheduler] Scrape error:', e.message);
             }

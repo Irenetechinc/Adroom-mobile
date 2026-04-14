@@ -1,5 +1,6 @@
 import { getServiceSupabaseClient } from '../config/supabase';
 import { creditManagementAgent, CMAResult } from './creditManagementAgent';
+import { pushService } from './pushService';
 
 // ══════════════════════════════════════════════════════════════
 // ADROOM ENERGY ECONOMICS
@@ -188,6 +189,13 @@ export class EnergyService {
       await this.checkAndTriggerOnDemand(userId, newBalance);
     }
 
+    // Push notifications for credit state changes (fire-and-forget)
+    if (newBalance <= 0) {
+      pushService.notifyExhausted(userId).catch(() => {});
+    } else if (newBalance <= ON_DEMAND_THRESHOLD) {
+      pushService.notifyLowCredits(userId, newBalance).catch(() => {});
+    }
+
     return newBalance;
   }
 
@@ -261,6 +269,13 @@ export class EnergyService {
 
     if (newBalance <= ON_DEMAND_THRESHOLD) {
       await this.checkAndTriggerOnDemand(userId, newBalance);
+    }
+
+    // Push notifications for credit state changes (fire-and-forget)
+    if (newBalance <= 0) {
+      pushService.notifyExhausted(userId).catch(() => {});
+    } else if (newBalance <= ON_DEMAND_THRESHOLD) {
+      pushService.notifyLowCredits(userId, newBalance).catch(() => {});
     }
 
     const savedMsg = cma.savedCredits > 0 ? ` [CMA saved ${cma.savedCredits} credits]` : '';

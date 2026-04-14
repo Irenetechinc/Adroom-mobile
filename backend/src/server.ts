@@ -838,6 +838,106 @@ app.get('/api/agents/interventions/:strategyId', async (req, res) => {
 });
 
 /**
+ * POST /api/strategy/:id/stop — Stop a running strategy, disconnect website, notify user
+ */
+app.post('/api/strategy/:id/stop', async (req, res) => {
+  try {
+    const supabase = getSupabaseClient(req as any);
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return res.status(401).json({ error: 'Unauthorized.' });
+
+    const { id: strategyId } = req.params;
+    const { reason = 'user_requested' } = req.body;
+    const svc = getServiceSupabaseClient();
+
+    const { data: strategy, error: fetchErr } = await svc
+      .from('strategies')
+      .select('id, title, user_id, product_id, is_active')
+      .eq('id', strategyId)
+      .eq('user_id', user.id)
+      .single();
+
+    if (fetchErr || !strategy) return res.status(404).json({ error: 'Strategy not found.' });
+
+    await svc
+      .from('strategies')
+      .update({ is_active: false, status: 'ended', updated_at: new Date().toISOString() })
+      .eq('id', strategyId)
+      .eq('user_id', user.id);
+
+    // Disconnect the website linked to this strategy's product
+    if (strategy.product_id) {
+      await svc
+        .from('product_memory')
+        .update({ website_url: null, last_scraped_at: null })
+        .eq('product_id', strategy.product_id)
+        .eq('user_id', user.id);
+    }
+
+    // Cancel scheduled agent tasks for this strategy
+    await svc
+      .from('agent_task_queue')
+      .update({ status: 'cancelled' })
+      .eq('strategy_id', strategyId)
+      .in('status', ['pending', 'scheduled']);
+
+    // Send push notification to user
+    const { pushService: ps } = await import('./services/pushService');
+    const friendlyReason = reason === 'credits_exhausted'
+      ? 'Energy credits exhausted'
+      : reason === 'user_requested'
+      ? 'Stopped by you'
+      : reason;
+    await ps.notifyStrategyStopped(user.id, strategy.title || 'Your Strategy', friendlyReason);
+
+    res.json({ success: true, strategy_id: strategyId, stopped: true, reason });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * GET /api/strategy/active-websites — Count of active website-connected strategies for plan limit enforcement
+ */
+app.get('/api/strategy/active-websites', async (req, res) => {
+  try {
+    const supabase = getSupabaseClient(req as any);
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return res.status(401).json({ error: 'Unauthorized.' });
+
+    const svc = getServiceSupabaseClient();
+    const { count } = await svc
+      .from('strategies')
+      .select('id', { count: 'exact', head: true })
+      .eq('user_id', user.id)
+      .eq('is_active', true)
+      .eq('status', 'active')
+      .not('product_id', 'is', null);
+
+    const { data: sub } = await svc
+      .from('subscriptions')
+      .select('plan, status')
+      .eq('user_id', user.id)
+      .single();
+
+    const plan = sub?.plan ?? 'none';
+    const isActive = sub?.status === 'active' || sub?.status === 'trialing';
+    let maxWebsites = 0;
+    if (isActive && plan === 'pro') maxWebsites = 1;
+    if (isActive && plan === 'pro_plus') maxWebsites = 2;
+
+    res.json({
+      activeWebsites: count ?? 0,
+      maxWebsites,
+      plan,
+      canConnect: (count ?? 0) < maxWebsites,
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
  * Facebook Webhook Verification
  */
 app.get('/webhooks/facebook', (req, res) => {

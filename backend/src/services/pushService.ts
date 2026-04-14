@@ -1,0 +1,138 @@
+import { getServiceSupabaseClient } from '../config/supabase';
+
+const EXPO_PUSH_URL = 'https://exp.host/--/api/v2/push/send';
+
+export interface PushPayload {
+  title: string;
+  body: string;
+  data?: Record<string, any>;
+  sound?: 'default' | null;
+  badge?: number;
+  channelId?: string;
+}
+
+async function sendExpoPush(tokens: string[], payload: PushPayload): Promise<void> {
+  if (!tokens.length) return;
+  const messages = tokens.map((token) => ({
+    to: token,
+    sound: payload.sound ?? 'default',
+    title: payload.title,
+    body: payload.body,
+    data: payload.data ?? {},
+    badge: payload.badge,
+    channelId: payload.channelId,
+  }));
+
+  try {
+    const res = await fetch(EXPO_PUSH_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+      body: JSON.stringify(messages),
+    });
+    if (!res.ok) {
+      const err = await res.text();
+      console.error('[PushService] Expo push failed:', err);
+    }
+  } catch (e: any) {
+    console.error('[PushService] Network error sending push:', e.message);
+  }
+}
+
+async function getUserTokens(userId: string): Promise<string[]> {
+  const supabase = getServiceSupabaseClient();
+  const { data } = await supabase
+    .from('device_push_tokens')
+    .select('token')
+    .eq('user_id', userId);
+  return (data ?? []).map((r: any) => r.token).filter(Boolean);
+}
+
+async function insertNotification(
+  userId: string,
+  title: string,
+  body: string,
+  data: Record<string, any> = {},
+): Promise<void> {
+  const supabase = getServiceSupabaseClient();
+  await supabase.from('user_notifications').insert({
+    user_id: userId,
+    title,
+    body,
+    data,
+    is_read: false,
+    sent_by: 'system',
+  });
+}
+
+export const pushService = {
+  async notifyLowCredits(userId: string, balance: number, required?: number): Promise<void> {
+    const tokens = await getUserTokens(userId);
+    const requiredNote = required ? ` You need at least ${required} more credits to continue.` : '';
+    const title = 'AdRoom Energy Running Low';
+    const body = `You have ${balance.toFixed(1)} energy credits remaining.${requiredNote} Top up to keep your strategy running.`;
+    const data = { type: 'low_credits', balance, required };
+    await Promise.all([
+      sendExpoPush(tokens, { title, body, data, channelId: 'alerts' }),
+      insertNotification(userId, title, body, data),
+    ]);
+    console.log(`[PushService] Low credits notification sent to user ${userId} (balance: ${balance})`);
+  },
+
+  async notifyExhausted(userId: string): Promise<void> {
+    const tokens = await getUserTokens(userId);
+    const title = 'AdRoom Energy Exhausted';
+    const body = 'Your energy credits have run out. All AI operations and campaigns have been paused. Top up to resume.';
+    const data = { type: 'credits_exhausted' };
+    await Promise.all([
+      sendExpoPush(tokens, { title, body, data, channelId: 'alerts' }),
+      insertNotification(userId, title, body, data),
+    ]);
+    console.log(`[PushService] Exhausted credits notification sent to user ${userId}`);
+  },
+
+  async notifyStrategyActivated(userId: string, strategyTitle: string): Promise<void> {
+    const tokens = await getUserTokens(userId);
+    const title = 'Strategy Activated';
+    const body = `Your strategy "${strategyTitle}" is now live. AdRoom AI is executing your campaign.`;
+    const data = { type: 'strategy_activated' };
+    await Promise.all([
+      sendExpoPush(tokens, { title, body, data }),
+      insertNotification(userId, title, body, data),
+    ]);
+  },
+
+  async notifyStrategyStopped(userId: string, strategyTitle: string, reason: string): Promise<void> {
+    const tokens = await getUserTokens(userId);
+    const title = 'Strategy Stopped';
+    const body = `Your strategy "${strategyTitle}" has been stopped. Reason: ${reason}`;
+    const data = { type: 'strategy_stopped', reason };
+    await Promise.all([
+      sendExpoPush(tokens, { title, body, data, channelId: 'alerts' }),
+      insertNotification(userId, title, body, data),
+    ]);
+  },
+
+  async notifyInsufficientForOperation(
+    userId: string,
+    operation: string,
+    balance: number,
+    required: number,
+  ): Promise<void> {
+    const tokens = await getUserTokens(userId);
+    const title = 'Insufficient Credits';
+    const body = `AdRoom needs ${required} credits to run "${operation}" but you only have ${balance.toFixed(1)}. Top up to continue.`;
+    const data = { type: 'insufficient_credits', operation, balance, required };
+    await Promise.all([
+      sendExpoPush(tokens, { title, body, data, channelId: 'alerts' }),
+      insertNotification(userId, title, body, data),
+    ]);
+  },
+
+  async send(userId: string, payload: PushPayload): Promise<void> {
+    const tokens = await getUserTokens(userId);
+    await Promise.all([
+      sendExpoPush(tokens, payload),
+      insertNotification(userId, payload.title, payload.body, payload.data ?? {}),
+    ]);
+  },
+};

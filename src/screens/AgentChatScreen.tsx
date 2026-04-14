@@ -28,6 +28,10 @@ import { VisionService } from '../services/vision';
 import ImageUploadComponent from '../components/ImageUploadComponent';
 import { useEnergyStore } from '../store/energyStore';
 import { useStrategyCreationStore } from '../store/strategyCreationStore';
+import Constants from 'expo-constants';
+import { supabase } from '../services/supabase';
+
+const BACKEND_URL = process.env.EXPO_PUBLIC_API_URL || (Constants.expoConfig?.extra?.apiUrl as string) || '';
 
 // ─── Currency Data ────────────────────────────────────────────────────────────
 
@@ -849,6 +853,7 @@ export default function AgentChatScreen({ navigation, route }: Props) {
   const { user } = useAuthStore();
   const { subscription: userSubscription } = useEnergyStore();
   const isProOrAboveUser = userSubscription?.status === 'active' && (userSubscription?.plan === 'pro' || userSubscription?.plan === 'pro_plus');
+  const [activeWebsiteInfo, setActiveWebsiteInfo] = useState<{ canConnect: boolean; activeWebsites: number; maxWebsites: number } | null>(null);
   const insets = useSafeAreaInsets();
   const flatListRef = useRef<FlatList>(null);
   const [historyLoaded, setHistoryLoaded] = useState(false);
@@ -862,6 +867,20 @@ export default function AgentChatScreen({ navigation, route }: Props) {
     activityTimer.current = setTimeout(() => setIsActive(false), 4000);
   };
 
+  const fetchActiveWebsiteInfo = useCallback(async () => {
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.access_token || !BACKEND_URL) return;
+      const res = await fetch(`${BACKEND_URL}/api/strategy/active-websites`, {
+        headers: { Authorization: `Bearer ${session.access_token}` },
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setActiveWebsiteInfo(data);
+      }
+    } catch {}
+  }, []);
+
   useEffect(() => {
     const skipLoad = !!(route.params?.fromStrategyApproval || route.params?.connectFacebook ||
       route.params?.connectInstagram || route.params?.connectTikTok ||
@@ -872,6 +891,7 @@ export default function AgentChatScreen({ navigation, route }: Props) {
     } else {
       setHistoryLoaded(true);
     }
+    fetchActiveWebsiteInfo();
   }, []);
 
   useEffect(() => {
@@ -982,7 +1002,7 @@ export default function AgentChatScreen({ navigation, route }: Props) {
               onUpload={handleImageUpload}
               onManual={handleManualEntry}
               onWebsite={handleWebsiteEntry}
-              isWebsiteRestricted={!isProOrAboveUser}
+              isWebsiteRestricted={!isProOrAboveUser || (activeWebsiteInfo !== null && !activeWebsiteInfo.canConnect)}
               onWebsiteUpgrade={() => navigation.navigate('Subscription', { scrollToPlan: 'pro' })}
               onBack={goBackToMenu}
               disabled={isDisabled}

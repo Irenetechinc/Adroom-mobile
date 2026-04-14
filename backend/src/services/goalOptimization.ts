@@ -36,8 +36,23 @@ export class GoalOptimizationService {
         
         const { data: strategies } = await this.supabase
             .from('strategies')
-            .select('*, product_memory(*)')
-            .eq('is_active', true);
+            .select('*')
+            .eq('is_active', true)
+            .eq('status', 'active');
+
+        if (strategies?.length) {
+            const productIds = strategies.map((s: any) => s.product_id).filter(Boolean);
+            if (productIds.length > 0) {
+                const { data: memories } = await this.supabase
+                    .from('product_memory')
+                    .select('*')
+                    .in('product_id', productIds);
+                const memoryMap = new Map((memories ?? []).map((m: any) => [m.product_id, m]));
+                for (const s of strategies) {
+                    s.product_memory = memoryMap.get(s.product_id) ?? null;
+                }
+            }
+        }
 
         if (!strategies) return;
 
