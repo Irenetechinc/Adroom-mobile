@@ -1,10 +1,36 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, FlatList, Image, TouchableOpacity, RefreshControl, StyleSheet } from 'react-native';
+import { View, Text, FlatList, Image, TouchableOpacity, RefreshControl, StyleSheet, ScrollView } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { ArrowLeft, Play, Clock, CheckCircle2, Image as ImageIcon, Video, History, Zap } from 'lucide-react-native';
 import { supabase } from '../services/supabase';
 import Animated, { FadeInDown } from 'react-native-reanimated';
+import { Skeleton } from '../components/Skeleton';
+
+function HistorySkeleton() {
+  return (
+    <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 16 }} scrollEnabled={false}>
+      {[...Array(4)].map((_, i) => (
+        <View key={i} style={{ backgroundColor: '#151B2B', borderRadius: 18, borderWidth: 1, borderColor: '#1E293B', padding: 16, marginBottom: 12 }}>
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 12 }}>
+            <Skeleton width={60} height={22} borderRadius={8} />
+            <Skeleton width={54} height={22} borderRadius={8} />
+          </View>
+          <Skeleton width="80%" height={16} borderRadius={4} style={{ marginBottom: 8 }} />
+          <Skeleton width="100%" height={13} borderRadius={4} style={{ marginBottom: 4 }} />
+          <Skeleton width="70%" height={13} borderRadius={4} style={{ marginBottom: 14 }} />
+          <View style={{ flexDirection: 'row', gap: 8, marginBottom: 14 }}>
+            {[...Array(3)].map((_, j) => <Skeleton key={j} width={72} height={72} borderRadius={10} />)}
+          </View>
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+            <Skeleton width={100} height={13} borderRadius={4} />
+            <Skeleton width={90} height={13} borderRadius={4} />
+          </View>
+        </View>
+      ))}
+    </ScrollView>
+  );
+}
 
 interface StrategyHistoryItem {
   id: string;
@@ -20,12 +46,13 @@ interface StrategyHistoryItem {
 export default function StrategyHistoryScreen() {
   const navigation = useNavigation();
   const [history, setHistory] = useState<StrategyHistoryItem[]>([]);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [initialLoad, setInitialLoad] = useState(true);
 
   const fetchHistory = async () => {
     setLoading(true);
     const { data: { user } } = await supabase.auth.getUser();
-    if (!user) { setLoading(false); return; }
+    if (!user) { setLoading(false); setInitialLoad(false); return; }
 
     const { data, error } = await supabase
       .from('strategies')
@@ -35,6 +62,7 @@ export default function StrategyHistoryScreen() {
 
     if (!error && data) setHistory(data as any);
     setLoading(false);
+    setInitialLoad(false);
   };
 
   useEffect(() => { fetchHistory(); }, []);
@@ -132,17 +160,19 @@ export default function StrategyHistoryScreen() {
         </View>
       </View>
 
-      <FlatList
-        data={history}
-        renderItem={renderItem}
-        keyExtractor={item => item.id}
-        contentContainerStyle={styles.list}
-        showsVerticalScrollIndicator={false}
-        refreshControl={
-          <RefreshControl refreshing={loading} onRefresh={fetchHistory} tintColor="#00F0FF" />
-        }
-        ListEmptyComponent={
-          !loading ? (
+      {initialLoad ? (
+        <HistorySkeleton />
+      ) : (
+        <FlatList
+          data={history}
+          renderItem={renderItem}
+          keyExtractor={item => item.id}
+          contentContainerStyle={styles.list}
+          showsVerticalScrollIndicator={false}
+          refreshControl={
+            <RefreshControl refreshing={loading} onRefresh={fetchHistory} tintColor="#00F0FF" />
+          }
+          ListEmptyComponent={
             <View style={styles.emptyWrap}>
               <View style={styles.emptyIcon}>
                 <History size={32} color="#1E293B" />
@@ -150,9 +180,9 @@ export default function StrategyHistoryScreen() {
               <Text style={styles.emptyTitle}>No strategies yet</Text>
               <Text style={styles.emptySubtitle}>Your launched campaigns and strategies will appear here.</Text>
             </View>
-          ) : null
-        }
-      />
+          }
+        />
+      )}
     </SafeAreaView>
   );
 }

@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet, FlatList,
-  ActivityIndicator, RefreshControl,
+  ActivityIndicator, RefreshControl, ScrollView,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
@@ -10,6 +10,25 @@ import { ArrowLeft, Bell, BellOff, CheckCheck } from 'lucide-react-native';
 import Animated, { FadeInDown } from 'react-native-reanimated';
 import { supabase } from '../services/supabase';
 import Constants from 'expo-constants';
+import { Skeleton } from '../components/Skeleton';
+
+function NotificationsSkeleton() {
+  return (
+    <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 16 }} scrollEnabled={false}>
+      {[...Array(6)].map((_, i) => (
+        <View key={i} style={{ flexDirection: 'row', gap: 12, backgroundColor: '#151B2B', borderRadius: 14, borderWidth: 1, borderColor: '#1E293B', padding: 14, marginBottom: 10 }}>
+          <Skeleton width={36} height={36} borderRadius={10} />
+          <View style={{ flex: 1, gap: 6 }}>
+            <Skeleton width="70%" height={13} borderRadius={4} />
+            <Skeleton width="100%" height={12} borderRadius={4} />
+            <Skeleton width="90%" height={12} borderRadius={4} />
+            <Skeleton width="30%" height={11} borderRadius={4} />
+          </View>
+        </View>
+      ))}
+    </ScrollView>
+  );
+}
 
 const BACKEND_URL = process.env.EXPO_PUBLIC_API_URL || Constants.expoConfig?.extra?.apiUrl || '';
 
@@ -157,10 +176,7 @@ export default function NotificationsScreen() {
       </View>
 
       {loading ? (
-        <View style={styles.center}>
-          <ActivityIndicator size="large" color="#00F0FF" />
-          <Text style={styles.loadingText}>Loading notifications…</Text>
-        </View>
+        <NotificationsSkeleton />
       ) : notifications.length === 0 ? (
         <View style={styles.center}>
           <View style={styles.emptyIcon}>
