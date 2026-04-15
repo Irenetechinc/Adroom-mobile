@@ -834,6 +834,40 @@ const TypingIndicator = () => {
   );
 };
 
+// ─── Credit Ticker ───────────────────────────────────────────────────────────
+
+function CreditTicker({ balance, onPress }: { balance: number; onPress: () => void }) {
+  const scale = useSharedValue(1);
+  const prevBalance = useRef(balance);
+
+  useEffect(() => {
+    if (prevBalance.current !== balance) {
+      scale.value = withSequence(
+        withTiming(1.2, { duration: 180 }),
+        withTiming(1, { duration: 180 }),
+      );
+      prevBalance.current = balance;
+    }
+  }, [balance]);
+
+  const animStyle = useAnimatedStyle(() => ({ transform: [{ scale: scale.value }] }));
+
+  const color = balance <= 0 ? '#EF4444' : balance <= 5 ? '#F59E0B' : '#10B981';
+  const bg = balance <= 0 ? 'rgba(239,68,68,0.12)' : balance <= 5 ? 'rgba(245,158,11,0.12)' : 'rgba(16,185,129,0.1)';
+  const border = balance <= 0 ? 'rgba(239,68,68,0.3)' : balance <= 5 ? 'rgba(245,158,11,0.3)' : 'rgba(16,185,129,0.25)';
+
+  return (
+    <TouchableOpacity onPress={onPress} activeOpacity={0.75}>
+      <Animated.View style={[{ flexDirection: 'row', alignItems: 'center', backgroundColor: bg, borderWidth: 1, borderColor: border, borderRadius: 20, paddingHorizontal: 9, paddingVertical: 5, gap: 4 }, animStyle]}>
+        <Zap size={11} color={color} fill={color} />
+        <Text style={{ color, fontSize: 11, fontWeight: '800', letterSpacing: 0.3 }}>
+          {balance <= 0 ? '0' : balance < 10 ? balance.toFixed(1) : Math.floor(balance).toString()}
+        </Text>
+      </Animated.View>
+    </TouchableOpacity>
+  );
+}
+
 // ─── Main Component ─────────────────────────────────────────────────────────
 
 type Props = NativeStackScreenProps<RootStackParamList, 'AgentChat'>;
@@ -893,6 +927,9 @@ export default function AgentChatScreen({ navigation, route }: Props) {
     }
     fetchActiveWebsiteInfo();
     fetchEnergy();
+
+    const creditPoll = setInterval(() => { fetchEnergy(); }, 15000);
+    return () => clearInterval(creditPoll);
   }, []);
 
   useEffect(() => {
@@ -1105,6 +1142,7 @@ export default function AgentChatScreen({ navigation, route }: Props) {
           <Text style={styles.headerTitle}>Agent</Text>
         </View>
         <View style={styles.headerRight}>
+          <CreditTicker balance={parseFloat(String(energyAccount?.balance_credits ?? '0'))} onPress={() => (navigation as any).navigate('Subscription', { tab: 'topup' })} />
           <View style={styles.liveIndicator}>
             <View style={styles.liveDot} />
             <Text style={styles.liveText}>Live</Text>

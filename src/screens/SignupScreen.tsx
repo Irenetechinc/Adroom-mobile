@@ -41,16 +41,34 @@ export default function SignupScreen({ navigation }: Props) {
 
     setLoading(true);
 
-    const { error } = await supabase.auth.signUp({ email: email.trim(), password });
-    setLoading(false);
-
-    if (error) {
-      Alert.alert('Registration Failed', error.message);
-    } else {
+    try {
+      if (BACKEND_URL) {
+        const res = await fetch(`${BACKEND_URL}/api/auth/register`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email: email.trim(), password }),
+        });
+        const data = await res.json();
+        setLoading(false);
+        if (!res.ok) {
+          Alert.alert('Registration Failed', data.error || 'Something went wrong. Please try again.');
+          return;
+        }
+        await supabase.auth.resend({ type: 'signup', email: email.trim() }).catch(() => {});
+      } else {
+        const { error } = await supabase.auth.signUp({ email: email.trim(), password });
+        setLoading(false);
+        if (error) {
+          Alert.alert('Registration Failed', error.message);
+          return;
+        }
+      }
       Alert.alert('Check Your Email', 'A verification link has been sent to your email address.', [
         { text: 'OK', onPress: () => navigation.navigate('Login') },
       ]);
-
+    } catch (err: any) {
+      setLoading(false);
+      Alert.alert('Registration Failed', 'Could not connect. Please check your connection and try again.');
     }
   };
 

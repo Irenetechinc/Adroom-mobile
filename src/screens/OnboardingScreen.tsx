@@ -2,7 +2,7 @@ import React, { useEffect, useRef } from 'react';
 import { View, Text, TouchableOpacity, ScrollView, Dimensions, StyleSheet, Platform } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../types';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Zap, Target, TrendingUp, ShieldCheck, ArrowRight, Brain, Cpu } from 'lucide-react-native';
 import Animated, {
   FadeInDown, FadeInUp, useSharedValue, useAnimatedStyle,
@@ -106,6 +106,8 @@ function FeatureRow({ icon: Icon, title, description, color, bg, border, delay }
 }
 
 export default function OnboardingScreen({ navigation }: Props) {
+  const insets = useSafeAreaInsets();
+
   useEffect(() => {
     (async () => {
       try {
@@ -168,7 +170,10 @@ export default function OnboardingScreen({ navigation }: Props) {
       </ScrollView>
 
       {/* CTA */}
-      <Animated.View entering={FadeInUp.delay(1100).springify()} style={styles.cta}>
+      <Animated.View
+        entering={FadeInUp.delay(1100).springify()}
+        style={[styles.cta, { paddingBottom: Math.max(insets.bottom + 16, 32) }]}
+      >
         <TouchableOpacity
           onPress={() => navigation.replace('Login')}
           style={styles.ctaButton}
