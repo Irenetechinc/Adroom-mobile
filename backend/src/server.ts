@@ -1643,6 +1643,48 @@ app.put('/api/notifications/inbox/:id/read', async (req, res) => {
   }
 });
 
+/**
+ * POST /api/auth/register — create a new user via the service-role admin client
+ * so that trigger failures never block signup. Manually provisions wallet +
+ * energy account to guarantee records exist.
+ */
+app.post('/api/auth/register', async (req, res) => {
+  try {
+    const { email, password } = req.body;
+    if (!email || !password) return res.status(400).json({ error: 'Email and password are required.' });
+    if (password.length < 6) return res.status(400).json({ error: 'Password must be at least 6 characters.' });
+
+    const svc = getServiceSupabaseClient();
+
+    const { data, error } = await svc.auth.admin.createUser({
+      email: email.trim().toLowerCase(),
+      password,
+      email_confirm: false,
+    });
+
+    if (error) {
+      if (error.message?.toLowerCase().includes('already registered') || error.message?.includes('already exists')) {
+        return res.status(409).json({ error: 'An account with this email already exists.' });
+      }
+      return res.status(400).json({ error: error.message });
+    }
+
+    const userId = data.user?.id;
+    if (userId) {
+      await Promise.allSettled([
+        svc.from('wallets').upsert({ user_id: userId }, { onConflict: 'user_id' }),
+        svc.from('energy_accounts').upsert({ user_id: userId, balance_credits: 0 }, { onConflict: 'user_id' }),
+        svc.from('subscriptions').upsert({ user_id: userId, plan: 'none', status: 'inactive' }, { onConflict: 'user_id' }),
+      ]);
+    }
+
+    res.json({ success: true, message: 'Account created. Please check your email to verify your address.' });
+  } catch (err: any) {
+    console.error('[Register] Error:', err.message);
+    res.status(500).json({ error: 'Registration failed. Please try again.' });
+  }
+});
+
 app.post('/api/push/register', async (req, res) => {
   try {
     const supabase = getSupabaseClient(req);
