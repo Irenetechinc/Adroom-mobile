@@ -12,15 +12,52 @@ import {
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import Animated, { FadeInDown } from 'react-native-reanimated';
 import { useEnergyStore, PLAN_DETAILS } from '../store/energyStore';
+import { Skeleton } from '../components/Skeleton';
+
+function SettingsSkeleton({ insets }: { insets: { bottom: number } }) {
+  return (
+    <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 16, paddingBottom: Math.max(40, insets.bottom + 20) }} scrollEnabled={false}>
+      {/* Profile card */}
+      <View style={{ backgroundColor: '#151B2B', borderRadius: 18, borderWidth: 1, borderColor: '#1E293B', padding: 16, flexDirection: 'row', alignItems: 'center', gap: 14, marginBottom: 24 }}>
+        <Skeleton width={52} height={52} borderRadius={16} />
+        <View style={{ flex: 1, gap: 7 }}>
+          <Skeleton width="50%" height={14} borderRadius={4} />
+          <Skeleton width="75%" height={12} borderRadius={4} />
+        </View>
+      </View>
+      {/* Two groups */}
+      {[3, 2].map((count, gi) => (
+        <View key={gi} style={{ marginBottom: 24 }}>
+          <Skeleton width={80} height={12} borderRadius={4} style={{ marginBottom: 10, marginLeft: 4 }} />
+          <View style={{ backgroundColor: '#151B2B', borderRadius: 16, borderWidth: 1, borderColor: '#1E293B', overflow: 'hidden' }}>
+            {[...Array(count)].map((_, i) => (
+              <View key={i} style={{ flexDirection: 'row', alignItems: 'center', gap: 12, padding: 14, borderBottomWidth: i < count - 1 ? 1 : 0, borderBottomColor: '#1E293B' }}>
+                <Skeleton width={36} height={36} borderRadius={10} />
+                <View style={{ flex: 1, gap: 6 }}>
+                  <Skeleton width="45%" height={13} borderRadius={4} />
+                  <Skeleton width="65%" height={11} borderRadius={4} />
+                </View>
+                <Skeleton width={16} height={16} borderRadius={4} />
+              </View>
+            ))}
+          </View>
+        </View>
+      ))}
+    </ScrollView>
+  );
+}
 
 export default function SettingsScreen() {
   const { signOut, user } = useAuthStore();
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const [signingOut, setSigningOut] = useState(false);
   const insets = useSafeAreaInsets();
-  const { account, subscription, fetchEnergy } = useEnergyStore();
+  const { account, subscription, fetchEnergy, isLoading: energyLoading } = useEnergyStore();
+  const [ready, setReady] = useState(false);
 
-  useEffect(() => { fetchEnergy(); }, []);
+  useEffect(() => {
+    fetchEnergy().finally(() => setReady(true));
+  }, []);
 
   const balance = parseFloat(String(account?.balance_credits ?? '0'));
   const plan = subscription?.plan ?? 'none';
@@ -125,7 +162,9 @@ export default function SettingsScreen() {
         </View>
       </View>
 
-      <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={false} contentContainerStyle={[styles.scroll, { paddingBottom: Math.max(40, insets.bottom + 20) }]}>
+      {!ready && <SettingsSkeleton insets={insets} />}
+
+      <ScrollView style={[{ flex: 1 }, !ready && { display: 'none' }]} showsVerticalScrollIndicator={false} contentContainerStyle={[styles.scroll, { paddingBottom: Math.max(40, insets.bottom + 20) }]}>
         {/* Profile Card */}
         <Animated.View entering={FadeInDown.delay(100).springify()} style={styles.profileCard}>
           <View style={styles.avatar}>

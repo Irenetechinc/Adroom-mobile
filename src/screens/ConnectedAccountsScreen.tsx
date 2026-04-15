@@ -15,6 +15,27 @@ import {
 import Animated, { FadeInDown } from 'react-native-reanimated';
 import { useAgentStore } from '../store/agentStore';
 import { useEnergyStore } from '../store/energyStore';
+import { Skeleton } from '../components/Skeleton';
+
+function ConnectedAccountsSkeleton({ insets }: { insets: { bottom: number } }) {
+  return (
+    <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 20, paddingBottom: Math.max(40, insets.bottom + 20) }} scrollEnabled={false}>
+      <Skeleton width="100%" height={15} borderRadius={4} style={{ marginBottom: 20 }} />
+      {[...Array(5)].map((_, i) => (
+        <View key={i} style={{ backgroundColor: '#151B2B', borderRadius: 18, borderWidth: 1, borderColor: '#1E293B', padding: 16, marginBottom: 12 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+            <Skeleton width={48} height={48} borderRadius={14} />
+            <View style={{ flex: 1, gap: 7 }}>
+              <Skeleton width="55%" height={14} borderRadius={4} />
+              <Skeleton width="75%" height={12} borderRadius={4} />
+            </View>
+            <Skeleton width={82} height={30} borderRadius={10} />
+          </View>
+        </View>
+      ))}
+    </ScrollView>
+  );
+}
 
 type Platform = {
   id: string;
@@ -39,6 +60,7 @@ export default function ConnectedAccountsScreen() {
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const insets = useSafeAreaInsets();
   const [loading, setLoading] = useState(false);
+  const [initialLoad, setInitialLoad] = useState(true);
   const [disconnecting, setDisconnecting] = useState<string | null>(null);
 
   const { tokens, connectedPlatforms, loadConnectedPlatforms, disconnectPlatform } = useAgentStore();
@@ -57,6 +79,7 @@ export default function ConnectedAccountsScreen() {
     setLoading(true);
     await loadConnectedPlatforms();
     setLoading(false);
+    setInitialLoad(false);
   }, [loadConnectedPlatforms]);
 
   useFocusEffect(
@@ -148,8 +171,12 @@ export default function ConnectedAccountsScreen() {
         </TouchableOpacity>
       </View>
 
+      {initialLoad ? (
+        <ConnectedAccountsSkeleton insets={insets} />
+      ) : null}
+
       <ScrollView
-        style={{ flex: 1 }}
+        style={[{ flex: 1 }, initialLoad && { display: 'none' }]}
         showsVerticalScrollIndicator={false}
         contentContainerStyle={[styles.scroll, { paddingBottom: Math.max(40, insets.bottom + 20) }]}
       >
