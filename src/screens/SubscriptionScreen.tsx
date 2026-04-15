@@ -13,6 +13,7 @@ import {
 } from 'lucide-react-native';
 import { useEnergyStore, PLAN_DETAILS, TOPUP_OPTIONS } from '../store/energyStore';
 import Constants from 'expo-constants';
+import { Skeleton } from '../components/Skeleton';
 
 const API_URL = process.env.EXPO_PUBLIC_API_URL || Constants.expoConfig?.extra?.apiUrl || 'http://localhost:8000';
 
@@ -403,12 +404,41 @@ export default function SubscriptionScreen() {
         </TouchableOpacity>
       </View>
 
-      {/* Initial loading state — prevents flashing empty/free state before data loads */}
+      {/* Initial loading skeleton — prevents flashing empty/free state before data loads */}
       {isLoading && !account && (
-        <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', gap: 14 }}>
-          <ActivityIndicator size="large" color={COLORS.neon} />
-          <Text style={{ color: COLORS.muted, fontSize: 13 }}>Loading your account…</Text>
-        </View>
+        <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 16 }} scrollEnabled={false}>
+          {/* Balance card skeleton */}
+          <View style={{ backgroundColor: '#151B2B', borderRadius: 20, borderWidth: 1, borderColor: '#1E293B', padding: 20, marginBottom: 16 }}>
+            <Skeleton width="40%" height={12} borderRadius={4} style={{ marginBottom: 10 }} />
+            <Skeleton width="55%" height={40} borderRadius={6} style={{ marginBottom: 6 }} />
+            <Skeleton width="30%" height={12} borderRadius={4} style={{ marginBottom: 16 }} />
+            <View style={{ flexDirection: 'row', gap: 10 }}>
+              <Skeleton width="48%" height={36} borderRadius={10} />
+              <Skeleton width="48%" height={36} borderRadius={10} />
+            </View>
+          </View>
+          {/* Tab bar skeleton */}
+          <View style={{ flexDirection: 'row', gap: 8, marginBottom: 16 }}>
+            {[...Array(3)].map((_, i) => <Skeleton key={i} width="31%" height={38} borderRadius={12} />)}
+          </View>
+          {/* Plan cards skeleton */}
+          {[...Array(3)].map((_, i) => (
+            <View key={i} style={{ backgroundColor: '#151B2B', borderRadius: 18, borderWidth: 1, borderColor: '#1E293B', padding: 18, marginBottom: 12 }}>
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 12 }}>
+                <Skeleton width="45%" height={18} borderRadius={4} />
+                <Skeleton width="30%" height={26} borderRadius={8} />
+              </View>
+              <Skeleton width="70%" height={13} borderRadius={4} style={{ marginBottom: 14 }} />
+              {[...Array(3)].map((_, j) => (
+                <View key={j} style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+                  <Skeleton width={16} height={16} borderRadius={8} />
+                  <Skeleton width="65%" height={12} borderRadius={4} />
+                </View>
+              ))}
+              <Skeleton width="100%" height={44} borderRadius={12} style={{ marginTop: 8 }} />
+            </View>
+          ))}
+        </ScrollView>
       )}
 
       {(!isLoading || account) && <ScrollView

@@ -851,7 +851,7 @@ export default function AgentChatScreen({ navigation, route }: Props) {
   } = useAgentStore();
 
   const { user } = useAuthStore();
-  const { subscription: userSubscription } = useEnergyStore();
+  const { subscription: userSubscription, account: energyAccount, fetchEnergy } = useEnergyStore();
   const isProOrAboveUser = userSubscription?.status === 'active' && (userSubscription?.plan === 'pro' || userSubscription?.plan === 'pro_plus');
   const [activeWebsiteInfo, setActiveWebsiteInfo] = useState<{ canConnect: boolean; activeWebsites: number; maxWebsites: number } | null>(null);
   const insets = useSafeAreaInsets();
@@ -892,6 +892,7 @@ export default function AgentChatScreen({ navigation, route }: Props) {
       setHistoryLoaded(true);
     }
     fetchActiveWebsiteInfo();
+    fetchEnergy();
   }, []);
 
   useEffect(() => {
@@ -1131,6 +1132,29 @@ export default function AgentChatScreen({ navigation, route }: Props) {
           ListFooterComponent={(isTyping || uploading) ? <TypingIndicator /> : null}
           keyboardShouldPersistTaps="handled"
         />
+
+        {/* Credits Exhausted Banner */}
+        {(() => {
+          const bal = parseFloat(String(energyAccount?.balance_credits ?? '1'));
+          if (bal > 0) return null;
+          return (
+            <View style={{ backgroundColor: 'rgba(239,68,68,0.08)', borderTopWidth: 1, borderTopColor: 'rgba(239,68,68,0.2)', paddingHorizontal: 16, paddingVertical: 12, flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+              <View style={{ width: 32, height: 32, borderRadius: 10, backgroundColor: 'rgba(239,68,68,0.12)', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                <Text style={{ fontSize: 16 }}>⚡</Text>
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={{ color: '#FCA5A5', fontWeight: '700', fontSize: 13, marginBottom: 2 }}>Energy Credits Exhausted</Text>
+                <Text style={{ color: '#94A3B8', fontSize: 12, lineHeight: 17 }}>Your active campaigns are paused. Top up to resume.</Text>
+              </View>
+              <TouchableOpacity
+                onPress={() => (navigation as any).navigate('Subscription', { tab: 'topup' })}
+                style={{ backgroundColor: '#EF4444', borderRadius: 8, paddingHorizontal: 10, paddingVertical: 6 }}
+              >
+                <Text style={{ color: '#FFFFFF', fontWeight: '700', fontSize: 12 }}>Top Up</Text>
+              </TouchableOpacity>
+            </View>
+          );
+        })()}
 
         {/* Watermark */}
         <WatermarkOverlay visible={!isActive && messages.length === 0} />

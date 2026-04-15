@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   View, Text, FlatList, TouchableOpacity,
-  ActivityIndicator, RefreshControl, StyleSheet,
+  ActivityIndicator, RefreshControl, StyleSheet, ScrollView,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
@@ -13,6 +13,33 @@ import {
 import Animated, { FadeInDown } from 'react-native-reanimated';
 import { supabase, isSupabaseConfigured } from '../services/supabase';
 import { useAuthStore } from '../store/authStore';
+import { Skeleton } from '../components/Skeleton';
+
+function InteractionsSkeleton() {
+  return (
+    <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 16 }} scrollEnabled={false}>
+      {[...Array(5)].map((_, i) => (
+        <View key={i} style={{ backgroundColor: '#151B2B', borderRadius: 16, borderWidth: 1, borderColor: '#1E293B', padding: 14, marginBottom: 10 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 12 }}>
+            <Skeleton width={38} height={38} borderRadius={10} />
+            <View style={{ flex: 1, gap: 6 }}>
+              <Skeleton width="50%" height={13} borderRadius={4} />
+              <Skeleton width="35%" height={11} borderRadius={4} />
+            </View>
+          </View>
+          <View style={{ backgroundColor: '#0B0F19', borderRadius: 10, padding: 10, marginBottom: 8 }}>
+            <Skeleton width="100%" height={12} borderRadius={4} style={{ marginBottom: 5 }} />
+            <Skeleton width="75%" height={12} borderRadius={4} />
+          </View>
+          <View style={{ backgroundColor: 'rgba(0,240,255,0.04)', borderRadius: 10, padding: 10 }}>
+            <Skeleton width="30%" height={11} borderRadius={4} style={{ marginBottom: 6 }} />
+            <Skeleton width="90%" height={12} borderRadius={4} />
+          </View>
+        </View>
+      ))}
+    </ScrollView>
+  );
+}
 
 type InteractionType = 'comment' | 'message' | 'reply';
 
@@ -285,10 +312,7 @@ export default function InteractionsScreen() {
       </View>
 
       {loading ? (
-        <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
-          <ActivityIndicator color="#00F0FF" size="large" />
-          <Text style={{ color: '#64748B', marginTop: 12, fontSize: 13 }}>Loading interactions…</Text>
-        </View>
+        <InteractionsSkeleton />
       ) : interactions.length === 0 ? (
         <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 40 }}>
           <View style={styles.emptyIcon}>
