@@ -656,7 +656,7 @@ export const useAgentStore = create<AgentState>()(
       addMessage(`Strategy approved. Activating your autonomous agent now — building your full campaign execution plan...`, 'agent');
 
       const BACKEND_URL = process.env.EXPO_PUBLIC_API_URL;
-      const strategyId = (generatedStrategies as any).strategyId;
+      const strategyId = generatedStrategies?.strategyId;
 
       if (BACKEND_URL && strategyId) {
           try {
@@ -958,8 +958,8 @@ export const useAgentStore = create<AgentState>()(
       'goal_selection': 'GOAL_SELECTION',
       'duration_selection': 'DURATION_SELECTION',
       'strategy_preview': 'STRATEGY_GENERATION',
-      'facebook_connect': 'CONNECTING',
-      'page_selection': 'CONNECTED',
+      'facebook_connect': 'EXECUTION',
+      'page_selection': 'EXECUTION',
       'retry_action': 'IDLE',
       'session_restore': 'IDLE',
       'create_strategy_prompt': 'IDLE',

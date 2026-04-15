@@ -21,7 +21,7 @@ export default function StrategyComparisonScreen() {
     );
   }
 
-  const strategy = (generatedStrategies as any)?.strategy;
+  const strategy = generatedStrategies?.strategy;
 
   const handleSelect = (type: 'free' | 'paid') => {
     Alert.alert(
