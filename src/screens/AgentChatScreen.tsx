@@ -119,22 +119,47 @@ const SizeChips = ({ selected, onToggle, disabled }: { selected: string[]; onTog
 
 // ─── Back to Menu Button ─────────────────────────────────────────────────────
 
-const BackToMenuButton = ({ onPress, disabled }: { onPress: () => void; disabled?: boolean }) => {
-  if (disabled) return null;
+const FormNavRow = ({
+  onBack, onStepBack, disabled,
+}: {
+  onBack?: () => void;
+  onStepBack?: () => void;
+  disabled?: boolean;
+}) => {
+  if (disabled || (!onBack && !onStepBack)) return null;
   return (
-    <TouchableOpacity
-      onPress={onPress}
-      style={{
-        flexDirection: 'row', alignItems: 'center', gap: 6,
-        marginTop: 10, paddingVertical: 8, paddingHorizontal: 12,
-        borderWidth: 1, borderColor: 'rgba(100,116,139,0.3)',
-        borderRadius: 10, alignSelf: 'flex-start',
-      }}
-      activeOpacity={0.7}
-    >
-      <ArrowLeft size={13} color="#64748B" />
-      <Text style={{ color: '#64748B', fontSize: 12, fontWeight: '600' }}>Back to Main Menu</Text>
-    </TouchableOpacity>
+    <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 10, alignItems: 'center' }}>
+      {onStepBack && (
+        <TouchableOpacity
+          onPress={onStepBack}
+          style={{
+            flexDirection: 'row', alignItems: 'center', gap: 5,
+            paddingVertical: 7, paddingHorizontal: 11,
+            borderWidth: 1, borderColor: 'rgba(0,240,255,0.25)',
+            borderRadius: 10, backgroundColor: 'rgba(0,240,255,0.06)',
+          }}
+          activeOpacity={0.7}
+        >
+          <ArrowLeft size={12} color="#00F0FF" />
+          <Text style={{ color: '#00F0FF', fontSize: 12, fontWeight: '700' }}>Back</Text>
+        </TouchableOpacity>
+      )}
+      {onBack && (
+        <TouchableOpacity
+          onPress={onBack}
+          style={{
+            flexDirection: 'row', alignItems: 'center', gap: 5,
+            paddingVertical: 7, paddingHorizontal: 11,
+            borderWidth: 1, borderColor: 'rgba(100,116,139,0.3)',
+            borderRadius: 10,
+          }}
+          activeOpacity={0.7}
+        >
+          <ArrowLeft size={12} color="#64748B" />
+          <Text style={{ color: '#64748B', fontSize: 12, fontWeight: '600' }}>Main Menu</Text>
+        </TouchableOpacity>
+      )}
+    </View>
   );
 };
 
@@ -192,7 +217,7 @@ const WatermarkOverlay = ({ visible }: { visible: boolean }) => {
 
 // ─── Interactive Cards ────────────────────────────────────────────────────────
 
-const ProductIntakeCard = ({ onUpload, onManual, onWebsite, onWebsiteUpgrade, isWebsiteRestricted, onBack, disabled }: { onUpload: () => void; onManual: () => void; onWebsite: () => void; onWebsiteUpgrade?: () => void; isWebsiteRestricted?: boolean; onBack?: () => void; disabled?: boolean }) => (
+const ProductIntakeCard = ({ onUpload, onManual, onWebsite, onWebsiteUpgrade, isWebsiteRestricted, onBack, onStepBack, disabled }: { onUpload: () => void; onManual: () => void; onWebsite: () => void; onWebsiteUpgrade?: () => void; isWebsiteRestricted?: boolean; onBack?: () => void; onStepBack?: () => void; disabled?: boolean }) => (
   <View style={[styles.card, disabled && styles.cardDisabled]}>
     <TouchableOpacity
       onPress={onUpload}
@@ -246,7 +271,7 @@ const WebsiteIntakeCard = ({ onSubmit, onBack, disabled }: { onSubmit: (url: str
       <TouchableOpacity onPress={() => onSubmit(url)} disabled={disabled || !url.trim()} style={[styles.primaryBtn, (disabled || !url.trim()) && { opacity: 0.4 }]}>
         <Text style={styles.primaryBtnText}>Connect Website</Text>
       </TouchableOpacity>
-      <BackToMenuButton onPress={onBack!} disabled={disabled} />
+      <FormNavRow onBack={onBack} onStepBack={onStepBack} disabled={disabled} />
     </View>
   );
 };
@@ -347,7 +372,7 @@ const AttributeEditorCard = ({ product, onSave, onBack, disabled }: { product: a
           <Text style={styles.primaryBtnText}>Confirm & Continue</Text>
         </TouchableOpacity>
       )}
-      <BackToMenuButton onPress={onBack!} disabled={disabled} />
+      <FormNavRow onBack={onBack} onStepBack={onStepBack} disabled={disabled} />
     </View>
   );
 };
@@ -402,7 +427,7 @@ const GoalSelectionCard = ({ onSelect, onBack, disabled, navigation }: { onSelec
           );
         })}
       </View>
-      <BackToMenuButton onPress={onBack!} disabled={disabled} />
+      <FormNavRow onBack={onBack} onStepBack={onStepBack} disabled={disabled} />
     </View>
   );
 };
@@ -480,7 +505,7 @@ const DurationSelectionCard = ({
         );
       })}
     </View>
-    <BackToMenuButton onPress={onBack!} disabled={disabled} />
+    <FormNavRow onBack={onBack} onStepBack={onStepBack} disabled={disabled} />
   </View>
 );
 
@@ -564,7 +589,7 @@ const StrategyPreviewCard = ({ strategy, onLaunch, onBack, disabled }: { strateg
         <Text style={[styles.primaryBtnText, { color: '#475569' }]}>STRATEGY LAUNCHED</Text>
       </View>
     )}
-    {!disabled && <BackToMenuButton onPress={onBack!} disabled={disabled} />}
+    <FormNavRow onBack={onBack} onStepBack={onStepBack} disabled={disabled} />
   </View>
 );
 
@@ -626,7 +651,7 @@ const ProductManualIntakeCard = ({ onSubmit, onBack, disabled }: { onSubmit: (da
             <Text style={styles.primaryBtnText}>Save Product</Text>
           </TouchableOpacity>
         )}
-        <BackToMenuButton onPress={onBack!} disabled={disabled} />
+        <FormNavRow onBack={onBack} onStepBack={onStepBack} disabled={disabled} />
       </ScrollView>
     </View>
   );
@@ -675,7 +700,7 @@ const ServiceIntakeCard = ({ onSubmit, onBack, disabled }: { onSubmit: (data: an
             <Text style={styles.primaryBtnText}>Save Service</Text>
           </TouchableOpacity>
         )}
-        <BackToMenuButton onPress={onBack!} disabled={disabled} />
+        <FormNavRow onBack={onBack} onStepBack={onStepBack} disabled={disabled} />
       </ScrollView>
     </View>
   );
@@ -700,7 +725,7 @@ const BrandIntakeCard = ({ onSubmit, onBack, disabled }: { onSubmit: (data: any)
             <Text style={styles.primaryBtnText}>Save Brand</Text>
           </TouchableOpacity>
         )}
-        <BackToMenuButton onPress={onBack!} disabled={disabled} />
+        <FormNavRow onBack={onBack} onStepBack={onStepBack} disabled={disabled} />
       </ScrollView>
     </View>
   );
@@ -723,7 +748,7 @@ const FacebookConnectButton = ({ onPress, isConnected, onDisconnect, platform, o
         {isConnected ? `Disconnect ${platform}` : `Connect ${platform}`}
       </Text>
     </TouchableOpacity>
-    <BackToMenuButton onPress={onBack!} disabled={disabled} />
+    <FormNavRow onBack={onBack} onStepBack={onStepBack} disabled={disabled} />
   </View>
 );
 
@@ -745,7 +770,7 @@ const SelectionList = ({ items, onSelect, type, onBack, disabled }: { items: any
         </TouchableOpacity>
       ))}
     </View>
-    <BackToMenuButton onPress={onBack!} disabled={disabled} />
+    <FormNavRow onBack={onBack} onStepBack={onStepBack} disabled={disabled} />
   </View>
 );
 
@@ -773,7 +798,7 @@ const RetryActionCard = ({ onRetry, onCancel, onBack, actionName, disabled }: { 
     {disabled && (
       <Text style={{ color: '#334155', fontSize: 12 }}>This step has been skipped.</Text>
     )}
-    <BackToMenuButton onPress={onBack!} disabled={disabled} />
+    <FormNavRow onBack={onBack} onStepBack={onStepBack} disabled={disabled} />
   </View>
 );
 
