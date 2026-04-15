@@ -117,6 +117,7 @@ interface AgentState {
   restoreSession: () => Promise<void>;
   startNewSession: () => Promise<void>;
   goBackToMenu: () => void;
+  goBackOneStep: () => void;
   dismissStrategyFlow: () => void;
   trimAfterMessage: (messageId: string) => void;
   
@@ -899,6 +900,80 @@ export const useAgentStore = create<AgentState>()(
       isTyping: false,
     });
     startStrategyFlow();
+  },
+
+  goBackOneStep: () => {
+    const { messages } = get();
+
+    const interactiveTypes = new Set([
+      'product_intake_form', 'product_manual_form', 'website_intake_form',
+      'service_intake_form', 'brand_intake_form', 'attribute_editor',
+      'strategy_type_selection', 'goal_selection', 'duration_selection',
+      'strategy_preview', 'facebook_connect', 'page_selection',
+      'retry_action', 'session_restore', 'create_strategy_prompt',
+    ]);
+
+    // Find the last active interactive message
+    let lastInteractiveIdx = -1;
+    for (let i = messages.length - 1; i >= 0; i--) {
+      if (messages[i].uiType && interactiveTypes.has(messages[i].uiType!)) {
+        lastInteractiveIdx = i;
+        break;
+      }
+    }
+    if (lastInteractiveIdx <= 0) return;
+
+    // Find the previous interactive message (what we're rolling back to)
+    let prevInteractiveIdx = -1;
+    for (let i = lastInteractiveIdx - 1; i >= 0; i--) {
+      if (messages[i].uiType && interactiveTypes.has(messages[i].uiType!)) {
+        prevInteractiveIdx = i;
+        break;
+      }
+    }
+    if (prevInteractiveIdx === -1) return; // No previous step — nothing to go back to
+
+    // Find the first user message after prevInteractiveIdx (the user's selection that triggered current card)
+    let userTriggerIdx = -1;
+    for (let i = prevInteractiveIdx + 1; i < lastInteractiveIdx; i++) {
+      if (messages[i].sender === 'user') {
+        userTriggerIdx = i;
+        break;
+      }
+    }
+
+    // Cut point: remove from user trigger (or just after prevInteractive) onwards
+    const cutIdx = userTriggerIdx !== -1 ? userTriggerIdx : prevInteractiveIdx + 1;
+    const newMessages = messages.slice(0, cutIdx);
+
+    // Map previous card's uiType back to the correct flowState
+    const uiTypeToFlowState: Record<string, FlowState> = {
+      'strategy_type_selection': 'STRATEGY_TYPE_SELECTION',
+      'product_intake_form': 'PRODUCT_INTAKE',
+      'service_intake_form': 'SERVICE_INTAKE',
+      'brand_intake_form': 'BRAND_INTAKE',
+      'product_manual_form': 'PRODUCT_INTAKE',
+      'website_intake_form': 'PRODUCT_INTAKE',
+      'attribute_editor': 'PRODUCT_INTAKE',
+      'goal_selection': 'GOAL_SELECTION',
+      'duration_selection': 'DURATION_SELECTION',
+      'strategy_preview': 'STRATEGY_GENERATION',
+      'facebook_connect': 'CONNECTING',
+      'page_selection': 'CONNECTED',
+      'retry_action': 'IDLE',
+      'session_restore': 'IDLE',
+      'create_strategy_prompt': 'IDLE',
+    };
+
+    const prevUiType = messages[prevInteractiveIdx].uiType!;
+    const restoredFlowState = (uiTypeToFlowState[prevUiType] ?? 'IDLE') as FlowState;
+
+    set({
+      messages: newMessages,
+      flowState: restoredFlowState,
+      isTyping: false,
+      isInputDisabled: true,
+    });
   },
 
   trimAfterMessage: (messageId: string) => {
