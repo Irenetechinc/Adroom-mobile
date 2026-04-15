@@ -118,6 +118,7 @@ interface AgentState {
   startNewSession: () => Promise<void>;
   goBackToMenu: () => void;
   dismissStrategyFlow: () => void;
+  trimAfterMessage: (messageId: string) => void;
   
   // Unified Connection Actions
   initiateConnection: (platform: string, fromFlow?: boolean) => void;
@@ -898,6 +899,17 @@ export const useAgentStore = create<AgentState>()(
       isTyping: false,
     });
     startStrategyFlow();
+  },
+
+  trimAfterMessage: (messageId: string) => {
+    const { messages } = get();
+    const idx = messages.findIndex(m => m.id === messageId);
+    if (idx === -1) return;
+    set({
+      messages: messages.slice(0, idx + 1),
+      isTyping: false,
+      isInputDisabled: true,
+    });
   },
 
   dismissStrategyFlow: () => {

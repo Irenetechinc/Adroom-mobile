@@ -2,7 +2,8 @@ import React, { useEffect, useState } from 'react';
 import { View, Text, FlatList, Image, TouchableOpacity, RefreshControl, StyleSheet, ScrollView } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { ArrowLeft, Play, Clock, CheckCircle2, Image as ImageIcon, Video, History, Zap } from 'lucide-react-native';
+import { Menu, Play, Clock, CheckCircle2, Image as ImageIcon, Video, History, Zap } from 'lucide-react-native';
+import { DrawerActions } from '@react-navigation/native';
 import { supabase } from '../services/supabase';
 import Animated, { FadeInDown } from 'react-native-reanimated';
 import { Skeleton } from '../components/Skeleton';
@@ -147,8 +148,8 @@ export default function StrategyHistoryScreen() {
     <SafeAreaView style={styles.safe} edges={['top']}>
       {/* Header */}
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
-          <ArrowLeft color="#E2E8F0" size={22} />
+        <TouchableOpacity onPress={() => navigation.dispatch(DrawerActions.openDrawer())} style={styles.backBtn}>
+          <Menu color="#E2E8F0" size={22} />
         </TouchableOpacity>
         <View style={{ flex: 1 }}>
           <Text style={styles.headerLabel}>AdRoom AI</Text>

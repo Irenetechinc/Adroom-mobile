@@ -5,7 +5,8 @@ import {
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
-import { ChevronLeft, Users, MessageCircle, ExternalLink } from 'lucide-react-native';
+import { Menu, Users, MessageCircle, ExternalLink } from 'lucide-react-native';
+import { DrawerActions } from '@react-navigation/native';
 import Animated, { FadeInDown } from 'react-native-reanimated';
 
 const CHANNELS = [
@@ -64,8 +65,8 @@ export default function CommunityScreen() {
     <SafeAreaView style={styles.safe} edges={['top']}>
       {/* Header */}
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
-          <ChevronLeft color="#E2E8F0" size={22} />
+        <TouchableOpacity onPress={() => navigation.dispatch(DrawerActions.openDrawer())} style={styles.backBtn}>
+          <Menu color="#E2E8F0" size={22} />
         </TouchableOpacity>
         <View style={{ flex: 1 }}>
           <Text style={styles.headerLabel}>AdRoom AI</Text>

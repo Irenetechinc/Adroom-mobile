@@ -97,7 +97,7 @@ export default function AboutScreen() {
             <Text style={styles.contactDesc}>Questions, feedback, or partnership enquiries</Text>
           </View>
           <TouchableOpacity
-            onPress={() => Linking.openURL('mailto:support@adroom.ai')}
+            onPress={() => Linking.openURL('mailto:support@adroomai.com')}
             style={styles.contactBtn}
           >
             <Text style={styles.contactBtnText}>Contact</Text>
