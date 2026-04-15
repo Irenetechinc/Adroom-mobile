@@ -1398,8 +1398,7 @@ app.get('/api/chat/history', async (req, res) => {
       .delete()
       .eq('user_id', user.id)
       .lt('created_at', sevenDaysAgo)
-      .then(() => {})
-      .catch(() => {});
+      .then(() => {}, () => {});
 
     const { data, error } = await svc
       .from('ai_conversation_memory')
