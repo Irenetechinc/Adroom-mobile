@@ -54,14 +54,14 @@ export default function StrategyApprovalScreen({ navigation }: Props) {
     return <View className="flex-1 bg-adroom-dark" />;
   }
 
-  const activeStrategy: any = (generatedStrategies as any)?.strategy || null;
+  const activeStrategy = generatedStrategies?.strategy ?? null;
 
   const doLaunch = async () => {
     setShowCreditModal(false);
     setLaunching(true);
     try {
       await setActiveStrategy(activeStrategy);
-      navigation.navigate('AgentChat', { fromStrategyApproval: true } as any);
+      navigation.navigate('AgentChat', { fromStrategyApproval: true });
     } catch (error: any) {
       Alert.alert('Error', error.message);
     } finally {

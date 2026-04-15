@@ -221,7 +221,7 @@ export default function SettingsScreen() {
           </TouchableOpacity>
         </Animated.View>
 
-        <Text style={styles.versionText}>AdRoom AI • v1.0.0 • Production</Text>
+        <Text style={styles.versionText}>AdRoom AI • v3.2.0</Text>
       </ScrollView>
     </SafeAreaView>
   );

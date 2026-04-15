@@ -15,7 +15,7 @@ export type RootStackParamList = {
     connectTwitter?: boolean;
   };
   ConnectedAccounts: undefined;
-  Subscription: { scrollToPlan?: string } | undefined;
+  Subscription: { scrollToPlan?: string; tab?: string } | undefined;
   PrivacySecurity: undefined;
   Notifications: undefined;
   About: undefined;

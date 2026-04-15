@@ -65,7 +65,7 @@ export default function ConnectedAccountsScreen() {
 
   const { tokens, connectedPlatforms, loadConnectedPlatforms, disconnectPlatform } = useAgentStore();
   const { subscription } = useEnergyStore();
-  const plan: string = (subscription as any)?.plan ?? 'none';
+  const plan = subscription?.plan ?? 'none';
   const isPro = plan === 'pro' || plan === 'pro_plus';
 
   // Use connectedPlatforms (populated from backend AND from live OAuth flow) as

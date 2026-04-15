@@ -1022,7 +1022,7 @@ export default function AgentChatScreen({ navigation, route }: Props) {
   const handleWebsiteEntry = () => {
     setInputDisabled(true);
     addMessage('Website Connect', 'user');
-    addMessage('Please provide your store or product URL below.', 'agent', undefined, 'website_intake_form' as any);
+    addMessage('Please provide your store or product URL below.', 'agent', undefined, 'website_intake_form');
   };
 
   const INTERACTIVE_TYPES = [
