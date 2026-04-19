@@ -25,7 +25,7 @@ const CHANNELS = [
     desc: 'Real-time chat, feature requests, bug reports, and community challenges.',
     letter: 'D',
     bg: '#5865F2',
-    action: 'https://discord.gg/adroomai',
+    action: 'https://discord.gg/KPKMShHEmu',
     cta: 'Join Discord',
   },
   {
