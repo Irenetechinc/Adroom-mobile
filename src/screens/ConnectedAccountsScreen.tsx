@@ -52,7 +52,7 @@ const PLATFORMS: Platform[] = [
   { id: 'instagram', name: 'Instagram', sub: 'Meta Business Suite', letter: 'IG', bg: 'rgba(195,42,163,0.9)', letterColor: '#FFFFFF' },
   { id: 'tiktok', name: 'TikTok', sub: 'TikTok for Creators', letter: 'T', bg: '#111', letterColor: '#FFFFFF' },
   { id: 'twitter', name: 'X / Twitter', sub: 'X Platform', letter: 'X', bg: '#000000', letterColor: '#FFFFFF' },
-  { id: 'linkedin', name: 'LinkedIn', sub: 'LinkedIn Marketing', letter: 'in', bg: '#0A66C2', letterColor: '#FFFFFF' },
+  { id: 'linkedin', name: 'LinkedIn', sub: 'LinkedIn Marketing', letter: 'in', bg: '#0A66C2', letterColor: '#FFFFFF', comingSoon: true },
   { id: 'google', name: 'Google Ads', sub: 'Google Marketing Platform', letter: 'G', bg: 'rgba(234,67,53,0.12)', letterColor: '#EA4335', comingSoon: true },
 ];
 
@@ -437,11 +437,22 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(245,158,11,0.1)', alignItems: 'center', justifyContent: 'center', marginBottom: 14,
   },
   notConnectedTitle: { color: '#FFFFFF', fontWeight: '700', fontSize: 16, marginBottom: 8 },
-  notConnectedDesc: { color: '#64748B', fontSize: 13, textAlign: 'center', lineHeight: 20, marginBottom: 24 },
+  notConnectedDesc: { color: '#64748B', fontSize: 13, textAlign: 'center', lineHeight: 20, marginBottom: 20 },
   connectBtn: {
     backgroundColor: '#00F0FF', borderRadius: 14, flexDirection: 'row',
     alignItems: 'center', justifyContent: 'center',
     paddingHorizontal: 24, paddingVertical: 14, gap: 10,
   },
   connectBtnText: { color: '#0B0F19', fontWeight: '800', fontSize: 15 },
+  comingSoonIcon: {
+    width: 60, height: 60, borderRadius: 18,
+    backgroundColor: 'rgba(112,0,255,0.1)', borderWidth: 1, borderColor: 'rgba(112,0,255,0.2)',
+    alignItems: 'center', justifyContent: 'center', marginBottom: 14,
+  },
+  comingSoonTitle: { color: '#A78BFA', fontWeight: '800', fontSize: 16, marginBottom: 8 },
+  comingSoonPill: {
+    backgroundColor: 'rgba(112,0,255,0.1)', borderWidth: 1, borderColor: 'rgba(112,0,255,0.25)',
+    borderRadius: 20, paddingHorizontal: 16, paddingVertical: 8,
+  },
+  comingSoonPillText: { color: '#A78BFA', fontWeight: '700', fontSize: 12 },
 });

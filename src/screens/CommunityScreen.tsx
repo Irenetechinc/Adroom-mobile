@@ -43,8 +43,9 @@ const CHANNELS = [
     desc: 'r/AdRoomAI — post campaigns, ask questions, and get community feedback.',
     letter: 'r',
     bg: '#FF4500',
-    action: 'https://reddit.com/r/adroomai',
-    cta: 'Join Subreddit',
+    action: null,
+    cta: 'Coming Soon',
+    comingSoon: true,
   },
 ];
 
@@ -100,9 +101,9 @@ export default function CommunityScreen() {
         {CHANNELS.map((ch, i) => (
           <Animated.View key={ch.id} entering={FadeInDown.delay(100 + i * 60).springify()}>
             <TouchableOpacity
-              onPress={() => open(ch.action)}
-              style={styles.channelCard}
-              activeOpacity={0.8}
+              onPress={() => !ch.comingSoon && ch.action && open(ch.action)}
+              style={[styles.channelCard, ch.comingSoon && { opacity: 0.7 }]}
+              activeOpacity={ch.comingSoon ? 1 : 0.8}
             >
               <View style={[styles.channelLogo, { backgroundColor: ch.bg }]}>
                 <Text style={styles.channelLogoText}>{ch.letter}</Text>
@@ -112,8 +113,16 @@ export default function CommunityScreen() {
                 <Text style={styles.channelDesc} numberOfLines={2}>{ch.desc}</Text>
               </View>
               <View style={styles.channelCta}>
-                <Text style={styles.channelCtaText}>{ch.cta}</Text>
-                <ExternalLink size={12} color="#00F0FF" style={{ marginTop: 2 }} />
+                {ch.comingSoon ? (
+                  <View style={styles.comingSoonBadge}>
+                    <Text style={styles.comingSoonText}>SOON</Text>
+                  </View>
+                ) : (
+                  <>
+                    <Text style={styles.channelCtaText}>{ch.cta}</Text>
+                    <ExternalLink size={12} color="#00F0FF" style={{ marginTop: 2 }} />
+                  </>
+                )}
               </View>
             </TouchableOpacity>
           </Animated.View>
@@ -184,6 +193,11 @@ const styles = StyleSheet.create({
   channelDesc: { color: '#64748B', fontSize: 12, lineHeight: 17 },
   channelCta: { alignItems: 'center', gap: 4, marginLeft: 10 },
   channelCtaText: { color: '#00F0FF', fontSize: 11, fontWeight: '700' },
+  comingSoonBadge: {
+    backgroundColor: 'rgba(112,0,255,0.1)', borderWidth: 1, borderColor: 'rgba(112,0,255,0.25)',
+    borderRadius: 20, paddingHorizontal: 10, paddingVertical: 5,
+  },
+  comingSoonText: { color: '#A78BFA', fontSize: 10, fontWeight: '800', letterSpacing: 0.5 },
 
   supportCard: {
     backgroundColor: '#151B2B', borderRadius: 16, borderWidth: 1, borderColor: '#1E293B', overflow: 'hidden',

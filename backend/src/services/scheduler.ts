@@ -9,6 +9,8 @@ import { ScraperService } from './scraperService';
 import { AgentOrchestrator } from '../agents/agentOrchestrator';
 import { getServiceSupabaseClient } from '../config/supabase';
 import { creditManagementAgent } from './creditManagementAgent';
+import { DailySummaryService } from './dailySummaryService';
+import { RadarAgent } from '../agents/radarAgent';
 
 async function hasActiveStrategies(): Promise<boolean> {
     const supabase = getServiceSupabaseClient();
@@ -33,6 +35,9 @@ const SCHED_AGENT_MONITOR_CRON= process.env.SCHED_AGENT_MONITOR_CRON|| '0 * * * 
 const SCHED_AGENT_OPTIM_CRON  = process.env.SCHED_AGENT_OPTIM_CRON  || '0 */2 * * *';   // Self-optimize every 2 hours
 const SCHED_LEAD_FOLLOWUP_CRON= process.env.SCHED_LEAD_FOLLOWUP_CRON|| '*/30 * * * *';  // SALESMAN lead follow-ups every 30 min
 
+const SCHED_RADAR_CRON        = process.env.SCHED_RADAR_CRON        || '0 */4 * * *';   // Radar scan every 4 hours
+const SCHED_DAILY_SUMMARY_CRON= process.env.SCHED_DAILY_SUMMARY_CRON|| '0 8 * * *';     // Daily summary at 8am UTC
+
 export class SchedulerService {
     private ipe: PlatformIntelligenceEngine;
     private social: SocialListeningEngine;
@@ -41,6 +46,8 @@ export class SchedulerService {
     private scraper: ScraperService;
     private decisionEngine: DecisionEngine;
     private orchestrator: AgentOrchestrator;
+    private dailySummary: DailySummaryService;
+    private radar: RadarAgent;
 
     constructor() {
         this.ipe = new PlatformIntelligenceEngine();
@@ -50,6 +57,8 @@ export class SchedulerService {
         this.scraper = new ScraperService();
         this.decisionEngine = new DecisionEngine();
         this.orchestrator = new AgentOrchestrator();
+        this.dailySummary = new DailySummaryService();
+        this.radar = new RadarAgent();
     }
 
     start() {
@@ -174,10 +183,32 @@ export class SchedulerService {
             try {
                 const status = await creditManagementAgent.selfMonitor();
                 if (status.dynamicEconomyActive) {
-                    console.log(`[CMA:Scheduler] 💰 Economy override ACTIVE — burn rate: ${status.systemBurnRate.toFixed(1)} credits/hr, cost: $${status.totalCostUsdLastHour.toFixed(4)}`);
+                    console.log(`[CMA:Scheduler] Economy override ACTIVE — burn rate: ${status.systemBurnRate.toFixed(1)} credits/hr, cost: $${status.totalCostUsdLastHour.toFixed(4)}`);
                 }
             } catch (e: any) {
                 console.error('[Scheduler] CMA self-monitor error:', e.message);
+            }
+        });
+
+        // Radar Agent — market intelligence scan every 4 hours
+        cron.schedule(SCHED_RADAR_CRON, async () => {
+            console.log('[Scheduler] Running Radar Agent global scan...');
+            try {
+                if (!(await hasActiveStrategies())) { console.log('[Scheduler] Radar skipped — no active strategies'); return; }
+                await this.radar.runGlobalScan();
+            } catch (e: any) {
+                console.error('[Scheduler] Radar Agent error:', e.message);
+            }
+        });
+
+        // Daily Strategy Summary — every day at 8am UTC
+        cron.schedule(SCHED_DAILY_SUMMARY_CRON, async () => {
+            console.log('[Scheduler] Running Daily Summary generation...');
+            try {
+                if (!(await hasActiveStrategies())) { console.log('[Scheduler] Daily summary skipped — no active strategies'); return; }
+                await this.dailySummary.runDailyRound();
+            } catch (e: any) {
+                console.error('[Scheduler] Daily summary error:', e.message);
             }
         });
 
