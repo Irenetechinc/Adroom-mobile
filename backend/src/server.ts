@@ -1969,6 +1969,196 @@ app.post('/delete-account', async (req, res) => {
   }
 });
 
+// ─── Strategy Pause / Resume ────────────────────────────────────────────────
+
+app.patch('/api/strategy/:id/pause', async (req, res) => {
+  try {
+    const supabase = getSupabaseClient(req as any);
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return res.status(401).json({ error: 'Unauthorized.' });
+
+    const strategyId = req.params.id;
+
+    const { error: stratErr } = await supabase
+      .from('strategies')
+      .update({ status: 'paused', is_active: false, updated_at: new Date().toISOString() })
+      .eq('id', strategyId)
+      .eq('user_id', user.id);
+    if (stratErr) return res.status(500).json({ error: stratErr.message });
+
+    const { error: memErr } = await supabase
+      .from('strategy_memory')
+      .update({ status: 'paused' })
+      .eq('strategy_id', strategyId)
+      .eq('user_id', user.id);
+    if (memErr) console.warn('[Pause] strategy_memory update failed:', memErr.message);
+
+    await supabase
+      .from('agent_tasks')
+      .update({ status: 'paused' })
+      .eq('strategy_id', strategyId)
+      .eq('user_id', user.id)
+      .in('status', ['pending', 'scheduled']);
+
+    console.log(`[Strategy] Paused strategy ${strategyId} for user ${user.id}`);
+    return res.status(200).json({ paused: true, strategyId });
+  } catch (e: any) {
+    return res.status(500).json({ error: e.message });
+  }
+});
+
+app.patch('/api/strategy/:id/resume', async (req, res) => {
+  try {
+    const supabase = getSupabaseClient(req as any);
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return res.status(401).json({ error: 'Unauthorized.' });
+
+    const strategyId = req.params.id;
+
+    const { error: stratErr } = await supabase
+      .from('strategies')
+      .update({ status: 'active', is_active: true, updated_at: new Date().toISOString() })
+      .eq('id', strategyId)
+      .eq('user_id', user.id);
+    if (stratErr) return res.status(500).json({ error: stratErr.message });
+
+    const { error: memErr } = await supabase
+      .from('strategy_memory')
+      .update({ status: 'active' })
+      .eq('strategy_id', strategyId)
+      .eq('user_id', user.id);
+    if (memErr) console.warn('[Resume] strategy_memory update failed:', memErr.message);
+
+    await supabase
+      .from('agent_tasks')
+      .update({ status: 'pending' })
+      .eq('strategy_id', strategyId)
+      .eq('user_id', user.id)
+      .eq('status', 'paused');
+
+    console.log(`[Strategy] Resumed strategy ${strategyId} for user ${user.id}`);
+    return res.status(200).json({ resumed: true, strategyId });
+  } catch (e: any) {
+    return res.status(500).json({ error: e.message });
+  }
+});
+
+// ─── Radar Agent ────────────────────────────────────────────────────────────
+
+app.post('/api/radar/scan/:strategyId', async (req, res) => {
+  try {
+    const supabase = getSupabaseClient(req as any);
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return res.status(401).json({ error: 'Unauthorized.' });
+
+    const { RadarAgent } = await import('./agents/radarAgent');
+    const radar = new RadarAgent();
+    const intel = await radar.runScan(user.id, req.params.strategyId);
+
+    return res.status(200).json({ intel });
+  } catch (e: any) {
+    return res.status(500).json({ error: e.message });
+  }
+});
+
+app.get('/api/radar/intel/:strategyId', async (req, res) => {
+  try {
+    const supabase = getSupabaseClient(req as any);
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return res.status(401).json({ error: 'Unauthorized.' });
+
+    const { data } = await supabase
+      .from('radar_intel')
+      .select('*')
+      .eq('strategy_id', req.params.strategyId)
+      .eq('user_id', user.id)
+      .order('scanned_at', { ascending: false })
+      .limit(10);
+
+    return res.status(200).json({ intel: data || [] });
+  } catch (e: any) {
+    return res.status(500).json({ error: e.message });
+  }
+});
+
+// ─── Daily Strategy Reports ──────────────────────────────────────────────────
+
+app.get('/api/strategy/:id/daily-reports', async (req, res) => {
+  try {
+    const supabase = getSupabaseClient(req as any);
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return res.status(401).json({ error: 'Unauthorized.' });
+
+    const { data } = await supabase
+      .from('strategy_daily_reports')
+      .select('*')
+      .eq('strategy_id', req.params.id)
+      .eq('user_id', user.id)
+      .order('report_date', { ascending: false })
+      .limit(30);
+
+    return res.status(200).json({ reports: data || [] });
+  } catch (e: any) {
+    return res.status(500).json({ error: e.message });
+  }
+});
+
+app.post('/api/strategy/:id/daily-summary', async (req, res) => {
+  try {
+    const supabase = getSupabaseClient(req as any);
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return res.status(401).json({ error: 'Unauthorized.' });
+
+    const { data: strategy } = await supabase
+      .from('strategy_memory')
+      .select('*')
+      .eq('strategy_id', req.params.id)
+      .eq('user_id', user.id)
+      .single();
+
+    if (!strategy) return res.status(404).json({ error: 'Strategy not found.' });
+
+    const { DailySummaryService } = await import('./services/dailySummaryService');
+    const summaryService = new DailySummaryService();
+    await summaryService.generateSummaryForStrategy(user.id, strategy);
+
+    return res.status(200).json({ success: true });
+  } catch (e: any) {
+    return res.status(500).json({ error: e.message });
+  }
+});
+
+// ─── Smart Video Editor ──────────────────────────────────────────────────────
+
+app.post('/api/video/edit-plan', async (req, res) => {
+  try {
+    const supabase = getSupabaseClient(req as any);
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return res.status(401).json({ error: 'Unauthorized.' });
+
+    const { videoUri, productName, goal, platform, instructions, strategyId } = req.body;
+    if (!productName || !goal || !platform) {
+      return res.status(400).json({ error: 'productName, goal, and platform are required.' });
+    }
+
+    const { SmartVideoEditor } = await import('./services/smartVideoEditor');
+    const editor = new SmartVideoEditor();
+    const result = await editor.generateEditPlan({ videoUri, productName, goal, platform, instructions });
+
+    if (videoUri && strategyId) {
+      try {
+        await editor.saveEditPlan(user.id, strategyId, videoUri, result);
+      } catch (saveErr: any) {
+        console.warn('[VideoEditor] Could not save edit job (non-fatal):', saveErr.message);
+      }
+    }
+
+    return res.status(200).json(result);
+  } catch (e: any) {
+    return res.status(500).json({ error: e.message });
+  }
+});
+
 app.listen(PORT, async () => {
   console.log(`[AdRoom Server] Running on port ${PORT} — ${new Date().toISOString()}`);
   console.log(`[AdRoom Server] AI Engines: GPT-4o (strategy) | Gemini 2.0 Flash (text) | Imagen 3 (creative)`);

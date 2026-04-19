@@ -138,7 +138,7 @@ export default function DashboardScreen() {
         contentContainerStyle={[styles.scrollContent, { paddingBottom: Math.max(40, insets.bottom + 20) }]}
       >
         {/* Skeleton loading overlay (first load only, not on pull-to-refresh) */}
-        {loading && !refreshing && activeStrategies.length === 0 && (
+        {loading && !refreshing && activeStrategies.length === 0 ? (
           <View style={{ paddingTop: 8 }}>
             <Skeleton width="100%" height={44} borderRadius={14} style={{ marginBottom: 12 }} />
             <View style={{ flexDirection: 'row', gap: 10, marginBottom: 12 }}>
@@ -151,8 +151,9 @@ export default function DashboardScreen() {
             <Skeleton width="100%" height={120} borderRadius={16} style={{ marginBottom: 12 }} />
             <Skeleton width="100%" height={120} borderRadius={16} style={{ marginBottom: 12 }} />
           </View>
-        )}
+        ) : null}
 
+        {!(loading && !refreshing && activeStrategies.length === 0) && <>
         {/* Status bar */}
         <Animated.View entering={FadeInDown.delay(100).springify()} style={styles.statusBar}>
           <View style={styles.statusDot} />
@@ -384,6 +385,7 @@ export default function DashboardScreen() {
             )}
           </View>
         </Animated.View>
+        </>}
       </ScrollView>
     </SafeAreaView>
   );

@@ -26,6 +26,7 @@ import {
 import { IntegrityService } from '../services/integrity';
 import { VisionService } from '../services/vision';
 import ImageUploadComponent from '../components/ImageUploadComponent';
+import VideoUploadComponent, { type VideoAsset } from '../components/VideoUploadComponent';
 import { useEnergyStore } from '../store/energyStore';
 import { useStrategyCreationStore } from '../store/strategyCreationStore';
 import Constants from 'expo-constants';
@@ -610,6 +611,7 @@ const ProductManualIntakeCard = ({ onSubmit, onBack, onStepBack, disabled }: { o
   const [selectedSizes, setSelectedSizes] = useState<string[]>([]);
   const [quantity, setQuantity] = useState('');
   const [images, setImages] = useState<{ uri: string; base64: string | null }[]>([]);
+  const [video, setVideo] = useState<VideoAsset | null>(null);
 
   const toggleSize = (size: string) =>
     setSelectedSizes((prev) => prev.includes(size) ? prev.filter(s => s !== size) : [...prev, size]);
@@ -650,8 +652,11 @@ const ProductManualIntakeCard = ({ onSubmit, onBack, onStepBack, disabled }: { o
 
         {!disabled && <ImageUploadComponent onImagesSelected={setImages} maxImages={5} />}
         {!disabled && (
+          <VideoUploadComponent onVideoSelected={setVideo} selectedVideo={video} disabled={disabled} />
+        )}
+        {!disabled && (
           <TouchableOpacity
-            onPress={() => onSubmit({ name, category, price: `${currencySymbol}${price}`, currency, description, color, sizes: selectedSizes, quantity, images })}
+            onPress={() => onSubmit({ name, category, price: `${currencySymbol}${price}`, currency, description, color, sizes: selectedSizes, quantity, images, video })}
             style={[styles.primaryBtn, { marginTop: 12 }]}
             disabled={!name.trim()}
           >
@@ -672,6 +677,7 @@ const ServiceIntakeCard = ({ onSubmit, onBack, onStepBack, disabled }: { onSubmi
   const [description, setDescription] = useState('');
   const [portfolioUrl, setPortfolioUrl] = useState('');
   const [images, setImages] = useState<{ uri: string; base64: string | null }[]>([]);
+  const [video, setVideo] = useState<VideoAsset | null>(null);
 
   const currencySymbol = CURRENCIES.find(c => c.code === currency)?.symbol || '$';
 
@@ -699,8 +705,11 @@ const ServiceIntakeCard = ({ onSubmit, onBack, onStepBack, disabled }: { onSubmi
         />
         {!disabled && <ImageUploadComponent onImagesSelected={setImages} maxImages={5} />}
         {!disabled && (
+          <VideoUploadComponent onVideoSelected={setVideo} selectedVideo={video} disabled={disabled} />
+        )}
+        {!disabled && (
           <TouchableOpacity
-            onPress={() => onSubmit({ name, category, price: `${currencySymbol}${price}`, currency, description, portfolioUrl: portfolioUrl.trim() || null, images })}
+            onPress={() => onSubmit({ name, category, price: `${currencySymbol}${price}`, currency, description, portfolioUrl: portfolioUrl.trim() || null, images, video })}
             style={[styles.primaryBtn, { marginTop: 12 }]}
             disabled={!name.trim()}
           >
@@ -718,6 +727,7 @@ const BrandIntakeCard = ({ onSubmit, onBack, onStepBack, disabled }: { onSubmit:
   const [mission, setMission] = useState('');
   const [values, setValues] = useState('');
   const [images, setImages] = useState<{ uri: string; base64: string | null }[]>([]);
+  const [video, setVideo] = useState<VideoAsset | null>(null);
 
   return (
     <View style={[styles.card, { padding: 14 }, disabled && styles.cardDisabled]}>
@@ -728,7 +738,10 @@ const BrandIntakeCard = ({ onSubmit, onBack, onStepBack, disabled }: { onSubmit:
         <TextInput placeholder="Core Values (e.g. Quality, Innovation)" placeholderTextColor="#475569" multiline style={[styles.input, { height: 70, marginBottom: 12 }]} value={values} onChangeText={setValues} editable={!disabled} />
         {!disabled && <ImageUploadComponent onImagesSelected={setImages} maxImages={5} />}
         {!disabled && (
-          <TouchableOpacity onPress={() => onSubmit({ name, mission, values, images })} style={[styles.primaryBtn, { marginTop: 12 }]} disabled={!name.trim()}>
+          <VideoUploadComponent onVideoSelected={setVideo} selectedVideo={video} disabled={disabled} />
+        )}
+        {!disabled && (
+          <TouchableOpacity onPress={() => onSubmit({ name, mission, values, images, video })} style={[styles.primaryBtn, { marginTop: 12 }]} disabled={!name.trim()}>
             <Text style={styles.primaryBtnText}>Save Brand</Text>
           </TouchableOpacity>
         )}

@@ -1,12 +1,14 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, FlatList, Image, TouchableOpacity, RefreshControl, StyleSheet, ScrollView } from 'react-native';
+import { View, Text, FlatList, Image, TouchableOpacity, RefreshControl, StyleSheet, ScrollView, Alert, ActivityIndicator } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Menu, Play, Clock, CheckCircle2, Image as ImageIcon, Video, History, Zap } from 'lucide-react-native';
+import { Menu, Play, Clock, CheckCircle2, Image as ImageIcon, Video, History, Zap, Pause } from 'lucide-react-native';
 import { DrawerActions } from '@react-navigation/native';
 import { supabase } from '../services/supabase';
 import Animated, { FadeInDown } from 'react-native-reanimated';
 import { Skeleton } from '../components/Skeleton';
+
+const BACKEND_URL = process.env.EXPO_PUBLIC_API_URL;
 
 function HistorySkeleton() {
   return (
@@ -49,6 +51,7 @@ export default function StrategyHistoryScreen() {
   const [history, setHistory] = useState<StrategyHistoryItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [initialLoad, setInitialLoad] = useState(true);
+  const [pausingId, setPausingId] = useState<string | null>(null);
 
   const fetchHistory = async () => {
     setLoading(true);
@@ -67,6 +70,61 @@ export default function StrategyHistoryScreen() {
   };
 
   useEffect(() => { fetchHistory(); }, []);
+
+  const handlePause = async (item: StrategyHistoryItem) => {
+    Alert.alert(
+      'Pause Strategy?',
+      `Pausing "${item.title}" will stop all scheduled AI tasks until you resume.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Pause',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              setPausingId(item.id);
+              const { data: { session } } = await supabase.auth.getSession();
+              if (!session?.access_token || !BACKEND_URL) throw new Error('Not authenticated.');
+              const res = await fetch(`${BACKEND_URL}/api/strategy/${item.id}/pause`, {
+                method: 'PATCH',
+                headers: { Authorization: `Bearer ${session.access_token}` },
+              });
+              if (!res.ok) {
+                const d = await res.json();
+                throw new Error(d.error || 'Failed to pause strategy.');
+              }
+              setHistory(prev => prev.map(s => s.id === item.id ? { ...s, status: 'paused', is_active: false } : s));
+            } catch (e: any) {
+              Alert.alert('Error', e.message || 'Could not pause strategy. Please try again.');
+            } finally {
+              setPausingId(null);
+            }
+          },
+        },
+      ],
+    );
+  };
+
+  const handleResume = async (item: StrategyHistoryItem) => {
+    try {
+      setPausingId(item.id);
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.access_token || !BACKEND_URL) throw new Error('Not authenticated.');
+      const res = await fetch(`${BACKEND_URL}/api/strategy/${item.id}/resume`, {
+        method: 'PATCH',
+        headers: { Authorization: `Bearer ${session.access_token}` },
+      });
+      if (!res.ok) {
+        const d = await res.json();
+        throw new Error(d.error || 'Failed to resume strategy.');
+      }
+      setHistory(prev => prev.map(s => s.id === item.id ? { ...s, status: 'active', is_active: true } : s));
+    } catch (e: any) {
+      Alert.alert('Error', e.message || 'Could not resume strategy. Please try again.');
+    } finally {
+      setPausingId(null);
+    }
+  };
 
   const renderAssets = (assets: any[]) => {
     if (!assets || assets.length === 0) return null;
@@ -93,7 +151,21 @@ export default function StrategyHistoryScreen() {
 
   const renderItem = ({ item, index }: { item: StrategyHistoryItem; index: number }) => {
     const isActive = item.status === 'active' || item.is_active;
+    const isPaused = item.status === 'paused';
     const isPaid = item.type === 'PAID';
+    const isLoading = pausingId === item.id;
+
+    const statusColor = isActive ? '#00F0FF' : isPaused ? '#F59E0B' : '#64748B';
+    const statusBg = isActive
+      ? 'rgba(0,240,255,0.08)'
+      : isPaused
+      ? 'rgba(245,158,11,0.08)'
+      : 'rgba(100,116,139,0.08)';
+    const statusBorder = isActive
+      ? 'rgba(0,240,255,0.2)'
+      : isPaused
+      ? 'rgba(245,158,11,0.2)'
+      : 'rgba(100,116,139,0.15)';
 
     return (
       <Animated.View entering={FadeInDown.delay(index * 70).springify()}>
@@ -105,15 +177,14 @@ export default function StrategyHistoryScreen() {
                 {item.type}
               </Text>
             </View>
-            <View style={[styles.statusTag, isActive
-              ? { backgroundColor: 'rgba(0,240,255,0.08)', borderColor: 'rgba(0,240,255,0.2)' }
-              : { backgroundColor: 'rgba(100,116,139,0.08)', borderColor: 'rgba(100,116,139,0.15)' }
-            ]}>
+            <View style={[styles.statusTag, { backgroundColor: statusBg, borderColor: statusBorder }]}>
               {isActive
-                ? <Play size={10} color="#00F0FF" fill="#00F0FF" />
-                : <CheckCircle2 size={10} color="#64748B" />}
-              <Text style={[styles.statusTagText, { color: isActive ? '#00F0FF' : '#64748B' }]}>
-                {isActive ? 'Live' : 'Ended'}
+                ? <Play size={10} color={statusColor} fill={statusColor} />
+                : isPaused
+                ? <Pause size={10} color={statusColor} />
+                : <CheckCircle2 size={10} color={statusColor} />}
+              <Text style={[styles.statusTagText, { color: statusColor }]}>
+                {isActive ? 'Live' : isPaused ? 'Paused' : 'Ended'}
               </Text>
             </View>
           </View>
@@ -132,10 +203,44 @@ export default function StrategyHistoryScreen() {
               <Text style={styles.dateText}>{new Date(item.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</Text>
             </View>
 
-            {isActive && (
-              <View style={styles.aiMonitor}>
-                <View style={styles.aiMonitorDot} />
-                <Text style={styles.aiMonitorText}>AI Monitoring</Text>
+            {(isActive || isPaused) && (
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                {isActive && (
+                  <View style={styles.aiMonitor}>
+                    <View style={styles.aiMonitorDot} />
+                    <Text style={styles.aiMonitorText}>AI Monitoring</Text>
+                  </View>
+                )}
+                {isActive && (
+                  <TouchableOpacity
+                    onPress={() => handlePause(item)}
+                    disabled={isLoading}
+                    style={styles.pauseBtn}
+                    activeOpacity={0.75}
+                  >
+                    {isLoading
+                      ? <ActivityIndicator size="small" color="#F59E0B" />
+                      : <>
+                          <Pause size={11} color="#F59E0B" />
+                          <Text style={styles.pauseBtnText}>Pause</Text>
+                        </>}
+                  </TouchableOpacity>
+                )}
+                {isPaused && (
+                  <TouchableOpacity
+                    onPress={() => handleResume(item)}
+                    disabled={isLoading}
+                    style={styles.resumeBtn}
+                    activeOpacity={0.75}
+                  >
+                    {isLoading
+                      ? <ActivityIndicator size="small" color="#10B981" />
+                      : <>
+                          <Play size={11} color="#10B981" />
+                          <Text style={styles.resumeBtnText}>Resume</Text>
+                        </>}
+                  </TouchableOpacity>
+                )}
               </View>
             )}
           </View>
@@ -241,6 +346,18 @@ const styles = StyleSheet.create({
   aiMonitor: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   aiMonitorDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: '#00F0FF' },
   aiMonitorText: { color: '#00F0FF', fontSize: 11, fontWeight: '600' },
+  pauseBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    backgroundColor: 'rgba(245,158,11,0.1)', borderWidth: 1, borderColor: 'rgba(245,158,11,0.25)',
+    borderRadius: 8, paddingHorizontal: 9, paddingVertical: 5,
+  },
+  pauseBtnText: { color: '#F59E0B', fontSize: 11, fontWeight: '700' },
+  resumeBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    backgroundColor: 'rgba(16,185,129,0.1)', borderWidth: 1, borderColor: 'rgba(16,185,129,0.25)',
+    borderRadius: 8, paddingHorizontal: 9, paddingVertical: 5,
+  },
+  resumeBtnText: { color: '#10B981', fontSize: 11, fontWeight: '700' },
   emptyWrap: { alignItems: 'center', paddingTop: 80, paddingHorizontal: 32 },
   emptyIcon: {
     width: 72, height: 72, borderRadius: 24,
