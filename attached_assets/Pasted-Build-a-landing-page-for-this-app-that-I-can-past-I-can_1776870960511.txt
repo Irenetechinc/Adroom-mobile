@@ -1,0 +1,321 @@
+Build a landing page for this app that I can past I can run on my afeeshost.com hosting
+
+First landing page is the countdown to app lunch this should contain all the app dose but do not expose app secret just all the abilities adroom. Ai poses how it can help anyone with product servicde or brand a hive thier goal by 100%, how it's the futufe of integent automated marketing butake adroom ai better than it competitors and unmatched any time any where 
+
+The another landing page that will upload when app is lunched 
+
+The another one for our special program early investors window where 
+Which entails this, this page also should feature on the countdown page 
+
+📊 ADROOM AI - Early Investor Convertible Structure (₦1M Minimum)
+
+🎯 Investment Summary
+
+Item Value
+Company Valuation (Pre-Seed) $5,000,000 USD (≈ ₦7,750,000,000 at ₦1,550/$)
+Main Pre-Seed Target ₦1,000,000,000
+Main Pre-Seed Equity 10%
+Main Pre-Seed Price Per Share ₦1
+Early Investor Minimum ₦1,000,000
+Early Investor Maximum Total ₦155,000,000 (2% of company)
+Conversion Price Fixed at ₦1 per share
+Conversion Trigger Main pre-seed round closes (6-12 months)
+
+---
+
+📈 Investor Equity & Value Comparison Table
+
+How Much Your Investment Will Be Worth After Conversion
+
+You Invest (Today) Shares Received % of Company Today Value at Main Pre-Seed (₦1/share) Value at $5M Valuation Your Gain
+₦1,000,000 1,000,000 shares 0.0129% ₦1,000,000 $645 Break even
+₦5,000,000 5,000,000 shares 0.0645% ₦5,000,000 $3,225 Break even
+₦10,000,000 10,000,000 shares 0.129% ₦10,000,000 $6,450 Break even
+₦25,000,000 25,000,000 shares 0.322% ₦25,000,000 $16,125 Break even
+₦50,000,000 50,000,000 shares 0.645% ₦50,000,000 $32,250 Break even
+₦100,000,000 100,000,000 shares 1.29% ₦100,000,000 $64,500 Break even
+₦155,000,000 (Max) 155,000,000 shares 2.00% ₦155,000,000 $100,000 Break even
+
+Note: At conversion, your investment value stays the same (₦1 per share). The real gain comes AFTER the pre-seed round when the company grows.
+
+---
+
+📈 Projected Future Value (If Company Grows)
+
+Stage Valuation Your ₦1M Investment Value Your ₦10M Investment Value Your ₦50M Investment Value
+Today (Early Investment) ₦7.75B ₦1,000,000 ₦10,000,000 ₦50,000,000
+Main Pre-Seed (6-12 months) ₦7.75B (same) ₦1,000,000 ₦10,000,000 ₦50,000,000
+Seed Round (12-24 months) ₦23.25B (3x) ₦3,000,000 ₦30,000,000 ₦150,000,000
+Series A (24-36 months) ₦77.5B (10x) ₦10,000,000 ₦100,000,000 ₦500,000,000
+Series B (36-48 months) ₦232.5B (30x) ₦30,000,000 ₦300,000,000 ₦1,500,000,000
+Exit / IPO ₦775B (100x) ₦100,000,000 ₦1,000,000,000 ₦5,000,000,000
+
+---
+
+📊 Visual Comparison: Investment vs Value Over Time
+
+```
+Your Investment: ₦1,000,000
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Today:               ████ ₦1,000,000
+Pre-Seed Close:      ████ ₦1,000,000 (same)
+Seed Round (3x):     ████████████ ₦3,000,000
+Series A (10x):      ████████████████████████████████ ₦10,000,000
+Series B (30x):      ████████████████████████████████████████████████████████████ ₦30,000,000
+Exit (100x):         ████████████████████████████████████████████████████████████████████████████████████████████████████████████ ₦100,000,000
+```
+
+```
+Your Investment: ₦10,000,000
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Today:               ████ ₦10,000,000
+Pre-Seed Close:      ████ ₦10,000,000
+Seed Round (3x):     ████████████ ₦30,000,000
+Series A (10x):      ████████████████████████████████ ₦100,000,000
+Series B (30x):      ████████████████████████████████████████████████████████████ ₦300,000,000
+Exit (100x):         ████████████████████████████████████████████████████████████████████████████████████████████████████████████ ₦1,000,000,000
+```
+
+```
+Your Investment: ₦50,000,000
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Today:               ████ ₦50,000,000
+Pre-Seed Close:      ████ ₦50,000,000
+Seed Round (3x):     ████████████ ₦150,000,000
+Series A (10x):      ████████████████████████████████ ₦500,000,000
+Series B (30x):      ████████████████████████████████████████████████████████████ ₦1,500,000,000
+Exit (100x):         ████████████████████████████████████████████████████████████████████████████████████████████████████████████ ₦5,000,000,000
+```
+
+---
+
+📄 Early Investor Term Sheet
+
+ADROOM AI
+
+Convertible Early Investment Agreement
+
+---
+
+1. The Opportunity
+
+AdRoom AI is a fully autonomous marketing intelligence platform with:
+
+· 5 completed AI agents (Sales, Launch, Promotion, Leads, Awareness)
+· Website connector with auto-product scraping
+· 7 patentable technologies (patents pending)
+· Complete product ready for market launch
+· $5M valuation for main pre-seed round
+
+---
+
+2. Investment Terms
+
+Term Detail
+Minimum Investment ₦1,000,000 (One Million Naira)
+Maximum per Investor ₦155,000,000 (capped at 2% total company)
+Share Price Today ₦1 per share
+What You Receive Convertible Note / SAFE Agreement
+Conversion Trigger Main pre-seed round closes (6-12 months)
+Conversion Price Fixed at ₦1 per share (same as main round)
+Your Equity at Conversion (Your ₦) ÷ ₦1 = Number of shares
+Total Early Pool Maximum ₦155,000,000 (2% of company)
+
+---
+
+3. What Your Investment Becomes
+
+You Invest Shares % of Company Value at Main Round Future Potential (10x)
+₦1,000,000 1,000,000 0.0129% ₦1,000,000 ₦10,000,000
+₦5,000,000 5,000,000 0.0645% ₦5,000,000 ₦50,000,000
+₦10,000,000 10,000,000 0.129% ₦10,000,000 ₦100,000,000
+₦25,000,000 25,000,000 0.322% ₦25,000,000 ₦250,000,000
+₦50,000,000 50,000,000 0.645% ₦50,000,000 ₦500,000,000
+₦100,000,000 100,000,000 1.29% ₦100,000,000 ₦1,000,000,000
+₦155,000,000 155,000,000 2.00% ₦155,000,000 ₦1,550,000,000
+
+---
+
+4. Why Invest Now?
+
+Reason Explanation
+Same price as main round You get in at the same ₦1/share as large investors
+Lower minimum Main round minimum may be ₦5M+. Early minimum is ₦1M
+First access You invest before the main round opens to the public
+Believer status You become a founding supporter of AdRoom AI
+Future priority Early investors get priority in future funding rounds
+
+---
+
+5. Projected Returns at Different Valuations
+
+Company Valuation Your ₦1M Becomes Your ₦10M Becomes Your ₦50M Becomes
+₦7.75B (Today's Value) ₦1,000,000 ₦10,000,000 ₦50,000,000
+₦23.25B (3x - Seed) ₦3,000,000 ₦30,000,000 ₦150,000,000
+₦77.5B (10x - Series A) ₦10,000,000 ₦100,000,000 ₦500,000,000
+₦232.5B (30x - Series B) ₦30,000,000 ₦300,000,000 ₦1,500,000,000
+₦775B (100x - Exit) ₦100,000,000 ₦1,000,000,000 ₦5,000,000,000
+
+---
+
+6. Simple Agreement Text
+
+```
+ADROOM AI - EARLY INVESTMENT CONVERTIBLE NOTE
+
+Date: ______________
+
+Investor Name: ______________
+Investment Amount: ₦______________ (Minimum ₦1,000,000)
+
+TERMS:
+
+1. The investor receives the right to convert this investment into 
+   equity shares of AdRoom AI at a fixed price of ₦1 per share.
+
+2. Conversion will occur automatically when AdRoom AI closes its 
+   main pre-seed funding round (target: ₦1,000,000,000 for 10% equity).
+
+3. At conversion, the investor receives:
+   (Investment Amount ÷ ₦1) = Number of shares
+
+4. If the main pre-seed round does not close within 18 months, 
+   the investor may request a full refund of their investment.
+
+5. Total early investments are capped at ₦155,000,000 (2% of company).
+
+6. This agreement is governed by the laws of Nigeria.
+
+FOR ADROOM AI:
+
+Signature: ______________
+Name: ______________
+Date: ______________
+
+FOR INVESTOR:
+
+Signature: ______________
+Name: ______________
+Date: ______________
+```
+
+---
+
+7. Pitch Script for Investors
+
+"AdRoom AI is valued at $5 million. Our main pre-seed round is ₦1 billion for 10% equity at ₦1 per share.
+
+We are opening an early investor window for believers who want to get in before the main round.
+
+Same price. ₦1 per share. Same terms as large investors.
+
+Minimum investment is ₦1 million.
+
+Your ₦1 million buys you 1 million shares. At the main pre-seed round, those shares are worth exactly ₦1 million.
+
+But when we grow to a $50 million valuation (10x), your ₦1 million becomes ₦10 million.
+
+When we exit at $500 million (100x), your ₦1 million becomes ₦100 million.
+
+We are capping early investments at 2% total equity. Once we hit ₦155 million from early investors, the window closes.
+
+This is for people who see what we're building and want to be part of it from day one.
+
+Same price as the big investors. Lower minimum. Same upside.
+
+Are you in?"
+
+---
+
+8. Investor FAQ
+
+Q: Why same price as main round?
+A: Because you're getting early access. The main round is the same price. You're not getting a discount - you're getting the opportunity to invest before the round opens to everyone.
+
+Q: What if the main round valuation is higher?
+A: We are committed to ₦1 billion for 10% at $5M valuation. If it changes, early investors will get the same or better terms.
+
+Q: What if the main round never happens?
+A: You get a full refund after 18 months.
+
+Q: How do I know my investment is safe?
+A: We provide a formal agreement, regular updates, and full transparency. Patents pending. Product complete.
+
+Q: Can I invest more than ₦155 million?
+A: No. That would exceed 2% of the company.
+
+Q: When do I get my shares?
+A: When the main pre-seed round closes (6-12 months).
+
+Q: What is the minimum investment?
+A: ₦1,000,000 (One Million Naira).
+
+---
+
+9. Sample Message to Investors
+
+```
+🚀 ADROOM AI - Early Investment Opportunity (₦1M Minimum)
+
+We are building the future of autonomous marketing.
+Product: COMPLETE ✅
+Patents: PENDING ✅
+Valuation: $5,000,000 ✅
+
+MAIN PRE-SEED ROUND:
+₦1,000,000,000 for 10% equity (₦1/share)
+
+EARLY INVESTOR WINDOW (NOW OPEN):
+• Same price: ₦1/share
+• Minimum: ₦1,000,000
+• Maximum total: ₦155,000,000 (2% of company)
+• Converts to equity when main round closes
+
+WHAT YOUR ₦1,000,000 BECOMES:
+• Today: ₦1,000,000 (1,000,000 shares)
+• At 10x growth: ₦10,000,000
+• At 100x exit: ₦100,000,000
+
+This is for believers who want to be part of something big.
+
+Interested? Reply for the full term sheet.
+
+AdRoom AI Team
+```
+
+---
+
+10. Summary Table for Investors (One-Pager)
+
+Your Investment Shares % of Company Value at Main Round Value at 10x Value at 100x
+₦1,000,000 1M 0.0129% ₦1M ₦10M ₦100M
+₦5,000,000 5M 0.0645% ₦5M ₦50M ₦500M
+₦10,000,000 10M 0.129% ₦10M ₦100M ₦1B
+₦25,000,000 25M 0.322% ₦25M ₦250M ₦2.5B
+₦50,000,000 50M 0.645% ₦50M ₦500M ₦5B
+₦100,000,000 100M 1.29% ₦100M ₦1B ₦10B
+₦155,000,000 155M 2.00% ₦155M ₦1.55B ₦15.5B
+
+---
+
+✅ Final Checklist
+
+```
+[ ] Set minimum investment at ₦1,000,000
+[ ] Prepare Convertible Note / SAFE agreement
+[ ] Create investor tracking spreadsheet
+[ ] Prepare one-page summary for investors
+[ ] Send pitch to potential investors
+[ ] Collect investments into dedicated account
+[ ] Issue agreements to each investor
+[ ] Track total early investment (cap at ₦155M)
+[ ] Provide regular updates to early investors
+[ ] Close early window when main pre-seed begins
+```
+
+---
+
+This structure is clear, transparent, and gives investors full visibility into what their money becomes. No hidden terms. No special discounts. Everyone at ₦1/share. 🚀
