@@ -11,6 +11,8 @@
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" integrity="sha512-DTOQO9RWCH3ppGqcWaEA1BIZOC6xxalwEsw9c2QQeAIftl+Vegovlnee1c9QX4TctnWMn13TZye+giMm8e2LwA==" crossorigin="anonymous" referrerpolicy="no-referrer" />
+<link rel="icon" type="image/jpeg" href="assets/logo.jpg" />
 <style>
   :root{
     --bg:#0B0F19; --bg-2:#0D1526; --card:#151B2B; --line:#1E293B;
@@ -52,12 +54,10 @@
     display:flex;align-items:center;justify-content:space-between;gap:20px;
   }
   .logo{display:flex;align-items:center;gap:10px;font-weight:800;font-size:18px;letter-spacing:-.5px}
-  .logo-dot{
-    width:32px;height:32px;border-radius:9px;
-    background:linear-gradient(135deg,var(--cyan),#0099AA);
-    display:flex;align-items:center;justify-content:center;
+  .logo-img{
+    width:36px;height:36px;border-radius:9px;object-fit:cover;
     box-shadow:0 0 24px rgba(0,240,255,.4);
-    font-family:'Space Grotesk',sans-serif;color:#001518;font-weight:800;font-size:16px;
+    border:1px solid rgba(0,240,255,.25);
   }
   .nav-cta{
     background:var(--cyan);color:#001518;font-weight:700;font-size:13px;
@@ -73,7 +73,24 @@
   .hero{
     min-height:100vh;display:flex;flex-direction:column;justify-content:center;align-items:center;
     text-align:center;padding-top:120px;padding-bottom:60px;
+    position:relative;overflow:hidden;
   }
+  .hero-bg{
+    position:absolute;inset:0;z-index:0;
+    background-image:url('assets/hero-bg.jpg');
+    background-size:cover;background-position:center;
+    opacity:.28;
+    filter:blur(1px);
+    animation:heroPan 30s ease-in-out infinite alternate;
+  }
+  .hero-bg::after{
+    content:'';position:absolute;inset:0;
+    background:
+      linear-gradient(180deg, rgba(11,15,25,.55) 0%, rgba(11,15,25,.85) 70%, var(--bg) 100%),
+      radial-gradient(ellipse 70% 50% at 50% 30%, rgba(0,240,255,.15), transparent 60%);
+  }
+  @keyframes heroPan{0%{transform:scale(1.05) translateX(0)}100%{transform:scale(1.15) translateX(-3%)}}
+  .hero > *{position:relative;z-index:1}
   .badge{
     display:inline-flex;align-items:center;gap:8px;
     background:var(--cyan-soft);border:1px solid var(--cyan-line);
@@ -267,14 +284,15 @@
 
 <nav>
   <div class="nav-inner">
-    <a href="#" class="logo"><span class="logo-dot">A</span> AdRoom AI</a>
+    <a href="#" class="logo"><img src="assets/logo.jpg" alt="AdRoom AI" class="logo-img" /> AdRoom AI</a>
     <a href="#investors" class="nav-cta">Early Investor Window</a>
   </div>
 </nav>
 
 <!-- HERO -->
 <section class="hero">
-  <span class="badge anim"><span class="live-dot"></span> Launching Soon</span>
+  <div class="hero-bg"></div>
+  <span class="badge anim"><span class="live-dot"></span> <i class="fa-solid fa-rocket"></i> Launching Soon</span>
   <h1 class="anim delay-1">The Autonomous Marketing Workforce.<br/>Coming to Change Everything.</h1>
   <p class="lead anim delay-2">AdRoom AI is the world's first fully autonomous AI marketing workforce. No agencies. No paid ads. No team. Just results — delivered 24/7 by intelligent agents working tirelessly for your brand.</p>
 
@@ -286,8 +304,8 @@
   </div>
 
   <div class="hero-ctas anim delay-4">
-    <a href="#waitlist" class="btn btn-primary">Join the Waitlist →</a>
-    <a href="#investors" class="btn btn-ghost">Become an Early Investor</a>
+    <a href="#waitlist" class="btn btn-primary"><i class="fa-solid fa-bell"></i> Join the Waitlist</a>
+    <a href="#investors" class="btn btn-ghost"><i class="fa-solid fa-chart-line"></i> Become an Early Investor</a>
   </div>
 </section>
 
@@ -313,12 +331,12 @@
     </div>
 
     <div class="grid">
-      <div class="card anim"><div class="card-icon" style="background:rgba(0,240,255,.1);color:var(--cyan)">📈</div><h3>Explosive Sales Growth</h3><p>Our Salesman Agent identifies buying signals, crafts persuasive content, and converts cold audiences into paying customers — relentlessly, around the clock.</p></div>
-      <div class="card anim delay-1"><div class="card-icon" style="background:rgba(16,185,129,.1);color:var(--green)">🌍</div><h3>Massive Brand Awareness</h3><p>Build your brand presence across Facebook, Instagram, TikTok, LinkedIn, and X with culturally resonant, platform-native content — at scale.</p></div>
-      <div class="card anim delay-2"><div class="card-icon" style="background:rgba(245,158,11,.1);color:var(--amber)">🎯</div><h3>High-Quality Lead Generation</h3><p>The Lead Agent pinpoints your ideal audience using real-time trend intelligence, then warms them up with precision messaging that converts.</p></div>
-      <div class="card anim delay-3"><div class="card-icon" style="background:rgba(124,58,237,.1);color:var(--purple)">⚡</div><h3>Instant Product Launches</h3><p>Launching a new product or brand? AdRoom builds your full launch strategy, content calendar, and execution plan — in minutes.</p></div>
-      <div class="card anim delay-4"><div class="card-icon" style="background:rgba(239,68,68,.1);color:var(--red)">🎁</div><h3>Promotions That Convert</h3><p>Time-sensitive, high-urgency campaigns crafted for maximum action and revenue. Goodbye generic discount posts.</p></div>
-      <div class="card anim delay-5"><div class="card-icon" style="background:rgba(249,115,22,.1);color:#F97316">🏆</div><h3>$15K Paid Ads — For Free</h3><p>What an agency would charge $10K–$15K/month in paid ads to deliver, AdRoom achieves 100% organically. Zero budget. Same — often better — results.</p></div>
+      <div class="card anim"><div class="card-icon" style="background:rgba(0,240,255,.1);color:var(--cyan)"><i class="fa-solid fa-chart-line"></i></div><h3>Explosive Sales Growth</h3><p>Our Salesman Agent identifies buying signals, crafts persuasive content, and converts cold audiences into paying customers — relentlessly, around the clock.</p></div>
+      <div class="card anim delay-1"><div class="card-icon" style="background:rgba(16,185,129,.1);color:var(--green)"><i class="fa-solid fa-globe"></i></div><h3>Massive Brand Awareness</h3><p>Build your brand presence across Facebook, Instagram, TikTok, LinkedIn, and X with culturally resonant, platform-native content — at scale.</p></div>
+      <div class="card anim delay-2"><div class="card-icon" style="background:rgba(245,158,11,.1);color:var(--amber)"><i class="fa-solid fa-bullseye"></i></div><h3>High-Quality Lead Generation</h3><p>The Lead Agent pinpoints your ideal audience using real-time trend intelligence, then warms them up with precision messaging that converts.</p></div>
+      <div class="card anim delay-3"><div class="card-icon" style="background:rgba(124,58,237,.1);color:var(--purple)"><i class="fa-solid fa-bolt"></i></div><h3>Instant Product Launches</h3><p>Launching a new product or brand? AdRoom builds your full launch strategy, content calendar, and execution plan — in minutes.</p></div>
+      <div class="card anim delay-4"><div class="card-icon" style="background:rgba(239,68,68,.1);color:var(--red)"><i class="fa-solid fa-gift"></i></div><h3>Promotions That Convert</h3><p>Time-sensitive, high-urgency campaigns crafted for maximum action and revenue. Goodbye generic discount posts.</p></div>
+      <div class="card anim delay-5"><div class="card-icon" style="background:rgba(249,115,22,.1);color:#F97316"><i class="fa-solid fa-trophy"></i></div><h3>$15K Paid Ads — For Free</h3><p>What an agency would charge $10K–$15K/month in paid ads to deliver, AdRoom achieves 100% organically. Zero budget. Same — often better — results.</p></div>
     </div>
   </div>
 </section>
@@ -378,7 +396,7 @@
         <div class="inv-stat anim delay-3"><div class="inv-stat-v">100×</div><div class="inv-stat-l">Exit Potential</div></div>
       </div>
 
-      <a href="investors.html" class="btn btn-amber anim delay-4">View Full Investment Terms →</a>
+      <a href="investors.html" class="btn btn-amber anim delay-4"><i class="fa-solid fa-file-contract"></i> View Full Investment Terms</a>
     </div>
   </div>
 </section>
@@ -392,7 +410,7 @@
       <p class="sec-sub anim delay-2" style="margin:0 auto">Get early access, launch-day perks, and exclusive updates as we count down to launch.</p>
       <form class="signup-form" onsubmit="handleSignup(event)">
         <input type="email" placeholder="you@yourcompany.com" required id="email-input" />
-        <button class="btn btn-primary" type="submit">Notify Me</button>
+        <button class="btn btn-primary" type="submit" id="signup-btn"><i class="fa-solid fa-bell"></i> Notify Me</button>
       </form>
       <div class="signup-msg" id="signup-msg"></div>
     </div>
@@ -443,14 +461,42 @@
   }, { threshold: 0.12, rootMargin: '0px 0px -50px 0px' });
   animEls.forEach(el => observer.observe(el));
 
-  // WAITLIST handler — replace with your own endpoint
-  function handleSignup(e){
+  // WAITLIST handler — sends email to save-email.php which appends it to whitelistusers.txt
+  async function handleSignup(e){
     e.preventDefault();
-    const email = document.getElementById('email-input').value;
+    const input = document.getElementById('email-input');
+    const btn = document.getElementById('signup-btn');
     const msg = document.getElementById('signup-msg');
-    msg.textContent = '✓ You\'re on the list, ' + email.split('@')[0] + '! We\'ll be in touch.';
-    document.getElementById('email-input').value = '';
-    setTimeout(() => msg.textContent = '', 6000);
+    const email = input.value.trim();
+    if (!email) return;
+
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Saving...';
+    msg.style.color = 'var(--cyan)';
+    msg.textContent = '';
+
+    try {
+      const formData = new FormData();
+      formData.append('email', email);
+      const res = await fetch('save-email.php', { method: 'POST', body: formData });
+      const data = await res.json();
+      if (data.ok) {
+        msg.textContent = data.duplicate
+          ? '✓ You are already on the waitlist — we will be in touch.'
+          : '✓ You are on the list, ' + email.split('@')[0] + '! Welcome aboard.';
+        input.value = '';
+      } else {
+        msg.style.color = '#EF4444';
+        msg.textContent = '✗ ' + (data.error || 'Could not save. Please try again.');
+      }
+    } catch (err) {
+      msg.style.color = '#EF4444';
+      msg.textContent = '✗ Network error. Please try again.';
+    } finally {
+      btn.disabled = false;
+      btn.innerHTML = '<i class="fa-solid fa-bell"></i> Notify Me';
+      setTimeout(() => { msg.textContent = ''; msg.style.color = 'var(--cyan)'; }, 7000);
+    }
   }
 </script>
 </body>
