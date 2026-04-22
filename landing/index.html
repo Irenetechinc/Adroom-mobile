@@ -13,6 +13,11 @@
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet" />
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" integrity="sha512-DTOQO9RWCH3ppGqcWaEA1BIZOC6xxalwEsw9c2QQeAIftl+Vegovlnee1c9QX4TctnWMn13TZye+giMm8e2LwA==" crossorigin="anonymous" referrerpolicy="no-referrer" />
 <link rel="icon" type="image/jpeg" href="assets/logo.jpg" />
+<link rel="shortcut icon" type="image/jpeg" href="assets/logo.jpg" />
+<link rel="apple-touch-icon" href="assets/logo.jpg" />
+<link rel="apple-touch-icon" sizes="180x180" href="assets/logo.jpg" />
+<meta name="msapplication-TileImage" content="assets/logo.jpg" />
+<meta name="msapplication-TileColor" content="#0B0F19" />
 <style>
   :root{
     --bg:#0B0F19; --bg-2:#0D1526; --card:#151B2B; --line:#1E293B;
@@ -76,18 +81,26 @@
     position:relative;overflow:hidden;
   }
   .hero-bg{
-    position:absolute;inset:0;z-index:0;
-    background-image:url('assets/hero-bg.jpg');
-    background-size:cover;background-position:center;
-    opacity:.28;
-    filter:blur(1px);
+    position:absolute;inset:0;z-index:0;overflow:hidden;
+    background:
+      radial-gradient(ellipse 60% 40% at 15% 20%, rgba(0,240,255,.32), transparent 55%),
+      radial-gradient(ellipse 55% 45% at 85% 25%, rgba(124,58,237,.28), transparent 55%),
+      radial-gradient(ellipse 70% 50% at 50% 100%, rgba(245,158,11,.18), transparent 55%),
+      linear-gradient(135deg,#0D1526 0%,#151B2B 50%,#0B0F19 100%);
     animation:heroPan 30s ease-in-out infinite alternate;
   }
-  .hero-bg::after{
+  .hero-bg::before{
     content:'';position:absolute;inset:0;
+    background-image:url('assets/hero-bg.jpg');
+    background-size:cover;background-position:center;
+    opacity:.45;mix-blend-mode:screen;
+  }
+  .hero-bg::after{
+    content:'';position:absolute;inset:0;z-index:1;
     background:
-      linear-gradient(180deg, rgba(11,15,25,.55) 0%, rgba(11,15,25,.85) 70%, var(--bg) 100%),
-      radial-gradient(ellipse 70% 50% at 50% 30%, rgba(0,240,255,.15), transparent 60%);
+      linear-gradient(180deg,rgba(11,15,25,.35) 0%,rgba(11,15,25,.7) 70%,var(--bg) 100%),
+      repeating-linear-gradient(0deg,rgba(0,240,255,.04) 0,rgba(0,240,255,.04) 1px,transparent 1px,transparent 60px),
+      repeating-linear-gradient(90deg,rgba(0,240,255,.04) 0,rgba(0,240,255,.04) 1px,transparent 1px,transparent 60px);
   }
   @keyframes heroPan{0%{transform:scale(1.05) translateX(0)}100%{transform:scale(1.15) translateX(-3%)}}
   .hero > *{position:relative;z-index:1}
