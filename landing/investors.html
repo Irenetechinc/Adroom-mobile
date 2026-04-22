@@ -1,0 +1,368 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<meta name="description" content="AdRoom AI — Early Investor Window. ₦1M minimum. ₦1/share. Same price as main pre-seed round. Capped at 2% of company." />
+<meta name="theme-color" content="#0B0F19" />
+<meta property="og:title" content="AdRoom AI — Early Investor Window" />
+<meta property="og:description" content="Get in at $5M valuation. Same price as main round. Capped at 2% of company." />
+<title>AdRoom AI — Early Investor Window</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet" />
+<style>
+  :root{
+    --bg:#0B0F19; --bg-2:#0D1526; --card:#151B2B; --line:#1E293B;
+    --txt:#FFFFFF; --txt-2:#CBD5E1; --txt-3:#94A3B8; --txt-4:#64748B;
+    --cyan:#00F0FF; --amber:#F59E0B; --amber-soft:rgba(245,158,11,.08); --amber-line:rgba(245,158,11,.25);
+    --green:#10B981;
+    --maxw:1200px;
+  }
+  *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+  html{scroll-behavior:smooth;-webkit-text-size-adjust:100%}
+  body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--txt);line-height:1.6;overflow-x:hidden;-webkit-font-smoothing:antialiased}
+  h1,h2,h3,h4{font-family:'Space Grotesk',sans-serif;line-height:1.15;font-weight:700}
+  a{color:inherit;text-decoration:none}
+
+  body::before{
+    content:'';position:fixed;inset:0;pointer-events:none;z-index:0;
+    background:
+      radial-gradient(ellipse 80% 50% at 20% 0%, rgba(245,158,11,.1), transparent 60%),
+      radial-gradient(ellipse 60% 40% at 80% 50%, rgba(0,240,255,.05), transparent 60%);
+  }
+
+  nav{position:fixed;top:0;left:0;right:0;z-index:50;backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);background:rgba(11,15,25,.7);border-bottom:1px solid rgba(245,158,11,.12);padding:14px 24px}
+  .nav-inner{max-width:var(--maxw);margin:0 auto;display:flex;align-items:center;justify-content:space-between;gap:20px}
+  .logo{display:flex;align-items:center;gap:10px;font-weight:800;font-size:18px;letter-spacing:-.5px}
+  .logo-dot{width:32px;height:32px;border-radius:9px;background:linear-gradient(135deg,var(--amber),#B97400);display:flex;align-items:center;justify-content:center;box-shadow:0 0 24px rgba(245,158,11,.4);font-family:'Space Grotesk',sans-serif;color:#1A0E00;font-weight:800;font-size:16px}
+  .nav-cta{background:var(--amber);color:#1A0E00;font-weight:700;font-size:13px;padding:9px 18px;border-radius:50px;transition:transform .2s, box-shadow .3s}
+  .nav-cta:hover{transform:translateY(-1px);box-shadow:0 8px 24px rgba(245,158,11,.35)}
+
+  section{position:relative;z-index:1;padding:80px 24px}
+  .container{max-width:var(--maxw);margin:0 auto}
+
+  .hero{min-height:90vh;display:flex;flex-direction:column;justify-content:center;align-items:center;text-align:center;padding-top:120px;padding-bottom:60px}
+  .badge{display:inline-flex;align-items:center;gap:8px;background:var(--amber-soft);border:1px solid var(--amber-line);color:var(--amber);padding:7px 14px;border-radius:50px;font-size:12px;font-weight:600;letter-spacing:.4px;margin-bottom:30px}
+  .live-dot{width:7px;height:7px;border-radius:4px;background:var(--amber);box-shadow:0 0 10px var(--amber);animation:pulse 2s ease-in-out infinite}
+  @keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.5;transform:scale(1.3)}}
+
+  .hero h1{font-size:clamp(34px,6.5vw,72px);font-weight:800;letter-spacing:-2px;background:linear-gradient(135deg,#fff 0%,var(--amber) 50%,#fff 100%);-webkit-background-clip:text;background-clip:text;color:transparent;margin-bottom:24px;max-width:900px}
+  .hero p.lead{font-size:clamp(16px,2vw,20px);color:var(--txt-3);max-width:720px;margin-bottom:48px;line-height:1.7}
+
+  .btn{display:inline-flex;align-items:center;gap:8px;padding:14px 28px;border-radius:50px;font-weight:700;font-size:14px;transition:all .25s ease;cursor:pointer;border:none}
+  .btn-amber{background:var(--amber);color:#1A0E00}
+  .btn-amber:hover{transform:translateY(-2px);box-shadow:0 12px 30px rgba(245,158,11,.4)}
+  .btn-ghost{background:transparent;color:var(--txt);border:1px solid var(--line)}
+  .btn-ghost:hover{border-color:var(--amber);color:var(--amber)}
+
+  .eyebrow{display:inline-block;color:var(--amber);font-size:12px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;margin-bottom:12px}
+  .sec-head{font-size:clamp(28px,4.5vw,44px);font-weight:800;letter-spacing:-1px;margin-bottom:18px}
+  .sec-sub{font-size:clamp(15px,1.5vw,17px);color:var(--txt-3);max-width:680px;line-height:1.7}
+  .sec-head-wrap{text-align:center;max-width:780px;margin:0 auto 60px}
+  .sec-head-wrap .sec-sub{margin:0 auto}
+
+  /* Summary cards */
+  .summary-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:16px}
+  .sum-card{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:24px;transition:transform .3s,border-color .3s}
+  .sum-card:hover{transform:translateY(-3px);border-color:var(--amber-line)}
+  .sum-card .lab{color:var(--txt-4);font-size:11px;font-weight:600;letter-spacing:1px;text-transform:uppercase;margin-bottom:8px}
+  .sum-card .val{font-family:'Space Grotesk',sans-serif;font-size:24px;font-weight:700;color:var(--amber);margin-bottom:6px;line-height:1.2}
+  .sum-card .sub{color:var(--txt-3);font-size:12px;line-height:1.5}
+
+  /* Tables */
+  .table-wrap{background:var(--card);border:1px solid var(--line);border-radius:20px;padding:8px;overflow-x:auto}
+  table{width:100%;border-collapse:collapse;min-width:600px}
+  th,td{padding:14px 16px;text-align:left;font-size:13px;border-bottom:1px solid rgba(255,255,255,.04)}
+  th{color:var(--amber);font-weight:700;font-size:11px;letter-spacing:.8px;text-transform:uppercase;background:rgba(245,158,11,.04)}
+  td{color:var(--txt-2)}
+  tr:last-child td{border-bottom:none}
+  tr:hover td{background:rgba(245,158,11,.03)}
+  td.highlight{color:var(--amber);font-weight:700;font-family:'Space Grotesk',sans-serif}
+
+  /* Why invest */
+  .reasons{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:18px}
+  .reason{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:26px;transition:transform .3s,border-color .3s}
+  .reason:hover{transform:translateY(-3px);border-color:var(--amber-line)}
+  .reason-num{display:inline-block;width:36px;height:36px;border-radius:10px;background:var(--amber-soft);color:var(--amber);font-weight:700;font-family:'Space Grotesk',sans-serif;line-height:36px;text-align:center;font-size:15px;margin-bottom:14px}
+  .reason h3{font-size:17px;margin-bottom:8px}
+  .reason p{color:var(--txt-3);font-size:13.5px;line-height:1.65}
+
+  /* Growth bars */
+  .growth{display:flex;flex-direction:column;gap:32px}
+  .growth-block{background:var(--card);border:1px solid var(--line);border-radius:20px;padding:28px}
+  .growth-block h3{font-size:18px;color:var(--amber);margin-bottom:18px}
+  .bar-row{display:grid;grid-template-columns:130px 1fr 130px;gap:14px;align-items:center;margin-bottom:12px;font-size:13px}
+  .bar-lab{color:var(--txt-3);font-size:12px}
+  .bar-track{height:18px;background:rgba(255,255,255,.04);border-radius:9px;overflow:hidden;position:relative}
+  .bar-fill{height:100%;background:linear-gradient(90deg,var(--amber),#FCD34D);border-radius:9px;transform-origin:left;transform:scaleX(0);transition:transform 1.4s cubic-bezier(.2,.7,.2,1)}
+  .bar-row.in .bar-fill{transform:scaleX(var(--w,1))}
+  .bar-val{color:var(--amber);font-weight:700;font-family:'Space Grotesk',sans-serif;text-align:right;font-size:13px}
+
+  /* FAQ */
+  .faq{display:flex;flex-direction:column;gap:10px}
+  .faq-item{background:var(--card);border:1px solid var(--line);border-radius:14px;overflow:hidden}
+  .faq-q{padding:18px 22px;cursor:pointer;font-weight:600;font-size:14.5px;display:flex;justify-content:space-between;align-items:center;gap:14px;user-select:none}
+  .faq-q::after{content:'+';color:var(--amber);font-size:24px;font-weight:300;transition:transform .25s;line-height:1}
+  .faq-item.open .faq-q::after{transform:rotate(45deg)}
+  .faq-a{max-height:0;overflow:hidden;transition:max-height .35s ease;padding:0 22px}
+  .faq-item.open .faq-a{max-height:300px;padding:0 22px 18px}
+  .faq-a p{color:var(--txt-3);font-size:13.5px;line-height:1.7}
+
+  /* CTA */
+  .final-cta{background:linear-gradient(135deg,var(--amber-soft),rgba(245,158,11,.02));border:1px solid var(--amber-line);border-radius:28px;padding:60px 40px;text-align:center;position:relative;overflow:hidden}
+  .final-cta::before{content:'';position:absolute;inset:0;background:radial-gradient(ellipse 50% 50% at 50% 0%,rgba(245,158,11,.18),transparent 70%)}
+  .final-cta > *{position:relative;z-index:1}
+  .final-cta h2{font-size:clamp(28px,4vw,42px);margin-bottom:16px;background:linear-gradient(135deg,#fff,var(--amber));-webkit-background-clip:text;background-clip:text;color:transparent}
+  .final-cta p{color:var(--txt-2);max-width:620px;margin:0 auto 28px;font-size:15px;line-height:1.7}
+  .final-ctas{display:flex;gap:14px;flex-wrap:wrap;justify-content:center}
+
+  /* Footer */
+  footer{border-top:1px solid var(--line);padding:40px 24px;text-align:center;color:var(--txt-4);font-size:13px;position:relative;z-index:1}
+  footer .ftr-links{display:flex;gap:24px;justify-content:center;margin-bottom:14px;flex-wrap:wrap}
+  footer .ftr-links a:hover{color:var(--amber)}
+  .disclaim{font-size:11px;color:var(--txt-4);max-width:760px;margin:18px auto 0;line-height:1.6;opacity:.7}
+
+  /* Animations */
+  .anim{opacity:0;transform:translateY(40px);transition:opacity .8s ease, transform .8s ease}
+  .anim.in{opacity:1;transform:translateY(0)}
+  .anim-l{opacity:0;transform:translateX(-40px);transition:opacity .8s ease, transform .8s ease}
+  .anim-l.in{opacity:1;transform:translateX(0)}
+  .anim-scale{opacity:0;transform:scale(.92);transition:opacity .8s ease, transform .8s ease}
+  .anim-scale.in{opacity:1;transform:scale(1)}
+  .delay-1{transition-delay:.08s}
+  .delay-2{transition-delay:.16s}
+  .delay-3{transition-delay:.24s}
+  .delay-4{transition-delay:.32s}
+  .delay-5{transition-delay:.4s}
+
+  @media (max-width:768px){
+    section{padding:60px 20px}
+    .bar-row{grid-template-columns:90px 1fr 100px;gap:8px;font-size:11px}
+    .bar-lab,.bar-val{font-size:11px}
+    .final-cta{padding:40px 24px}
+    .nav-cta{display:none}
+  }
+</style>
+</head>
+<body>
+
+<nav>
+  <div class="nav-inner">
+    <a href="index.html" class="logo"><span class="logo-dot">A</span> AdRoom AI</a>
+    <a href="#contact" class="nav-cta">Become an Investor</a>
+  </div>
+</nav>
+
+<!-- HERO -->
+<section class="hero">
+  <span class="badge anim"><span class="live-dot"></span> EARLY INVESTOR WINDOW · OPEN NOW</span>
+  <h1 class="anim delay-1">Own a Piece of the Future of Marketing.</h1>
+  <p class="lead anim delay-2">A rare opportunity to invest in AdRoom AI at the same price as our main pre-seed round — with a lower minimum. Capped at 2% of the company. Once it's filled, the window closes forever.</p>
+
+  <div style="display:flex;gap:14px;flex-wrap:wrap;justify-content:center" class="anim delay-3">
+    <a href="#contact" class="btn btn-amber">Reserve Your Allocation →</a>
+    <a href="#terms" class="btn btn-ghost">View Full Terms</a>
+  </div>
+</section>
+
+<!-- INVESTMENT SUMMARY -->
+<section>
+  <div class="container">
+    <div class="sec-head-wrap">
+      <span class="eyebrow anim">Investment Summary</span>
+      <h2 class="sec-head anim delay-1">The Numbers at a Glance</h2>
+    </div>
+    <div class="summary-grid">
+      <div class="sum-card anim"><div class="lab">Company Valuation</div><div class="val">$5M USD</div><div class="sub">Pre-seed valuation (≈ ₦7.75B at ₦1,550/$)</div></div>
+      <div class="sum-card anim delay-1"><div class="lab">Main Pre-Seed Target</div><div class="val">₦1,000,000,000</div><div class="sub">For 10% equity</div></div>
+      <div class="sum-card anim delay-2"><div class="lab">Share Price</div><div class="val">₦1 / share</div><div class="sub">Same price as main round</div></div>
+      <div class="sum-card anim delay-3"><div class="lab">Early Investor Minimum</div><div class="val">₦1,000,000</div><div class="sub">Lowest entry point</div></div>
+      <div class="sum-card anim delay-4"><div class="lab">Maximum Total Pool</div><div class="val">₦155,000,000</div><div class="sub">2% of company — hard cap</div></div>
+      <div class="sum-card anim delay-5"><div class="lab">Conversion Trigger</div><div class="val">6–12 months</div><div class="sub">When main pre-seed round closes</div></div>
+    </div>
+  </div>
+</section>
+
+<!-- WHY -->
+<section>
+  <div class="container">
+    <div class="sec-head-wrap">
+      <span class="eyebrow anim">Why Invest Now</span>
+      <h2 class="sec-head anim delay-1">Five Reasons Believers Are Getting In Today</h2>
+    </div>
+    <div class="reasons">
+      <div class="reason anim"><div class="reason-num">1</div><h3>Same Price as Main Round</h3><p>Get in at the exact ₦1/share price as large institutional investors. No premium. No discount. Same upside.</p></div>
+      <div class="reason anim delay-1"><div class="reason-num">2</div><h3>Lower Minimum Entry</h3><p>The main round minimum may be ₦5M+. This early window opens the door at just ₦1M.</p></div>
+      <div class="reason anim delay-2"><div class="reason-num">3</div><h3>First Access</h3><p>You invest before the main round opens to the public — secure your position now.</p></div>
+      <div class="reason anim delay-3"><div class="reason-num">4</div><h3>Founding Believer Status</h3><p>You become a founding supporter of AdRoom AI — recognised in our investor archive.</p></div>
+      <div class="reason anim delay-4"><div class="reason-num">5</div><h3>Future Round Priority</h3><p>Early investors get priority allocation and preferential terms in seed and Series A rounds.</p></div>
+    </div>
+  </div>
+</section>
+
+<!-- EQUITY TABLE -->
+<section>
+  <div class="container">
+    <div class="sec-head-wrap">
+      <span class="eyebrow anim">Investor Equity Comparison</span>
+      <h2 class="sec-head anim delay-1">What Your Investment Buys You</h2>
+      <p class="sec-sub anim delay-2">Every ₦1 = 1 share. Your equity is locked at conversion when the main pre-seed round closes.</p>
+    </div>
+    <div class="table-wrap anim-scale">
+      <table>
+        <thead>
+          <tr><th>You Invest</th><th>Shares Received</th><th>% of Company</th><th>Value at Main Round (₦)</th><th>USD Value</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>₦1,000,000</td><td>1,000,000</td><td>0.0129%</td><td class="highlight">₦1,000,000</td><td>$645</td></tr>
+          <tr><td>₦5,000,000</td><td>5,000,000</td><td>0.0645%</td><td class="highlight">₦5,000,000</td><td>$3,225</td></tr>
+          <tr><td>₦10,000,000</td><td>10,000,000</td><td>0.129%</td><td class="highlight">₦10,000,000</td><td>$6,450</td></tr>
+          <tr><td>₦25,000,000</td><td>25,000,000</td><td>0.322%</td><td class="highlight">₦25,000,000</td><td>$16,125</td></tr>
+          <tr><td>₦50,000,000</td><td>50,000,000</td><td>0.645%</td><td class="highlight">₦50,000,000</td><td>$32,250</td></tr>
+          <tr><td>₦100,000,000</td><td>100,000,000</td><td>1.29%</td><td class="highlight">₦100,000,000</td><td>$64,500</td></tr>
+          <tr><td>₦155,000,000 (Max)</td><td>155,000,000</td><td>2.00%</td><td class="highlight">₦155,000,000</td><td>$100,000</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="sec-sub anim" style="text-align:center;margin:20px auto 0;max-width:680px;font-size:13px">At conversion, your share value matches your investment. The real upside compounds AFTER the pre-seed round, as the company grows.</p>
+  </div>
+</section>
+
+<!-- GROWTH PROJECTIONS -->
+<section>
+  <div class="container">
+    <div class="sec-head-wrap">
+      <span class="eyebrow anim">Projected Future Value</span>
+      <h2 class="sec-head anim delay-1">If AdRoom AI Grows Like Comparable Platforms…</h2>
+      <p class="sec-sub anim delay-2">Visualised at three sample investment levels. Bars are illustrative scale.</p>
+    </div>
+
+    <div class="growth">
+      <div class="growth-block anim">
+        <h3>Your Investment: ₦1,000,000</h3>
+        <div class="bar-row" style="--w:0.01"><div class="bar-lab">Today</div><div class="bar-track"><div class="bar-fill"></div></div><div class="bar-val">₦1M</div></div>
+        <div class="bar-row" style="--w:0.01"><div class="bar-lab">Pre-Seed Close</div><div class="bar-track"><div class="bar-fill"></div></div><div class="bar-val">₦1M</div></div>
+        <div class="bar-row" style="--w:0.03"><div class="bar-lab">Seed (3×)</div><div class="bar-track"><div class="bar-fill"></div></div><div class="bar-val">₦3M</div></div>
+        <div class="bar-row" style="--w:0.10"><div class="bar-lab">Series A (10×)</div><div class="bar-track"><div class="bar-fill"></div></div><div class="bar-val">₦10M</div></div>
+        <div class="bar-row" style="--w:0.30"><div class="bar-lab">Series B (30×)</div><div class="bar-track"><div class="bar-fill"></div></div><div class="bar-val">₦30M</div></div>
+        <div class="bar-row" style="--w:1"><div class="bar-lab">Exit / IPO (100×)</div><div class="bar-track"><div class="bar-fill"></div></div><div class="bar-val">₦100M</div></div>
+      </div>
+
+      <div class="growth-block anim delay-1">
+        <h3>Your Investment: ₦10,000,000</h3>
+        <div class="bar-row" style="--w:0.01"><div class="bar-lab">Today</div><div class="bar-track"><div class="bar-fill"></div></div><div class="bar-val">₦10M</div></div>
+        <div class="bar-row" style="--w:0.01"><div class="bar-lab">Pre-Seed Close</div><div class="bar-track"><div class="bar-fill"></div></div><div class="bar-val">₦10M</div></div>
+        <div class="bar-row" style="--w:0.03"><div class="bar-lab">Seed (3×)</div><div class="bar-track"><div class="bar-fill"></div></div><div class="bar-val">₦30M</div></div>
+        <div class="bar-row" style="--w:0.10"><div class="bar-lab">Series A (10×)</div><div class="bar-track"><div class="bar-fill"></div></div><div class="bar-val">₦100M</div></div>
+        <div class="bar-row" style="--w:0.30"><div class="bar-lab">Series B (30×)</div><div class="bar-track"><div class="bar-fill"></div></div><div class="bar-val">₦300M</div></div>
+        <div class="bar-row" style="--w:1"><div class="bar-lab">Exit / IPO (100×)</div><div class="bar-track"><div class="bar-fill"></div></div><div class="bar-val">₦1B</div></div>
+      </div>
+
+      <div class="growth-block anim delay-2">
+        <h3>Your Investment: ₦50,000,000</h3>
+        <div class="bar-row" style="--w:0.01"><div class="bar-lab">Today</div><div class="bar-track"><div class="bar-fill"></div></div><div class="bar-val">₦50M</div></div>
+        <div class="bar-row" style="--w:0.01"><div class="bar-lab">Pre-Seed Close</div><div class="bar-track"><div class="bar-fill"></div></div><div class="bar-val">₦50M</div></div>
+        <div class="bar-row" style="--w:0.03"><div class="bar-lab">Seed (3×)</div><div class="bar-track"><div class="bar-fill"></div></div><div class="bar-val">₦150M</div></div>
+        <div class="bar-row" style="--w:0.10"><div class="bar-lab">Series A (10×)</div><div class="bar-track"><div class="bar-fill"></div></div><div class="bar-val">₦500M</div></div>
+        <div class="bar-row" style="--w:0.30"><div class="bar-lab">Series B (30×)</div><div class="bar-track"><div class="bar-fill"></div></div><div class="bar-val">₦1.5B</div></div>
+        <div class="bar-row" style="--w:1"><div class="bar-lab">Exit / IPO (100×)</div><div class="bar-track"><div class="bar-fill"></div></div><div class="bar-val">₦5B</div></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- TERM SHEET -->
+<section id="terms">
+  <div class="container">
+    <div class="sec-head-wrap">
+      <span class="eyebrow anim">Convertible Note Terms</span>
+      <h2 class="sec-head anim delay-1">Key Terms — Plain & Simple</h2>
+    </div>
+    <div class="table-wrap anim-scale">
+      <table>
+        <thead><tr><th>Term</th><th>Detail</th></tr></thead>
+        <tbody>
+          <tr><td>Minimum Investment</td><td class="highlight">₦1,000,000</td></tr>
+          <tr><td>Maximum per Investor</td><td class="highlight">₦155,000,000 (2% cap)</td></tr>
+          <tr><td>Share Price Today</td><td class="highlight">₦1 per share</td></tr>
+          <tr><td>What You Receive</td><td>Convertible Note / SAFE Agreement</td></tr>
+          <tr><td>Conversion Trigger</td><td>Main pre-seed round closes (6–12 months)</td></tr>
+          <tr><td>Conversion Price</td><td>Fixed at ₦1 per share (same as main round)</td></tr>
+          <tr><td>Your Equity at Conversion</td><td>(Your ₦) ÷ ₦1 = Number of shares</td></tr>
+          <tr><td>Refund Protection</td><td>Full refund if main round doesn't close in 18 months</td></tr>
+          <tr><td>Total Pool Maximum</td><td class="highlight">₦155,000,000 (2% of company)</td></tr>
+          <tr><td>Governing Law</td><td>Laws of the Federal Republic of Nigeria</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+<!-- FAQ -->
+<section>
+  <div class="container">
+    <div class="sec-head-wrap">
+      <span class="eyebrow anim">Frequently Asked</span>
+      <h2 class="sec-head anim delay-1">Investor FAQ</h2>
+    </div>
+    <div class="faq" style="max-width:820px;margin:0 auto">
+      <div class="faq-item anim"><div class="faq-q">Why the same price as the main round?</div><div class="faq-a"><p>You're getting early access. You're not getting a discount — you're getting the opportunity to invest before the round opens to everyone, with a lower minimum.</p></div></div>
+      <div class="faq-item anim delay-1"><div class="faq-q">What if the main round valuation goes higher?</div><div class="faq-a"><p>We are committed to ₦1B for 10% at the $5M valuation. If terms change, early investors will receive the same or better terms — never worse.</p></div></div>
+      <div class="faq-item anim delay-2"><div class="faq-q">What if the main round never happens?</div><div class="faq-a"><p>You receive a full refund of your investment after 18 months. Your capital is protected.</p></div></div>
+      <div class="faq-item anim delay-3"><div class="faq-q">How do I know my investment is safe?</div><div class="faq-a"><p>We provide a formal convertible note agreement, monthly investor updates, and full transparency. Patents pending. Product complete and live.</p></div></div>
+      <div class="faq-item anim delay-4"><div class="faq-q">Can I invest more than ₦155 million?</div><div class="faq-a"><p>No. ₦155M is the maximum any single investor can put in, since that already represents 2% of the entire company — the hard cap for the early window.</p></div></div>
+      <div class="faq-item anim delay-5"><div class="faq-q">When do I receive my shares?</div><div class="faq-a"><p>Shares are issued automatically when the main pre-seed round closes — projected in 6 to 12 months from today.</p></div></div>
+      <div class="faq-item anim"><div class="faq-q">What is the absolute minimum?</div><div class="faq-a"><p>₦1,000,000 — One Million Naira. This is the lowest entry point we offer.</p></div></div>
+    </div>
+  </div>
+</section>
+
+<!-- FINAL CTA -->
+<section id="contact">
+  <div class="container">
+    <div class="final-cta">
+      <span class="eyebrow anim">Reserve Your Allocation</span>
+      <h2 class="anim delay-1">The Window Closes at ₦155,000,000.</h2>
+      <p class="anim delay-2">Once early investors fill the 2% pool, this opportunity is gone forever. Reach out today to receive the full term sheet, convertible note agreement, and next steps.</p>
+      <div class="final-ctas anim delay-3">
+        <a href="mailto:invest@adroomai.com?subject=Early%20Investor%20Inquiry" class="btn btn-amber">📧 Email invest@adroomai.com</a>
+        <a href="https://wa.me/2348000000000" class="btn btn-ghost">💬 WhatsApp Us</a>
+      </div>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="ftr-links">
+    <a href="index.html">Home</a>
+    <a href="#terms">Terms</a>
+    <a href="#contact">Contact</a>
+    <a href="mailto:invest@adroomai.com">Investor Relations</a>
+  </div>
+  <div>© <span id="yr"></span> AdRoom AI · Building the future of autonomous marketing.</div>
+  <div class="disclaim">DISCLAIMER: This material is for informational purposes only and does not constitute an offer to sell or a solicitation to buy securities. Investments in early-stage companies carry substantial risk, including the loss of all capital invested. Projections are illustrative and not guarantees of future performance. Please consult a qualified financial advisor before investing. Convertible note agreement subject to formal documentation and applicable law.</div>
+</footer>
+
+<script>
+  document.getElementById('yr').textContent = new Date().getFullYear();
+
+  // Re-triggering scroll animations
+  const animEls = document.querySelectorAll('.anim, .anim-l, .anim-r, .anim-scale, .bar-row');
+  const observer = new IntersectionObserver((entries) => {
+    entries.forEach(entry => {
+      if (entry.isIntersecting) entry.target.classList.add('in');
+      else entry.target.classList.remove('in');
+    });
+  }, { threshold: 0.12, rootMargin: '0px 0px -50px 0px' });
+  animEls.forEach(el => observer.observe(el));
+
+  // FAQ toggle
+  document.querySelectorAll('.faq-item').forEach(item => {
+    item.querySelector('.faq-q').addEventListener('click', () => {
+      item.classList.toggle('open');
+    });
+  });
+</script>
+</body>
+</html>
