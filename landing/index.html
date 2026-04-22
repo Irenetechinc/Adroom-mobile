@@ -1,0 +1,457 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<meta name="description" content="AdRoom AI — The world's first fully autonomous AI marketing workforce. Launching soon. Join the early investor window." />
+<meta name="theme-color" content="#0B0F19" />
+<meta property="og:title" content="AdRoom AI — Launching Soon" />
+<meta property="og:description" content="The autonomous marketing workforce that replaces agencies, ad budgets, and guesswork." />
+<title>AdRoom AI — Launching Soon</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet" />
+<style>
+  :root{
+    --bg:#0B0F19; --bg-2:#0D1526; --card:#151B2B; --line:#1E293B;
+    --txt:#FFFFFF; --txt-2:#CBD5E1; --txt-3:#94A3B8; --txt-4:#64748B;
+    --cyan:#00F0FF; --cyan-soft:rgba(0,240,255,.08); --cyan-line:rgba(0,240,255,.18);
+    --amber:#F59E0B; --green:#10B981; --purple:#7C3AED; --red:#EF4444;
+    --maxw:1200px;
+  }
+  *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+  html{scroll-behavior:smooth;-webkit-text-size-adjust:100%}
+  body{
+    font-family:'Inter',system-ui,-apple-system,sans-serif;
+    background:var(--bg);color:var(--txt);line-height:1.6;
+    overflow-x:hidden;-webkit-font-smoothing:antialiased;
+  }
+  h1,h2,h3,h4{font-family:'Space Grotesk',sans-serif;line-height:1.15;font-weight:700}
+  a{color:inherit;text-decoration:none}
+  img{max-width:100%;display:block}
+
+  /* Background ambient */
+  body::before{
+    content:'';position:fixed;inset:0;pointer-events:none;z-index:0;
+    background:
+      radial-gradient(ellipse 80% 50% at 20% 0%, rgba(0,240,255,.08), transparent 60%),
+      radial-gradient(ellipse 60% 40% at 80% 50%, rgba(124,58,237,.06), transparent 60%),
+      radial-gradient(ellipse 60% 40% at 30% 100%, rgba(245,158,11,.04), transparent 60%);
+  }
+
+  /* Nav */
+  nav{
+    position:fixed;top:0;left:0;right:0;z-index:50;
+    backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);
+    background:rgba(11,15,25,.7);
+    border-bottom:1px solid rgba(0,240,255,.08);
+    padding:14px 24px;
+  }
+  .nav-inner{
+    max-width:var(--maxw);margin:0 auto;
+    display:flex;align-items:center;justify-content:space-between;gap:20px;
+  }
+  .logo{display:flex;align-items:center;gap:10px;font-weight:800;font-size:18px;letter-spacing:-.5px}
+  .logo-dot{
+    width:32px;height:32px;border-radius:9px;
+    background:linear-gradient(135deg,var(--cyan),#0099AA);
+    display:flex;align-items:center;justify-content:center;
+    box-shadow:0 0 24px rgba(0,240,255,.4);
+    font-family:'Space Grotesk',sans-serif;color:#001518;font-weight:800;font-size:16px;
+  }
+  .nav-cta{
+    background:var(--cyan);color:#001518;font-weight:700;font-size:13px;
+    padding:9px 18px;border-radius:50px;
+    transition:transform .2s, box-shadow .3s;
+  }
+  .nav-cta:hover{transform:translateY(-1px);box-shadow:0 8px 24px rgba(0,240,255,.35)}
+
+  section{position:relative;z-index:1;padding:80px 24px}
+  .container{max-width:var(--maxw);margin:0 auto}
+
+  /* Hero */
+  .hero{
+    min-height:100vh;display:flex;flex-direction:column;justify-content:center;align-items:center;
+    text-align:center;padding-top:120px;padding-bottom:60px;
+  }
+  .badge{
+    display:inline-flex;align-items:center;gap:8px;
+    background:var(--cyan-soft);border:1px solid var(--cyan-line);
+    color:var(--cyan);padding:7px 14px;border-radius:50px;
+    font-size:12px;font-weight:600;letter-spacing:.4px;
+    margin-bottom:30px;
+  }
+  .live-dot{
+    width:7px;height:7px;border-radius:4px;background:var(--cyan);
+    box-shadow:0 0 10px var(--cyan);animation:pulse 2s ease-in-out infinite;
+  }
+  @keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.5;transform:scale(1.3)}}
+
+  .hero h1{
+    font-size:clamp(36px,7vw,82px);font-weight:800;letter-spacing:-2px;
+    background:linear-gradient(135deg,#fff 0%,var(--cyan) 50%,#fff 100%);
+    -webkit-background-clip:text;background-clip:text;color:transparent;
+    margin-bottom:24px;max-width:1000px;
+  }
+  .hero p.lead{
+    font-size:clamp(16px,2vw,20px);color:var(--txt-3);max-width:720px;
+    margin-bottom:48px;line-height:1.7;
+  }
+
+  /* Countdown */
+  .countdown{display:flex;gap:16px;flex-wrap:wrap;justify-content:center;margin-bottom:48px}
+  .cd-box{
+    background:var(--card);border:1px solid var(--line);border-radius:16px;
+    padding:18px 24px;min-width:90px;text-align:center;
+    transition:border-color .3s,transform .3s;
+  }
+  .cd-box:hover{border-color:var(--cyan-line);transform:translateY(-2px)}
+  .cd-num{
+    font-family:'Space Grotesk',sans-serif;font-size:clamp(28px,5vw,44px);font-weight:700;
+    color:var(--cyan);line-height:1;margin-bottom:6px;
+    text-shadow:0 0 30px rgba(0,240,255,.3);
+  }
+  .cd-lab{font-size:11px;color:var(--txt-4);text-transform:uppercase;letter-spacing:1.5px;font-weight:600}
+
+  .hero-ctas{display:flex;gap:14px;flex-wrap:wrap;justify-content:center}
+  .btn{
+    display:inline-flex;align-items:center;gap:8px;
+    padding:14px 28px;border-radius:50px;font-weight:700;font-size:14px;
+    transition:all .25s ease;cursor:pointer;border:none;
+  }
+  .btn-primary{background:var(--cyan);color:#001518}
+  .btn-primary:hover{transform:translateY(-2px);box-shadow:0 12px 30px rgba(0,240,255,.4)}
+  .btn-ghost{background:transparent;color:var(--txt);border:1px solid var(--line)}
+  .btn-ghost:hover{border-color:var(--cyan);color:var(--cyan)}
+
+  /* Section heads */
+  .eyebrow{
+    display:inline-block;color:var(--cyan);font-size:12px;font-weight:700;
+    letter-spacing:1.5px;text-transform:uppercase;margin-bottom:12px;
+  }
+  .sec-head{
+    font-size:clamp(28px,4.5vw,46px);font-weight:800;letter-spacing:-1px;margin-bottom:18px;
+  }
+  .sec-sub{font-size:clamp(15px,1.5vw,17px);color:var(--txt-3);max-width:680px;line-height:1.7}
+  .sec-head-wrap{text-align:center;max-width:780px;margin:0 auto 60px}
+  .sec-head-wrap .sec-sub{margin:0 auto}
+
+  /* Stats strip */
+  .stats{
+    display:grid;grid-template-columns:repeat(4,1fr);
+    background:var(--card);border:1px solid var(--line);border-radius:24px;
+    overflow:hidden;
+  }
+  .stat{padding:32px 16px;text-align:center;border-right:1px solid var(--line)}
+  .stat:last-child{border-right:none}
+  .stat-v{font-family:'Space Grotesk',sans-serif;font-size:clamp(28px,4vw,42px);font-weight:700;color:var(--cyan);margin-bottom:8px}
+  .stat-l{color:var(--txt-2);font-size:13px;font-weight:600;margin-bottom:4px}
+  .stat-s{color:var(--txt-4);font-size:11px}
+
+  /* Cards grid */
+  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:20px}
+  .card{
+    background:var(--card);border:1px solid var(--line);border-radius:20px;
+    padding:32px;transition:transform .3s, border-color .3s, box-shadow .3s;
+    position:relative;overflow:hidden;
+  }
+  .card::before{
+    content:'';position:absolute;top:-1px;left:-1px;right:-1px;height:2px;
+    background:linear-gradient(90deg,transparent,var(--cyan),transparent);
+    opacity:0;transition:opacity .3s;
+  }
+  .card:hover{transform:translateY(-4px);border-color:var(--cyan-line);box-shadow:0 20px 40px rgba(0,240,255,.06)}
+  .card:hover::before{opacity:1}
+  .card-icon{
+    width:48px;height:48px;border-radius:12px;
+    display:flex;align-items:center;justify-content:center;
+    margin-bottom:18px;font-size:22px;
+  }
+  .card h3{font-size:19px;margin-bottom:10px}
+  .card p{color:var(--txt-3);font-size:14px;line-height:1.65}
+
+  /* Why us comparison */
+  .vs-grid{display:grid;grid-template-columns:1fr 1fr;gap:20px}
+  .vs-col{background:var(--card);border:1px solid var(--line);border-radius:20px;padding:30px}
+  .vs-col.them{opacity:.7}
+  .vs-col h3{font-size:18px;margin-bottom:18px;display:flex;align-items:center;gap:10px}
+  .vs-col.us h3{color:var(--cyan)}
+  .vs-col.them h3{color:var(--txt-3)}
+  .vs-col ul{list-style:none}
+  .vs-col li{padding:11px 0;border-bottom:1px solid rgba(255,255,255,.04);display:flex;gap:10px;align-items:flex-start;font-size:14px;color:var(--txt-2)}
+  .vs-col li:last-child{border-bottom:none}
+  .vs-col li::before{flex-shrink:0;font-weight:700;width:18px}
+  .vs-col.us li::before{content:'✓';color:var(--cyan)}
+  .vs-col.them li::before{content:'✗';color:var(--red)}
+
+  /* Investor banner */
+  .inv-banner{
+    background:linear-gradient(135deg,rgba(245,158,11,.08),rgba(245,158,11,.02));
+    border:1px solid rgba(245,158,11,.25);border-radius:28px;padding:48px;
+    text-align:center;position:relative;overflow:hidden;
+  }
+  .inv-banner::before{
+    content:'';position:absolute;inset:0;
+    background:radial-gradient(ellipse 50% 50% at 50% 0%,rgba(245,158,11,.15),transparent 70%);
+  }
+  .inv-banner > *{position:relative;z-index:1}
+  .inv-banner .eyebrow{color:var(--amber)}
+  .inv-banner h2{font-size:clamp(26px,4vw,40px);margin-bottom:16px;background:linear-gradient(135deg,#fff,#F59E0B);-webkit-background-clip:text;background-clip:text;color:transparent}
+  .inv-banner p{color:var(--txt-2);max-width:640px;margin:0 auto 28px;font-size:15px;line-height:1.7}
+  .inv-stats{display:flex;gap:30px;justify-content:center;flex-wrap:wrap;margin-bottom:32px}
+  .inv-stat{text-align:center}
+  .inv-stat-v{font-family:'Space Grotesk',sans-serif;font-size:24px;font-weight:700;color:var(--amber);margin-bottom:4px}
+  .inv-stat-l{font-size:11px;color:var(--txt-4);text-transform:uppercase;letter-spacing:1px}
+  .btn-amber{background:var(--amber);color:#1A0E00}
+  .btn-amber:hover{transform:translateY(-2px);box-shadow:0 12px 30px rgba(245,158,11,.4)}
+
+  /* Email signup */
+  .signup{
+    background:var(--card);border:1px solid var(--cyan-line);border-radius:24px;
+    padding:48px;text-align:center;
+  }
+  .signup-form{
+    display:flex;gap:10px;max-width:500px;margin:24px auto 0;flex-wrap:wrap;
+  }
+  .signup input{
+    flex:1;min-width:200px;padding:14px 18px;border-radius:50px;
+    background:rgba(255,255,255,.03);border:1px solid var(--line);
+    color:var(--txt);font-size:14px;font-family:inherit;outline:none;
+    transition:border-color .2s;
+  }
+  .signup input:focus{border-color:var(--cyan)}
+  .signup-msg{margin-top:14px;font-size:13px;color:var(--cyan);min-height:18px}
+
+  /* Footer */
+  footer{
+    border-top:1px solid var(--line);padding:40px 24px;text-align:center;
+    color:var(--txt-4);font-size:13px;position:relative;z-index:1;
+  }
+  footer .ftr-links{display:flex;gap:24px;justify-content:center;margin-bottom:14px;flex-wrap:wrap}
+  footer .ftr-links a:hover{color:var(--cyan)}
+
+  /* Scroll-triggered animations (re-trigger on each scroll into view) */
+  .anim{opacity:0;transform:translateY(40px);transition:opacity .8s ease, transform .8s ease}
+  .anim.in{opacity:1;transform:translateY(0)}
+  .anim-l{opacity:0;transform:translateX(-40px);transition:opacity .8s ease, transform .8s ease}
+  .anim-l.in{opacity:1;transform:translateX(0)}
+  .anim-r{opacity:0;transform:translateX(40px);transition:opacity .8s ease, transform .8s ease}
+  .anim-r.in{opacity:1;transform:translateX(0)}
+  .anim-scale{opacity:0;transform:scale(.92);transition:opacity .8s ease, transform .8s ease}
+  .anim-scale.in{opacity:1;transform:scale(1)}
+  .delay-1{transition-delay:.08s}
+  .delay-2{transition-delay:.16s}
+  .delay-3{transition-delay:.24s}
+  .delay-4{transition-delay:.32s}
+  .delay-5{transition-delay:.4s}
+  .delay-6{transition-delay:.48s}
+
+  /* Responsive */
+  @media (max-width:768px){
+    section{padding:60px 20px}
+    .stats{grid-template-columns:repeat(2,1fr)}
+    .stat:nth-child(2){border-right:none}
+    .stat:nth-child(1),.stat:nth-child(2){border-bottom:1px solid var(--line)}
+    .vs-grid{grid-template-columns:1fr}
+    .card{padding:26px}
+    .inv-banner,.signup{padding:32px 22px}
+    .nav-cta{display:none}
+  }
+  @media (max-width:480px){
+    .countdown{gap:8px}
+    .cd-box{padding:14px 16px;min-width:72px}
+  }
+</style>
+</head>
+<body>
+
+<nav>
+  <div class="nav-inner">
+    <a href="#" class="logo"><span class="logo-dot">A</span> AdRoom AI</a>
+    <a href="#investors" class="nav-cta">Early Investor Window</a>
+  </div>
+</nav>
+
+<!-- HERO -->
+<section class="hero">
+  <span class="badge anim"><span class="live-dot"></span> Launching Soon</span>
+  <h1 class="anim delay-1">The Autonomous Marketing Workforce.<br/>Coming to Change Everything.</h1>
+  <p class="lead anim delay-2">AdRoom AI is the world's first fully autonomous AI marketing workforce. No agencies. No paid ads. No team. Just results — delivered 24/7 by intelligent agents working tirelessly for your brand.</p>
+
+  <div class="countdown anim-scale delay-3" id="countdown">
+    <div class="cd-box"><div class="cd-num" id="d-days">00</div><div class="cd-lab">Days</div></div>
+    <div class="cd-box"><div class="cd-num" id="d-hours">00</div><div class="cd-lab">Hours</div></div>
+    <div class="cd-box"><div class="cd-num" id="d-mins">00</div><div class="cd-lab">Minutes</div></div>
+    <div class="cd-box"><div class="cd-num" id="d-secs">00</div><div class="cd-lab">Seconds</div></div>
+  </div>
+
+  <div class="hero-ctas anim delay-4">
+    <a href="#waitlist" class="btn btn-primary">Join the Waitlist →</a>
+    <a href="#investors" class="btn btn-ghost">Become an Early Investor</a>
+  </div>
+</section>
+
+<!-- STATS -->
+<section>
+  <div class="container">
+    <div class="stats">
+      <div class="stat anim"><div class="stat-v">100%</div><div class="stat-l">Autonomous</div><div class="stat-s">Zero human input after setup</div></div>
+      <div class="stat anim delay-1"><div class="stat-v">$0</div><div class="stat-l">Ad Spend</div><div class="stat-s">Pure organic growth</div></div>
+      <div class="stat anim delay-2"><div class="stat-v">24/7</div><div class="stat-l">Always Working</div><div class="stat-s">Marketing that never sleeps</div></div>
+      <div class="stat anim delay-3"><div class="stat-v">5×</div><div class="stat-l">More Reach</div><div class="stat-s">Vs. traditional paid campaigns</div></div>
+    </div>
+  </div>
+</section>
+
+<!-- WHAT IT DOES -->
+<section>
+  <div class="container">
+    <div class="sec-head-wrap">
+      <span class="eyebrow anim">What AdRoom Delivers</span>
+      <h2 class="sec-head anim delay-1">Everything Your Business Needs to Grow — Automatically</h2>
+      <p class="sec-sub anim delay-2">Whether you sell a product, a service, or a brand — AdRoom helps you reach your goal 100%. Every time.</p>
+    </div>
+
+    <div class="grid">
+      <div class="card anim"><div class="card-icon" style="background:rgba(0,240,255,.1);color:var(--cyan)">📈</div><h3>Explosive Sales Growth</h3><p>Our Salesman Agent identifies buying signals, crafts persuasive content, and converts cold audiences into paying customers — relentlessly, around the clock.</p></div>
+      <div class="card anim delay-1"><div class="card-icon" style="background:rgba(16,185,129,.1);color:var(--green)">🌍</div><h3>Massive Brand Awareness</h3><p>Build your brand presence across Facebook, Instagram, TikTok, LinkedIn, and X with culturally resonant, platform-native content — at scale.</p></div>
+      <div class="card anim delay-2"><div class="card-icon" style="background:rgba(245,158,11,.1);color:var(--amber)">🎯</div><h3>High-Quality Lead Generation</h3><p>The Lead Agent pinpoints your ideal audience using real-time trend intelligence, then warms them up with precision messaging that converts.</p></div>
+      <div class="card anim delay-3"><div class="card-icon" style="background:rgba(124,58,237,.1);color:var(--purple)">⚡</div><h3>Instant Product Launches</h3><p>Launching a new product or brand? AdRoom builds your full launch strategy, content calendar, and execution plan — in minutes.</p></div>
+      <div class="card anim delay-4"><div class="card-icon" style="background:rgba(239,68,68,.1);color:var(--red)">🎁</div><h3>Promotions That Convert</h3><p>Time-sensitive, high-urgency campaigns crafted for maximum action and revenue. Goodbye generic discount posts.</p></div>
+      <div class="card anim delay-5"><div class="card-icon" style="background:rgba(249,115,22,.1);color:#F97316">🏆</div><h3>$15K Paid Ads — For Free</h3><p>What an agency would charge $10K–$15K/month in paid ads to deliver, AdRoom achieves 100% organically. Zero budget. Same — often better — results.</p></div>
+    </div>
+  </div>
+</section>
+
+<!-- WHY US -->
+<section>
+  <div class="container">
+    <div class="sec-head-wrap">
+      <span class="eyebrow anim">Why AdRoom AI</span>
+      <h2 class="sec-head anim delay-1">Unmatched. Anywhere. Anytime.</h2>
+      <p class="sec-sub anim delay-2">Other tools automate tasks. AdRoom replaces your entire marketing team with intelligent agents that think, decide, and execute on their own.</p>
+    </div>
+
+    <div class="vs-grid">
+      <div class="vs-col us anim-l">
+        <h3>✦ AdRoom AI</h3>
+        <ul>
+          <li>Fully autonomous — works without you</li>
+          <li>Zero ad budget required</li>
+          <li>Strategies built from real-time market data</li>
+          <li>Five specialised AI agents working together</li>
+          <li>Platform-native content for every channel</li>
+          <li>Results compound forever</li>
+          <li>Set up in minutes, runs forever</li>
+          <li>Transparent dashboard, clear results</li>
+        </ul>
+      </div>
+      <div class="vs-col them anim-r">
+        <h3>○ Traditional Tools & Agencies</h3>
+        <ul>
+          <li>Need constant management and approvals</li>
+          <li>Demand $10K+ monthly ad budgets</li>
+          <li>Strategies based on guesswork or templates</li>
+          <li>Single-purpose schedulers, not strategists</li>
+          <li>Same content recycled across platforms</li>
+          <li>Results stop the moment payment stops</li>
+          <li>Weeks of onboarding and contracts</li>
+          <li>Locked behind agency reports and jargon</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- INVESTORS -->
+<section id="investors">
+  <div class="container">
+    <div class="inv-banner">
+      <span class="eyebrow anim">Early Investor Window — Open Now</span>
+      <h2 class="anim delay-1">Own a Piece of the Future of Marketing</h2>
+      <p class="anim delay-2">Get in at the same ₦1/share price as our main pre-seed round. Lower minimum. Same upside. Capped at 2% of the company. Once it's filled, the window closes.</p>
+
+      <div class="inv-stats">
+        <div class="inv-stat anim"><div class="inv-stat-v">$5M</div><div class="inv-stat-l">Valuation</div></div>
+        <div class="inv-stat anim delay-1"><div class="inv-stat-v">₦1M</div><div class="inv-stat-l">Minimum</div></div>
+        <div class="inv-stat anim delay-2"><div class="inv-stat-v">₦1</div><div class="inv-stat-l">Per Share</div></div>
+        <div class="inv-stat anim delay-3"><div class="inv-stat-v">100×</div><div class="inv-stat-l">Exit Potential</div></div>
+      </div>
+
+      <a href="investors.html" class="btn btn-amber anim delay-4">View Full Investment Terms →</a>
+    </div>
+  </div>
+</section>
+
+<!-- WAITLIST -->
+<section id="waitlist">
+  <div class="container">
+    <div class="signup">
+      <span class="eyebrow anim">Join the Waitlist</span>
+      <h2 class="sec-head anim delay-1">Be the First to Know</h2>
+      <p class="sec-sub anim delay-2" style="margin:0 auto">Get early access, launch-day perks, and exclusive updates as we count down to launch.</p>
+      <form class="signup-form" onsubmit="handleSignup(event)">
+        <input type="email" placeholder="you@yourcompany.com" required id="email-input" />
+        <button class="btn btn-primary" type="submit">Notify Me</button>
+      </form>
+      <div class="signup-msg" id="signup-msg"></div>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="ftr-links">
+    <a href="#waitlist">Waitlist</a>
+    <a href="#investors">Investors</a>
+    <a href="mailto:hello@adroomai.com">Contact</a>
+  </div>
+  <div>© <span id="yr"></span> AdRoom AI · The future of marketing is autonomous.</div>
+</footer>
+
+<script>
+  // YEAR
+  document.getElementById('yr').textContent = new Date().getFullYear();
+
+  // COUNTDOWN — set launch date here
+  const LAUNCH_DATE = new Date('2026-06-01T00:00:00Z').getTime();
+  function updateCountdown(){
+    const now = Date.now();
+    let diff = Math.max(0, LAUNCH_DATE - now);
+    const d = Math.floor(diff/(1000*60*60*24));
+    const h = Math.floor((diff/(1000*60*60))%24);
+    const m = Math.floor((diff/(1000*60))%60);
+    const s = Math.floor((diff/1000)%60);
+    document.getElementById('d-days').textContent = String(d).padStart(2,'0');
+    document.getElementById('d-hours').textContent = String(h).padStart(2,'0');
+    document.getElementById('d-mins').textContent = String(m).padStart(2,'0');
+    document.getElementById('d-secs').textContent = String(s).padStart(2,'0');
+  }
+  updateCountdown();
+  setInterval(updateCountdown,1000);
+
+  // SCROLL ANIMATIONS — re-trigger every time element enters viewport
+  const animEls = document.querySelectorAll('.anim, .anim-l, .anim-r, .anim-scale');
+  const observer = new IntersectionObserver((entries) => {
+    entries.forEach(entry => {
+      if (entry.isIntersecting) {
+        entry.target.classList.add('in');
+      } else {
+        // Re-trigger: remove the class when out of view so animation plays again next time
+        entry.target.classList.remove('in');
+      }
+    });
+  }, { threshold: 0.12, rootMargin: '0px 0px -50px 0px' });
+  animEls.forEach(el => observer.observe(el));
+
+  // WAITLIST handler — replace with your own endpoint
+  function handleSignup(e){
+    e.preventDefault();
+    const email = document.getElementById('email-input').value;
+    const msg = document.getElementById('signup-msg');
+    msg.textContent = '✓ You\'re on the list, ' + email.split('@')[0] + '! We\'ll be in touch.';
+    document.getElementById('email-input').value = '';
+    setTimeout(() => msg.textContent = '', 6000);
+  }
+</script>
+</body>
+</html>
