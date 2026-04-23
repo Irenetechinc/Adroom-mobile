@@ -237,6 +237,277 @@
     .logo{font-size:16px}
     .logo-img{width:32px;height:32px}
   }
+
+  /* ─── SCREENSHOT CAROUSEL ─────────────────────────────────────────── */
+  .sc-section{padding:80px 24px;overflow:hidden}
+
+  .sc-stage{
+    position:relative;
+    user-select:none;
+    -webkit-user-select:none;
+  }
+
+  /* Entrance animation: slides float up when section enters viewport */
+  .sc-stage.sc-entered .sc-slide{
+    opacity:1;
+    transform:translateY(0) scale(1);
+  }
+
+  /* Track wrapper — clips overflow */
+  .sc-track-wrap{
+    position:relative;
+    overflow:hidden;
+    padding:40px 0 20px;
+    cursor:grab;
+  }
+  .sc-track-wrap:active{cursor:grabbing}
+
+  /* Sliding track */
+  .sc-track{
+    display:flex;
+    align-items:center;
+    transition:transform .52s cubic-bezier(.38,.1,.18,1);
+    will-change:transform;
+  }
+
+  /* Individual slide */
+  .sc-slide{
+    flex:0 0 100%;
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    gap:22px;
+    padding:0 16px;
+    opacity:0;
+    transform:translateY(48px) scale(.95);
+    transition:opacity .65s ease, transform .65s ease;
+  }
+  .sc-slide:nth-child(1){transition-delay:.0s}
+  .sc-slide:nth-child(2){transition-delay:.08s}
+  .sc-slide:nth-child(3){transition-delay:.16s}
+  .sc-slide:nth-child(4){transition-delay:.24s}
+
+  /* ── DEVICE FRAMES ─────────────── */
+  .sc-device{display:flex;justify-content:center;align-items:center}
+
+  .sc-device-shell{
+    position:relative;
+    border-radius:inherit;
+    overflow:hidden;
+    width:100%;
+    height:100%;
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    background:#0B0F1A;
+  }
+
+  /* Phone */
+  .sc-device-mobile{
+    width:230px;
+    height:468px;
+    border-radius:40px;
+    border:2.5px solid rgba(245,158,11,.45);
+    box-shadow:
+      0 0 0 1px rgba(245,158,11,.12),
+      0 0 40px rgba(245,158,11,.18),
+      0 0 80px rgba(245,158,11,.08),
+      inset 0 0 0 1px rgba(255,255,255,.04);
+    background:linear-gradient(160deg,#1E2436 0%,#0D1120 100%);
+  }
+
+  .sc-notch{
+    flex-shrink:0;
+    width:90px;height:22px;
+    background:#080C16;
+    border-radius:0 0 14px 14px;
+    margin-top:0;
+    position:relative;
+    z-index:2;
+  }
+  .sc-notch::after{
+    content:'';
+    position:absolute;
+    left:50%;transform:translateX(-50%);
+    top:6px;
+    width:10px;height:10px;
+    border-radius:50%;
+    background:rgba(0,240,255,.25);
+    box-shadow:0 0 6px rgba(0,240,255,.4);
+  }
+
+  .sc-home-bar{
+    flex-shrink:0;
+    width:100px;height:5px;
+    background:rgba(255,255,255,.18);
+    border-radius:3px;
+    margin:8px 0 10px;
+  }
+
+  /* Tablet */
+  .sc-device-tablet{
+    width:560px;
+    height:380px;
+    border-radius:22px;
+    border:2.5px solid rgba(245,158,11,.4);
+    box-shadow:
+      0 0 0 1px rgba(245,158,11,.10),
+      0 0 50px rgba(245,158,11,.15),
+      0 0 100px rgba(245,158,11,.07),
+      inset 0 0 0 1px rgba(255,255,255,.04);
+    background:linear-gradient(160deg,#1E2436 0%,#0D1120 100%);
+    flex-direction:row;
+  }
+
+  .sc-tablet-cam{
+    flex-shrink:0;
+    width:12px;height:12px;
+    border-radius:50%;
+    background:rgba(0,240,255,.2);
+    box-shadow:0 0 8px rgba(0,240,255,.35);
+    position:absolute;
+    left:10px;
+    top:50%;
+    transform:translateY(-50%);
+  }
+
+  .sc-tablet-home{
+    flex-shrink:0;
+    width:6px;height:50px;
+    background:rgba(255,255,255,.15);
+    border-radius:3px;
+    position:absolute;
+    right:7px;
+    top:50%;
+    transform:translateY(-50%);
+  }
+
+  /* Screen area */
+  .sc-device-mobile .sc-screen-wrap{
+    flex:1;
+    width:100%;
+    overflow:hidden;
+    display:flex;
+    align-items:flex-start;
+    justify-content:center;
+  }
+
+  .sc-device-tablet .sc-screen-wrap{
+    position:absolute;
+    inset:0;
+    left:26px;
+    right:18px;
+    overflow:hidden;
+    display:flex;
+    align-items:flex-start;
+    justify-content:center;
+  }
+
+  .sc-screen-wrap img{
+    width:100%;
+    height:100%;
+    object-fit:cover;
+    object-position:top center;
+    display:block;
+    pointer-events:none;
+    border:none;
+  }
+
+  /* Slide label */
+  .sc-label{
+    font-size:13px;
+    font-weight:600;
+    color:var(--txt-3);
+    letter-spacing:.4px;
+    text-align:center;
+    padding:6px 16px;
+    background:rgba(245,158,11,.06);
+    border:1px solid rgba(245,158,11,.14);
+    border-radius:50px;
+  }
+
+  /* ── ARROWS ─────────────── */
+  .sc-arrow{
+    position:absolute;
+    top:50%;
+    transform:translateY(-50%);
+    width:44px;height:44px;
+    border-radius:50%;
+    background:rgba(15,20,35,.85);
+    border:1px solid rgba(245,158,11,.3);
+    color:var(--amber);
+    cursor:pointer;
+    display:flex;align-items:center;justify-content:center;
+    transition:background .2s, border-color .2s, transform .2s;
+    z-index:10;
+    backdrop-filter:blur(8px);
+    -webkit-backdrop-filter:blur(8px);
+  }
+  .sc-arrow:hover{
+    background:rgba(245,158,11,.14);
+    border-color:var(--amber);
+    transform:translateY(-50%) scale(1.08);
+  }
+  .sc-arrow:active{transform:translateY(-50%) scale(.96)}
+  .sc-arrow-prev{left:4px}
+  .sc-arrow-next{right:4px}
+  .sc-arrow:disabled{opacity:.28;cursor:default;pointer-events:none}
+
+  /* ── DOTS ─────────────── */
+  .sc-dots{
+    display:flex;align-items:center;justify-content:center;
+    gap:10px;
+    margin-top:28px;
+  }
+  .sc-dot{
+    width:8px;height:8px;
+    border-radius:50%;
+    border:none;
+    background:rgba(255,255,255,.18);
+    cursor:pointer;
+    padding:0;
+    transition:background .25s, transform .25s, width .3s;
+    flex-shrink:0;
+  }
+  .sc-dot.active{
+    background:var(--amber);
+    width:26px;
+    border-radius:4px;
+    box-shadow:0 0 10px rgba(245,158,11,.5);
+  }
+  .sc-dot:hover:not(.active){background:rgba(245,158,11,.4)}
+
+  /* ── COUNTER ─────────────── */
+  .sc-counter{
+    text-align:center;
+    font-size:12px;
+    color:var(--txt-4);
+    font-weight:600;
+    letter-spacing:.6px;
+    margin-top:14px;
+    font-variant-numeric:tabular-nums;
+  }
+  #sc-cur{color:var(--amber)}
+
+  /* ── RESPONSIVE ─────────────── */
+  @media(max-width:640px){
+    .sc-device-mobile{width:190px;height:386px;border-radius:34px}
+    .sc-notch{width:72px;height:18px}
+    .sc-device-tablet{width:calc(100vw - 80px);height:auto;aspect-ratio:3/2;min-height:200px}
+    .sc-arrow{width:36px;height:36px}
+    .sc-arrow-prev{left:0}
+    .sc-arrow-next{right:0}
+    .sc-section{padding:60px 14px}
+  }
+  @media(max-width:400px){
+    .sc-device-mobile{width:164px;height:334px;border-radius:28px}
+    .sc-notch{width:60px;height:16px}
+  }
+  @media(min-width:900px){
+    .sc-track-wrap{padding:50px 60px 24px}
+    .sc-arrow-prev{left:6px}
+    .sc-arrow-next{right:6px}
+  }
 </style>
 </head>
 <body>
@@ -274,6 +545,105 @@
   </div>
 
 
+</section>
+
+<!-- ═══════════════════════════════════════════════
+     APP SCREENSHOTS CAROUSEL
+═══════════════════════════════════════════════ -->
+<section class="sc-section">
+  <div class="container">
+    <div class="sec-head-wrap">
+      <span class="eyebrow anim">The Product</span>
+      <h2 class="sec-head anim delay-1">Built &amp; Live — See AdRoom AI in Action</h2>
+      <p class="sec-sub anim delay-2">A full AI marketing command centre, engineered and ready to deploy your campaigns autonomously.</p>
+    </div>
+
+    <div class="sc-stage anim-scale" id="sc-stage">
+
+      <!-- TRACK -->
+      <div class="sc-track-wrap">
+        <div class="sc-track" id="sc-track">
+
+          <!-- Slide 1 — Mobile -->
+          <div class="sc-slide" data-type="mobile">
+            <div class="sc-device sc-device-mobile">
+              <div class="sc-device-shell">
+                <div class="sc-notch"></div>
+                <div class="sc-screen-wrap">
+                  <img src="../assets/carosel/1.png" alt="AdRoom AI — Strategy Dashboard" loading="lazy" draggable="false" />
+                </div>
+                <div class="sc-home-bar"></div>
+              </div>
+            </div>
+            <div class="sc-label">Strategy Dashboard</div>
+          </div>
+
+          <!-- Slide 2 — Mobile -->
+          <div class="sc-slide" data-type="mobile">
+            <div class="sc-device sc-device-mobile">
+              <div class="sc-device-shell">
+                <div class="sc-notch"></div>
+                <div class="sc-screen-wrap">
+                  <img src="../assets/carosel/2.png" alt="AdRoom AI — AI Brain Interface" loading="lazy" draggable="false" />
+                </div>
+                <div class="sc-home-bar"></div>
+              </div>
+            </div>
+            <div class="sc-label">AI Brain Interface</div>
+          </div>
+
+          <!-- Slide 3 — Mobile -->
+          <div class="sc-slide" data-type="mobile">
+            <div class="sc-device sc-device-mobile">
+              <div class="sc-device-shell">
+                <div class="sc-notch"></div>
+                <div class="sc-screen-wrap">
+                  <img src="../assets/carosel/3.png" alt="AdRoom AI — Campaign Analytics" loading="lazy" draggable="false" />
+                </div>
+                <div class="sc-home-bar"></div>
+              </div>
+            </div>
+            <div class="sc-label">Campaign Analytics</div>
+          </div>
+
+          <!-- Slide 4 — Tablet -->
+          <div class="sc-slide" data-type="tablet">
+            <div class="sc-device sc-device-tablet">
+              <div class="sc-device-shell">
+                <div class="sc-tablet-cam"></div>
+                <div class="sc-screen-wrap">
+                  <img src="../assets/carosel/4.png" alt="AdRoom AI — Full Dashboard (Tablet)" loading="lazy" draggable="false" />
+                </div>
+                <div class="sc-tablet-home"></div>
+              </div>
+            </div>
+            <div class="sc-label">Full Command Centre · Tablet View</div>
+          </div>
+
+        </div><!-- /sc-track -->
+
+        <!-- Arrows -->
+        <button class="sc-arrow sc-arrow-prev" id="sc-prev" aria-label="Previous screenshot">
+          <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+        </button>
+        <button class="sc-arrow sc-arrow-next" id="sc-next" aria-label="Next screenshot">
+          <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+        </button>
+      </div><!-- /sc-track-wrap -->
+
+      <!-- Dots -->
+      <div class="sc-dots" id="sc-dots" role="tablist" aria-label="Screenshot navigation">
+        <button class="sc-dot" role="tab" aria-label="Screenshot 1"></button>
+        <button class="sc-dot" role="tab" aria-label="Screenshot 2"></button>
+        <button class="sc-dot" role="tab" aria-label="Screenshot 3"></button>
+        <button class="sc-dot" role="tab" aria-label="Tablet view"></button>
+      </div>
+
+      <!-- Counter -->
+      <div class="sc-counter"><span id="sc-cur">1</span> / <span id="sc-tot">4</span></div>
+
+    </div><!-- /sc-stage -->
+  </div>
 </section>
 
 
@@ -609,6 +979,112 @@
       item.classList.toggle('open');
     });
   });
+
+  /* ============================================================
+     SCREENSHOT CAROUSEL
+     - Re-triggers entrance animation every time user scrolls
+       the section into view (removes .sc-entered on scroll out,
+       restores it on scroll in)
+     - Auto-advances every 4 s; pauses on hover / touch
+     - Supports mouse-drag + touch-swipe
+  ============================================================ */
+  (function(){
+    const track   = document.getElementById('sc-track');
+    const stage   = document.getElementById('sc-stage');
+    const prevBtn = document.getElementById('sc-prev');
+    const nextBtn = document.getElementById('sc-next');
+    const dotsEl  = document.getElementById('sc-dots');
+    const curEl   = document.getElementById('sc-cur');
+    if (!track || !stage) return;
+
+    const slides = Array.from(track.querySelectorAll('.sc-slide'));
+    const dots   = Array.from(dotsEl.querySelectorAll('.sc-dot'));
+    const total  = slides.length;
+    let current  = 0;
+    let autoTimer = null;
+    let isPaused  = false;
+
+    /* ── goto slide ── */
+    function goto(idx, skipTransition) {
+      current = (idx + total) % total;
+      if (skipTransition) track.style.transition = 'none';
+      track.style.transform = 'translateX(-' + (current * 100) + '%)';
+      if (skipTransition) void track.offsetWidth; // reflow
+      if (skipTransition) track.style.transition = '';
+
+      dots.forEach((d,i) => d.classList.toggle('active', i === current));
+      if (curEl) curEl.textContent = current + 1;
+    }
+
+    /* ── prev / next ── */
+    function next(){ goto(current + 1); }
+    function prev(){ goto(current - 1); }
+
+    prevBtn && prevBtn.addEventListener('click', () => { prev(); resetAuto(); });
+    nextBtn && nextBtn.addEventListener('click', () => { next(); resetAuto(); });
+    dots.forEach((d, i) => d.addEventListener('click', () => { goto(i); resetAuto(); }));
+
+    /* ── auto-play ── */
+    function startAuto(){
+      clearInterval(autoTimer);
+      autoTimer = setInterval(() => { if (!isPaused) next(); }, 4000);
+    }
+    function resetAuto(){ clearInterval(autoTimer); startAuto(); }
+
+    stage.addEventListener('mouseenter', () => { isPaused = true; });
+    stage.addEventListener('mouseleave', () => { isPaused = false; });
+
+    /* ── touch / mouse swipe ── */
+    (function(){
+      let startX = null, startY = null, dragging = false;
+      const tw = track.parentElement;
+
+      function onStart(x, y){ startX = x; startY = y; dragging = true; }
+      function onEnd(x){
+        if (!dragging || startX === null) return;
+        dragging = false;
+        const dx = x - startX;
+        if (Math.abs(dx) > 40){
+          dx < 0 ? next() : prev();
+          resetAuto();
+        }
+        startX = null;
+      }
+
+      tw.addEventListener('touchstart',  e => { isPaused = true;  onStart(e.touches[0].clientX, e.touches[0].clientY); }, {passive:true});
+      tw.addEventListener('touchend',    e => { isPaused = false; onEnd(e.changedTouches[0].clientX); }, {passive:true});
+      tw.addEventListener('touchcancel', e => { dragging = false; isPaused = false; });
+
+      tw.addEventListener('mousedown',  e => { onStart(e.clientX, e.clientY); e.preventDefault(); });
+      window.addEventListener('mouseup', e => { if (dragging) onEnd(e.clientX); });
+    })();
+
+    /* ── scroll-triggered entrance animation
+         Uses its own observer so it can toggle sc-entered on/off
+         independently of the global .anim observer (which handles
+         the section heading). Every time the stage re-enters the
+         viewport the slides float back up from below.            ── */
+    const scObs = new IntersectionObserver((entries) => {
+      entries.forEach(entry => {
+        if (entry.isIntersecting) {
+          stage.classList.add('sc-entered');
+          startAuto();
+        } else {
+          /* Remove class so animation replays next time */
+          stage.classList.remove('sc-entered');
+          clearInterval(autoTimer);
+          /* Reset to first slide so replay starts from top */
+          goto(0, true);
+        }
+      });
+    }, { threshold: 0.18, rootMargin: '0px 0px -60px 0px' });
+
+    scObs.observe(stage);
+
+    /* init dots */
+    dots.forEach((d,i) => d.classList.toggle('active', i === 0));
+    goto(0, true);
+  })();
 
   /* ============================================================
      REAL-TIME GEO + CURRENCY CONVERSION  (100% client-side)
