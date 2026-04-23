@@ -1,5 +1,35 @@
 const http = require('http');
+const fs = require('fs');
+const path = require('path');
 const PORT = 5000;
+
+const LANDING_DIR = path.join(__dirname, 'landing');
+const MIME = {
+  '.html':'text/html; charset=utf-8', '.css':'text/css; charset=utf-8',
+  '.js':'application/javascript; charset=utf-8', '.json':'application/json; charset=utf-8',
+  '.png':'image/png', '.jpg':'image/jpeg', '.jpeg':'image/jpeg',
+  '.svg':'image/svg+xml', '.webp':'image/webp', '.ico':'image/x-icon',
+  '.txt':'text/plain; charset=utf-8'
+};
+function tryServeLanding(req, res){
+  // Serve files under /landing/* and /assets/* (assets resolved against landing/assets)
+  let urlPath = decodeURIComponent(req.url.split('?')[0]);
+  let rel = null;
+  if (urlPath === '/landing' || urlPath === '/landing/') rel = 'index.html';
+  else if (urlPath.startsWith('/landing/')) rel = urlPath.slice('/landing/'.length);
+  else if (urlPath.startsWith('/assets/')) rel = urlPath.slice(1);
+  if (!rel) return false;
+  const safe = path.normalize(rel).replace(/^([\/\\])+/, '');
+  const full = path.join(LANDING_DIR, safe);
+  if (!full.startsWith(LANDING_DIR)) { res.writeHead(403); res.end('Forbidden'); return true; }
+  fs.readFile(full, (err, data) => {
+    if (err) { res.writeHead(404, {'Content-Type':'text/plain'}); res.end('Not found'); return; }
+    const ext = path.extname(full).toLowerCase();
+    res.writeHead(200, {'Content-Type': MIME[ext] || 'application/octet-stream', 'Cache-Control': 'no-cache'});
+    res.end(data);
+  });
+  return true;
+}
 
 const html = `<!DOCTYPE html>
 <html lang="en">
@@ -77,6 +107,7 @@ const html = `<!DOCTYPE html>
 </html>`;
 
 const server = http.createServer((req, res) => {
+  if (tryServeLanding(req, res)) return;
   if (req.url === '/health' || req.url === '/api-status') {
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ status: 'ok', backend: 'http://localhost:8000', type: 'mobile-app', agents: ['SALESMAN','AWARENESS','PROMOTION','LAUNCH'] }));

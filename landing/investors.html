@@ -13,11 +13,11 @@
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet" />
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" referrerpolicy="no-referrer" />
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.5.1/css/all.min.css" referrerpolicy="no-referrer" />
-<link rel="icon" type="image/jpeg" href="assets/logo.jpg" />
-<link rel="shortcut icon" type="image/jpeg" href="assets/logo.jpg" />
-<link rel="apple-touch-icon" href="assets/logo.jpg" />
-<link rel="apple-touch-icon" sizes="180x180" href="assets/logo.jpg" />
-<meta name="msapplication-TileImage" content="assets/logo.jpg" />
+<link rel="icon" type="image/png" href="assets/logo.png" />
+<link rel="shortcut icon" type="image/png" href="assets/logo.png" />
+<link rel="apple-touch-icon" href="assets/logo.png" />
+<link rel="apple-touch-icon" sizes="180x180" href="assets/logo.png" />
+<meta name="msapplication-TileImage" content="assets/logo.png" />
 <meta name="msapplication-TileColor" content="#0B0F19" />
 <style>
   :root{
@@ -54,7 +54,7 @@
 
   .hero{min-height:90vh;display:flex;flex-direction:column;justify-content:center;align-items:center;text-align:center;padding-top:120px;padding-bottom:60px;position:relative;overflow:hidden}
   .hero-bg{position:absolute;inset:0;z-index:0;overflow:hidden;background:radial-gradient(ellipse 60% 40% at 15% 20%,rgba(245,158,11,.30),transparent 55%),radial-gradient(ellipse 55% 45% at 85% 25%,rgba(252,211,77,.18),transparent 55%),radial-gradient(ellipse 70% 50% at 50% 100%,rgba(0,240,255,.12),transparent 55%),linear-gradient(135deg,#1A1408 0%,#151B2B 50%,#0B0F19 100%);animation:heroPan 30s ease-in-out infinite alternate}
-  .hero-bg::before{content:'';position:absolute;inset:0;background-image:url('assets/hero-bg.jpg');background-size:cover;background-position:center;opacity:.4;mix-blend-mode:screen}
+  .hero-bg::before{content:'';position:absolute;inset:0;background-image:url('assets/hero-bg.png');background-size:cover;background-position:center;opacity:.4;mix-blend-mode:screen}
   .hero-bg::after{content:'';position:absolute;inset:0;z-index:1;background:linear-gradient(180deg,rgba(11,15,25,.35) 0%,rgba(11,15,25,.7) 70%,var(--bg) 100%),repeating-linear-gradient(0deg,rgba(245,158,11,.04) 0,rgba(245,158,11,.04) 1px,transparent 1px,transparent 60px),repeating-linear-gradient(90deg,rgba(245,158,11,.04) 0,rgba(245,158,11,.04) 1px,transparent 1px,transparent 60px)}
   @keyframes heroPan{0%{transform:scale(1.05) translateX(0)}100%{transform:scale(1.15) translateX(-3%)}}
   .hero > *{position:relative;z-index:1}
@@ -138,6 +138,23 @@
   footer .ftr-links a:hover{color:var(--amber)}
   .disclaim{font-size:11px;color:var(--txt-4);max-width:760px;margin:18px auto 0;line-height:1.6;opacity:.7}
 
+  /* Countdown */
+  .countdown{margin-top:36px;display:inline-flex;flex-direction:column;align-items:center;gap:12px;padding:18px 22px;border-radius:20px;background:linear-gradient(135deg,rgba(245,158,11,.10),rgba(245,158,11,.02));border:1px solid var(--amber-line);max-width:560px;backdrop-filter:blur(8px)}
+  .cd-label{font-size:11.5px;font-weight:700;letter-spacing:1.4px;text-transform:uppercase;color:var(--amber)}
+  .cd-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;width:100%}
+  .cd-cell{background:rgba(11,15,25,.55);border:1px solid rgba(245,158,11,.18);border-radius:12px;padding:12px 6px;min-width:64px}
+  .cd-num{font-family:'Space Grotesk',sans-serif;font-size:clamp(22px,4vw,30px);font-weight:700;color:#fff;letter-spacing:-1px;line-height:1;font-variant-numeric:tabular-nums}
+  .cd-unit{margin-top:6px;font-size:10px;letter-spacing:1px;text-transform:uppercase;color:var(--txt-3);font-weight:600}
+  .cd-foot{font-size:11.5px;color:var(--txt-3);max-width:460px;text-align:center;line-height:1.5}
+
+  /* Exit highlight */
+  .exit-banner{background:linear-gradient(135deg,rgba(16,185,129,.08),rgba(0,240,255,.04));border:1px solid rgba(16,185,129,.25);border-radius:24px;padding:36px;display:grid;grid-template-columns:auto 1fr;gap:24px;align-items:center}
+  .exit-icon{width:64px;height:64px;border-radius:18px;background:rgba(16,185,129,.12);color:var(--green);display:flex;align-items:center;justify-content:center;font-size:28px;border:1px solid rgba(16,185,129,.3)}
+  .exit-banner h3{font-size:22px;margin-bottom:8px;color:#fff}
+  .exit-banner p{color:var(--txt-2);font-size:14px;line-height:1.65}
+  .exit-banner .pill{display:inline-block;margin-top:10px;padding:5px 12px;border-radius:50px;background:rgba(16,185,129,.12);color:var(--green);font-size:11px;font-weight:700;letter-spacing:.6px;text-transform:uppercase;border:1px solid rgba(16,185,129,.3)}
+  @media (max-width:600px){.exit-banner{grid-template-columns:1fr;text-align:center;padding:28px 20px}.exit-icon{margin:0 auto}}
+
   /* Animations */
   .anim{opacity:0;transform:translateY(40px);transition:opacity .8s ease, transform .8s ease}
   .anim.in{opacity:1;transform:translateY(0)}
@@ -195,7 +212,7 @@
 
 <nav>
   <div class="nav-inner">
-    <a href="index.html" class="logo"><img src="assets/logo.jpg" alt="AdRoom AI" class="logo-img" /> AdRoom AI</a>
+    <a href="index.html" class="logo"><img src="assets/logo.png" alt="AdRoom AI" class="logo-img" /> AdRoom AI</a>
     <a href="#contact" class="nav-cta"><i class="fa-solid fa-handshake"></i> Become an Investor</a>
   </div>
 </nav>
@@ -210,6 +227,18 @@
   <div style="display:flex;gap:14px;flex-wrap:wrap;justify-content:center" class="anim delay-3">
     <a href="#contact" class="btn btn-amber"><i class="fa-solid fa-hand-holding-dollar"></i> Reserve Your Allocation</a>
     <a href="#terms" class="btn btn-ghost"><i class="fa-solid fa-file-lines"></i> View Full Terms</a>
+  </div>
+
+  <!-- Countdown -->
+  <div class="countdown anim delay-4" aria-label="Early Investor Window countdown">
+    <div class="cd-label"><i class="fa-solid fa-hourglass-half"></i> Early Investor Window closes in</div>
+    <div class="cd-grid">
+      <div class="cd-cell"><div class="cd-num" id="cd-d">00</div><div class="cd-unit">Days</div></div>
+      <div class="cd-cell"><div class="cd-num" id="cd-h">00</div><div class="cd-unit">Hours</div></div>
+      <div class="cd-cell"><div class="cd-num" id="cd-m">00</div><div class="cd-unit">Minutes</div></div>
+      <div class="cd-cell"><div class="cd-num" id="cd-s">00</div><div class="cd-unit">Seconds</div></div>
+    </div>
+    <div class="cd-foot">After this window, the round opens at higher minimums to institutional investors only.</div>
   </div>
 </section>
 
@@ -338,10 +367,22 @@
           <tr><td>Conversion Price</td><td>Fixed at ₦1 per share (same as main round)</td></tr>
           <tr><td>Your Equity at Conversion</td><td>(Your ₦) ÷ ₦1 = Number of shares</td></tr>
           <tr><td>Refund Protection</td><td>Full refund if main round doesn't close in 18 months</td></tr>
+          <tr><td>24-Month Exit Option</td><td class="highlight">Guaranteed buyback at <strong>2× your investment</strong> after 24 months — at your request</td></tr>
+          <tr><td>Liquidity Window</td><td>Any time after Month 24, you may sell your shares back to the company at the higher of (a) 2× your original investment or (b) the latest priced-round valuation</td></tr>
           <tr><td>Total Pool Maximum</td><td class="highlight">₦155,000,000 (2% of company)</td></tr>
           <tr><td>Governing Law</td><td>Laws of the Federal Republic of Nigeria</td></tr>
         </tbody>
       </table>
+    </div>
+
+    <!-- 24-Month Exit Banner -->
+    <div class="exit-banner anim-scale" style="margin-top:28px">
+      <div class="exit-icon"><i class="fa-solid fa-shield-halved"></i></div>
+      <div>
+        <span class="pill"><i class="fa-solid fa-lock-open"></i> 24-Month Exit Guarantee</span>
+        <h3>You're never trapped. Walk away at 2× any time after Month 24.</h3>
+        <p>If you choose not to wait for the next priced round, AdRoom AI guarantees a buyback of your shares for <strong>double your original investment</strong> at any point after the 24-month mark — for any reason, no questions asked. Your downside is protected. Your upside is uncapped.</p>
+      </div>
     </div>
   </div>
 </section>
@@ -361,6 +402,8 @@
       <div class="faq-item anim delay-4"><div class="faq-q">Can I invest more than ₦155 million?</div><div class="faq-a"><p>No. ₦155M is the maximum any single investor can put in, since that already represents 2% of the entire company — the hard cap for the early window.</p></div></div>
       <div class="faq-item anim delay-5"><div class="faq-q">When do I receive my shares?</div><div class="faq-a"><p>Shares are issued automatically when the main pre-seed round closes — projected in 6 to 12 months from today.</p></div></div>
       <div class="faq-item anim"><div class="faq-q">What is the absolute minimum?</div><div class="faq-a"><p>₦1,000,000 — One Million Naira. This is the lowest entry point we offer.</p></div></div>
+      <div class="faq-item anim delay-1"><div class="faq-q">What if I want my money back before an IPO or acquisition?</div><div class="faq-a"><p>You're protected by the 24-Month Exit Guarantee. Any time after Month 24, you can request a full buyback of your shares at <strong>2× your original investment</strong> — no questions asked. So even in the worst-case scenario where the company never IPOs, you still walk away doubling your money.</p></div></div>
+      <div class="faq-item anim delay-2"><div class="faq-q">How does the 24-month exit actually work?</div><div class="faq-a"><p>Starting on the first day of Month 25, you may submit a written buyback request. AdRoom AI is contractually obligated to repurchase your shares for the higher of (a) 2× your original investment, or (b) the latest priced-round per-share value. Payment is made in full within 90 days of the request.</p></div></div>
     </div>
   </div>
 </section>
@@ -393,6 +436,35 @@
 
 <script>
   document.getElementById('yr').textContent = new Date().getFullYear();
+
+  // 14-day countdown — persists across reloads via localStorage
+  (function(){
+    const KEY = 'adroom_eiw_deadline_v1';
+    const FOURTEEN_DAYS = 14 * 24 * 60 * 60 * 1000;
+    let deadline = parseInt(localStorage.getItem(KEY) || '0', 10);
+    if (!deadline || isNaN(deadline) || deadline < Date.now()) {
+      deadline = Date.now() + FOURTEEN_DAYS;
+      localStorage.setItem(KEY, String(deadline));
+    }
+    const pad = n => String(Math.max(0, n)).padStart(2, '0');
+    const d = document.getElementById('cd-d'),
+          h = document.getElementById('cd-h'),
+          m = document.getElementById('cd-m'),
+          s = document.getElementById('cd-s');
+    function tick(){
+      const diff = deadline - Date.now();
+      if (diff <= 0){
+        d.textContent = h.textContent = m.textContent = s.textContent = '00';
+        return;
+      }
+      d.textContent = pad(Math.floor(diff / 86400000));
+      h.textContent = pad(Math.floor((diff % 86400000) / 3600000));
+      m.textContent = pad(Math.floor((diff % 3600000) / 60000));
+      s.textContent = pad(Math.floor((diff % 60000) / 1000));
+    }
+    tick();
+    setInterval(tick, 1000);
+  })();
 
   // Re-triggering scroll animations
   const animEls = document.querySelectorAll('.anim, .anim-l, .anim-r, .anim-scale, .bar-row');
