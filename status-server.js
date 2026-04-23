@@ -106,7 +106,107 @@ const html = `<!DOCTYPE html>
 </body>
 </html>`;
 
+// Investor reservations — written to investors.txt at project root.
+// File is intentionally NOT inside landing/ so it can never be served publicly.
+const INVESTORS_FILE = path.join(__dirname, 'investors.txt');
+const RESERVE_LIMIT_PER_HOUR = 5;
+const reserveHits = new Map(); // ip -> [timestamps]
+
+function clientIp(req){
+  const xf = req.headers['x-forwarded-for'];
+  if (xf) return xf.toString().split(',')[0].trim();
+  return (req.socket && req.socket.remoteAddress) || 'unknown';
+}
+function clean(s, max){
+  return String(s == null ? '' : s)
+    .replace(/[\r\n\t]+/g, ' ')
+    .replace(/[\x00-\x1F\x7F]/g, '')
+    .trim()
+    .slice(0, max);
+}
+function rateLimited(ip){
+  const now = Date.now();
+  const cutoff = now - 60 * 60 * 1000;
+  const hits = (reserveHits.get(ip) || []).filter(t => t > cutoff);
+  hits.push(now);
+  reserveHits.set(ip, hits);
+  return hits.length > RESERVE_LIMIT_PER_HOUR;
+}
+
+function handleReserve(req, res){
+  let body = '';
+  let total = 0;
+  req.on('data', chunk => {
+    total += chunk.length;
+    if (total > 16 * 1024) { req.destroy(); return; }
+    body += chunk;
+  });
+  req.on('end', () => {
+    let payload;
+    try { payload = JSON.parse(body || '{}'); }
+    catch { res.writeHead(400, {'Content-Type':'application/json'}); res.end(JSON.stringify({ok:false,error:'Invalid request.'})); return; }
+
+    // Honeypot
+    if (payload.website && String(payload.website).trim()) {
+      res.writeHead(200, {'Content-Type':'application/json'}); res.end(JSON.stringify({ok:true})); return;
+    }
+
+    const ip = clientIp(req);
+    if (rateLimited(ip)) {
+      res.writeHead(429, {'Content-Type':'application/json'});
+      res.end(JSON.stringify({ok:false,error:'Too many submissions from this connection. Please try again later or email invest@adroomai.com.'}));
+      return;
+    }
+
+    const name   = clean(payload.name,   120);
+    const amount = clean(payload.amount, 20);
+    const email  = clean(payload.email,  160);
+    const phone  = clean(payload.phone,  40);
+    const notes  = clean(payload.notes,  600);
+
+    if (!name || !amount || !email || !phone) {
+      res.writeHead(400, {'Content-Type':'application/json'});
+      res.end(JSON.stringify({ok:false,error:'All required fields must be provided.'})); return;
+    }
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
+      res.writeHead(400, {'Content-Type':'application/json'});
+      res.end(JSON.stringify({ok:false,error:'Please enter a valid email address.'})); return;
+    }
+
+    const ua = clean(req.headers['user-agent'] || '', 200);
+    const ts = new Date().toISOString();
+    const sep = '─'.repeat(72);
+    const entry =
+`${sep}
+[${ts}]  Early Investor Window — Reservation
+  Name        : ${name}
+  Amount (₦)  : ${amount}
+  Email       : ${email}
+  Phone/WA    : ${phone}
+  Notes       : ${notes || '(none)'}
+  IP          : ${ip}
+  User-Agent  : ${ua}
+`;
+    fs.appendFile(INVESTORS_FILE, entry, { mode: 0o600 }, (err) => {
+      if (err) {
+        console.error('[Reserve] write failed:', err.message);
+        res.writeHead(500, {'Content-Type':'application/json'});
+        res.end(JSON.stringify({ok:false,error:'Could not save your reservation. Please email invest@adroomai.com.'}));
+        return;
+      }
+      try { fs.chmodSync(INVESTORS_FILE, 0o600); } catch {}
+      console.log(`[Reserve] new reservation from ${name} <${email}> for ₦${amount}`);
+      res.writeHead(200, {'Content-Type':'application/json'});
+      res.end(JSON.stringify({ok:true}));
+    });
+  });
+  req.on('error', () => {
+    try { res.writeHead(400); res.end(); } catch {}
+  });
+}
+
 const server = http.createServer((req, res) => {
+  if (req.method === 'POST' && req.url === '/api/reserve') { handleReserve(req, res); return; }
   if (tryServeLanding(req, res)) return;
   if (req.url === '/health' || req.url === '/api-status') {
     res.writeHead(200, { 'Content-Type': 'application/json' });
