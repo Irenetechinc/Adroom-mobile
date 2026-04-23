@@ -508,6 +508,96 @@
     .sc-arrow-prev{left:6px}
     .sc-arrow-next{right:6px}
   }
+
+  /* ─── SOCIAL PROOF TICKER ────────────────────────────────────────── */
+  .ticker-strip{
+    position:relative;
+    z-index:1;
+    width:100%;
+    overflow:hidden;
+    border-top:1px solid rgba(245,158,11,.18);
+    border-bottom:1px solid rgba(245,158,11,.18);
+    background:linear-gradient(90deg,rgba(245,158,11,.05) 0%,rgba(245,158,11,.02) 50%,rgba(245,158,11,.05) 100%);
+    padding:0;
+    /* scroll-triggered: starts invisible */
+    opacity:0;
+    transform:translateY(16px);
+    transition:opacity .7s ease, transform .7s ease;
+  }
+  .ticker-strip.tk-in{
+    opacity:1;
+    transform:translateY(0);
+  }
+
+  /* edge fade masks */
+  .ticker-strip::before,
+  .ticker-strip::after{
+    content:'';
+    position:absolute;
+    top:0;bottom:0;
+    width:80px;
+    z-index:2;
+    pointer-events:none;
+  }
+  .ticker-strip::before{
+    left:0;
+    background:linear-gradient(90deg,var(--bg) 0%,transparent 100%);
+  }
+  .ticker-strip::after{
+    right:0;
+    background:linear-gradient(270deg,var(--bg) 0%,transparent 100%);
+  }
+
+  .ticker-inner{
+    display:flex;
+    align-items:center;
+    width:max-content;
+    animation:tickerRoll 38s linear infinite;
+    padding:14px 0;
+  }
+  .ticker-strip:hover .ticker-inner,
+  .ticker-strip:focus-within .ticker-inner{
+    animation-play-state:paused;
+  }
+
+  @keyframes tickerRoll{
+    0%  {transform:translateX(0)}
+    100%{transform:translateX(-50%)}
+  }
+
+  .tk-item{
+    display:inline-flex;
+    align-items:center;
+    gap:9px;
+    white-space:nowrap;
+    font-size:13px;
+    font-weight:600;
+    color:var(--txt-2);
+    padding:0 32px;
+    flex-shrink:0;
+  }
+  .tk-item .tk-icon{
+    font-size:14px;
+    color:var(--amber);
+    flex-shrink:0;
+  }
+  .tk-item strong{color:var(--amber)}
+
+  .tk-sep{
+    display:inline-block;
+    width:5px;height:5px;
+    border-radius:50%;
+    background:rgba(245,158,11,.45);
+    box-shadow:0 0 8px rgba(245,158,11,.4);
+    flex-shrink:0;
+    margin:0 4px;
+  }
+
+  @media(max-width:640px){
+    .ticker-strip::before,.ticker-strip::after{width:40px}
+    .tk-item{font-size:12px;padding:0 22px}
+    .ticker-inner{animation-duration:28s}
+  }
 </style>
 </head>
 <body>
@@ -646,6 +736,66 @@
   </div>
 </section>
 
+<!-- ═══════════════════════════════════════════════
+     SOCIAL PROOF TICKER
+═══════════════════════════════════════════════ -->
+<div class="ticker-strip" id="tk-strip" aria-label="Key product highlights" role="marquee">
+  <div class="ticker-inner" id="tk-inner">
+
+    <!-- ── SET A (original) ── -->
+    <span class="tk-item"><i class="fa-solid fa-bolt tk-icon"></i> <strong>Fully Built &amp; Live</strong> — downloadable on iOS &amp; Android today</span>
+    <span class="tk-sep"></span>
+    <span class="tk-item"><i class="fa-solid fa-brain tk-icon"></i> Powered by <strong>GPT-4o + Gemini Vision</strong></span>
+    <span class="tk-sep"></span>
+    <span class="tk-item"><i class="fa-solid fa-robot tk-icon"></i> <strong>100% Autonomous</strong> — AI plans, creates &amp; posts content for you</span>
+    <span class="tk-sep"></span>
+    <span class="tk-item"><i class="fa-solid fa-shield-halved tk-icon"></i> <strong>24-Month Exit Guarantee</strong> — walk away at fair market value, anytime</span>
+    <span class="tk-sep"></span>
+    <span class="tk-item"><i class="fa-solid fa-coins tk-icon"></i> <strong>₦1 per share</strong> — same price as institutional investors</span>
+    <span class="tk-sep"></span>
+    <span class="tk-item"><i class="fa-solid fa-chart-line tk-icon"></i> <strong>$5M Pre-Seed Valuation</strong> · 2% equity cap · ₦1M minimum</span>
+    <span class="tk-sep"></span>
+    <span class="tk-item"><i class="fa-brands fa-facebook tk-icon"></i> Multi-platform: <strong>Facebook · Instagram · TikTok · LinkedIn</strong></span>
+    <span class="tk-sep"></span>
+    <span class="tk-item"><i class="fa-solid fa-eye tk-icon"></i> <strong>Platform Intelligence Engine</strong> — real-time algorithm monitoring</span>
+    <span class="tk-sep"></span>
+    <span class="tk-item"><i class="fa-solid fa-lock tk-icon"></i> <strong>Full Refund Protection</strong> if main round doesn't close in 18 months</span>
+    <span class="tk-sep"></span>
+    <span class="tk-item"><i class="fa-solid fa-rocket tk-icon"></i> <strong>First-Mover</strong> in autonomous AI marketing — zero credible competition</span>
+    <span class="tk-sep"></span>
+    <span class="tk-item"><i class="fa-solid fa-scale-balanced tk-icon"></i> Governed by <strong>Nigerian Law</strong> · Convertible Note / SAFE Agreement</span>
+    <span class="tk-sep"></span>
+    <span class="tk-item"><i class="fa-solid fa-wand-magic-sparkles tk-icon"></i> <strong>AI Creative Engine</strong> — generates copy, images &amp; replies automatically</span>
+    <span class="tk-sep"></span>
+
+    <!-- ── SET B (duplicate for seamless loop) ── -->
+    <span class="tk-item"><i class="fa-solid fa-bolt tk-icon"></i> <strong>Fully Built &amp; Live</strong> — downloadable on iOS &amp; Android today</span>
+    <span class="tk-sep"></span>
+    <span class="tk-item"><i class="fa-solid fa-brain tk-icon"></i> Powered by <strong>GPT-4o + Gemini Vision</strong></span>
+    <span class="tk-sep"></span>
+    <span class="tk-item"><i class="fa-solid fa-robot tk-icon"></i> <strong>100% Autonomous</strong> — AI plans, creates &amp; posts content for you</span>
+    <span class="tk-sep"></span>
+    <span class="tk-item"><i class="fa-solid fa-shield-halved tk-icon"></i> <strong>24-Month Exit Guarantee</strong> — walk away at fair market value, anytime</span>
+    <span class="tk-sep"></span>
+    <span class="tk-item"><i class="fa-solid fa-coins tk-icon"></i> <strong>₦1 per share</strong> — same price as institutional investors</span>
+    <span class="tk-sep"></span>
+    <span class="tk-item"><i class="fa-solid fa-chart-line tk-icon"></i> <strong>$5M Pre-Seed Valuation</strong> · 2% equity cap · ₦1M minimum</span>
+    <span class="tk-sep"></span>
+    <span class="tk-item"><i class="fa-brands fa-facebook tk-icon"></i> Multi-platform: <strong>Facebook · Instagram · TikTok · LinkedIn</strong></span>
+    <span class="tk-sep"></span>
+    <span class="tk-item"><i class="fa-solid fa-eye tk-icon"></i> <strong>Platform Intelligence Engine</strong> — real-time algorithm monitoring</span>
+    <span class="tk-sep"></span>
+    <span class="tk-item"><i class="fa-solid fa-lock tk-icon"></i> <strong>Full Refund Protection</strong> if main round doesn't close in 18 months</span>
+    <span class="tk-sep"></span>
+    <span class="tk-item"><i class="fa-solid fa-rocket tk-icon"></i> <strong>First-Mover</strong> in autonomous AI marketing — zero credible competition</span>
+    <span class="tk-sep"></span>
+    <span class="tk-item"><i class="fa-solid fa-scale-balanced tk-icon"></i> Governed by <strong>Nigerian Law</strong> · Convertible Note / SAFE Agreement</span>
+    <span class="tk-sep"></span>
+    <span class="tk-item"><i class="fa-solid fa-wand-magic-sparkles tk-icon"></i> <strong>AI Creative Engine</strong> — generates copy, images &amp; replies automatically</span>
+    <span class="tk-sep"></span>
+
+  </div>
+</div>
 
 
 <!-- INVESTMENT SUMMARY -->
@@ -1084,6 +1234,24 @@
     /* init dots */
     dots.forEach((d,i) => d.classList.toggle('active', i === 0));
     goto(0, true);
+  })();
+
+  /* ── TICKER scroll-trigger ──────────────────────────────────────────
+     Fades + slides the ticker in when it enters view;
+     removes the class on exit so it re-animates every scroll-in.     */
+  (function(){
+    const tk = document.getElementById('tk-strip');
+    if (!tk) return;
+    const tkObs = new IntersectionObserver((entries) => {
+      entries.forEach(entry => {
+        if (entry.isIntersecting) {
+          tk.classList.add('tk-in');
+        } else {
+          tk.classList.remove('tk-in');
+        }
+      });
+    }, { threshold: 0.25 });
+    tkObs.observe(tk);
   })();
 
   /* ============================================================
