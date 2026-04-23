@@ -61,9 +61,8 @@
       "apiUrl": "http://localhost:8000",
       "facebookAppId": "1536532767602012",
       "eas": {
-        "projectId": "db165cb5-331a-4921-9125-f975565c2aa1"
+        "projectId": "69c27cbc-28ff-42e8-ada2-e3226a6b7de9"
       }
-    },
-    "owner": "iamdivinedavid"
+    }
   }
 }
