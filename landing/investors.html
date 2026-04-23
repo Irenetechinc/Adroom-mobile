@@ -124,18 +124,15 @@
   .faq-item.open .faq-a{max-height:300px;padding:0 22px 18px}
   .faq-a p{color:var(--txt-3);font-size:13.5px;line-height:1.7}
 
-  /* Currency banner */
-  .cur-bar{position:sticky;top:60px;z-index:40;display:flex;align-items:center;justify-content:center;gap:14px;flex-wrap:wrap;padding:10px 18px;margin:0;background:linear-gradient(90deg,rgba(11,15,25,.92),rgba(21,27,43,.92));backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);border-bottom:1px solid rgba(245,158,11,.12);font-size:12.5px;color:var(--txt-2);transition:opacity .3s ease}
-  .cur-bar.hidden{display:none}
-  .cur-bar .cur-info{display:inline-flex;align-items:center;gap:8px}
-  .cur-bar .cur-flag{font-size:16px;line-height:1}
-  .cur-bar .cur-meta{color:var(--txt-3);font-size:11.5px}
-  .cur-bar .cur-meta b{color:var(--amber);font-weight:700}
-  .cur-bar select{background:rgba(245,158,11,.08);border:1px solid var(--amber-line);color:var(--txt);padding:5px 10px;border-radius:8px;font-size:12px;font-family:inherit;cursor:pointer;outline:none}
-  .cur-bar select:hover{background:rgba(245,158,11,.15)}
+  /* Nav-integrated currency selector */
+  .nav-right{display:flex;align-items:center;gap:14px}
+  .nav-cur-select{appearance:none;-webkit-appearance:none;background:rgba(245,158,11,.06) url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'><path fill='%23F59E0B' d='M0 0l5 6 5-6z'/></svg>") no-repeat right 10px center;border:1px solid var(--amber-line);color:var(--txt);padding:8px 28px 8px 12px;border-radius:50px;font-size:12px;font-weight:600;font-family:inherit;cursor:pointer;outline:none;transition:background .2s, border-color .2s;letter-spacing:.3px;min-width:96px}
+  .nav-cur-select:hover{background-color:rgba(245,158,11,.14);border-color:var(--amber)}
+  .nav-cur-select:focus{border-color:var(--amber);box-shadow:0 0 0 3px rgba(245,158,11,.15)}
+  .nav-cur-select option{background:#0B0F19;color:var(--txt)}
   .cur-conv{display:inline-block;margin-left:6px;color:var(--cyan);font-weight:600;font-size:.86em;opacity:.92;font-family:'Space Grotesk',sans-serif;letter-spacing:0;white-space:nowrap}
   td.highlight .cur-conv,.val .cur-conv{color:rgba(0,240,255,.85)}
-  @media (max-width:520px){.cur-bar{font-size:11.5px;padding:8px 12px;gap:10px}.cur-bar .cur-meta{font-size:10.5px}}
+  @media (max-width:600px){.nav-right{gap:8px}.nav-cur-select{font-size:11px;padding:7px 24px 7px 10px;min-width:78px;background-position:right 8px center}}
 
   /* Reservation form */
   .reserve-form{max-width:560px;margin:0 auto 28px;display:grid;gap:14px;text-align:left}
@@ -152,7 +149,7 @@
   .form-status.show{display:block}
   .form-status.success{background:rgba(16,185,129,.08);border:1px solid rgba(16,185,129,.3);color:#34D399}
   .form-status.error{background:rgba(239,68,68,.08);border:1px solid rgba(239,68,68,.3);color:#FCA5A5}
-  .or-divider{display:flex;align-items:center;gap:12px;margin:8px 0 4px;color:var(--txt-4);font-size:11px;letter-spacing:1.2px;text-transform:uppercase;font-weight:600}
+  .or-divider{display:flex;align-items:center;gap:12px;margin:32px 0 20px;color:var(--txt-4);font-size:11px;letter-spacing:1.2px;text-transform:uppercase;font-weight:600}
   .or-divider::before,.or-divider::after{content:'';flex:1;height:1px;background:var(--line)}
   @media (max-width:520px){.reserve-form .row{grid-template-columns:1fr}}
 
@@ -181,6 +178,7 @@
 
   /* Exit highlight */
   .exit-banner{background:linear-gradient(135deg,rgba(16,185,129,.08),rgba(0,240,255,.04));border:1px solid rgba(16,185,129,.25);border-radius:24px;padding:36px;display:grid;grid-template-columns:auto 1fr;gap:24px;align-items:center}
+  .exit-banner .pill{margin-bottom:16px}
   .exit-icon{width:64px;height:64px;border-radius:18px;background:rgba(16,185,129,.12);color:var(--green);display:flex;align-items:center;justify-content:center;font-size:28px;border:1px solid rgba(16,185,129,.3)}
   .exit-banner h3{font-size:22px;margin-bottom:8px;color:#fff}
   .exit-banner p{color:var(--txt-2);font-size:14px;line-height:1.65}
@@ -245,22 +243,12 @@
 <nav>
   <div class="nav-inner">
     <a href="index.html" class="logo"><img src="assets/logo.png" alt="AdRoom AI" class="logo-img" /> AdRoom AI</a>
-    <a href="#contact" class="nav-cta"><i class="fa-solid fa-handshake"></i> Become an Investor</a>
+    <div class="nav-right">
+      <select id="nav-cur-select" class="nav-cur-select" aria-label="Display currency" title="Choose display currency"></select>
+      <a href="#contact" class="nav-cta"><i class="fa-solid fa-handshake"></i> Become an Investor</a>
+    </div>
   </div>
 </nav>
-
-<!-- Currency / Geo bar (auto-shown for non-NGN visitors) -->
-<div class="cur-bar hidden" id="cur-bar" role="region" aria-label="Currency conversion">
-  <div class="cur-info">
-    <span class="cur-flag" id="cur-flag">🌍</span>
-    <span>Showing approximate amounts in <b id="cur-code">USD</b></span>
-  </div>
-  <div class="cur-meta">Live rate: <b id="cur-rate">—</b> · From <span id="cur-loc">your location</span></div>
-  <label style="display:inline-flex;align-items:center;gap:6px">
-    <span style="font-size:11px;color:var(--txt-4);text-transform:uppercase;letter-spacing:.6px">Currency</span>
-    <select id="cur-select" aria-label="Choose display currency"></select>
-  </label>
-</div>
 
 <!-- HERO -->
 <section class="hero">
@@ -412,8 +400,8 @@
           <tr><td>Conversion Price</td><td>Fixed at ₦1 per share (same as main round)</td></tr>
           <tr><td>Your Equity at Conversion</td><td>(Your ₦) ÷ ₦1 = Number of shares</td></tr>
           <tr><td>Refund Protection</td><td>Full refund if main round doesn't close in 18 months</td></tr>
-          <tr><td>24-Month Exit Option</td><td class="highlight">Guaranteed buyback at <strong>2× your investment</strong> after 24 months — at your request</td></tr>
-          <tr><td>Liquidity Window</td><td>Any time after Month 24, you may sell your shares back to the company at the higher of (a) 2× your original investment or (b) the latest priced-round valuation</td></tr>
+          <tr><td>24-Month Exit Option</td><td class="highlight">Guaranteed buyback at the company's <strong>then-current valuation</strong> after 24 months — at your request</td></tr>
+          <tr><td>Liquidity Window</td><td>Any time after Month 24, you may sell your shares back to the company at the <strong>then-current company valuation</strong>. (If the company has grown 2× or more by that time, you naturally receive 2× or more of your investment.)</td></tr>
           <tr><td>Total Pool Maximum</td><td class="highlight">₦155,000,000 (2% of company)</td></tr>
           <tr><td>Governing Law</td><td>Laws of the Federal Republic of Nigeria</td></tr>
         </tbody>
@@ -425,8 +413,8 @@
       <div class="exit-icon"><i class="fa-solid fa-shield-halved"></i></div>
       <div>
         <span class="pill"><i class="fa-solid fa-lock-open"></i> 24-Month Exit Guarantee</span>
-        <h3>You're never trapped. Walk away at 2× any time after Month 24.</h3>
-        <p>If you choose not to wait for the next priced round, AdRoom AI guarantees a buyback of your shares for <strong>double your original investment</strong> at any point after the 24-month mark — for any reason, no questions asked. Your downside is protected. Your upside is uncapped.</p>
+        <h3>You're never trapped. Walk away any time after Month 24 at fair market value.</h3>
+        <p>If you choose not to wait for the next priced round, AdRoom AI guarantees a buyback of your shares at the company's <strong>then-current valuation</strong> at any point after the 24-month mark — for any reason, no questions asked. If the company has grown 2× or more by then, your buyback naturally reflects that growth. Your liquidity is guaranteed. Your upside is uncapped.</p>
       </div>
     </div>
   </div>
@@ -447,8 +435,8 @@
       <div class="faq-item anim delay-4"><div class="faq-q">Can I invest more than ₦155 million?</div><div class="faq-a"><p>No. ₦155M is the maximum any single investor can put in, since that already represents 2% of the entire company — the hard cap for the early window.</p></div></div>
       <div class="faq-item anim delay-5"><div class="faq-q">When do I receive my shares?</div><div class="faq-a"><p>Shares are issued automatically when the main pre-seed round closes — projected in 6 to 12 months from today.</p></div></div>
       <div class="faq-item anim"><div class="faq-q">What is the absolute minimum?</div><div class="faq-a"><p>₦1,000,000 — One Million Naira. This is the lowest entry point we offer.</p></div></div>
-      <div class="faq-item anim delay-1"><div class="faq-q">What if I want my money back before an IPO or acquisition?</div><div class="faq-a"><p>You're protected by the 24-Month Exit Guarantee. Any time after Month 24, you can request a full buyback of your shares at <strong>2× your original investment</strong> — no questions asked. So even in the worst-case scenario where the company never IPOs, you still walk away doubling your money.</p></div></div>
-      <div class="faq-item anim delay-2"><div class="faq-q">How does the 24-month exit actually work?</div><div class="faq-a"><p>Starting on the first day of Month 25, you may submit a written buyback request. AdRoom AI is contractually obligated to repurchase your shares for the higher of (a) 2× your original investment, or (b) the latest priced-round per-share value. Payment is made in full within 90 days of the request.</p></div></div>
+      <div class="faq-item anim delay-1"><div class="faq-q">What if I want my money back before an IPO or acquisition?</div><div class="faq-a"><p>You're protected by the 24-Month Exit Guarantee. Any time after Month 24, you can request a full buyback of your shares at the company's <strong>then-current valuation</strong> — no questions asked. The amount you receive reflects the company's market value at that time, so if the company has grown 2× or more, you naturally receive 2× or more of what you put in.</p></div></div>
+      <div class="faq-item anim delay-2"><div class="faq-q">How does the 24-month exit actually work?</div><div class="faq-a"><p>Starting on the first day of Month 25, you may submit a written buyback request. AdRoom AI is contractually obligated to repurchase your shares at the <strong>then-current per-share valuation</strong> (based on the most recent priced round or independent valuation). Payment is made in full within 90 days of the request. There is no guaranteed multiple — the buyback simply reflects fair market value at the time of your exit.</p></div></div>
     </div>
   </div>
 </section>
@@ -461,7 +449,7 @@
       <h2 class="anim delay-1">The Window Closes at ₦155,000,000.</h2>
       <p class="anim delay-2">Once early investors fill the 2% pool, this opportunity is gone forever. Reserve your spot in 30 seconds — we'll send you the full term sheet, convertible note agreement, and next steps.</p>
 
-      <form class="reserve-form anim delay-3" id="reserve-form" novalidate>
+      <form class="reserve-form anim delay-3" id="reserve-form" method="POST" action="reserve.php" novalidate>
         <div class="row">
           <div class="field">
             <label for="rf-name">Full Name *</label>
@@ -496,7 +484,7 @@
 
       <div class="or-divider anim delay-4"><span>Prefer to reach out directly?</span></div>
 
-      <div class="final-ctas anim delay-4">
+      <div class="final-ctas anim delay-4" style="padding-top:6px">
         <a href="mailto:invest@adroomai.com?subject=Early%20Investor%20Inquiry&body=Hello%20AdRoom%20AI%20Team,%0A%0AI%20am%20interested%20in%20the%20Early%20Investor%20Window.%20Please%20send%20me%20the%20full%20term%20sheet%20and%20next%20steps.%0A%0AName:%0AInvestment%20amount%20(₦):%0APhone:%0A%0AThank%20you." class="btn btn-amber"><i class="fa-solid fa-envelope"></i> Email invest@adroomai.com</a>
         <a href="https://wa.me/2348147970957?text=Hello%20AdRoom%20AI%20Team,%20I%20am%20interested%20in%20the%20Early%20Investor%20Window.%20Please%20send%20me%20more%20details." class="btn btn-ghost" target="_blank" rel="noopener"><i class="fa-brands fa-whatsapp"></i> WhatsApp Us</a>
       </div>
@@ -570,19 +558,15 @@
     form.addEventListener('submit', async (e) => {
       e.preventDefault();
       const fd = new FormData(form);
-      const payload = {
-        name: (fd.get('name')||'').toString().trim(),
-        amount: (fd.get('amount')||'').toString().trim(),
-        email: (fd.get('email')||'').toString().trim(),
-        phone: (fd.get('phone')||'').toString().trim(),
-        notes: (fd.get('notes')||'').toString().trim(),
-        website: (fd.get('website')||'').toString()
-      };
-      if (!payload.name || !payload.amount || !payload.email || !payload.phone) {
+      const name   = (fd.get('name')||'').toString().trim();
+      const amount = (fd.get('amount')||'').toString().trim();
+      const email  = (fd.get('email')||'').toString().trim();
+      const phone  = (fd.get('phone')||'').toString().trim();
+      if (!name || !amount || !email || !phone) {
         showStatus('Please fill in all required fields.', 'error');
         return;
       }
-      if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(payload.email)) {
+      if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
         showStatus('Please enter a valid email address.', 'error');
         return;
       }
@@ -590,17 +574,22 @@
       const originalHtml = submitBtn.innerHTML;
       submitBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Sending...';
       try {
-        const res = await fetch('/api/reserve', {
+        // POST as application/x-www-form-urlencoded so PHP populates $_POST
+        // natively. The form's `action` attribute (reserve.php) is the source
+        // of truth for where the request goes.
+        const params = new URLSearchParams();
+        for (const [k, v] of fd.entries()) params.append(k, typeof v === 'string' ? v : '');
+        const res = await fetch(form.action, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload)
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8' },
+          body: params.toString()
         });
         const data = await res.json().catch(() => ({}));
-        if (res.ok && data.ok) {
+        if (res.ok && data && data.ok) {
           form.reset();
           showStatus('✓ Reservation received. The founder will reach out within 24 hours with the full term sheet.', 'success');
         } else {
-          showStatus(data.error || 'Something went wrong. Please email invest@adroomai.com directly.', 'error');
+          showStatus((data && data.error) || 'Something went wrong. Please email invest@adroomai.com directly.', 'error');
         }
       } catch (err) {
         showStatus('Network error. Please email invest@adroomai.com directly.', 'error');
@@ -619,15 +608,16 @@
   });
 
   /* ============================================================
-     REAL-TIME GEO + CURRENCY CONVERSION
-     - IP-based country detection: ipapi.co (CORS, free, no key)
-       Fallback: api.country.is (CORS, free, no key)
-     - Live FX rates: open.er-api.com base=NGN (CORS, free, no key)
-     - Caches both for 60 minutes in localStorage to stay friendly
-       to free-tier API quotas on shared hosting.
-     - Walks all on-page text nodes and appends a converted
-       amount next to every Naira figure (₦1,000,000 / ₦5M / ₦1B).
-     - Manual override via dropdown — choice is remembered.
+     REAL-TIME GEO + CURRENCY CONVERSION  (100% client-side)
+     No backend, no build step — drops onto any static host.
+     - Geo  : ipapi.co/json/   (free, no key, CORS-enabled)
+              fallback → api.country.is  (free, no key, CORS)
+     - FX   : open.er-api.com/v6/latest/NGN  (free, no key, CORS,
+              updates every ~24h — true production rate source)
+     - Cache: localStorage, FX 30min / Geo 6h (polite-use limits).
+     - DOM  : text-node walker that appends "(~$X,XXX)" next to
+              every ₦amount on the page (₦1, ₦1,000,000, ₦5M, ₦7.75B).
+     - UI   : single nav dropdown — the visitor's choice is remembered.
      ============================================================ */
   (function(){
     const SUPPORTED = [
@@ -646,19 +636,16 @@
       {c:'NGN',s:'₦',n:'Nigerian Naira'}
     ];
     const SUPPORTED_CODES = new Set(SUPPORTED.map(x=>x.c));
-    const GEO_KEY='adroom_geo_v1', FX_KEY='adroom_fx_v1', CHOICE_KEY='adroom_cur_choice_v1';
-    const HOUR = 60*60*1000;
+    const GEO_KEY='adroom_geo_v2', FX_KEY='adroom_fx_v2', CHOICE_KEY='adroom_cur_choice_v2';
+    const FX_TTL  = 30*60*1000;  // 30 min — keeps rates fresh, well under free quotas
+    const GEO_TTL = 6*60*60*1000; // 6h — geo rarely changes
 
-    const bar      = document.getElementById('cur-bar');
-    const flagEl   = document.getElementById('cur-flag');
-    const codeEl   = document.getElementById('cur-code');
-    const rateEl   = document.getElementById('cur-rate');
-    const locEl    = document.getElementById('cur-loc');
-    const selectEl = document.getElementById('cur-select');
+    const selectEl = document.getElementById('nav-cur-select');
+    if (!selectEl) return;
 
     SUPPORTED.forEach(x=>{
       const o=document.createElement('option');
-      o.value=x.c; o.textContent=`${x.c} — ${x.n}`;
+      o.value=x.c; o.textContent=`${x.c} ${x.s}`;
       selectEl.appendChild(o);
     });
 
@@ -687,7 +674,7 @@
     };
 
     async function detectGeo(){
-      const cached = cacheGet(GEO_KEY, HOUR);
+      const cached = cacheGet(GEO_KEY, GEO_TTL);
       if (cached) return cached;
       // Primary: ipapi.co (returns currency + country_name)
       try{
@@ -720,7 +707,7 @@
     }
 
     async function fetchRates(){
-      const cached = cacheGet(FX_KEY, HOUR);
+      const cached = cacheGet(FX_KEY, FX_TTL);
       if (cached) return cached;
       // Live rates, NGN base. Real, free, no key.
       const j = await fetchJson('https://open.er-api.com/v6/latest/NGN');
@@ -763,7 +750,8 @@
           const p = node.parentNode;
           if (!p) return NodeFilter.FILTER_REJECT;
           if (SKIP.has(p.nodeName)) return NodeFilter.FILTER_REJECT;
-          if (p.classList && (p.classList.contains('cur-conv') || p.closest('.cur-bar'))) return NodeFilter.FILTER_REJECT;
+          if (p.classList && p.classList.contains('cur-conv')) return NodeFilter.FILTER_REJECT;
+          if (p.closest && p.closest('nav,.nav-cur-select')) return NodeFilter.FILTER_REJECT;
           if (!node.nodeValue || node.nodeValue.indexOf('₦')===-1) return NodeFilter.FILTER_REJECT;
           return NodeFilter.FILTER_ACCEPT;
         }
@@ -808,47 +796,43 @@
       }
     }
 
-    function updateBar(currencyCode, rate, geo){
-      bar.classList.remove('hidden');
-      flagEl.textContent = flagFor(geo.country);
-      codeEl.textContent = currencyCode;
-      locEl.textContent  = geo.countryName || 'your location';
-      const symbol = (SUPPORTED.find(x=>x.c===currencyCode)||{}).s || '';
-      // Show how much 1,000,000 NGN equals
-      const oneMillion = 1e6 * rate;
-      rateEl.textContent = `₦1,000,000 ≈ ${formatMoney(oneMillion, currencyCode)}`;
-      selectEl.value = currencyCode;
+    function setSelected(code){
+      // Reflect current currency in the nav dropdown — title shows fuller info.
+      selectEl.value = code;
+      const meta = SUPPORTED.find(x=>x.c===code) || {};
+      selectEl.title = `Showing approximate amounts in ${meta.n||code} (${code}). Switch any time.`;
     }
 
+    let FX_CACHE = null;   // shared so the dropdown handler can re-convert instantly
+    let GEO_CACHE = null;
+
     async function init(){
-      let geo, fx;
-      try { [geo, fx] = await Promise.all([detectGeo(), fetchRates()]); }
-      catch(e){ console.warn('[currency] init failed:', e); return; }
-
-      // Honour saved manual choice if present
-      const saved = (()=>{ try{ return localStorage.getItem(CHOICE_KEY); }catch{ return null; } })();
-      let target = saved && SUPPORTED_CODES.has(saved) ? saved : geo.currency;
-      if (!SUPPORTED_CODES.has(target)) target = 'USD';
-
-      // If visitor is in Nigeria and hasn't manually chosen another currency,
-      // skip conversion entirely — naira is already shown.
-      if (target === 'NGN' && !saved){
-        // Still expose the bar so the user can switch if they want.
-        updateBar('NGN', 1, geo);
+      // Fetch geo + rates in parallel — both are real, free, key-less APIs.
+      const results = await Promise.allSettled([detectGeo(), fetchRates()]);
+      GEO_CACHE = results[0].status === 'fulfilled' ? results[0].value : { country:'', countryName:'your location', currency:'USD' };
+      if (results[1].status !== 'fulfilled'){
+        console.warn('[currency] FX rates unavailable:', results[1].reason);
+        // Hide the dropdown — without rates there's nothing meaningful to switch to.
+        selectEl.style.display = 'none';
         return;
       }
+      FX_CACHE = results[1].value;
 
-      const rate = fx.rates[target];
-      if (!rate){ console.warn('[currency] no rate for', target); return; }
-      updateBar(target, rate, geo);
+      // Manual override wins; otherwise use IP-detected currency.
+      const saved = (()=>{ try{ return localStorage.getItem(CHOICE_KEY); }catch{ return null; } })();
+      let target = saved && SUPPORTED_CODES.has(saved) ? saved : GEO_CACHE.currency;
+      if (!SUPPORTED_CODES.has(target) || !FX_CACHE.rates[target]) target = 'NGN';
+
+      setSelected(target);
+      const rate = target === 'NGN' ? 1 : FX_CACHE.rates[target];
       applyConversions(rate, target);
 
       selectEl.addEventListener('change', () => {
         const code = selectEl.value;
         try { localStorage.setItem(CHOICE_KEY, code); } catch {}
-        const r = fx.rates[code];
+        const r = code === 'NGN' ? 1 : FX_CACHE.rates[code];
         if (!r) return;
-        updateBar(code, r, geo);
+        setSelected(code);
         applyConversions(r, code);
       });
     }

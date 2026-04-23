@@ -1,6 +1,7 @@
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
+const querystring = require('querystring');
 const PORT = 5000;
 
 const LANDING_DIR = path.join(__dirname, 'landing');
@@ -142,9 +143,21 @@ function handleReserve(req, res){
     body += chunk;
   });
   req.on('end', () => {
+    const ctype = (req.headers['content-type'] || '').toLowerCase();
     let payload;
-    try { payload = JSON.parse(body || '{}'); }
-    catch { res.writeHead(400, {'Content-Type':'application/json'}); res.end(JSON.stringify({ok:false,error:'Invalid request.'})); return; }
+    try {
+      if (ctype.includes('application/x-www-form-urlencoded')) {
+        payload = querystring.parse(body || '');
+      } else if (ctype.includes('application/json') || (body && body.trim().startsWith('{'))) {
+        payload = JSON.parse(body || '{}');
+      } else {
+        // Best-effort: try urlencoded for any unknown text body.
+        payload = querystring.parse(body || '');
+      }
+    } catch {
+      res.writeHead(400, {'Content-Type':'application/json'});
+      res.end(JSON.stringify({ok:false,error:'Invalid request.'})); return;
+    }
 
     // Honeypot
     if (payload.website && String(payload.website).trim()) {
@@ -206,7 +219,9 @@ function handleReserve(req, res){
 }
 
 const server = http.createServer((req, res) => {
-  if (req.method === 'POST' && req.url === '/api/reserve') { handleReserve(req, res); return; }
+  if (req.method === 'POST' && (req.url === '/api/reserve' || req.url === '/landing/reserve.php' || req.url === '/reserve.php')) {
+    handleReserve(req, res); return;
+  }
   if (tryServeLanding(req, res)) return;
   if (req.url === '/health' || req.url === '/api-status') {
     res.writeHead(200, { 'Content-Type': 'application/json' });
