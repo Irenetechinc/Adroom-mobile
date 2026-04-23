@@ -124,6 +124,19 @@
   .faq-item.open .faq-a{max-height:300px;padding:0 22px 18px}
   .faq-a p{color:var(--txt-3);font-size:13.5px;line-height:1.7}
 
+  /* Currency banner */
+  .cur-bar{position:sticky;top:60px;z-index:40;display:flex;align-items:center;justify-content:center;gap:14px;flex-wrap:wrap;padding:10px 18px;margin:0;background:linear-gradient(90deg,rgba(11,15,25,.92),rgba(21,27,43,.92));backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);border-bottom:1px solid rgba(245,158,11,.12);font-size:12.5px;color:var(--txt-2);transition:opacity .3s ease}
+  .cur-bar.hidden{display:none}
+  .cur-bar .cur-info{display:inline-flex;align-items:center;gap:8px}
+  .cur-bar .cur-flag{font-size:16px;line-height:1}
+  .cur-bar .cur-meta{color:var(--txt-3);font-size:11.5px}
+  .cur-bar .cur-meta b{color:var(--amber);font-weight:700}
+  .cur-bar select{background:rgba(245,158,11,.08);border:1px solid var(--amber-line);color:var(--txt);padding:5px 10px;border-radius:8px;font-size:12px;font-family:inherit;cursor:pointer;outline:none}
+  .cur-bar select:hover{background:rgba(245,158,11,.15)}
+  .cur-conv{display:inline-block;margin-left:6px;color:var(--cyan);font-weight:600;font-size:.86em;opacity:.92;font-family:'Space Grotesk',sans-serif;letter-spacing:0;white-space:nowrap}
+  td.highlight .cur-conv,.val .cur-conv{color:rgba(0,240,255,.85)}
+  @media (max-width:520px){.cur-bar{font-size:11.5px;padding:8px 12px;gap:10px}.cur-bar .cur-meta{font-size:10.5px}}
+
   /* Reservation form */
   .reserve-form{max-width:560px;margin:0 auto 28px;display:grid;gap:14px;text-align:left}
   .reserve-form .row{display:grid;grid-template-columns:1fr 1fr;gap:14px}
@@ -235,6 +248,19 @@
     <a href="#contact" class="nav-cta"><i class="fa-solid fa-handshake"></i> Become an Investor</a>
   </div>
 </nav>
+
+<!-- Currency / Geo bar (auto-shown for non-NGN visitors) -->
+<div class="cur-bar hidden" id="cur-bar" role="region" aria-label="Currency conversion">
+  <div class="cur-info">
+    <span class="cur-flag" id="cur-flag">🌍</span>
+    <span>Showing approximate amounts in <b id="cur-code">USD</b></span>
+  </div>
+  <div class="cur-meta">Live rate: <b id="cur-rate">—</b> · From <span id="cur-loc">your location</span></div>
+  <label style="display:inline-flex;align-items:center;gap:6px">
+    <span style="font-size:11px;color:var(--txt-4);text-transform:uppercase;letter-spacing:.6px">Currency</span>
+    <select id="cur-select" aria-label="Choose display currency"></select>
+  </label>
+</div>
 
 <!-- HERO -->
 <section class="hero">
@@ -591,6 +617,245 @@
       item.classList.toggle('open');
     });
   });
+
+  /* ============================================================
+     REAL-TIME GEO + CURRENCY CONVERSION
+     - IP-based country detection: ipapi.co (CORS, free, no key)
+       Fallback: api.country.is (CORS, free, no key)
+     - Live FX rates: open.er-api.com base=NGN (CORS, free, no key)
+     - Caches both for 60 minutes in localStorage to stay friendly
+       to free-tier API quotas on shared hosting.
+     - Walks all on-page text nodes and appends a converted
+       amount next to every Naira figure (₦1,000,000 / ₦5M / ₦1B).
+     - Manual override via dropdown — choice is remembered.
+     ============================================================ */
+  (function(){
+    const SUPPORTED = [
+      {c:'USD',s:'$',n:'US Dollar'},      {c:'EUR',s:'€',n:'Euro'},
+      {c:'GBP',s:'£',n:'British Pound'},  {c:'CAD',s:'C$',n:'Canadian Dollar'},
+      {c:'AUD',s:'A$',n:'Australian Dollar'},{c:'NZD',s:'NZ$',n:'New Zealand Dollar'},
+      {c:'JPY',s:'¥',n:'Japanese Yen'},   {c:'CNY',s:'¥',n:'Chinese Yuan'},
+      {c:'INR',s:'₹',n:'Indian Rupee'},   {c:'AED',s:'د.إ',n:'UAE Dirham'},
+      {c:'SAR',s:'﷼',n:'Saudi Riyal'},    {c:'ZAR',s:'R',n:'South African Rand'},
+      {c:'KES',s:'KSh',n:'Kenyan Shilling'},{c:'GHS',s:'GH₵',n:'Ghanaian Cedi'},
+      {c:'EGP',s:'E£',n:'Egyptian Pound'},{c:'CHF',s:'CHF',n:'Swiss Franc'},
+      {c:'SEK',s:'kr',n:'Swedish Krona'}, {c:'NOK',s:'kr',n:'Norwegian Krone'},
+      {c:'DKK',s:'kr',n:'Danish Krone'},  {c:'SGD',s:'S$',n:'Singapore Dollar'},
+      {c:'HKD',s:'HK$',n:'Hong Kong Dollar'},{c:'BRL',s:'R$',n:'Brazilian Real'},
+      {c:'MXN',s:'MX$',n:'Mexican Peso'}, {c:'TRY',s:'₺',n:'Turkish Lira'},
+      {c:'NGN',s:'₦',n:'Nigerian Naira'}
+    ];
+    const SUPPORTED_CODES = new Set(SUPPORTED.map(x=>x.c));
+    const GEO_KEY='adroom_geo_v1', FX_KEY='adroom_fx_v1', CHOICE_KEY='adroom_cur_choice_v1';
+    const HOUR = 60*60*1000;
+
+    const bar      = document.getElementById('cur-bar');
+    const flagEl   = document.getElementById('cur-flag');
+    const codeEl   = document.getElementById('cur-code');
+    const rateEl   = document.getElementById('cur-rate');
+    const locEl    = document.getElementById('cur-loc');
+    const selectEl = document.getElementById('cur-select');
+
+    SUPPORTED.forEach(x=>{
+      const o=document.createElement('option');
+      o.value=x.c; o.textContent=`${x.c} — ${x.n}`;
+      selectEl.appendChild(o);
+    });
+
+    const cacheGet = (k, ttl) => {
+      try{
+        const raw=localStorage.getItem(k); if(!raw) return null;
+        const o=JSON.parse(raw);
+        if(!o||!o.ts||(Date.now()-o.ts)>ttl) return null;
+        return o.data;
+      }catch{ return null; }
+    };
+    const cacheSet = (k, data) => {
+      try{ localStorage.setItem(k, JSON.stringify({ts:Date.now(),data})); }catch{}
+    };
+    const fetchJson = (url, timeoutMs=6000) => {
+      const ctl = new AbortController();
+      const t = setTimeout(()=>ctl.abort(), timeoutMs);
+      return fetch(url,{signal:ctl.signal,credentials:'omit',cache:'no-store'})
+        .then(r=>{ if(!r.ok) throw new Error('HTTP '+r.status); return r.json(); })
+        .finally(()=>clearTimeout(t));
+    };
+    const flagFor = (cc) => {
+      if(!cc||cc.length!==2) return '🌍';
+      try{ return String.fromCodePoint(...[...cc.toUpperCase()].map(c=>0x1F1E6+(c.charCodeAt(0)-65))); }
+      catch{ return '🌍'; }
+    };
+
+    async function detectGeo(){
+      const cached = cacheGet(GEO_KEY, HOUR);
+      if (cached) return cached;
+      // Primary: ipapi.co (returns currency + country_name)
+      try{
+        const j = await fetchJson('https://ipapi.co/json/');
+        if (j && j.country_code) {
+          const data = {
+            country: j.country_code,
+            countryName: j.country_name || j.country_code,
+            currency: (j.currency || '').toUpperCase()
+          };
+          cacheSet(GEO_KEY, data); return data;
+        }
+      }catch(e){ /* fallthrough */ }
+      // Fallback: country.is (only country code; map to a sensible currency)
+      try{
+        const j = await fetchJson('https://api.country.is/');
+        if (j && j.country) {
+          const data = { country:j.country, countryName:j.country, currency:countryToCurrency(j.country) };
+          cacheSet(GEO_KEY, data); return data;
+        }
+      }catch(e){}
+      return { country:'', countryName:'your location', currency:'USD' };
+    }
+    function countryToCurrency(cc){
+      const m={US:'USD',GB:'GBP',CA:'CAD',AU:'AUD',NZ:'NZD',JP:'JPY',CN:'CNY',IN:'INR',
+        AE:'AED',SA:'SAR',ZA:'ZAR',KE:'KES',GH:'GHS',EG:'EGP',CH:'CHF',SE:'SEK',NO:'NOK',
+        DK:'DKK',SG:'SGD',HK:'HKD',BR:'BRL',MX:'MXN',TR:'TRY',NG:'NGN',
+        DE:'EUR',FR:'EUR',IT:'EUR',ES:'EUR',NL:'EUR',BE:'EUR',IE:'EUR',PT:'EUR',AT:'EUR',FI:'EUR',GR:'EUR'};
+      return m[cc] || 'USD';
+    }
+
+    async function fetchRates(){
+      const cached = cacheGet(FX_KEY, HOUR);
+      if (cached) return cached;
+      // Live rates, NGN base. Real, free, no key.
+      const j = await fetchJson('https://open.er-api.com/v6/latest/NGN');
+      if (!j || !j.rates) throw new Error('rates unavailable');
+      const data = { rates:j.rates, time:j.time_last_update_utc || new Date().toUTCString() };
+      cacheSet(FX_KEY, data); return data;
+    }
+
+    function formatMoney(value, code){
+      try{
+        const opts = { style:'currency', currency:code, maximumFractionDigits: value>=100?0:2, minimumFractionDigits:0 };
+        return new Intl.NumberFormat(undefined, opts).format(value);
+      }catch{
+        const sym = (SUPPORTED.find(x=>x.c===code)||{}).s || (code+' ');
+        return sym + value.toLocaleString(undefined,{maximumFractionDigits: value>=100?0:2});
+      }
+    }
+
+    // Parses a Naira mention into a numeric value.
+    // Matches: ₦1, ₦1,000,000, ₦1.5M, ₦155M, ₦7.75B, ₦100K
+    const NAIRA_RE = /₦\s?(\d{1,3}(?:[,.\s]\d{3})*(?:\.\d+)?|\d+(?:\.\d+)?)\s?([KMBkmb])?/g;
+    function nairaToNumber(numStr, suffix){
+      const cleaned = numStr.replace(/[\s,]/g,'');
+      let n = parseFloat(cleaned);
+      if (!isFinite(n)) return null;
+      if (suffix){
+        const s = suffix.toUpperCase();
+        if (s==='K') n *= 1e3;
+        else if (s==='M') n *= 1e6;
+        else if (s==='B') n *= 1e9;
+      }
+      return n;
+    }
+
+    // Walk text nodes, skipping inputs/scripts/style and the currency bar itself.
+    const SKIP = new Set(['SCRIPT','STYLE','TEXTAREA','INPUT','SELECT','OPTION','NOSCRIPT','CODE']);
+    function* textNodes(root){
+      const w = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
+        acceptNode(node){
+          const p = node.parentNode;
+          if (!p) return NodeFilter.FILTER_REJECT;
+          if (SKIP.has(p.nodeName)) return NodeFilter.FILTER_REJECT;
+          if (p.classList && (p.classList.contains('cur-conv') || p.closest('.cur-bar'))) return NodeFilter.FILTER_REJECT;
+          if (!node.nodeValue || node.nodeValue.indexOf('₦')===-1) return NodeFilter.FILTER_REJECT;
+          return NodeFilter.FILTER_ACCEPT;
+        }
+      });
+      let n; while((n=w.nextNode())) yield n;
+    }
+
+    function clearConversions(){
+      document.querySelectorAll('.cur-conv').forEach(el => el.remove());
+    }
+
+    function applyConversions(rate, currencyCode){
+      clearConversions();
+      if (!rate || !isFinite(rate) || rate<=0 || currencyCode === 'NGN') return;
+      const nodes = Array.from(textNodes(document.body));
+      for (const node of nodes){
+        const text = node.nodeValue;
+        let lastIndex = 0; let any = false;
+        const frag = document.createDocumentFragment();
+        NAIRA_RE.lastIndex = 0;
+        let m;
+        while ((m = NAIRA_RE.exec(text)) !== null){
+          const matchEnd = m.index + m[0].length;
+          if (m.index > lastIndex) frag.appendChild(document.createTextNode(text.slice(lastIndex, m.index)));
+          frag.appendChild(document.createTextNode(m[0]));
+          const naira = nairaToNumber(m[1], m[2]);
+          if (naira != null && naira > 0){
+            const converted = naira * rate;
+            // Keep small share-price values (₦1) sensible — show as e.g. $0.00065
+            const span = document.createElement('span');
+            span.className = 'cur-conv';
+            span.textContent = `(~${formatMoney(converted, currencyCode)})`;
+            frag.appendChild(span);
+            any = true;
+          }
+          lastIndex = matchEnd;
+        }
+        if (any){
+          if (lastIndex < text.length) frag.appendChild(document.createTextNode(text.slice(lastIndex)));
+          node.parentNode.replaceChild(frag, node);
+        }
+      }
+    }
+
+    function updateBar(currencyCode, rate, geo){
+      bar.classList.remove('hidden');
+      flagEl.textContent = flagFor(geo.country);
+      codeEl.textContent = currencyCode;
+      locEl.textContent  = geo.countryName || 'your location';
+      const symbol = (SUPPORTED.find(x=>x.c===currencyCode)||{}).s || '';
+      // Show how much 1,000,000 NGN equals
+      const oneMillion = 1e6 * rate;
+      rateEl.textContent = `₦1,000,000 ≈ ${formatMoney(oneMillion, currencyCode)}`;
+      selectEl.value = currencyCode;
+    }
+
+    async function init(){
+      let geo, fx;
+      try { [geo, fx] = await Promise.all([detectGeo(), fetchRates()]); }
+      catch(e){ console.warn('[currency] init failed:', e); return; }
+
+      // Honour saved manual choice if present
+      const saved = (()=>{ try{ return localStorage.getItem(CHOICE_KEY); }catch{ return null; } })();
+      let target = saved && SUPPORTED_CODES.has(saved) ? saved : geo.currency;
+      if (!SUPPORTED_CODES.has(target)) target = 'USD';
+
+      // If visitor is in Nigeria and hasn't manually chosen another currency,
+      // skip conversion entirely — naira is already shown.
+      if (target === 'NGN' && !saved){
+        // Still expose the bar so the user can switch if they want.
+        updateBar('NGN', 1, geo);
+        return;
+      }
+
+      const rate = fx.rates[target];
+      if (!rate){ console.warn('[currency] no rate for', target); return; }
+      updateBar(target, rate, geo);
+      applyConversions(rate, target);
+
+      selectEl.addEventListener('change', () => {
+        const code = selectEl.value;
+        try { localStorage.setItem(CHOICE_KEY, code); } catch {}
+        const r = fx.rates[code];
+        if (!r) return;
+        updateBar(code, r, geo);
+        applyConversions(r, code);
+      });
+    }
+
+    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
+    else init();
+  })();
 </script>
 </body>
 </html>
