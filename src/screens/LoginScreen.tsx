@@ -10,8 +10,6 @@ import { supabase } from '../services/supabase';
 import { Mail, Lock, Eye, EyeOff, KeyRound, CheckCircle, ArrowLeft, X } from 'lucide-react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-const BACKEND_URL = process.env.EXPO_PUBLIC_API_URL;
-
 type Props = NativeStackScreenProps<RootStackParamList, 'Login'>;
 
 export default function LoginScreen({ navigation }: Props) {
@@ -70,20 +68,6 @@ export default function LoginScreen({ navigation }: Props) {
   };
 
   const sendResetRequest = async (emailToSend: string): Promise<{ ok: boolean; error?: string }> => {
-    if (BACKEND_URL) {
-      try {
-        const res = await fetch(`${BACKEND_URL}/api/auth/forgot-password`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ email: emailToSend }),
-        });
-        const data = await res.json().catch(() => ({}));
-        if (!res.ok) return { ok: false, error: data.error || 'Could not send reset email.' };
-        return { ok: true };
-      } catch {
-        // Fall through to Supabase
-      }
-    }
     const { error } = await supabase.auth.resetPasswordForEmail(emailToSend, {
       redirectTo: 'adroom://reset-password',
     });

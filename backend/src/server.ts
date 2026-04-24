@@ -1654,21 +1654,34 @@ app.post('/api/auth/register', async (req, res) => {
     if (!email || !password) return res.status(400).json({ error: 'Email and password are required.' });
     if (password.length < 6) return res.status(400).json({ error: 'Password must be at least 6 characters.' });
 
+    const cleanEmail = email.trim().toLowerCase();
     const svc = getServiceSupabaseClient();
 
-    const { data, error } = await svc.auth.admin.createUser({
-      email: email.trim().toLowerCase(),
+    // ROOT-CAUSE FIX: Use signUp() instead of admin.createUser().
+    // admin.createUser() creates the account but DOES NOT send the verification email,
+    // which is why users were never receiving it. signUp() triggers Supabase's built-in
+    // confirmation email automatically using the templates configured in your dashboard.
+    const { data, error } = await svc.auth.signUp({
+      email: cleanEmail,
       password,
-      email_confirm: false,
+      options: {
+        emailRedirectTo: 'adroom://verified',
+      },
     });
 
     if (error) {
-      if (error.message?.toLowerCase().includes('already registered') || error.message?.includes('already exists')) {
+      const msg = error.message?.toLowerCase() || '';
+      if (msg.includes('already registered') || msg.includes('already exists') || msg.includes('user already')) {
         return res.status(409).json({ error: 'An account with this email already exists.' });
+      }
+      if (msg.includes('rate limit') || msg.includes('too many')) {
+        return res.status(429).json({ error: 'Too many sign-up attempts. Please wait a minute and try again.' });
       }
       return res.status(400).json({ error: error.message });
     }
 
+    // Manually provision wallet / energy / subscription using the service role,
+    // so trigger failures never block signup.
     const userId = data.user?.id;
     if (userId) {
       await Promise.allSettled([
@@ -1676,17 +1689,6 @@ app.post('/api/auth/register', async (req, res) => {
         svc.from('energy_accounts').upsert({ user_id: userId, balance_credits: 0 }, { onConflict: 'user_id' }),
         svc.from('subscriptions').upsert({ user_id: userId, plan: 'none', status: 'inactive' }, { onConflict: 'user_id' }),
       ]);
-    }
-
-    // Send branded verification email via Resend (root-cause fix for Supabase email delivery)
-    try {
-      const { emailService } = await import('./services/emailService');
-      const result = await emailService.sendVerificationEmail(email.trim().toLowerCase());
-      if (!result.ok) {
-        console.warn('[Register] Verification email send failed (non-fatal):', result.error);
-      }
-    } catch (e: any) {
-      console.warn('[Register] Email service unavailable:', e.message);
     }
 
     res.json({ success: true, message: 'Account created. Please check your email to verify your address.' });
@@ -1697,44 +1699,33 @@ app.post('/api/auth/register', async (req, res) => {
 });
 
 /**
- * POST /api/auth/resend-verification — resend the verification email via Resend.
+ * POST /api/auth/resend-verification — re-trigger Supabase's built-in
+ * verification email for an unconfirmed user.
  */
 app.post('/api/auth/resend-verification', async (req, res) => {
-  try {
-    const { email } = req.body;
-    if (!email) return res.status(400).json({ error: 'Email is required.' });
-    const { emailService } = await import('./services/emailService');
-    const result = await emailService.sendVerificationEmail(email.trim().toLowerCase());
-    if (!result.ok) {
-      // Don't leak whether the email exists; return success anyway
-      console.warn('[ResendVerification] Failed:', result.error);
-    }
-    res.json({ success: true });
-  } catch (err: any) {
-    console.error('[ResendVerification] Error:', err.message);
-    res.status(500).json({ error: 'Could not resend verification email.' });
-  }
-});
-
-/**
- * POST /api/auth/forgot-password — send a branded password reset email via Resend.
- * Always returns success to avoid leaking which emails are registered.
- */
-app.post('/api/auth/forgot-password', async (req, res) => {
   try {
     const { email } = req.body;
     if (!email || typeof email !== 'string' || !email.includes('@')) {
       return res.status(400).json({ error: 'Valid email is required.' });
     }
-    const { emailService } = await import('./services/emailService');
-    const result = await emailService.sendPasswordResetEmail(email.trim().toLowerCase());
-    if (!result.ok) {
-      console.warn('[ForgotPassword] Send failed:', result.error);
+    const svc = getServiceSupabaseClient();
+    const { error } = await svc.auth.resend({
+      type: 'signup',
+      email: email.trim().toLowerCase(),
+      options: { emailRedirectTo: 'adroom://verified' },
+    });
+    if (error) {
+      const msg = error.message?.toLowerCase() || '';
+      if (msg.includes('rate limit') || msg.includes('too many')) {
+        return res.status(429).json({ error: 'Please wait a minute before requesting another email.' });
+      }
+      console.warn('[ResendVerification] Supabase error:', error.message);
     }
-    res.json({ success: true, message: 'If an account exists with that email, a reset link has been sent.' });
+    // Always return success to avoid leaking which emails exist.
+    res.json({ success: true });
   } catch (err: any) {
-    console.error('[ForgotPassword] Error:', err.message);
-    res.status(500).json({ error: 'Could not send reset email.' });
+    console.error('[ResendVerification] Error:', err.message);
+    res.status(500).json({ error: 'Could not resend verification email.' });
   }
 });
 
