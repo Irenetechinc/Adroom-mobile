@@ -73,6 +73,19 @@ export default function SubscriptionScreen() {
   const [pin, setPin] = useState('');
   const [pinLoading, setPinLoading] = useState(false);
 
+  // Payment confirm modal state
+  const [showConfirmModal, setShowConfirmModal] = useState(false);
+  const [confirmPayload, setConfirmPayload] = useState<{
+    type: 'subscription' | 'topup';
+    title: string;
+    subtitle: string;
+    amount: number;
+    credits: number;
+    color: string;
+    planId?: string;
+    pack?: typeof TOPUP_OPTIONS[0];
+  } | null>(null);
+
   // In-app WebView payment modal state
   const [showPaymentWebView, setShowPaymentWebView] = useState(false);
   const [paymentWebUrl, setPaymentWebUrl] = useState('');
@@ -358,25 +371,29 @@ export default function SubscriptionScreen() {
 
   const handleSubscribe = (planId: string) => {
     const p = PLAN_DETAILS[planId];
-    Alert.alert(
-      `Subscribe to ${p.name}`,
-      `${p.credits} energy credits/month — $${p.price}/mo.\n\nYou'll be taken to a secure payment page inside the app.`,
-      [
-        { text: 'Pay Now', onPress: () => initiateWebPayment(p.price, 'subscription', planId) },
-        { text: 'Cancel', style: 'cancel' },
-      ],
-    );
+    setConfirmPayload({
+      type: 'subscription',
+      title: `Subscribe to ${p.name}`,
+      subtitle: 'Billed monthly · Cancel anytime',
+      amount: p.price,
+      credits: p.credits,
+      color: p.color,
+      planId,
+    });
+    setShowConfirmModal(true);
   };
 
   const handleTopUp = (pack: typeof TOPUP_OPTIONS[0]) => {
-    Alert.alert(
-      `Buy ${pack.label}`,
-      `Add ${pack.credits} energy credits — $${pack.price}.\n\nInstant credit after payment.`,
-      [
-        { text: 'Pay Now', onPress: () => initiateWebPayment(pack.price, 'topup', pack.id) },
-        { text: 'Cancel', style: 'cancel' },
-      ],
-    );
+    setConfirmPayload({
+      type: 'topup',
+      title: pack.label,
+      subtitle: 'One-time purchase · Instant credit',
+      amount: pack.price,
+      credits: pack.credits,
+      color: COLORS.amber,
+      pack,
+    });
+    setShowConfirmModal(true);
   };
 
   const handleCancel = async () => {
@@ -780,6 +797,93 @@ export default function SubscriptionScreen() {
           </Animated.View>
         )}
       </ScrollView>}
+
+      {/* Payment Confirm Modal */}
+      <Modal visible={showConfirmModal} transparent animationType="fade">
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalCard, { borderColor: confirmPayload?.color ? `${confirmPayload.color}30` : COLORS.border }]}>
+            <TouchableOpacity onPress={() => setShowConfirmModal(false)} style={styles.modalClose}>
+              <X size={20} color={COLORS.muted} />
+            </TouchableOpacity>
+
+            {/* Icon */}
+            <View style={{ alignItems: 'center', marginBottom: 16 }}>
+              <View style={{
+                width: 64, height: 64, borderRadius: 20,
+                backgroundColor: confirmPayload?.color ? `${confirmPayload.color}15` : COLORS.border,
+                borderWidth: 1.5, borderColor: confirmPayload?.color ? `${confirmPayload.color}35` : COLORS.border,
+                alignItems: 'center', justifyContent: 'center',
+              }}>
+                {confirmPayload?.type === 'topup'
+                  ? <Zap size={28} color={confirmPayload?.color ?? COLORS.amber} />
+                  : <Crown size={28} color={confirmPayload?.color ?? COLORS.amber} />
+                }
+              </View>
+            </View>
+
+            <Text style={styles.modalTitle}>{confirmPayload?.title}</Text>
+            <Text style={{ color: COLORS.muted, fontSize: 12, textAlign: 'center', marginBottom: 20 }}>
+              {confirmPayload?.subtitle}
+            </Text>
+
+            {/* Summary rows */}
+            <View style={{ backgroundColor: COLORS.bg, borderRadius: 14, padding: 16, marginBottom: 20, gap: 10 }}>
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                <Text style={{ color: COLORS.muted, fontSize: 13 }}>Energy Credits</Text>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
+                  <Zap size={13} color={confirmPayload?.color ?? COLORS.amber} />
+                  <Text style={{ color: COLORS.text, fontWeight: '700', fontSize: 14 }}>
+                    {confirmPayload?.credits?.toLocaleString()}
+                  </Text>
+                </View>
+              </View>
+              {confirmPayload?.type === 'subscription' && (
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <Text style={{ color: COLORS.muted, fontSize: 13 }}>Billing Cycle</Text>
+                  <Text style={{ color: COLORS.text, fontWeight: '600', fontSize: 13 }}>Monthly</Text>
+                </View>
+              )}
+              <View style={{ height: 1, backgroundColor: COLORS.border }} />
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                <Text style={{ color: COLORS.text, fontWeight: '700', fontSize: 14 }}>
+                  {confirmPayload?.type === 'subscription' ? 'Monthly Total' : 'You Pay'}
+                </Text>
+                <Text style={{ color: confirmPayload?.color ?? COLORS.amber, fontWeight: '900', fontSize: 22 }}>
+                  ${confirmPayload?.amount}
+                  {confirmPayload?.type === 'subscription' && (
+                    <Text style={{ color: COLORS.muted, fontSize: 12, fontWeight: '400' }}>/mo</Text>
+                  )}
+                </Text>
+              </View>
+            </View>
+
+            {/* Security note */}
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 16 }}>
+              <Shield size={12} color={COLORS.muted} />
+              <Text style={{ color: COLORS.muted, fontSize: 11, flex: 1 }}>
+                Secured by Flutterwave · 256-bit SSL · You'll be taken to a secure payment page
+              </Text>
+            </View>
+
+            <TouchableOpacity
+              onPress={() => {
+                setShowConfirmModal(false);
+                if (confirmPayload?.type === 'subscription' && confirmPayload.planId) {
+                  initiateWebPayment(confirmPayload.amount, 'subscription', confirmPayload.planId);
+                } else if (confirmPayload?.type === 'topup' && confirmPayload.pack) {
+                  initiateWebPayment(confirmPayload.amount, 'topup', confirmPayload.pack.id);
+                }
+              }}
+              style={[styles.modalDanger, { backgroundColor: confirmPayload?.color ?? COLORS.amber }]}
+            >
+              <Text style={[styles.modalDangerText, { color: '#000' }]}>Pay Now · ${confirmPayload?.amount}</Text>
+            </TouchableOpacity>
+            <TouchableOpacity onPress={() => setShowConfirmModal(false)} style={styles.modalSecondary}>
+              <Text style={styles.modalSecondaryText}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
 
       {/* Cancel Modal */}
       <Modal visible={showCancelModal} transparent animationType="fade">
