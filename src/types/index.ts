@@ -3,6 +3,7 @@ export type RootStackParamList = {
   Onboarding: undefined;
   Login: undefined;
   Signup: undefined;
+  ResetPassword: undefined;
   Main: { screen?: keyof MainTabParamList } | undefined;
   // AgentChat moved to MainTab
   StrategyApproval: { strategy: any };

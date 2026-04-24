@@ -9,6 +9,7 @@ import { registerPushToken, setupNotificationListeners } from '../services/notif
 
 import LoginScreen from '../screens/LoginScreen';
 import SignupScreen from '../screens/SignupScreen';
+import ResetPasswordScreen from '../screens/ResetPasswordScreen';
 import DrawerNavigator from './DrawerNavigator';
 import StrategyApprovalScreen from '../screens/StrategyApprovalScreen';
 import { AuthLoadingSkeleton } from '../components/Skeleton';
@@ -59,6 +60,7 @@ const linking: LinkingOptions<RootStackParamList> = {
       Login: 'login',
       Signup: 'signup',
       Onboarding: 'onboarding',
+      ResetPassword: 'reset-password',
     },
   },
 };
@@ -100,9 +102,11 @@ export default function AppNavigator() {
             <Stack.Screen name="Onboarding" component={OnboardingScreen} />
             <Stack.Screen name="Login" component={LoginScreen} />
             <Stack.Screen name="Signup" component={SignupScreen} />
+            <Stack.Screen name="ResetPassword" component={ResetPasswordScreen} />
           </>
         ) : (
           <>
+            <Stack.Screen name="ResetPassword" component={ResetPasswordScreen} />
             <Stack.Screen name="Main" component={DrawerNavigator} />
             <Stack.Screen 
               name="StrategyApproval" 
