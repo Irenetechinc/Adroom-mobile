@@ -3,7 +3,7 @@
     "name": "AdRoom AI",
     "slug": "adroom-mobile",
     "scheme": "adroom",
-    "version": "2.2.0",
+    "version": "2.2.1",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
@@ -42,8 +42,8 @@
       [
         "expo-location",
         {
-          "locationAlwaysAndWhenInUsePermission": "AdRoom uses your location to find local trends and optimize campaign targeting.",
-          "locationWhenInUsePermission": "AdRoom uses your location to find local trends and optimize campaign targeting."
+          "locationAlwaysAndWhenInUsePermission": "AdRoom AI uses your location to find local trends and optimize campaign targeting.",
+          "locationWhenInUsePermission": "AdRoom AI uses your location to find local trends and optimize campaign targeting."
         }
       ],
       [

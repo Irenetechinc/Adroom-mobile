@@ -1,9 +1,9 @@
 import React, { useEffect, useRef } from 'react';
-import { View, Text, TouchableOpacity, ScrollView, Dimensions, StyleSheet, Platform } from 'react-native';
+import { View, Text, TouchableOpacity, ScrollView, Dimensions, StyleSheet, Platform, Image } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../types';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Zap, Target, TrendingUp, ShieldCheck, ArrowRight, Brain, Cpu } from 'lucide-react-native';
+import { Target, TrendingUp, ShieldCheck, ArrowRight, Brain, Cpu } from 'lucide-react-native';
 import Animated, {
   FadeInDown, FadeInUp, useSharedValue, useAnimatedStyle,
   withRepeat, withTiming, withSequence, interpolate, Easing,
@@ -56,21 +56,12 @@ const features = [
 
 function PulsingOrb() {
   const scale = useSharedValue(1);
-  const opacity = useSharedValue(0.5);
 
   useEffect(() => {
     scale.value = withRepeat(
       withSequence(
-        withTiming(1.15, { duration: 2000, easing: Easing.inOut(Easing.ease) }),
-        withTiming(1, { duration: 2000, easing: Easing.inOut(Easing.ease) }),
-      ),
-      -1,
-      false,
-    );
-    opacity.value = withRepeat(
-      withSequence(
-        withTiming(1, { duration: 2000 }),
-        withTiming(0.4, { duration: 2000 }),
+        withTiming(1.06, { duration: 2200, easing: Easing.inOut(Easing.ease) }),
+        withTiming(1, { duration: 2200, easing: Easing.inOut(Easing.ease) }),
       ),
       -1,
       false,
@@ -79,14 +70,15 @@ function PulsingOrb() {
 
   const animStyle = useAnimatedStyle(() => ({
     transform: [{ scale: scale.value }],
-    opacity: opacity.value,
   }));
 
   return (
     <Animated.View style={[styles.outerOrb, animStyle]}>
-      <View style={styles.innerOrb}>
-        <Zap size={38} color="#00F0FF" />
-      </View>
+      <Image
+        source={require('../../assets/icon.png')}
+        style={styles.logoImage}
+        resizeMode="contain"
+      />
     </Animated.View>
   );
 }
@@ -197,15 +189,14 @@ const styles = StyleSheet.create({
   scroll: { paddingBottom: 160, paddingTop: 20 },
   hero: { alignItems: 'center', paddingHorizontal: 24, paddingTop: 20, paddingBottom: 28 },
   outerOrb: {
-    width: 100, height: 100, borderRadius: 50,
-    backgroundColor: 'rgba(0,240,255,0.1)',
-    borderWidth: 1.5, borderColor: 'rgba(0,240,255,0.4)',
+    width: 110, height: 110, borderRadius: 34,
+    backgroundColor: '#151B2B',
+    borderWidth: 1.5, borderColor: 'rgba(245,158,11,0.35)',
     alignItems: 'center', justifyContent: 'center', marginBottom: 28,
+    overflow: 'hidden',
   },
-  innerOrb: {
-    width: 70, height: 70, borderRadius: 35,
-    backgroundColor: 'rgba(0,240,255,0.15)',
-    alignItems: 'center', justifyContent: 'center',
+  logoImage: {
+    width: 90, height: 90, borderRadius: 26,
   },
   brandSmall: {
     color: '#64748B', fontSize: 11, letterSpacing: 4,

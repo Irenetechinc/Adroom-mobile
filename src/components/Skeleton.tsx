@@ -1,5 +1,5 @@
 import React, { useEffect } from 'react';
-import { View, ViewProps, StyleSheet } from 'react-native';
+import { View, ViewProps, StyleSheet, Image, ActivityIndicator, Text } from 'react-native';
 import Animated, { 
   useSharedValue, 
   useAnimatedStyle, 
@@ -57,29 +57,25 @@ export const Skeleton: React.FC<SkeletonProps> = ({
 
 export const AuthLoadingSkeleton = () => {
   return (
-    <View style={{ flex: 1, backgroundColor: '#0B0F19', justifyContent: 'center', paddingHorizontal: 24 }}>
-      <View style={{ alignItems: 'center', marginBottom: 40 }}>
-        <Skeleton width={150} height={40} borderRadius={8} style={{ marginBottom: 10 }} />
-        <Skeleton width={200} height={20} borderRadius={4} />
+    <View style={{ flex: 1, backgroundColor: '#0B0F19', alignItems: 'center', justifyContent: 'center' }}>
+      <View style={{
+        width: 100, height: 100, borderRadius: 30,
+        backgroundColor: '#151B2B',
+        borderWidth: 1.5, borderColor: 'rgba(245,158,11,0.3)',
+        alignItems: 'center', justifyContent: 'center',
+        marginBottom: 24, overflow: 'hidden',
+      }}>
+        <Image
+          source={require('../../assets/icon.png')}
+          style={{ width: 80, height: 80, borderRadius: 22 }}
+          resizeMode="contain"
+        />
       </View>
-
-      <View>
-        <View style={{ marginBottom: 16 }}>
-          <Skeleton width={80} height={16} borderRadius={4} style={{ marginBottom: 8 }} />
-          <Skeleton width="100%" height={50} borderRadius={10} />
-        </View>
-
-        <View style={{ marginBottom: 24 }}>
-          <Skeleton width={80} height={16} borderRadius={4} style={{ marginBottom: 8 }} />
-          <Skeleton width="100%" height={50} borderRadius={10} />
-        </View>
-
-        <Skeleton width="100%" height={56} borderRadius={12} />
-        
-        <View style={{ alignItems: 'center', marginTop: 24 }}>
-           <Skeleton width={200} height={16} borderRadius={4} />
-        </View>
-      </View>
+      <Text style={{ color: '#FFFFFF', fontSize: 22, fontWeight: '800', letterSpacing: -0.3, marginBottom: 6 }}>
+        AdRoom <Text style={{ color: '#F59E0B' }}>AI</Text>
+      </Text>
+      <Text style={{ color: '#475569', fontSize: 13, marginBottom: 36 }}>Autonomous Marketing Platform</Text>
+      <ActivityIndicator color="#F59E0B" size="small" />
     </View>
   );
 };
