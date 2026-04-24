@@ -1,11 +1,11 @@
 import React from 'react';
 import {
-  View, Text, ScrollView, TouchableOpacity, StyleSheet, Linking,
+  View, Text, ScrollView, TouchableOpacity, StyleSheet, Linking, Image,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import {
-  ChevronLeft, Bot, TrendingUp, Users, Target, Zap,
+  ChevronLeft, TrendingUp, Users, Target, Zap,
   Globe, Star, Mail, ArrowRight, CheckCircle,
 } from 'lucide-react-native';
 import Animated, { FadeInDown } from 'react-native-reanimated';
@@ -22,13 +22,13 @@ const CAPABILITIES = [
     icon: TrendingUp,
     color: '#00F0FF',
     title: 'Explosive Sales Growth',
-    body: 'AdRoom deploys a dedicated Salesman Agent that identifies buying signals, crafts persuasive content, and drives conversions across every platform — continuously, without you lifting a finger.',
+    body: 'AdRoom AI deploys a dedicated Salesman Agent that identifies buying signals, crafts persuasive content, and drives conversions across every platform — continuously, without you lifting a finger.',
   },
   {
     icon: Globe,
     color: '#10B981',
     title: 'Brand Awareness at Scale',
-    body: 'Reach tens of thousands of potential customers organically. AdRoom builds your brand presence across Facebook, Instagram, TikTok, LinkedIn, and X with targeted, culturally resonant content — all automatically.',
+    body: 'Reach tens of thousands of potential customers organically. AdRoom AI builds your brand presence across Facebook, Instagram, TikTok, LinkedIn, and X with targeted, culturally resonant content — all automatically.',
   },
   {
     icon: Target,
@@ -40,19 +40,19 @@ const CAPABILITIES = [
     icon: Zap,
     color: '#7C3AED',
     title: 'Instant Campaign Launches',
-    body: 'Launching a new product or brand? AdRoom assembles a full launch strategy in minutes — content calendar, platform sequencing, audience targeting, and execution — all handled autonomously from day one.',
+    body: 'Launching a new product or brand? AdRoom AI assembles a full launch strategy in minutes — content calendar, platform sequencing, audience targeting, and execution — all handled autonomously from day one.',
   },
   {
     icon: Users,
     color: '#EF4444',
     title: 'Promotions That Actually Convert',
-    body: 'Forget generic discount posts. AdRoom\'s Promotion Agent crafts time-sensitive, high-urgency campaigns tailored to your product and audience, proven to drive immediate action and revenue.',
+    body: 'Forget generic discount posts. AdRoom AI\'s Promotion Agent crafts time-sensitive, high-urgency campaigns tailored to your product and audience, proven to drive immediate action and revenue.',
   },
   {
     icon: Star,
     color: '#F97316',
     title: 'The $15,000 Paid Ads Result — For Free',
-    body: 'What a professional agency would charge $10,000–$15,000/month in paid advertising to achieve, AdRoom delivers organically. Zero ad budget. Zero agency fees. Same — often better — results.',
+    body: 'What a professional agency would charge $10,000–$15,000/month in paid advertising to achieve, AdRoom AI delivers organically. Zero ad budget. Zero agency fees. Same — often better — results.',
   },
 ];
 
@@ -89,7 +89,11 @@ export default function AboutScreen() {
         {/* Hero */}
         <Animated.View entering={FadeInDown.delay(60).springify()} style={styles.hero}>
           <View style={styles.heroIconWrap}>
-            <Bot size={44} color="#00F0FF" />
+            <Image
+              source={require('../../assets/icon.png')}
+              style={{ width: 60, height: 60, borderRadius: 18 }}
+              resizeMode="contain"
+            />
           </View>
           <Text style={styles.heroTitle}>Your Entire Marketing{'\n'}Team. Fully Automated.</Text>
           <Text style={styles.heroSub}>
@@ -119,10 +123,10 @@ export default function AboutScreen() {
           <Text style={styles.sectionHeading}>Marketing That Never Stops Working For You</Text>
           <Text style={styles.sectionBody}>
             Most businesses pay thousands every month for agencies, freelancers, or ad budgets —
-            and still spend hours managing campaigns. AdRoom eliminates all of that.
+            and still spend hours managing campaigns. AdRoom AI eliminates all of that.
           </Text>
           <Text style={[styles.sectionBody, { marginTop: 10 }]}>
-            From the moment you set up your product, AdRoom's AI agents take over completely.
+            From the moment you set up your product, AdRoom AI's agents take over completely.
             They research your market, identify your audience, create platform-native content,
             publish at optimal times, monitor performance, and adapt — continuously — with
             no instructions from you.
@@ -166,7 +170,7 @@ export default function AboutScreen() {
             between $10,000 and $15,000 a month. And it stops the moment you stop paying.
           </Text>
           <Text style={[styles.calloutBody, { marginTop: 10 }]}>
-            AdRoom delivers the same reach, the same conversions, and often better
+            AdRoom AI delivers the same reach, the same conversions, and often better
             engagement — entirely organically. No cost per click. No ad fatigue.
             No dependency on a platform's paid algorithm.
           </Text>
@@ -190,7 +194,7 @@ export default function AboutScreen() {
         {/* Mission */}
         <Animated.View entering={FadeInDown.delay(340).springify()} style={styles.missionCard}>
           <Text style={styles.missionQuote}>
-            "Every business deserves world-class marketing. AdRoom exists to make that a reality
+            "Every business deserves world-class marketing. AdRoom AI exists to make that a reality
             — not a privilege reserved for those with the biggest budgets."
           </Text>
           <Text style={styles.missionAttrib}>— The AdRoom AI Team</Text>
@@ -217,7 +221,7 @@ export default function AboutScreen() {
 
         <Text style={styles.footer}>
           © {new Date().getFullYear()} AdRoom AI · All rights reserved{'\n'}
-          Version 3.2.0 · Built for ambitious businesses worldwide
+          Version 2.2.1 · Built for ambitious businesses worldwide
         </Text>
       </ScrollView>
     </SafeAreaView>
@@ -247,8 +251,9 @@ const styles = StyleSheet.create({
   },
   heroIconWrap: {
     width: 88, height: 88, borderRadius: 28,
-    backgroundColor: 'rgba(0,240,255,0.08)', borderWidth: 1.5, borderColor: 'rgba(0,240,255,0.2)',
+    backgroundColor: '#151B2B', borderWidth: 1.5, borderColor: 'rgba(245,158,11,0.25)',
     alignItems: 'center', justifyContent: 'center', marginBottom: 20,
+    overflow: 'hidden',
   },
   heroTitle: {
     color: '#FFFFFF', fontSize: 24, fontWeight: '900', textAlign: 'center',
