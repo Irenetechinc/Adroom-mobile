@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, Alert, Modal,
   ActivityIndicator, KeyboardAvoidingView, Platform, StyleSheet, ScrollView,
@@ -26,6 +26,9 @@ export default function SignupScreen({ navigation }: Props) {
   const [confirmFocused, setConfirmFocused] = useState(false);
   const [showEmailModal, setShowEmailModal] = useState(false);
   const [registeredEmail, setRegisteredEmail] = useState('');
+  const [resendLoading, setResendLoading] = useState(false);
+  const [resendSent, setResendSent] = useState(false);
+  const [resendCooldown, setResendCooldown] = useState(0);
 
   const handleSignup = async () => {
     if (!email || !password || !confirmPassword) {
@@ -72,6 +75,45 @@ export default function SignupScreen({ navigation }: Props) {
       Alert.alert('Registration Failed', 'Could not connect. Please check your connection and try again.');
     }
   };
+
+  const cooldownRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const handleResend = async () => {
+    if (resendLoading || resendCooldown > 0 || !registeredEmail) return;
+    setResendLoading(true);
+    setResendSent(false);
+    try {
+      if (BACKEND_URL) {
+        await fetch(`${BACKEND_URL}/api/auth/resend-verification`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email: registeredEmail }),
+        }).catch(() => {});
+      }
+      await supabase.auth.resend({ type: 'signup', email: registeredEmail }).catch(() => {});
+      setResendSent(true);
+      setResendCooldown(60);
+      cooldownRef.current = setInterval(() => {
+        setResendCooldown((prev) => {
+          if (prev <= 1) {
+            if (cooldownRef.current) clearInterval(cooldownRef.current);
+            return 0;
+          }
+          return prev - 1;
+        });
+      }, 1000);
+    } catch {
+      // silently ignore
+    } finally {
+      setResendLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    return () => {
+      if (cooldownRef.current) clearInterval(cooldownRef.current);
+    };
+  }, []);
 
   return (
     <SafeAreaView style={styles.safe}>
@@ -222,6 +264,33 @@ export default function SignupScreen({ navigation }: Props) {
               </View>
             ))}
 
+            {/* Resend */}
+            <TouchableOpacity
+              onPress={handleResend}
+              disabled={resendLoading || resendCooldown > 0}
+              style={[
+                styles.resendBtn,
+                resendSent && styles.resendBtnSent,
+                (resendCooldown > 0 && !resendSent) && { opacity: 0.5 },
+              ]}
+              activeOpacity={0.75}
+            >
+              {resendLoading ? (
+                <ActivityIndicator size="small" color="#A78BFA" />
+              ) : resendSent ? (
+                <>
+                  <CheckCircle size={14} color="#10B981" />
+                  <Text style={[styles.resendText, { color: '#10B981' }]}>
+                    Sent!{resendCooldown > 0 ? `  Resend in ${resendCooldown}s` : ''}
+                  </Text>
+                </>
+              ) : (
+                <Text style={styles.resendText}>
+                  Didn't get it?{resendCooldown > 0 ? `  Resend in ${resendCooldown}s` : '  Resend Email'}
+                </Text>
+              )}
+            </TouchableOpacity>
+
             {/* CTA */}
             <TouchableOpacity
               onPress={() => {
@@ -323,10 +392,21 @@ const styles = StyleSheet.create({
   },
   stepNumText: { color: '#A78BFA', fontSize: 11, fontWeight: '800' },
   stepText: { color: '#94A3B8', fontSize: 13, flex: 1, lineHeight: 18 },
+  resendBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
+    borderWidth: 1, borderColor: 'rgba(112,0,255,0.2)',
+    borderRadius: 10, paddingVertical: 11, marginBottom: 10,
+    backgroundColor: 'rgba(112,0,255,0.06)',
+  },
+  resendBtnSent: {
+    borderColor: 'rgba(16,185,129,0.25)',
+    backgroundColor: 'rgba(16,185,129,0.06)',
+  },
+  resendText: { color: '#A78BFA', fontSize: 13, fontWeight: '600' },
   modalBtn: {
     backgroundColor: '#7000FF', borderRadius: 14,
     height: 52, flexDirection: 'row',
-    alignItems: 'center', justifyContent: 'center', gap: 8, marginTop: 8,
+    alignItems: 'center', justifyContent: 'center', gap: 8, marginTop: 2,
   },
   modalBtnText: { color: '#FFFFFF', fontWeight: '800', fontSize: 15 },
 });
