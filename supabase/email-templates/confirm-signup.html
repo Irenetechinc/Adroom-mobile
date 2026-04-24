@@ -6,7 +6,7 @@
   <meta http-equiv="X-UA-Compatible" content="IE=edge" />
   <meta name="x-apple-disable-message-reformatting" />
   <meta name="format-detection" content="telephone=no,address=no,email=no,date=no,url=no" />
-  <title>Confirm your AdRoom AI account</title>
+  <title>One last step — confirm your AdRoom AI account</title>
   <!--[if mso]>
   <noscript>
     <xml>
@@ -17,73 +17,60 @@
   </noscript>
   <![endif]-->
   <style>
-    /* Reset */
     * { box-sizing: border-box; }
     body, table, td, a { -webkit-text-size-adjust: 100%; -ms-text-size-adjust: 100%; }
     table, td { mso-table-lspace: 0pt; mso-table-rspace: 0pt; }
     img { -ms-interpolation-mode: bicubic; border: 0; height: auto; line-height: 100%; outline: none; text-decoration: none; }
-    body { margin: 0 !important; padding: 0 !important; width: 100% !important; min-width: 100%; background-color: #080C16; }
-
-    /* Link colour override for dark-mode email clients */
+    body { margin: 0 !important; padding: 0 !important; width: 100% !important; min-width: 100%; background-color: #07090F; }
     a { color: #F59E0B; }
     a:hover { color: #FCD34D; }
-
-    /* Responsive */
     @media only screen and (max-width: 620px) {
       .email-container { width: 100% !important; }
       .fluid { max-width: 100% !important; height: auto !important; }
-      .stack-column,
-      .stack-column-center { display: block !important; width: 100% !important; max-width: 100% !important; direction: ltr !important; }
-      .stack-column-center { text-align: center !important; }
-      .btn-main { display: block !important; width: 100% !important; }
       .padding-mobile { padding-left: 24px !important; padding-right: 24px !important; }
+      .btn-main { display: block !important; width: 100% !important; }
+      .hide-mobile { display: none !important; }
     }
   </style>
 </head>
 
 <!--
-  ╔══════════════════════════════════════════════════════╗
-  ║   AdRoom AI — Confirm Signup Email Template          ║
-  ║   Supabase variable: {{ .ConfirmationURL }}           ║
-  ║   Paste this HTML into Supabase > Auth > Email       ║
-  ║   Templates > Confirm signup                         ║
-  ╚══════════════════════════════════════════════════════╝
+  AdRoom AI — Email Confirmation Template
+  Supabase variable: {{ .ConfirmationURL }}
+  Paste into: Supabase › Authentication › Email Templates › Confirm signup
 -->
 
-<body style="margin:0;padding:0;width:100%;background-color:#080C16;font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;">
+<body style="margin:0;padding:0;width:100%;background-color:#07090F;font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;">
 
-  <!-- Preheader (hidden preview text) -->
-  <div style="display:none;font-size:1px;color:#080C16;line-height:1px;max-height:0;max-width:0;opacity:0;overflow:hidden;">
-    You're almost there — tap below to confirm your AdRoom AI account and unlock your AI marketing command centre.
+  <!-- Hidden preview text -->
+  <div style="display:none;font-size:1px;color:#07090F;line-height:1px;max-height:0;max-width:0;opacity:0;overflow:hidden;">
+    Almost there — one quick tap and your account is ready to go. Let's get your marketing running.
   </div>
 
-  <!-- Email wrapper -->
-  <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="background-color:#080C16;">
+  <!-- Outer wrapper -->
+  <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="background-color:#07090F;">
     <tr>
-      <td align="center" style="padding:32px 16px 48px;">
+      <td align="center" style="padding:36px 16px 52px;">
 
-        <!-- ─── EMAIL CARD (max 580px) ──────────────────────────────── -->
-        <table class="email-container" role="presentation" cellpadding="0" cellspacing="0" border="0" width="580" style="max-width:580px;width:100%;">
+        <!-- ── CARD CONTAINER ─────────────────────────────────────── -->
+        <table class="email-container" role="presentation" cellpadding="0" cellspacing="0" border="0" width="560" style="max-width:560px;width:100%;">
 
-          <!-- ── HEADER / LOGO ── -->
+          <!-- ── TOP LOGO BAR ── -->
           <tr>
-            <td align="center" style="padding-bottom:28px;">
+            <td align="center" style="padding-bottom:32px;">
               <table role="presentation" cellpadding="0" cellspacing="0" border="0">
                 <tr>
-                  <td style="padding:10px 16px 10px 10px;background:rgba(245,158,11,0.08);border:1px solid rgba(245,158,11,0.25);border-radius:14px;">
-                    <table role="presentation" cellpadding="0" cellspacing="0" border="0">
-                      <tr>
-                        <!-- Logo icon placeholder — replace src with your hosted logo URL -->
-                        <td style="vertical-align:middle;padding-right:10px;">
-                          <img src="https://adroom.adroomai.com/wp-content/uploads/2026/04/CompressJPEG.Online_img512x512.jpg"
-                               alt="AdRoom AI" width="38" height="38"
-                               style="display:block;width:38px;height:38px;border-radius:10px;border:0;" />
-                        </td>
-                        <td style="vertical-align:middle;">
-                          <span style="font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:18px;font-weight:800;color:#FFFFFF;letter-spacing:-0.5px;white-space:nowrap;">AdRoom <span style="color:#F59E0B;">AI</span></span>
-                        </td>
-                      </tr>
-                    </table>
+                  <td style="vertical-align:middle;padding-right:10px;">
+                    <img
+                      src="https://adroom.adroomai.com/wp-content/uploads/2026/04/CompressJPEG.Online_img512x512.jpg"
+                      alt="AdRoom AI Logo" width="36" height="36"
+                      style="display:block;width:36px;height:36px;border-radius:9px;border:0;"
+                    />
+                  </td>
+                  <td style="vertical-align:middle;">
+                    <span style="font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:17px;font-weight:800;color:#FFFFFF;letter-spacing:-0.4px;white-space:nowrap;">
+                      AdRoom <span style="color:#F59E0B;">AI</span>
+                    </span>
                   </td>
                 </tr>
               </table>
@@ -92,48 +79,53 @@
 
           <!-- ── MAIN CARD ── -->
           <tr>
-            <td style="background:#0F1623;border:1px solid rgba(245,158,11,0.18);border-radius:24px;overflow:hidden;">
+            <td style="background:#0D1321;border:1px solid rgba(245,158,11,0.15);border-radius:24px;overflow:hidden;">
 
-              <!-- Top amber accent bar -->
+              <!-- Amber top stripe -->
               <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%">
                 <tr>
-                  <td style="height:4px;background:linear-gradient(90deg,#D97706,#F59E0B,#FCD34D,#F59E0B,#D97706);font-size:0;line-height:0;">&nbsp;</td>
+                  <td style="height:3px;background:linear-gradient(90deg,#92400E,#F59E0B,#FDE68A,#F59E0B,#92400E);font-size:0;line-height:0;">&nbsp;</td>
                 </tr>
               </table>
 
-              <!-- Card body -->
+              <!-- ── HERO LOGO ── -->
               <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%">
                 <tr>
-                  <td class="padding-mobile" style="padding:44px 48px 36px;">
+                  <td align="center" style="padding:44px 48px 0;">
+                    <img
+                      src="https://adroom.adroomai.com/wp-content/uploads/2026/04/CompressJPEG.Online_img512x512.jpg"
+                      alt="AdRoom AI" width="80" height="80"
+                      style="display:block;width:80px;height:80px;border-radius:22px;border:2px solid rgba(245,158,11,0.25);"
+                    />
+                  </td>
+                </tr>
+              </table>
 
-                    <!-- Icon circle -->
-                    <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%">
-                      <tr>
-                        <td align="center" style="padding-bottom:28px;">
-                          <div style="display:inline-block;width:68px;height:68px;border-radius:50%;background:rgba(245,158,11,0.10);border:1.5px solid rgba(245,158,11,0.35);text-align:center;line-height:68px;font-size:28px;">
-                            &#9993;
-                          </div>
-                        </td>
-                      </tr>
-                    </table>
+              <!-- ── BODY COPY ── -->
+              <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%">
+                <tr>
+                  <td class="padding-mobile" style="padding:28px 48px 36px;">
 
                     <!-- Headline -->
                     <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%">
                       <tr>
-                        <td align="center" style="padding-bottom:14px;">
-                          <h1 style="margin:0;font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:26px;font-weight:800;color:#FFFFFF;letter-spacing:-0.5px;line-height:1.2;">
-                            Confirm your email address
+                        <td align="center" style="padding-bottom:16px;">
+                          <h1 style="margin:0;font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:27px;font-weight:800;color:#FFFFFF;letter-spacing:-0.5px;line-height:1.25;">
+                            You're almost in &#x1F44B;
                           </h1>
                         </td>
                       </tr>
                     </table>
 
-                    <!-- Subheading -->
+                    <!-- Body text -->
                     <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%">
                       <tr>
                         <td align="center" style="padding-bottom:32px;">
-                          <p style="margin:0;font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:15px;color:#94A3B8;line-height:1.7;max-width:420px;">
-                            You're one step away from your AI-powered marketing command centre. Click below to verify your email and activate your AdRoom AI account.
+                          <p style="margin:0 0 14px;font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:15px;color:#94A3B8;line-height:1.75;max-width:400px;">
+                            Thanks for signing up. Just tap the button below to confirm your email and we'll have everything ready for you on the other side.
+                          </p>
+                          <p style="margin:0;font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:15px;color:#94A3B8;line-height:1.75;max-width:400px;">
+                            Your first autonomous marketing campaign is one confirmation away.
                           </p>
                         </td>
                       </tr>
@@ -144,17 +136,22 @@
                       <tr>
                         <td align="center" style="padding-bottom:36px;">
                           <!--[if mso]>
-                          <v:roundrect xmlns:v="urn:schemas-microsoft-com:vml" xmlns:w="urn:schemas-microsoft-com:office:word" href="{{ .ConfirmationURL }}" style="height:52px;v-text-anchor:middle;width:260px;" arcsize="50%" fillcolor="#F59E0B" stroke="f">
+                          <v:roundrect xmlns:v="urn:schemas-microsoft-com:vml" xmlns:w="urn:schemas-microsoft-com:office:word"
+                            href="{{ .ConfirmationURL }}"
+                            style="height:54px;v-text-anchor:middle;width:240px;"
+                            arcsize="50%" fillcolor="#F59E0B" stroke="f">
                             <w:anchorlock/>
-                            <center style="color:#1A0E00;font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:15px;font-weight:700;">Confirm My Email</center>
+                            <center style="color:#1A0800;font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:16px;font-weight:700;">
+                              Confirm My Email
+                            </center>
                           </v:roundrect>
                           <![endif]-->
                           <!--[if !mso]><!-->
                           <a href="{{ .ConfirmationURL }}"
-                             style="display:inline-block;background:linear-gradient(135deg,#F59E0B,#D97706);color:#1A0E00;font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:15px;font-weight:800;letter-spacing:0.2px;text-decoration:none;border-radius:50px;padding:15px 40px;mso-padding-alt:0;line-height:1;border:none;">
-                            <!--<![endif]-->
-                            ✉&nbsp; Confirm My Email
-                            <!--[if !mso]><!-->
+                             style="display:inline-block;background:linear-gradient(135deg,#F59E0B 0%,#D97706 100%);color:#1A0800;font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:16px;font-weight:800;letter-spacing:0.1px;text-decoration:none;border-radius:50px;padding:16px 44px;line-height:1;border:none;box-shadow:0 4px 20px rgba(245,158,11,0.25);">
+                          <!--<![endif]-->
+                            Confirm My Email &rarr;
+                          <!--[if !mso]><!-->
                           </a>
                           <!--<![endif]-->
                         </td>
@@ -164,16 +161,16 @@
                     <!-- Divider -->
                     <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%">
                       <tr>
-                        <td style="border-top:1px solid rgba(255,255,255,0.07);padding-bottom:28px;font-size:0;line-height:0;">&nbsp;</td>
+                        <td style="border-top:1px solid rgba(255,255,255,0.07);padding-bottom:26px;font-size:0;line-height:0;">&nbsp;</td>
                       </tr>
                     </table>
 
-                    <!-- "Or copy link" fallback -->
+                    <!-- Link fallback -->
                     <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%">
                       <tr>
-                        <td align="center" style="padding-bottom:10px;">
-                          <p style="margin:0;font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:12px;font-weight:600;color:#64748B;letter-spacing:0.8px;text-transform:uppercase;">
-                            Or copy this link into your browser
+                        <td align="center" style="padding-bottom:6px;">
+                          <p style="margin:0;font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:11px;font-weight:600;color:#4B5563;letter-spacing:0.8px;text-transform:uppercase;">
+                            Button not working? Copy this link
                           </p>
                         </td>
                       </tr>
@@ -181,9 +178,9 @@
                         <td align="center">
                           <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="max-width:100%;">
                             <tr>
-                              <td style="background:#080C16;border:1px solid rgba(245,158,11,0.15);border-radius:10px;padding:12px 16px;word-break:break-all;max-width:460px;">
+                              <td style="background:#080C16;border:1px solid rgba(245,158,11,0.12);border-radius:10px;padding:11px 14px;word-break:break-all;max-width:440px;">
                                 <a href="{{ .ConfirmationURL }}"
-                                   style="font-family:'Courier New',Courier,monospace;font-size:11px;color:#F59E0B;text-decoration:none;line-height:1.5;word-break:break-all;">
+                                   style="font-family:'Courier New',Courier,monospace;font-size:11px;color:#D97706;text-decoration:none;line-height:1.6;word-break:break-all;">
                                   {{ .ConfirmationURL }}
                                 </a>
                               </td>
@@ -197,70 +194,79 @@
                 </tr>
               </table>
 
-              <!-- ── WHAT'S WAITING STRIP ── -->
-              <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="background:rgba(245,158,11,0.04);border-top:1px solid rgba(245,158,11,0.10);">
+              <!-- ── WHAT'S INSIDE STRIP ── -->
+              <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%"
+                     style="background:rgba(245,158,11,0.04);border-top:1px solid rgba(245,158,11,0.09);">
                 <tr>
-                  <td class="padding-mobile" style="padding:28px 48px;">
-                    <p style="margin:0 0 16px;font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:11px;font-weight:700;color:#64748B;letter-spacing:1.2px;text-transform:uppercase;">
-                      What's waiting for you inside
+                  <td class="padding-mobile" style="padding:26px 48px 30px;">
+
+                    <p style="margin:0 0 18px;font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:13px;font-weight:700;color:#FFFFFF;">
+                      Here's what's waiting for you inside
                     </p>
-                    <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%">
+
+                    <!-- Feature 1 -->
+                    <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="margin-bottom:14px;">
                       <tr>
-                        <td style="padding-bottom:10px;">
-                          <table role="presentation" cellpadding="0" cellspacing="0" border="0">
-                            <tr>
-                              <td style="width:28px;vertical-align:top;">
-                                <span style="font-size:14px;">&#9889;</span>
-                              </td>
-                              <td>
-                                <span style="font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:13px;color:#CBD5E1;line-height:1.5;">
-                                  <strong style="color:#F59E0B;">AI Strategy Engine</strong> — generates full marketing campaigns in seconds
-                                </span>
-                              </td>
-                            </tr>
-                          </table>
+                        <td style="width:36px;vertical-align:top;padding-top:1px;">
+                          <div style="width:28px;height:28px;border-radius:8px;background:rgba(245,158,11,0.12);text-align:center;line-height:28px;font-size:14px;">&#9889;</div>
                         </td>
-                      </tr>
-                      <tr>
-                        <td style="padding-bottom:10px;">
-                          <table role="presentation" cellpadding="0" cellspacing="0" border="0">
-                            <tr>
-                              <td style="width:28px;vertical-align:top;">
-                                <span style="font-size:14px;">&#129302;</span>
-                              </td>
-                              <td>
-                                <span style="font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:13px;color:#CBD5E1;line-height:1.5;">
-                                  <strong style="color:#F59E0B;">Autonomous Posting</strong> — AI creates and publishes content for you
-                                </span>
-                              </td>
-                            </tr>
-                          </table>
-                        </td>
-                      </tr>
-                      <tr>
-                        <td>
-                          <table role="presentation" cellpadding="0" cellspacing="0" border="0">
-                            <tr>
-                              <td style="width:28px;vertical-align:top;">
-                                <span style="font-size:14px;">&#128202;</span>
-                              </td>
-                              <td>
-                                <span style="font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:13px;color:#CBD5E1;line-height:1.5;">
-                                  <strong style="color:#F59E0B;">Platform Intelligence</strong> — real-time algorithm monitoring across every platform
-                                </span>
-                              </td>
-                            </tr>
-                          </table>
+                        <td style="padding-left:10px;vertical-align:top;">
+                          <p style="margin:0;font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:13px;color:#CBD5E1;line-height:1.6;">
+                            <strong style="color:#F59E0B;">AI Strategy Engine</strong> — a full campaign built around your product in seconds, not weeks.
+                          </p>
                         </td>
                       </tr>
                     </table>
+
+                    <!-- Feature 2 -->
+                    <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="margin-bottom:14px;">
+                      <tr>
+                        <td style="width:36px;vertical-align:top;padding-top:1px;">
+                          <div style="width:28px;height:28px;border-radius:8px;background:rgba(245,158,11,0.12);text-align:center;line-height:28px;font-size:14px;">&#129302;</div>
+                        </td>
+                        <td style="padding-left:10px;vertical-align:top;">
+                          <p style="margin:0;font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:13px;color:#CBD5E1;line-height:1.6;">
+                            <strong style="color:#F59E0B;">Autonomous Posting</strong> — your AI writes the posts, picks the time, and hits publish. You just watch.
+                          </p>
+                        </td>
+                      </tr>
+                    </table>
+
+                    <!-- Feature 3 -->
+                    <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%">
+                      <tr>
+                        <td style="width:36px;vertical-align:top;padding-top:1px;">
+                          <div style="width:28px;height:28px;border-radius:8px;background:rgba(245,158,11,0.12);text-align:center;line-height:28px;font-size:14px;">&#128202;</div>
+                        </td>
+                        <td style="padding-left:10px;vertical-align:top;">
+                          <p style="margin:0;font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:13px;color:#CBD5E1;line-height:1.6;">
+                            <strong style="color:#F59E0B;">Zero Ad Budget Needed</strong> — organic reach that rivals $10k/month paid campaigns, for free.
+                          </p>
+                        </td>
+                      </tr>
+                    </table>
+
                   </td>
                 </tr>
               </table>
 
-              <!-- Bottom padding -->
+              <!-- ── PERSONAL SIGN-OFF ── -->
               <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%">
-                <tr><td style="height:8px;font-size:0;line-height:0;">&nbsp;</td></tr>
+                <tr>
+                  <td class="padding-mobile" style="padding:24px 48px 30px;">
+                    <p style="margin:0 0 6px;font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:14px;color:#94A3B8;line-height:1.7;">
+                      Excited to have you on board. If you ever have questions, just reply to this email — a real person reads every one.
+                    </p>
+                    <p style="margin:0;font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:14px;color:#64748B;line-height:1.7;">
+                      — The AdRoom AI Team
+                    </p>
+                  </td>
+                </tr>
+              </table>
+
+              <!-- Bottom spacer -->
+              <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%">
+                <tr><td style="height:6px;font-size:0;line-height:0;">&nbsp;</td></tr>
               </table>
 
             </td>
@@ -268,18 +274,18 @@
 
           <!-- ── SECURITY NOTE ── -->
           <tr>
-            <td style="padding:24px 8px 0;">
-              <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="background:rgba(245,158,11,0.04);border:1px solid rgba(245,158,11,0.12);border-radius:14px;">
+            <td style="padding:20px 4px 0;">
+              <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%"
+                     style="background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.07);border-radius:14px;">
                 <tr>
-                  <td style="padding:16px 20px;">
+                  <td style="padding:14px 18px;">
                     <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%">
                       <tr>
-                        <td style="width:28px;vertical-align:top;padding-top:1px;">
-                          <span style="font-size:15px;color:#F59E0B;">&#128274;</span>
-                        </td>
-                        <td>
-                          <p style="margin:0;font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:12px;color:#94A3B8;line-height:1.6;">
-                            <strong style="color:#CBD5E1;">Security notice:</strong> This link expires in 24 hours and can only be used once. If you didn't create an AdRoom AI account, you can safely ignore this email — no action is needed.
+                        <td style="width:24px;vertical-align:top;padding-top:1px;font-size:14px;">&#128274;</td>
+                        <td style="padding-left:10px;">
+                          <p style="margin:0;font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:12px;color:#64748B;line-height:1.65;">
+                            <strong style="color:#94A3B8;">Heads up:</strong> This link expires in 24 hours and works only once.
+                            If you didn't sign up for AdRoom AI, no worries — just ignore this email and nothing will happen.
                           </p>
                         </td>
                       </tr>
@@ -292,44 +298,35 @@
 
           <!-- ── FOOTER ── -->
           <tr>
-            <td align="center" style="padding:32px 8px 0;">
+            <td align="center" style="padding:28px 8px 0;">
               <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%">
-
-                <!-- Divider -->
                 <tr>
-                  <td style="border-top:1px solid rgba(255,255,255,0.06);padding-bottom:24px;font-size:0;line-height:0;">&nbsp;</td>
+                  <td style="border-top:1px solid rgba(255,255,255,0.05);padding-bottom:20px;font-size:0;line-height:0;">&nbsp;</td>
                 </tr>
-
-                <!-- Links -->
                 <tr>
-                  <td align="center" style="padding-bottom:14px;">
-                    <a href="https://adroomai.com" style="font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:12px;color:#64748B;text-decoration:none;padding:0 12px;">Website</a>
-                    <span style="color:#1E293B;">|</span>
-                    <a href="mailto:support@adroomai.com" style="font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:12px;color:#64748B;text-decoration:none;padding:0 12px;">Support</a>
-                    <span style="color:#1E293B;">|</span>
-                    <a href="https://adroomai.com/privacy" style="font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:12px;color:#64748B;text-decoration:none;padding:0 12px;">Privacy Policy</a>
+                  <td align="center" style="padding-bottom:12px;">
+                    <a href="https://adroomai.com" style="font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:12px;color:#4B5563;text-decoration:none;padding:0 10px;">Website</a>
+                    <span style="color:#1E293B;">&middot;</span>
+                    <a href="mailto:support@adroomai.com" style="font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:12px;color:#4B5563;text-decoration:none;padding:0 10px;">Support</a>
+                    <span style="color:#1E293B;">&middot;</span>
+                    <a href="https://adroomai.com/privacy" style="font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:12px;color:#4B5563;text-decoration:none;padding:0 10px;">Privacy</a>
                   </td>
                 </tr>
-
-                <!-- Copyright -->
                 <tr>
                   <td align="center">
-                    <p style="margin:0;font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:11px;color:#334155;line-height:1.6;">
-                      &copy; 2026 AdRoom AI &nbsp;&middot;&nbsp; Building the future of autonomous marketing.<br />
-                      This email was sent because you signed up at adroomai.com.
+                    <p style="margin:0;font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:11px;color:#1E293B;line-height:1.7;">
+                      &copy; 2026 AdRoom AI &nbsp;&middot;&nbsp; You received this because you signed up at adroomai.com
                     </p>
                   </td>
                 </tr>
-
               </table>
             </td>
           </tr>
 
-        </table><!-- /email-container -->
-
+        </table>
       </td>
     </tr>
-  </table><!-- /wrapper -->
+  </table>
 
 </body>
 </html>
