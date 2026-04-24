@@ -1678,10 +1678,63 @@ app.post('/api/auth/register', async (req, res) => {
       ]);
     }
 
+    // Send branded verification email via Resend (root-cause fix for Supabase email delivery)
+    try {
+      const { emailService } = await import('./services/emailService');
+      const result = await emailService.sendVerificationEmail(email.trim().toLowerCase());
+      if (!result.ok) {
+        console.warn('[Register] Verification email send failed (non-fatal):', result.error);
+      }
+    } catch (e: any) {
+      console.warn('[Register] Email service unavailable:', e.message);
+    }
+
     res.json({ success: true, message: 'Account created. Please check your email to verify your address.' });
   } catch (err: any) {
     console.error('[Register] Error:', err.message);
     res.status(500).json({ error: 'Registration failed. Please try again.' });
+  }
+});
+
+/**
+ * POST /api/auth/resend-verification — resend the verification email via Resend.
+ */
+app.post('/api/auth/resend-verification', async (req, res) => {
+  try {
+    const { email } = req.body;
+    if (!email) return res.status(400).json({ error: 'Email is required.' });
+    const { emailService } = await import('./services/emailService');
+    const result = await emailService.sendVerificationEmail(email.trim().toLowerCase());
+    if (!result.ok) {
+      // Don't leak whether the email exists; return success anyway
+      console.warn('[ResendVerification] Failed:', result.error);
+    }
+    res.json({ success: true });
+  } catch (err: any) {
+    console.error('[ResendVerification] Error:', err.message);
+    res.status(500).json({ error: 'Could not resend verification email.' });
+  }
+});
+
+/**
+ * POST /api/auth/forgot-password — send a branded password reset email via Resend.
+ * Always returns success to avoid leaking which emails are registered.
+ */
+app.post('/api/auth/forgot-password', async (req, res) => {
+  try {
+    const { email } = req.body;
+    if (!email || typeof email !== 'string' || !email.includes('@')) {
+      return res.status(400).json({ error: 'Valid email is required.' });
+    }
+    const { emailService } = await import('./services/emailService');
+    const result = await emailService.sendPasswordResetEmail(email.trim().toLowerCase());
+    if (!result.ok) {
+      console.warn('[ForgotPassword] Send failed:', result.error);
+    }
+    res.json({ success: true, message: 'If an account exists with that email, a reset link has been sent.' });
+  } catch (err: any) {
+    console.error('[ForgotPassword] Error:', err.message);
+    res.status(500).json({ error: 'Could not send reset email.' });
   }
 });
 

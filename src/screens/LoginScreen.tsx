@@ -10,6 +10,8 @@ import { supabase } from '../services/supabase';
 import { Mail, Lock, Eye, EyeOff, KeyRound, CheckCircle, ArrowLeft, X } from 'lucide-react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+const BACKEND_URL = process.env.EXPO_PUBLIC_API_URL;
+
 type Props = NativeStackScreenProps<RootStackParamList, 'Login'>;
 
 export default function LoginScreen({ navigation }: Props) {
@@ -67,6 +69,27 @@ export default function LoginScreen({ navigation }: Props) {
     }, 1000);
   };
 
+  const sendResetRequest = async (emailToSend: string): Promise<{ ok: boolean; error?: string }> => {
+    if (BACKEND_URL) {
+      try {
+        const res = await fetch(`${BACKEND_URL}/api/auth/forgot-password`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email: emailToSend }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) return { ok: false, error: data.error || 'Could not send reset email.' };
+        return { ok: true };
+      } catch {
+        // Fall through to Supabase
+      }
+    }
+    const { error } = await supabase.auth.resetPasswordForEmail(emailToSend, {
+      redirectTo: 'adroom://reset-password',
+    });
+    return error ? { ok: false, error: error.message } : { ok: true };
+  };
+
   const handleSendReset = async () => {
     const trimmed = forgotEmail.trim();
     if (!trimmed || !trimmed.includes('@')) {
@@ -75,11 +98,9 @@ export default function LoginScreen({ navigation }: Props) {
     }
     setForgotLoading(true);
     try {
-      const { error } = await supabase.auth.resetPasswordForEmail(trimmed, {
-        redirectTo: 'adroom://reset-password',
-      });
-      if (error) {
-        Alert.alert('Error', error.message);
+      const result = await sendResetRequest(trimmed);
+      if (!result.ok) {
+        Alert.alert('Error', result.error || 'Something went wrong.');
         return;
       }
       setForgotStep('sent');
@@ -97,9 +118,7 @@ export default function LoginScreen({ navigation }: Props) {
     setResendLoading(true);
     setResendSent(false);
     try {
-      await supabase.auth.resetPasswordForEmail(forgotEmail.trim(), {
-        redirectTo: 'adroom://reset-password',
-      });
+      await sendResetRequest(forgotEmail.trim());
       setResendSent(true);
       startCooldown();
     } catch {
@@ -126,8 +145,8 @@ export default function LoginScreen({ navigation }: Props) {
           <Animated.View entering={FadeInDown.delay(100).springify()} style={styles.logoBlock}>
             <View style={styles.logoIcon}>
               <Image
-                source={require('../../assets/icon.png')}
-                style={{ width: 44, height: 44, borderRadius: 13 }}
+                source={require('../../assets/logo.png')}
+                style={{ width: 76, height: 76, borderRadius: 18 }}
                 resizeMode="contain"
               />
             </View>
@@ -357,13 +376,13 @@ const styles = StyleSheet.create({
   inner: { flexGrow: 1, justifyContent: 'center', paddingHorizontal: 24, paddingVertical: 32 },
   logoBlock: { alignItems: 'center', marginBottom: 40 },
   logoIcon: {
-    width: 68, height: 68, borderRadius: 22,
+    width: 100, height: 100, borderRadius: 28,
     backgroundColor: '#151B2B',
     borderWidth: 1.5, borderColor: 'rgba(0,240,255,0.25)',
-    alignItems: 'center', justifyContent: 'center', marginBottom: 16,
+    alignItems: 'center', justifyContent: 'center', marginBottom: 18,
     overflow: 'hidden',
   },
-  logoText: { color: '#FFFFFF', fontSize: 30, fontWeight: '900', letterSpacing: -0.5 },
+  logoText: { color: '#FFFFFF', fontSize: 32, fontWeight: '900', letterSpacing: -0.5 },
   logoSub: { color: '#64748B', fontSize: 14, marginTop: 6, fontWeight: '500' },
   form: { gap: 0 },
   fieldGroup: { marginBottom: 16 },
