@@ -1,13 +1,13 @@
 import React, { useState } from 'react';
 import {
-  View, Text, TextInput, TouchableOpacity, Alert,
+  View, Text, TextInput, TouchableOpacity, Alert, Modal,
   ActivityIndicator, KeyboardAvoidingView, Platform, StyleSheet, ScrollView,
 } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import Animated, { FadeInDown } from 'react-native-reanimated';
 import { RootStackParamList } from '../types';
 import { supabase } from '../services/supabase';
-import { Mail, Lock, Eye, EyeOff, ArrowLeft, UserPlus } from 'lucide-react-native';
+import { Mail, Lock, Eye, EyeOff, ArrowLeft, UserPlus, CheckCircle } from 'lucide-react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Signup'>;
@@ -24,6 +24,8 @@ export default function SignupScreen({ navigation }: Props) {
   const [emailFocused, setEmailFocused] = useState(false);
   const [passFocused, setPassFocused] = useState(false);
   const [confirmFocused, setConfirmFocused] = useState(false);
+  const [showEmailModal, setShowEmailModal] = useState(false);
+  const [registeredEmail, setRegisteredEmail] = useState('');
 
   const handleSignup = async () => {
     if (!email || !password || !confirmPassword) {
@@ -63,9 +65,8 @@ export default function SignupScreen({ navigation }: Props) {
           return;
         }
       }
-      Alert.alert('Check Your Email', 'A verification link has been sent to your email address.', [
-        { text: 'OK', onPress: () => navigation.navigate('Login') },
-      ]);
+      setRegisteredEmail(email.trim());
+      setShowEmailModal(true);
     } catch (err: any) {
       setLoading(false);
       Alert.alert('Registration Failed', 'Could not connect. Please check your connection and try again.');
@@ -180,6 +181,62 @@ export default function SignupScreen({ navigation }: Props) {
           </Animated.View>
         </ScrollView>
       </KeyboardAvoidingView>
+
+      {/* Email Verification Sent Modal */}
+      <Modal visible={showEmailModal} transparent animationType="fade">
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalCard}>
+            {/* Icon */}
+            <View style={styles.modalIconWrap}>
+              <View style={styles.modalIconRing}>
+                <Mail size={30} color="#7000FF" />
+              </View>
+            </View>
+
+            {/* Title */}
+            <Text style={styles.modalTitle}>Check Your Inbox</Text>
+            <Text style={styles.modalSubtitle}>
+              We sent a verification link to
+            </Text>
+            <View style={styles.emailChip}>
+              <Text style={styles.emailChipText} numberOfLines={1}>{registeredEmail}</Text>
+            </View>
+            <Text style={styles.modalBody}>
+              Tap the link in the email to activate your AdRoom AI account. It may take a moment to arrive — check your spam folder if needed.
+            </Text>
+
+            {/* Divider */}
+            <View style={styles.modalDivider} />
+
+            {/* Steps */}
+            {[
+              'Open the email from AdRoom AI',
+              'Tap "Confirm My Email"',
+              'Sign in and launch your first campaign',
+            ].map((step, i) => (
+              <View key={i} style={styles.stepRow}>
+                <View style={styles.stepNum}>
+                  <Text style={styles.stepNumText}>{i + 1}</Text>
+                </View>
+                <Text style={styles.stepText}>{step}</Text>
+              </View>
+            ))}
+
+            {/* CTA */}
+            <TouchableOpacity
+              onPress={() => {
+                setShowEmailModal(false);
+                navigation.navigate('Login');
+              }}
+              style={styles.modalBtn}
+              activeOpacity={0.85}
+            >
+              <CheckCircle size={18} color="#fff" />
+              <Text style={styles.modalBtnText}>Got it — Go to Sign In</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -216,4 +273,60 @@ const styles = StyleSheet.create({
   btnText: { color: '#FFFFFF', fontWeight: '800', fontSize: 16, letterSpacing: 0.3 },
   signinRow: { flexDirection: 'row', justifyContent: 'center', marginTop: 4 },
   signinText: { color: '#64748B', fontSize: 14 },
+
+  modalOverlay: {
+    flex: 1, backgroundColor: 'rgba(0,0,0,0.75)',
+    justifyContent: 'center', alignItems: 'center', padding: 24,
+  },
+  modalCard: {
+    backgroundColor: '#151B2B', borderRadius: 24,
+    padding: 28, width: '100%',
+    borderWidth: 1, borderColor: 'rgba(112,0,255,0.25)',
+  },
+  modalIconWrap: { alignItems: 'center', marginBottom: 20 },
+  modalIconRing: {
+    width: 72, height: 72, borderRadius: 36,
+    backgroundColor: 'rgba(112,0,255,0.1)',
+    borderWidth: 1.5, borderColor: 'rgba(112,0,255,0.35)',
+    alignItems: 'center', justifyContent: 'center',
+  },
+  modalTitle: {
+    color: '#FFFFFF', fontSize: 22, fontWeight: '800',
+    textAlign: 'center', letterSpacing: -0.3, marginBottom: 8,
+  },
+  modalSubtitle: {
+    color: '#64748B', fontSize: 13, textAlign: 'center', marginBottom: 8,
+  },
+  emailChip: {
+    alignSelf: 'center', backgroundColor: 'rgba(112,0,255,0.08)',
+    borderWidth: 1, borderColor: 'rgba(112,0,255,0.2)',
+    borderRadius: 50, paddingHorizontal: 16, paddingVertical: 6, marginBottom: 14,
+    maxWidth: '100%',
+  },
+  emailChipText: {
+    color: '#A78BFA', fontSize: 13, fontWeight: '600',
+  },
+  modalBody: {
+    color: '#475569', fontSize: 13, textAlign: 'center', lineHeight: 20, marginBottom: 20,
+  },
+  modalDivider: {
+    height: 1, backgroundColor: 'rgba(255,255,255,0.06)', marginBottom: 18,
+  },
+  stepRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 12,
+  },
+  stepNum: {
+    width: 24, height: 24, borderRadius: 12,
+    backgroundColor: 'rgba(112,0,255,0.15)',
+    borderWidth: 1, borderColor: 'rgba(112,0,255,0.3)',
+    alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+  },
+  stepNumText: { color: '#A78BFA', fontSize: 11, fontWeight: '800' },
+  stepText: { color: '#94A3B8', fontSize: 13, flex: 1, lineHeight: 18 },
+  modalBtn: {
+    backgroundColor: '#7000FF', borderRadius: 14,
+    height: 52, flexDirection: 'row',
+    alignItems: 'center', justifyContent: 'center', gap: 8, marginTop: 8,
+  },
+  modalBtnText: { color: '#FFFFFF', fontWeight: '800', fontSize: 15 },
 });
