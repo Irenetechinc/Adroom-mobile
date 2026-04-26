@@ -276,7 +276,108 @@ app.delete('/api/platform-configs/:platform', async (req, res) => {
       .eq('platform', platform);
 
     if (error) return res.status(500).json({ error: error.message });
+
+    // Realtime broadcast to admin dashboard
+    try {
+      const { adminBroadcast } = await import('./admin/adminRouter');
+      adminBroadcast('platform_disconnected', {
+        userId: user.id,
+        email: user.email,
+        platform,
+        at: new Date().toISOString(),
+      });
+    } catch { /* SSE optional */ }
+
     return res.status(200).json({ disconnected: true, platform });
+  } catch (e: any) {
+    return res.status(500).json({ error: e?.message });
+  }
+});
+
+/**
+ * Platform Configs — pre-flight check whether the user is allowed to connect
+ * one more platform under their current plan. Returns the limit + current usage
+ * so the chat agent can surface a clear upgrade prompt before invoking OAuth.
+ */
+app.get('/api/platform-configs/check', async (req, res) => {
+  try {
+    const supabase = getSupabaseClient(req as any);
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return res.status(401).json({ error: 'Unauthorized.' });
+
+    const platform = String(req.query.platform || '').toLowerCase();
+
+    const guard = await getSubscriptionGuard(user.id, supabase);
+    if (!guard.allowed) {
+      return res.status(200).json({
+        allowed: false,
+        plan: guard.plan,
+        status: guard.status,
+        limit: guard.limits.platforms,
+        used: 0,
+        reason: guard.reason || 'Your subscription is not active.',
+      });
+    }
+
+    const { data: configs } = await supabase
+      .from('ad_configs')
+      .select('platform')
+      .eq('user_id', user.id);
+
+    const list: any[] = configs || [];
+    const alreadyConnected = platform ? list.some((c) => c.platform === platform) : false;
+    const used = list.length;
+    const limit = guard.limits.platforms;
+    // Reconnecting an already-connected platform is always allowed (it's an
+    // upsert, not a new slot). New platforms must fit under the plan limit.
+    const allowed = alreadyConnected || used < limit;
+
+    return res.status(200).json({
+      allowed,
+      plan: guard.plan,
+      status: guard.status,
+      limit,
+      used,
+      already_connected: alreadyConnected,
+      reason: allowed ? undefined :
+        `Your ${guard.plan} plan allows ${limit} connected platform${limit === 1 ? '' : 's'}. You've already connected ${used}. Disconnect a platform or upgrade your plan to add more.`,
+    });
+  } catch (e: any) {
+    return res.status(500).json({ error: e?.message });
+  }
+});
+
+/**
+ * Platform Configs — notify the admin dashboard that the user just connected
+ * a platform via the client-side OAuth flow. The actual ad_configs upsert is
+ * still done client-side (RLS protected), but this lets the admin SSE stream
+ * pick up the change in realtime instead of waiting for a refresh.
+ */
+app.post('/api/platform-configs/notify', async (req, res) => {
+  try {
+    const supabase = getSupabaseClient(req as any);
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return res.status(401).json({ error: 'Unauthorized.' });
+
+    const platform = String(req.body?.platform || '').toLowerCase();
+    const accountName = req.body?.accountName || null;
+    const accountId = req.body?.accountId || null;
+
+    if (!platform) return res.status(400).json({ error: 'platform is required' });
+
+    try {
+      const { adminBroadcast } = await import('./admin/adminRouter');
+      adminBroadcast('platform_connected', {
+        userId: user.id,
+        email: user.email,
+        platform,
+        accountName,
+        accountId,
+        at: new Date().toISOString(),
+      });
+    } catch { /* SSE optional */ }
+
+    return res.status(200).json({ ok: true });
   } catch (e: any) {
     return res.status(500).json({ error: e?.message });
   }

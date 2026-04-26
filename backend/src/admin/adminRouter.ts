@@ -1,6 +1,8 @@
 import { Router, Request, Response, NextFunction } from 'express';
 import crypto from 'crypto';
 import { getServiceSupabaseClient } from '../config/supabase';
+import { SUBSCRIPTION_PLAN_LIMITS } from '../services/subscriptionGuard';
+import { pushService } from '../services/pushService';
 
 const router = Router();
 
@@ -159,6 +161,8 @@ router.get('/api/users', auth, async (req, res) => {
       full_name: u.user_metadata?.full_name || null,
       created_at: u.created_at,
       last_sign_in_at: u.last_sign_in_at,
+      email_confirmed_at: u.email_confirmed_at || null,
+      email_verified: !!u.email_confirmed_at,
       energy: energyMap[u.id] || null,
       subscription: subMap[u.id] || null,
       override_status: statusMap[u.id]?.status || 'active',
@@ -343,6 +347,37 @@ router.post('/api/users/:id/plan', auth, async (req, res) => {
       updated_at: now,
     }, { onConflict: 'user_id' });
 
+    // ── Enforce platform-count limits on plan change ────────────────────────
+    // When a user is downgraded (e.g. pro → starter or anything → none) we
+    // proactively delete their excess connected platforms so the new plan's
+    // limits are immediately enforced. The most-recently-updated configs are
+    // kept so the user retains the platforms they care about most.
+    let removedPlatforms: string[] = [];
+    try {
+      const newLimit = (SUBSCRIPTION_PLAN_LIMITS[plan] ?? SUBSCRIPTION_PLAN_LIMITS['none']).platforms;
+      const isInactive = effectiveStatus !== 'active' && effectiveStatus !== 'trialing';
+      const effectiveLimit = isInactive ? 0 : newLimit;
+
+      const { data: configs } = await sb
+        .from('ad_configs')
+        .select('platform, updated_at')
+        .eq('user_id', id)
+        .order('updated_at', { ascending: false });
+
+      const list = configs || [];
+      if (list.length > effectiveLimit) {
+        const toRemove = list.slice(effectiveLimit).map((c: any) => c.platform);
+        if (toRemove.length > 0) {
+          await sb.from('ad_configs').delete().eq('user_id', id).in('platform', toRemove);
+          removedPlatforms = toRemove;
+          // Notify admin dashboard listeners that platforms were force-disconnected
+          broadcast('platform_disconnected', { userId: id, platforms: toRemove, reason: 'plan_downgrade' });
+        }
+      }
+    } catch (e: any) {
+      console.error('[Admin] Failed to enforce platform limit on plan change:', e.message);
+    }
+
     let newBalance: number | null = null;
     if (grantCredits && plan !== 'none' && planCredits > 0) {
       const { data: account } = await sb.from('energy_accounts').select('*').eq('user_id', id).single();
@@ -381,7 +416,53 @@ router.post('/api/users/:id/plan', auth, async (req, res) => {
       status: effectiveStatus,
       creditsGranted: grantCredits ? planCredits : 0,
       newBalance,
+      removedPlatforms,
     });
+
+    // ── Realtime push notification to the user ──────────────────────────────
+    // Lets the user know immediately on their device that their plan changed.
+    try {
+      const fromPlan = existingSub?.plan || 'none';
+      const PLAN_LABEL: Record<string, string> = {
+        starter: 'Starter', pro: 'Pro', pro_plus: 'Pro+', none: 'No Plan',
+      };
+      const toLabel = PLAN_LABEL[plan] || plan;
+      const fromLabel = PLAN_LABEL[fromPlan] || fromPlan;
+
+      let title = 'Subscription Updated';
+      let body = '';
+      if (effectiveStatus === 'cancelled' || effectiveStatus === 'expired' || plan === 'none') {
+        title = 'Subscription Ended';
+        body = 'Your AdRoom AI subscription has ended. Upgrade to keep your campaigns running.';
+      } else if (fromPlan === 'none' || (existingSub?.status !== 'active' && existingSub?.status !== 'trialing')) {
+        title = `Welcome to ${toLabel}`;
+        body = grantCredits && planCredits > 0
+          ? `Your ${toLabel} plan is active. ${planCredits} energy credits have been added to your wallet.`
+          : `Your ${toLabel} plan is now active. Start launching strategies right away.`;
+      } else if (fromPlan !== plan) {
+        const ranks: Record<string, number> = { none: 0, starter: 1, pro: 2, pro_plus: 3 };
+        const direction = (ranks[plan] ?? 0) > (ranks[fromPlan] ?? 0) ? 'upgraded' : 'downgraded';
+        title = direction === 'upgraded' ? 'Plan Upgraded' : 'Plan Changed';
+        body = `Your subscription has been ${direction} from ${fromLabel} to ${toLabel}.`;
+        if (removedPlatforms.length > 0) {
+          body += ` ${removedPlatforms.length} connected platform${removedPlatforms.length > 1 ? 's were' : ' was'} disconnected to fit your new plan.`;
+        }
+        if (grantCredits && planCredits > 0) {
+          body += ` ${planCredits} credits added.`;
+        }
+      } else {
+        body = `Your ${toLabel} subscription was updated.`;
+      }
+
+      await pushService.send(id, {
+        title,
+        body,
+        data: { type: 'plan_changed', plan, status: effectiveStatus, removedPlatforms },
+        channelId: 'alerts',
+      });
+    } catch (e: any) {
+      console.error('[Admin] Failed to send plan-change push:', e.message);
+    }
 
     res.json({
       success: true,
@@ -389,6 +470,7 @@ router.post('/api/users/:id/plan', auth, async (req, res) => {
       status: effectiveStatus,
       credits_granted: grantCredits && planCredits > 0 ? planCredits : 0,
       new_balance: newBalance,
+      removed_platforms: removedPlatforms,
     });
   } catch (err: any) {
     res.status(500).json({ error: err.message });

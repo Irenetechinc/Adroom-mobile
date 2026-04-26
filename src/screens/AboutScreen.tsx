@@ -22,7 +22,7 @@ const CAPABILITIES = [
     icon: TrendingUp,
     color: '#00F0FF',
     title: 'Explosive Sales Growth',
-    body: 'AdRoom AI deploys a dedicated Salesman Agent that identifies buying signals, crafts persuasive content, and drives conversions across every platform — continuously, without you lifting a finger.',
+    body: 'AdRoom AI applies dedicated sales intelligence that identifies buying signals, crafts persuasive content, and drives conversions across every platform — continuously, without you lifting a finger.',
   },
   {
     icon: Globe,
@@ -34,7 +34,7 @@ const CAPABILITIES = [
     icon: Target,
     color: '#F59E0B',
     title: 'High-Quality Lead Generation',
-    body: 'Our Lead Agent pinpoints your ideal audience using real-time trend intelligence, then engages them with precision messaging that turns cold audiences into warm, ready-to-buy prospects.',
+    body: 'AdRoom AI\'s lead intelligence pinpoints your ideal audience using real-time trend signals, then engages them with precision messaging that turns cold audiences into warm, ready-to-buy prospects.',
   },
   {
     icon: Zap,
@@ -46,7 +46,7 @@ const CAPABILITIES = [
     icon: Users,
     color: '#EF4444',
     title: 'Promotions That Actually Convert',
-    body: 'Forget generic discount posts. AdRoom AI\'s Promotion Agent crafts time-sensitive, high-urgency campaigns tailored to your product and audience, proven to drive immediate action and revenue.',
+    body: 'Forget generic discount posts. AdRoom AI\'s promotional intelligence crafts time-sensitive, high-urgency campaigns tailored to your product and audience, proven to drive immediate action and revenue.',
   },
   {
     icon: Star,
@@ -95,9 +95,9 @@ export default function AboutScreen() {
               resizeMode="contain"
             />
           </View>
-          <Text style={styles.heroTitle}>Your Entire Marketing{'\n'}Team. Fully Automated.</Text>
+          <Text style={styles.heroTitle}>The Intelligent Marketing{'\n'}Framework. Fully Automated.</Text>
           <Text style={styles.heroSub}>
-            AdRoom AI is not a tool. It's a full-stack autonomous marketing workforce that works
+            AdRoom AI is not a tool. It's a full-stack intelligent marketing framework that works
             around the clock — without a single human in the loop.
           </Text>
           <View style={styles.heroBadge}>

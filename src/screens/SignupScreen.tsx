@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
-  View, Text, TextInput, TouchableOpacity, Alert, Modal,
+  View, Text, TextInput, TouchableOpacity, Modal,
   ActivityIndicator, KeyboardAvoidingView, Platform, StyleSheet, ScrollView,
 } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
@@ -10,6 +10,7 @@ import { supabase } from '../services/supabase';
 import { Mail, Lock, Eye, EyeOff, ArrowLeft, UserPlus, CheckCircle, AlertCircle, LogIn } from 'lucide-react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Constants from 'expo-constants';
+import InlineAlert, { InlineAlertVariant } from '../components/InlineAlert';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Signup'>;
 
@@ -35,17 +36,24 @@ export default function SignupScreen({ navigation }: Props) {
   const [resendCooldown, setResendCooldown] = useState(0);
   const [duplicateEmail, setDuplicateEmail] = useState<string | null>(null);
 
+  const [alert, setAlert] = useState<{ visible: boolean; title: string; message?: string; variant: InlineAlertVariant }>({
+    visible: false, title: '', variant: 'error',
+  });
+  const showAlert = (title: string, message?: string, variant: InlineAlertVariant = 'error') =>
+    setAlert({ visible: true, title, message, variant });
+  const closeAlert = () => setAlert((a) => ({ ...a, visible: false }));
+
   const handleSignup = async () => {
     if (!email || !password || !confirmPassword) {
-      Alert.alert('Missing Fields', 'Please fill in all fields.');
+      showAlert('Missing Information', 'Please fill in your email and both password fields to continue.', 'warning');
       return;
     }
     if (password !== confirmPassword) {
-      Alert.alert('Password Mismatch', 'Passwords do not match.');
+      showAlert('Passwords Don\'t Match', 'Your password and confirmation don\'t match. Please re-enter them.', 'warning');
       return;
     }
     if (password.length < 6) {
-      Alert.alert('Weak Password', 'Password must be at least 6 characters.');
+      showAlert('Weak Password', 'Your password needs to be at least 6 characters long.', 'warning');
       return;
     }
 
@@ -68,7 +76,11 @@ export default function SignupScreen({ navigation }: Props) {
           return;
         }
         if (!res.ok) {
-          Alert.alert('Registration Failed', data.error || 'Something went wrong. Please try again.');
+          showAlert(
+            'Sign-Up Failed',
+            data.error || 'Something went wrong while creating your account. Please try again in a moment.',
+            'error',
+          );
           return;
         }
         await supabase.auth.resend({ type: 'signup', email: email.trim() }).catch(() => {});
@@ -81,7 +93,7 @@ export default function SignupScreen({ navigation }: Props) {
             setDuplicateEmail(email.trim());
             return;
           }
-          Alert.alert('Registration Failed', error.message);
+          showAlert('Sign-Up Failed', error.message, 'error');
           return;
         }
       }
@@ -89,7 +101,11 @@ export default function SignupScreen({ navigation }: Props) {
       setShowEmailModal(true);
     } catch (err: any) {
       setLoading(false);
-      Alert.alert('Registration Failed', 'Could not connect. Please check your connection and try again.');
+      showAlert(
+        'Connection Problem',
+        'We couldn\'t reach our servers. Check your internet connection and try again.',
+        'error',
+      );
     }
   };
 
@@ -260,7 +276,7 @@ export default function SignupScreen({ navigation }: Props) {
             </TouchableOpacity>
 
             {/* Sign in link */}
-            <TouchableOpacity onPress={() => navigation.goBack()} style={styles.signinRow}>
+            <TouchableOpacity onPress={() => navigation.navigate('Login')} style={styles.signinRow}>
               <Text style={styles.signinText}>Already have an account?{' '}</Text>
               <Text style={[styles.signinText, { color: '#7000FF', fontWeight: '700' }]}>Sign In</Text>
             </TouchableOpacity>
@@ -350,6 +366,14 @@ export default function SignupScreen({ navigation }: Props) {
           </View>
         </View>
       </Modal>
+
+      <InlineAlert
+        visible={alert.visible}
+        title={alert.title}
+        message={alert.message}
+        variant={alert.variant}
+        onClose={closeAlert}
+      />
     </SafeAreaView>
   );
 }
