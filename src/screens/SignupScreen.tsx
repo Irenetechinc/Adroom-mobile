@@ -7,7 +7,7 @@ import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import Animated, { FadeInDown } from 'react-native-reanimated';
 import { RootStackParamList } from '../types';
 import { supabase } from '../services/supabase';
-import { Mail, Lock, Eye, EyeOff, ArrowLeft, UserPlus, CheckCircle } from 'lucide-react-native';
+import { Mail, Lock, Eye, EyeOff, ArrowLeft, UserPlus, CheckCircle, AlertCircle, LogIn } from 'lucide-react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Constants from 'expo-constants';
 
@@ -33,6 +33,7 @@ export default function SignupScreen({ navigation }: Props) {
   const [resendLoading, setResendLoading] = useState(false);
   const [resendSent, setResendSent] = useState(false);
   const [resendCooldown, setResendCooldown] = useState(0);
+  const [duplicateEmail, setDuplicateEmail] = useState<string | null>(null);
 
   const handleSignup = async () => {
     if (!email || !password || !confirmPassword) {
@@ -49,6 +50,7 @@ export default function SignupScreen({ navigation }: Props) {
     }
 
     setLoading(true);
+    setDuplicateEmail(null);
 
     try {
       if (BACKEND_URL) {
@@ -59,6 +61,12 @@ export default function SignupScreen({ navigation }: Props) {
         });
         const data = await res.json();
         setLoading(false);
+        if (res.status === 409) {
+          // Duplicate account — surface inline instead of an alert so the
+          // user can tap "Sign in instead" and land on Login pre-filled.
+          setDuplicateEmail(email.trim());
+          return;
+        }
         if (!res.ok) {
           Alert.alert('Registration Failed', data.error || 'Something went wrong. Please try again.');
           return;
@@ -68,6 +76,11 @@ export default function SignupScreen({ navigation }: Props) {
         const { error } = await supabase.auth.signUp({ email: email.trim(), password });
         setLoading(false);
         if (error) {
+          const msg = error.message?.toLowerCase() || '';
+          if (msg.includes('already registered') || msg.includes('already exists') || msg.includes('user already')) {
+            setDuplicateEmail(email.trim());
+            return;
+          }
           Alert.alert('Registration Failed', error.message);
           return;
         }
@@ -78,6 +91,11 @@ export default function SignupScreen({ navigation }: Props) {
       setLoading(false);
       Alert.alert('Registration Failed', 'Could not connect. Please check your connection and try again.');
     }
+  };
+
+  const goToLoginWithEmail = (e: string) => {
+    setDuplicateEmail(null);
+    navigation.navigate('Login', { prefillEmail: e });
   };
 
   const cooldownRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -149,7 +167,7 @@ export default function SignupScreen({ navigation }: Props) {
                   placeholder="your@email.com"
                   placeholderTextColor="#475569"
                   value={email}
-                  onChangeText={setEmail}
+                  onChangeText={(t) => { setEmail(t); if (duplicateEmail) setDuplicateEmail(null); }}
                   autoCapitalize="none"
                   keyboardType="email-address"
                   onFocus={() => setEmailFocused(true)}
@@ -206,6 +224,28 @@ export default function SignupScreen({ navigation }: Props) {
               <Text style={{ color: '#7000FF' }}>Terms of Service</Text> and{' '}
               <Text style={{ color: '#7000FF' }}>Privacy Policy</Text>.
             </Text>
+
+            {/* Duplicate-account banner */}
+            {duplicateEmail && (
+              <View style={styles.dupBanner}>
+                <View style={styles.dupRow}>
+                  <AlertCircle size={18} color="#FBBF24" />
+                  <Text style={styles.dupTitle}>That email is already registered</Text>
+                </View>
+                <Text style={styles.dupBody} numberOfLines={2}>
+                  An account already exists for{' '}
+                  <Text style={{ color: '#E2E8F0', fontWeight: '700' }}>{duplicateEmail}</Text>.
+                </Text>
+                <TouchableOpacity
+                  onPress={() => goToLoginWithEmail(duplicateEmail)}
+                  style={styles.dupBtn}
+                  activeOpacity={0.85}
+                >
+                  <LogIn size={16} color="#0B0F19" />
+                  <Text style={styles.dupBtnText}>Sign in instead</Text>
+                </TouchableOpacity>
+              </View>
+            )}
 
             {/* Submit */}
             <TouchableOpacity
@@ -344,6 +384,19 @@ const styles = StyleSheet.create({
     height: 54, alignItems: 'center', justifyContent: 'center', marginBottom: 16,
   },
   btnText: { color: '#FFFFFF', fontWeight: '800', fontSize: 16, letterSpacing: 0.3 },
+  dupBanner: {
+    backgroundColor: 'rgba(251,191,36,0.08)',
+    borderWidth: 1, borderColor: 'rgba(251,191,36,0.35)',
+    borderRadius: 14, padding: 14, marginBottom: 14,
+  },
+  dupRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 6 },
+  dupTitle: { color: '#FBBF24', fontSize: 14, fontWeight: '700' },
+  dupBody: { color: '#94A3B8', fontSize: 13, lineHeight: 18, marginBottom: 12 },
+  dupBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
+    backgroundColor: '#E2E8F0', paddingVertical: 10, borderRadius: 10,
+  },
+  dupBtnText: { color: '#0B0F19', fontWeight: '800', fontSize: 14, letterSpacing: 0.2 },
   signinRow: { flexDirection: 'row', justifyContent: 'center', marginTop: 4 },
   signinText: { color: '#64748B', fontSize: 14 },
 
