@@ -272,7 +272,7 @@ export default function StrategyApprovalScreen({ navigation }: Props) {
         {/* Execution Plan */}
         {actions.length > 0 && (
           <View className="bg-adroom-card rounded-xl p-5 mb-4 shadow-sm border border-adroom-neon/10">
-            <Text className="text-lg font-bold text-adroom-neon mb-3 uppercase tracking-wider">What Your AI Will Do</Text>
+            <Text className="text-lg font-bold text-adroom-neon mb-3 uppercase tracking-wider">What Adroom AI Will Do</Text>
             {actions.map((action: string, idx: number) => {
               const clean = friendlyAction(action);
               if (!clean) return null;
