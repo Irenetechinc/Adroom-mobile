@@ -58,7 +58,7 @@
     "extra": {
       "supabaseUrl": "https://mrrgjvrntenlkvslfvfh.supabase.co",
       "supabaseAnonKey": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1ycmdqdnJudGVubGt2c2xmdmZoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njk1NzIxMzgsImV4cCI6MjA4NTE0ODEzOH0.wIwrxgBTsYsx1jGSDDgNw3iPPHN0TZ8v7psen51Z9ks",
-      "apiUrl": "https://backend.adroomai.com",
+      "apiUrl": "https://adroom-mobile-production-c7fb.up.railway.app",
       "facebookAppId": "1536532767602012",
       "eas": {
         "projectId": "69c27cbc-28ff-42e8-ada2-e3226a6b7de9"

@@ -11,6 +11,20 @@ export interface PushPayload {
   channelId?: string;
 }
 
+async function deactivateInvalidTokens(invalidTokens: string[]): Promise<void> {
+  if (!invalidTokens.length) return;
+  try {
+    const supabase = getServiceSupabaseClient();
+    await supabase
+      .from('device_push_tokens')
+      .update({ is_active: false })
+      .in('token', invalidTokens);
+    console.log(`[PushService] Deactivated ${invalidTokens.length} invalid push token(s)`);
+  } catch (e: any) {
+    console.error('[PushService] Failed to deactivate invalid tokens:', e.message);
+  }
+}
+
 async function sendExpoPush(tokens: string[], payload: PushPayload): Promise<void> {
   if (!tokens.length) return;
   const messages = tokens.map((token) => ({
@@ -32,7 +46,26 @@ async function sendExpoPush(tokens: string[], payload: PushPayload): Promise<voi
     if (!res.ok) {
       const err = await res.text();
       console.error('[PushService] Expo push failed:', err);
+      return;
     }
+
+    // Inspect per-message tickets and deactivate tokens Expo flags as invalid
+    // so we don't keep retrying dead devices.
+    const json: any = await res.json().catch(() => null);
+    const tickets: any[] = Array.isArray(json?.data) ? json.data : [];
+    const invalid: string[] = [];
+    tickets.forEach((ticket, idx) => {
+      if (
+        ticket?.status === 'error' &&
+        (ticket?.details?.error === 'DeviceNotRegistered' ||
+          ticket?.details?.error === 'InvalidCredentials' ||
+          ticket?.details?.error === 'MismatchSenderId')
+      ) {
+        const token = tokens[idx];
+        if (token) invalid.push(token);
+      }
+    });
+    if (invalid.length) await deactivateInvalidTokens(invalid);
   } catch (e: any) {
     console.error('[PushService] Network error sending push:', e.message);
   }
@@ -43,7 +76,8 @@ async function getUserTokens(userId: string): Promise<string[]> {
   const { data } = await supabase
     .from('device_push_tokens')
     .select('token')
-    .eq('user_id', userId);
+    .eq('user_id', userId)
+    .eq('is_active', true);
   return (data ?? []).map((r: any) => r.token).filter(Boolean);
 }
 

@@ -12,6 +12,7 @@ async function sendCreditPushAlert(userId: string, balance: number): Promise<voi
       .from('device_push_tokens')
       .select('token')
       .eq('user_id', userId)
+      .eq('is_active', true)
       .limit(3);
 
     if (!tokens || tokens.length === 0) return;
