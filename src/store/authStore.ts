@@ -6,29 +6,72 @@ interface AuthState {
   session: Session | null;
   user: User | null;
   isLoading: boolean;
+  hasActiveStrategy: boolean;
   initialize: () => Promise<void>;
+  refreshActiveStrategy: () => Promise<void>;
   signOut: () => Promise<void>;
 }
 
-export const useAuthStore = create<AuthState>((set) => ({
+const checkActiveStrategy = async (userId: string): Promise<boolean> => {
+  try {
+    const { count, error } = await supabase
+      .from('strategies')
+      .select('id', { count: 'exact', head: true })
+      .eq('user_id', userId)
+      .eq('is_active', true);
+    if (error) {
+      // If column missing or other transient error, treat as no active strategy
+      // so the user lands on the chat to start one rather than a broken dashboard.
+      return false;
+    }
+    return (count ?? 0) > 0;
+  } catch {
+    return false;
+  }
+};
+
+export const useAuthStore = create<AuthState>((set, get) => ({
   session: null,
   user: null,
   isLoading: true,
+  hasActiveStrategy: false,
   initialize: async () => {
     try {
       const { data: { session } } = await supabase.auth.getSession();
-      set({ session, user: session?.user ?? null, isLoading: false });
+      let hasActive = false;
+      if (session?.user?.id) {
+        hasActive = await checkActiveStrategy(session.user.id);
+      }
+      set({ session, user: session?.user ?? null, hasActiveStrategy: hasActive, isLoading: false });
 
-      supabase.auth.onAuthStateChange((_event: string, session: Session | null) => {
-        set({ session, user: session?.user ?? null, isLoading: false });
+      supabase.auth.onAuthStateChange(async (_event: string, newSession: Session | null) => {
+        let active = false;
+        if (newSession?.user?.id) {
+          active = await checkActiveStrategy(newSession.user.id);
+        }
+        set({
+          session: newSession,
+          user: newSession?.user ?? null,
+          hasActiveStrategy: active,
+          isLoading: false,
+        });
       });
     } catch (error) {
       console.error('Auth initialization error:', error);
       set({ isLoading: false });
     }
   },
+  refreshActiveStrategy: async () => {
+    const userId = get().session?.user?.id;
+    if (!userId) {
+      set({ hasActiveStrategy: false });
+      return;
+    }
+    const active = await checkActiveStrategy(userId);
+    set({ hasActiveStrategy: active });
+  },
   signOut: async () => {
     await supabase.auth.signOut();
-    set({ session: null, user: null });
+    set({ session: null, user: null, hasActiveStrategy: false });
   },
 }));

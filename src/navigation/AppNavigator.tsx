@@ -1,5 +1,4 @@
-
-import React, { useEffect } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { NavigationContainer, DarkTheme, LinkingOptions } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import * as Linking from 'expo-linking';
@@ -15,7 +14,6 @@ import StrategyApprovalScreen from '../screens/StrategyApprovalScreen';
 import { AuthLoadingSkeleton } from '../components/Skeleton';
 import OnboardingScreen from '../screens/OnboardingScreen';
 
-// Agent Chat handles the entire strategy wizard flow now
 import AgentChatScreen from '../screens/AgentChatScreen';
 import ConnectedAccountsScreen from '../screens/ConnectedAccountsScreen';
 import SubscriptionScreen from '../screens/SubscriptionScreen';
@@ -65,38 +63,55 @@ const linking: LinkingOptions<RootStackParamList> = {
   },
 };
 
+// Minimum splash duration so the app never flashes a loader for a few ms.
+const MIN_SPLASH_MS = 2200;
+
 export default function AppNavigator() {
-  const { session, isLoading, initialize } = useAuthStore();
+  const { session, isLoading, hasActiveStrategy, initialize } = useAuthStore();
+  const [splashDone, setSplashDone] = useState(false);
+  const splashStartedAt = useRef<number>(Date.now());
 
   useEffect(() => {
     initialize();
   }, [initialize]);
 
-  // Register push token as soon as the user is authenticated
+  // Hold the splash for a minimum duration so it doesn't flash off briefly
+  // before the auth state is resolved.
+  useEffect(() => {
+    if (isLoading) return;
+    const elapsed = Date.now() - splashStartedAt.current;
+    const remaining = Math.max(0, MIN_SPLASH_MS - elapsed);
+    const t = setTimeout(() => setSplashDone(true), remaining);
+    return () => clearTimeout(t);
+  }, [isLoading]);
+
   useEffect(() => {
     if (!session) return;
-    // Small delay so auth is fully settled before requesting token
     const timer = setTimeout(() => {
       registerPushToken().catch(() => {});
     }, 2000);
     return () => clearTimeout(timer);
   }, [session?.user?.id]);
 
-  // Set up global notification listeners (foreground handling)
   useEffect(() => {
     const cleanup = setupNotificationListeners();
     return cleanup;
   }, []);
 
-  if (isLoading) {
-    return (
-      <AuthLoadingSkeleton />
-    );
+  if (isLoading || !splashDone) {
+    return <AuthLoadingSkeleton />;
   }
+
+  // Authed initial route: Dashboard if user already has an active strategy,
+  // otherwise the chat where they can start one.
+  const authedInitialDrawerRoute = hasActiveStrategy ? 'Dashboard' : 'AgentChat';
 
   return (
     <NavigationContainer theme={AdRoomTheme} linking={linking}>
-      <Stack.Navigator screenOptions={{ headerShown: false }}>
+      <Stack.Navigator
+        screenOptions={{ headerShown: false }}
+        initialRouteName={session ? 'Main' : 'Onboarding'}
+      >
         {!session ? (
           <>
             <Stack.Screen name="Onboarding" component={OnboardingScreen} />
@@ -106,37 +121,41 @@ export default function AppNavigator() {
           </>
         ) : (
           <>
-            <Stack.Screen name="ResetPassword" component={ResetPasswordScreen} />
-            <Stack.Screen name="Main" component={DrawerNavigator} />
-            <Stack.Screen 
-              name="StrategyApproval" 
-              component={StrategyApprovalScreen} 
+            <Stack.Screen name="Main">
+              {(props) => (
+                <DrawerNavigator {...props} initialRoute={authedInitialDrawerRoute} />
+              )}
+            </Stack.Screen>
+            <Stack.Screen
+              name="StrategyApproval"
+              component={StrategyApprovalScreen}
               options={{ title: 'Approve Strategy', headerShown: true }}
             />
             <Stack.Screen name="AgentChat" component={AgentChatScreen} />
-            <Stack.Screen 
-              name="ConnectedAccounts" 
-              component={ConnectedAccountsScreen} 
+            <Stack.Screen name="ResetPassword" component={ResetPasswordScreen} />
+            <Stack.Screen
+              name="ConnectedAccounts"
+              component={ConnectedAccountsScreen}
               options={{ title: 'Connected Accounts', headerShown: false }}
             />
-            <Stack.Screen 
-              name="Subscription" 
-              component={SubscriptionScreen} 
+            <Stack.Screen
+              name="Subscription"
+              component={SubscriptionScreen}
               options={{ headerShown: false }}
             />
-            <Stack.Screen 
-              name="PrivacySecurity" 
-              component={PrivacySecurityScreen} 
+            <Stack.Screen
+              name="PrivacySecurity"
+              component={PrivacySecurityScreen}
               options={{ headerShown: false }}
             />
-            <Stack.Screen 
-              name="Notifications" 
-              component={NotificationsScreen} 
+            <Stack.Screen
+              name="Notifications"
+              component={NotificationsScreen}
               options={{ headerShown: false }}
             />
-            <Stack.Screen 
-              name="About" 
-              component={AboutScreen} 
+            <Stack.Screen
+              name="About"
+              component={AboutScreen}
               options={{ headerShown: false }}
             />
           </>

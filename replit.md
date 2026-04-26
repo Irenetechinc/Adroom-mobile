@@ -126,6 +126,16 @@ Key tables:
 - `emotional_ownership` — Emotional category analysis
 - `narrative_snapshots` — GEO monitoring data
 
+## Recent Updates (v2.2.3 — 2026-04-26)
+- **Backend URL**: Switched from Railway to `https://backend.adroomai.com` in `eas.json` (3 envs) and `app.json` extra.apiUrl. Bumped version to 2.2.3.
+- **strategies.status column**: Added migration `supabase/migrations/20260426000000_strategies_status_column.sql` (DEFAULT 'active' + index). Run via `supabase db push` to apply remotely.
+- **Splash & Routing**: New `AuthLoadingSkeleton` (animated logo, glow, pulse dots) shown for ≥2.2s on auth resolve. After login, `AppNavigator` initialRouteName='Main' and DrawerNavigator opens `Dashboard` if `hasActiveStrategy`, otherwise `AgentChat`. Reset-password screen self-redirects to Main if URL lacks reset payload (no more "Verifying" hang).
+- **Active strategy check**: `authStore.checkActiveStrategy()` runs on session restore + sign-in to query `strategies?status=eq.active`.
+- **Onboarding**: 6 features inspired by AboutScreen, new tagline + stats, "Get Started" routes to Signup.
+- **Auth screens**: Removed "AdRoom AI" hero text from Login & Signup, softened Signup title to `#E2E8F0`. Signup uses BACKEND_URL with `Constants.expoConfig.extra.apiUrl` fallback. LoginScreen "Forgot password" first calls backend `/api/auth/reset-password` (service-role) before falling back to client SDK.
+- **Backend auth hardening**: `/api/auth/register` now does `admin.listUsers({filter})` pre-check and treats `identities=[]` as duplicate (prevents re-registering an existing email). Added `/api/auth/reset-password` using service role.
+- **Rebrand**: "Agent" → "Intelligence" in AgentChatScreen header, SideMenu label, and CampaignList empty-state CTA. AgentChatScreen now renders `AgentChatSkeleton` until message history finishes loading.
+
 ## Recent Feature Additions
 - **Plan Gating**: "Sales" and "Leads" goals are Pro-only; "Connect Website" in ProductIntakeCard is Pro-only — shows dimmed UPGRADE TO PRO label and routes to Subscription screen
 - **MemPalace Integration**: `agentStore` saves every chat message to backend `/api/chat/history` (POST with `role`/`content`/`metadata`) and loads history from backend first, falling back to Supabase. Messages are mapped between agent format (text/sender/ui_type/ui_data) and backend format (content/role/metadata)

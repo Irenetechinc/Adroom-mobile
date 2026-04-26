@@ -9,10 +9,14 @@ import { RootStackParamList } from '../types';
 import { supabase } from '../services/supabase';
 import { Mail, Lock, Eye, EyeOff, ArrowLeft, UserPlus, CheckCircle } from 'lucide-react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import Constants from 'expo-constants';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Signup'>;
 
-const BACKEND_URL = process.env.EXPO_PUBLIC_API_URL;
+const BACKEND_URL =
+  process.env.EXPO_PUBLIC_API_URL ||
+  (Constants.expoConfig?.extra?.apiUrl as string) ||
+  '';
 
 export default function SignupScreen({ navigation }: Props) {
   const [email, setEmail] = useState('');
@@ -130,7 +134,7 @@ export default function SignupScreen({ navigation }: Props) {
               <UserPlus size={26} color="#7000FF" />
             </View>
             <Text style={styles.title}>Create Account</Text>
-            <Text style={styles.subtitle}>Join AdRoom AI and launch your first autonomous campaign</Text>
+            <Text style={styles.subtitle}>Set up your intelligence workforce in under a minute</Text>
           </Animated.View>
 
           {/* Form */}
@@ -321,7 +325,7 @@ const styles = StyleSheet.create({
     borderWidth: 1.5, borderColor: 'rgba(112,0,255,0.3)',
     alignItems: 'center', justifyContent: 'center', marginBottom: 16,
   },
-  title: { color: '#FFFFFF', fontSize: 28, fontWeight: '800', letterSpacing: -0.3 },
+  title: { color: '#E2E8F0', fontSize: 28, fontWeight: '800', letterSpacing: -0.3 },
   subtitle: { color: '#64748B', fontSize: 14, textAlign: 'center', marginTop: 8, lineHeight: 20, paddingHorizontal: 16 },
   form: {},
   fieldGroup: { marginBottom: 16 },
@@ -360,7 +364,7 @@ const styles = StyleSheet.create({
     alignItems: 'center', justifyContent: 'center',
   },
   modalTitle: {
-    color: '#FFFFFF', fontSize: 22, fontWeight: '800',
+    color: '#E2E8F0', fontSize: 22, fontWeight: '800',
     textAlign: 'center', letterSpacing: -0.3, marginBottom: 8,
   },
   modalSubtitle: {

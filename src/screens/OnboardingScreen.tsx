@@ -3,7 +3,7 @@ import { View, Text, TouchableOpacity, ScrollView, Dimensions, StyleSheet, Platf
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../types';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Target, TrendingUp, ShieldCheck, ArrowRight, Brain, Cpu } from 'lucide-react-native';
+import { Target, TrendingUp, ShieldCheck, ArrowRight, Globe, Zap, Star, Users, Rocket } from 'lucide-react-native';
 import Animated, {
   FadeInDown, FadeInUp, useSharedValue, useAnimatedStyle,
   withRepeat, withTiming, withSequence, interpolate, Easing,
@@ -17,40 +17,58 @@ type Props = NativeStackScreenProps<RootStackParamList, 'Onboarding'>;
 
 const features = [
   {
-    icon: Brain,
-    title: 'AI Strategy Engine',
-    description: 'Autonomous campaigns that adapt in real-time using GPT-powered decision making.',
+    icon: TrendingUp,
+    title: 'Explosive Sales Growth',
+    description: 'A dedicated workforce that finds buyers, crafts persuasive content, and drives conversions across every platform — non-stop.',
     color: '#00F0FF',
     bg: 'rgba(0,240,255,0.08)',
     border: 'rgba(0,240,255,0.2)',
     delay: 500,
   },
   {
-    icon: TrendingUp,
-    title: 'Smart Asset Generation',
-    description: 'Generate professional banners, ad copy, and creative assets in seconds.',
-    color: '#7000FF',
-    bg: 'rgba(112,0,255,0.08)',
-    border: 'rgba(112,0,255,0.2)',
-    delay: 650,
-  },
-  {
-    icon: ShieldCheck,
-    title: 'Auto Integrity Check',
-    description: 'Every asset is vetted for policy compliance before going live on any platform.',
+    icon: Globe,
+    title: 'Brand Awareness at Scale',
+    description: 'Reach tens of thousands of potential customers organically across Facebook, Instagram, TikTok, LinkedIn, and X.',
     color: '#10B981',
     bg: 'rgba(16,185,129,0.08)',
     border: 'rgba(16,185,129,0.2)',
-    delay: 800,
+    delay: 650,
   },
   {
-    icon: Cpu,
-    title: 'Autonomous Execution',
-    description: 'Launch, manage, and optimize Facebook campaigns completely hands-free.',
+    icon: Target,
+    title: 'High-Quality Leads',
+    description: 'Pinpoints your ideal audience using real-time trend intelligence and turns cold prospects into warm, ready-to-buy leads.',
     color: '#F59E0B',
     bg: 'rgba(245,158,11,0.08)',
     border: 'rgba(245,158,11,0.2)',
+    delay: 800,
+  },
+  {
+    icon: Rocket,
+    title: 'Instant Campaign Launches',
+    description: 'A full launch framework — content calendar, audience targeting, and execution — assembled in minutes, not weeks.',
+    color: '#7C3AED',
+    bg: 'rgba(124,58,237,0.08)',
+    border: 'rgba(124,58,237,0.2)',
     delay: 950,
+  },
+  {
+    icon: Zap,
+    title: 'Promotions That Convert',
+    description: 'Time-sensitive, high-urgency campaigns tailored to your product and audience — proven to drive immediate revenue.',
+    color: '#EF4444',
+    bg: 'rgba(239,68,68,0.08)',
+    border: 'rgba(239,68,68,0.2)',
+    delay: 1100,
+  },
+  {
+    icon: ShieldCheck,
+    title: 'Built-in Integrity Check',
+    description: 'Every post, ad, and asset is vetted for policy compliance before it ever goes live on any platform.',
+    color: '#06B6D4',
+    bg: 'rgba(6,182,212,0.08)',
+    border: 'rgba(6,182,212,0.2)',
+    delay: 1250,
   },
 ];
 
@@ -132,9 +150,9 @@ export default function OnboardingScreen({ navigation }: Props) {
             <Text style={styles.brandName}>
               AdRoom <Text style={{ color: '#00F0FF' }}>AI</Text>
             </Text>
-            <Text style={styles.tagline}>Intelligent Automated Digital Marketing Framework </Text>
+            <Text style={styles.tagline}>Intelligent Automated Digital Marketing Framework</Text>
             <Text style={styles.subtitle}>
-              The world's first fully intelligent autonomous marketing framework — powered by AdRoom AI.
+              An always-on intelligence workforce that markets your brand across every major platform — no agencies, no ad budgets, no delays.
             </Text>
           </Animated.View>
         </Animated.View>
@@ -142,9 +160,9 @@ export default function OnboardingScreen({ navigation }: Props) {
         {/* Stats Row */}
         <Animated.View entering={FadeInDown.delay(400).springify()} style={styles.statsRow}>
           {[
-            { value: '10x', label: 'Faster Setup' },
-            { value: 'AI', label: 'Powered' },
-            { value: '24/7', label: 'Autonomous' },
+            { value: '$0', label: 'Ad Spend' },
+            { value: '24/7', label: 'Always On' },
+            { value: '5×', label: 'More Reach' },
           ].map((stat, i) => (
             <View key={i} style={styles.stat}>
               <Text style={styles.statValue}>{stat.value}</Text>
@@ -167,7 +185,7 @@ export default function OnboardingScreen({ navigation }: Props) {
         style={[styles.cta, { paddingBottom: Math.max(insets.bottom + 16, 32) }]}
       >
         <TouchableOpacity
-          onPress={() => navigation.replace('Login')}
+          onPress={() => navigation.replace('Signup')}
           style={styles.ctaButton}
           activeOpacity={0.85}
         >

@@ -42,8 +42,30 @@ export default function ResetPasswordScreen({ navigation }: Props) {
   const handledRef = useRef(false);
 
   useEffect(() => {
-    const handleUrl = async (urlStr: string | null) => {
-      if (!urlStr || handledRef.current) return;
+    const hasResetPayload = (urlStr: string) => {
+      const params = parseUrlParams(urlStr);
+      return !!(
+        params.access_token ||
+        params.refresh_token ||
+        params.code ||
+        params.error ||
+        params.error_description ||
+        params.type === 'recovery'
+      );
+    };
+
+    const handleUrl = async (urlStr: string | null, fromDeepLink: boolean) => {
+      if (handledRef.current) return;
+      // Only treat as a reset flow if the URL actually carries reset/recovery
+      // payload. If a signed-in user lands here without it (e.g. as the initial
+      // route), bounce them to the main app instead of showing a stuck spinner.
+      if (!urlStr || !hasResetPayload(urlStr)) {
+        if (!fromDeepLink) {
+          handledRef.current = true;
+          navigation.reset({ index: 0, routes: [{ name: 'Main' as any }] });
+        }
+        return;
+      }
       handledRef.current = true;
       try {
         const params = parseUrlParams(urlStr);
@@ -75,26 +97,21 @@ export default function ResetPasswordScreen({ navigation }: Props) {
           setStage('ready');
           return;
         }
-        const { data: { session } } = await supabase.auth.getSession();
-        if (session) {
-          setStage('ready');
-        } else {
-          setErrorMsg('This password reset link is invalid or has expired. Please request a new one.');
-          setStage('invalid');
-        }
+        setErrorMsg('This password reset link is invalid or has expired. Please request a new one.');
+        setStage('invalid');
       } catch (e: any) {
         setErrorMsg(e.message || 'Something went wrong opening this link.');
         setStage('invalid');
       }
     };
 
-    Linking.getInitialURL().then(handleUrl);
+    Linking.getInitialURL().then((url) => handleUrl(url, false));
     const sub = Linking.addEventListener('url', ({ url }) => {
       handledRef.current = false;
-      handleUrl(url);
+      handleUrl(url, true);
     });
     return () => sub.remove();
-  }, []);
+  }, [navigation]);
 
   const handleSubmit = async () => {
     if (!password || !confirmPassword) {

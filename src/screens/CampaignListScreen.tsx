@@ -131,7 +131,7 @@ export default function CampaignListScreen() {
                 activeOpacity={0.85}
               >
                 <Plus size={18} color="#0B0F19" />
-                <Text style={styles.emptyBtnText}>Start with Agent</Text>
+                <Text style={styles.emptyBtnText}>Start with Intelligence</Text>
               </TouchableOpacity>
             </View>
           }
