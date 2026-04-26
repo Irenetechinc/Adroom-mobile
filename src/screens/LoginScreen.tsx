@@ -129,7 +129,7 @@ export default function LoginScreen({ navigation }: Props) {
           <Animated.View entering={FadeInDown.delay(100).springify()} style={styles.logoBlock}>
             <View style={styles.logoIcon}>
               <Image
-                source={require('../../assets/logo.png')}
+                source={require('../../assets/icon.png')}
                 style={{ width: 76, height: 76, borderRadius: 18 }}
                 resizeMode="contain"
               />
