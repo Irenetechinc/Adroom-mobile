@@ -132,9 +132,9 @@ export default function OnboardingScreen({ navigation }: Props) {
             <Text style={styles.brandName}>
               AdRoom <Text style={{ color: '#00F0FF' }}>AI</Text>
             </Text>
-            <Text style={styles.tagline}>Automated Digital Marketing Agent</Text>
+            <Text style={styles.tagline}>Intelligent Automated Digital Marketing Framework </Text>
             <Text style={styles.subtitle}>
-              The world's first fully autonomous marketing OS — powered by real AI.
+              The world's first fully intelligent autonomous marketing framework — powered by AdRoom AI.
             </Text>
           </Animated.View>
         </Animated.View>
