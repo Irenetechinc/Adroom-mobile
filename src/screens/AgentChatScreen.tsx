@@ -1240,7 +1240,7 @@ export default function AgentChatScreen({ navigation, route }: Props) {
           const bal = parseFloat(String(energyAccount?.balance_credits ?? '1'));
           if (bal > 0) return null;
           return (
-            <View style={{ backgroundColor: 'rgba(239,68,68,0.08)', borderTopWidth: 1, borderTopColor: 'rgba(239,68,68,0.2)', paddingHorizontal: 16, paddingVertical: 12, flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+            <View style={{ backgroundColor: 'rgba(239,68,68,0.08)', borderTopWidth: 1, borderTopColor: 'rgba(239,68,68,0.2)', paddingHorizontal: 16, paddingTop: 12, paddingBottom: Math.max(12, insets.bottom + 8), flexDirection: 'row', alignItems: 'center', gap: 10 }}>
               <View style={{ width: 32, height: 32, borderRadius: 10, backgroundColor: 'rgba(239,68,68,0.12)', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                 <Text style={{ fontSize: 16 }}>⚡</Text>
               </View>

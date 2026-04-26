@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import {
-  View, Text, TextInput, TouchableOpacity, Alert, Modal, Image,
+  View, Text, TextInput, TouchableOpacity, Modal, Image,
   ActivityIndicator, KeyboardAvoidingView, Platform, StyleSheet, ScrollView,
 } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
@@ -10,6 +10,7 @@ import { supabase } from '../services/supabase';
 import { Mail, Lock, Eye, EyeOff, KeyRound, CheckCircle, ArrowLeft, X } from 'lucide-react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Constants from 'expo-constants';
+import InlineAlert, { InlineAlertVariant } from '../components/InlineAlert';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Login'>;
 
@@ -26,6 +27,13 @@ export default function LoginScreen({ navigation, route }: Props) {
   const [showPassword, setShowPassword] = useState(false);
   const [emailFocused, setEmailFocused] = useState(false);
   const [passwordFocused, setPasswordFocused] = useState(false);
+
+  const [alert, setAlert] = useState<{ visible: boolean; title: string; message?: string; variant: InlineAlertVariant }>({
+    visible: false, title: '', variant: 'error',
+  });
+  const showAlert = (title: string, message?: string, variant: InlineAlertVariant = 'error') =>
+    setAlert({ visible: true, title, message, variant });
+  const closeAlert = () => setAlert((a) => ({ ...a, visible: false }));
 
   const [showForgotModal, setShowForgotModal] = useState(false);
   const [forgotStep, setForgotStep] = useState<'input' | 'sent'>('input');
@@ -51,13 +59,31 @@ export default function LoginScreen({ navigation, route }: Props) {
 
   const handleLogin = async () => {
     if (!email || !password) {
-      Alert.alert('Missing Fields', 'Please enter your email and password.');
+      showAlert('Missing Information', 'Please enter your email and password to continue.', 'warning');
       return;
     }
     setLoading(true);
     const { error } = await supabase.auth.signInWithPassword({ email: email.trim(), password });
     setLoading(false);
-    if (error) Alert.alert('Sign In Failed', error.message);
+    if (error) {
+      const raw = (error.message || '').toLowerCase();
+      let title = 'Sign In Failed';
+      let msg = error.message || 'We couldn\'t sign you in. Please try again.';
+      if (raw.includes('invalid login credentials') || raw.includes('invalid email or password')) {
+        title = 'Incorrect email or password';
+        msg = 'The email or password you entered doesn\'t match our records. Double-check and try again, or use "Forgot password?" to reset.';
+      } else if (raw.includes('email not confirmed') || raw.includes('not confirmed')) {
+        title = 'Verify your email first';
+        msg = 'Your email address hasn\'t been verified yet. Check your inbox (and spam) for the verification link we sent during sign-up.';
+      } else if (raw.includes('rate') || raw.includes('too many')) {
+        title = 'Too many attempts';
+        msg = 'You\'ve tried to sign in too many times. Please wait a minute and try again.';
+      } else if (raw.includes('network') || raw.includes('fetch')) {
+        title = 'Connection problem';
+        msg = 'We couldn\'t reach our servers. Check your internet connection and try again.';
+      }
+      showAlert(title, msg, 'error');
+    }
   };
 
   const openForgotModal = () => {
@@ -111,21 +137,21 @@ export default function LoginScreen({ navigation, route }: Props) {
   const handleSendReset = async () => {
     const trimmed = forgotEmail.trim();
     if (!trimmed || !trimmed.includes('@')) {
-      Alert.alert('Invalid Email', 'Please enter a valid email address.');
+      showAlert('Invalid Email', 'Please enter a valid email address before sending the reset link.', 'warning');
       return;
     }
     setForgotLoading(true);
     try {
       const result = await sendResetRequest(trimmed);
       if (!result.ok) {
-        Alert.alert('Error', result.error || 'Something went wrong.');
+        showAlert('Couldn\'t Send Reset Email', result.error || 'Something went wrong while sending your reset link. Please try again in a moment.', 'error');
         return;
       }
       setForgotStep('sent');
       setResendSent(false);
       startCooldown();
     } catch {
-      Alert.alert('Error', 'Something went wrong. Please try again.');
+      showAlert('Network Issue', 'We couldn\'t reach our servers. Check your connection and try again.', 'error');
     } finally {
       setForgotLoading(false);
     }
@@ -383,6 +409,14 @@ export default function LoginScreen({ navigation, route }: Props) {
           </View>
         </KeyboardAvoidingView>
       </Modal>
+
+      <InlineAlert
+        visible={alert.visible}
+        title={alert.title}
+        message={alert.message}
+        variant={alert.variant}
+        onClose={closeAlert}
+      />
     </SafeAreaView>
   );
 }

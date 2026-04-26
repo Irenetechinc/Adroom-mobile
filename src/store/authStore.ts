@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { Session, User } from '@supabase/supabase-js';
 import { supabase } from '../services/supabase';
+import { useAgentStore } from './agentStore';
 
 interface AuthState {
   session: Session | null;
@@ -30,6 +31,10 @@ const checkActiveStrategy = async (userId: string): Promise<boolean> => {
   }
 };
 
+// Track previous user id so we can detect identity changes (a different user
+// logging in on the same device) and wipe stale per-user persisted state.
+let lastUserId: string | null = null;
+
 export const useAuthStore = create<AuthState>((set, get) => ({
   session: null,
   user: null,
@@ -41,10 +46,21 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       let hasActive = false;
       if (session?.user?.id) {
         hasActive = await checkActiveStrategy(session.user.id);
+        lastUserId = session.user.id;
       }
       set({ session, user: session?.user ?? null, hasActiveStrategy: hasActive, isLoading: false });
 
       supabase.auth.onAuthStateChange(async (_event: string, newSession: Session | null) => {
+        const newUserId = newSession?.user?.id ?? null;
+
+        // If the user identity changed (different account on same device),
+        // clear the persisted agent state so connected platforms / tokens /
+        // chat history from a previous user never bleed through.
+        if (lastUserId && newUserId && lastUserId !== newUserId) {
+          try { await useAgentStore.getState().clearAll(); } catch { /* ignore */ }
+        }
+        lastUserId = newUserId;
+
         let active = false;
         if (newSession?.user?.id) {
           active = await checkActiveStrategy(newSession.user.id);
@@ -71,7 +87,11 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     set({ hasActiveStrategy: active });
   },
   signOut: async () => {
+    // Wipe per-user persisted state BEFORE Supabase signOut so the next user
+    // logging in on this device starts from a clean slate.
+    try { await useAgentStore.getState().clearAll(); } catch { /* ignore */ }
     await supabase.auth.signOut();
+    lastUserId = null;
     set({ session: null, user: null, hasActiveStrategy: false });
   },
 }));

@@ -126,6 +126,17 @@ Key tables:
 - `emotional_ownership` — Emotional category analysis
 - `narrative_snapshots` — GEO monitoring data
 
+## Recent Updates (v2.2.4 — 2026-04-26)
+- **Custom Alerts (UX)**: New `src/components/InlineAlert.tsx` reusable modal (success/error/warning/info variants). `LoginScreen` no longer uses native `Alert.alert` — sign-in errors are mapped to friendly titles ("Incorrect email or password", "Verify your email first", "Too many attempts", "Connection problem") shown via InlineAlert. Forgot-password errors and validation also routed through InlineAlert.
+- **Onboarding/Auth nav**: `OnboardingScreen` uses `navigation.navigate(...)` (not `replace`) so back-stack works on Login/Signup. `SignupScreen`'s "Sign In" link routes via `navigation.navigate('Login')`.
+- **AboutScreen**: Hero retitled "Intelligent Marketing Framework". The four agent cards (Salesman / Lead Capture / Promotion / Brand Awareness) now describe each as **intelligence** (not "agent").
+- **SideMenu name resolution**: Fetches `profiles.username` and `profiles.full_name` and falls back to `user_metadata` so signed-in users see their real name instead of "User".
+- **Credits banner**: `AgentChatScreen` credits-exhausted banner uses `paddingBottom: Math.max(12, insets.bottom + 8)` so it clears the home indicator on iPhone X+.
+- **Per-user state isolation**: `agentStore` now exposes `clearAll()` (resets in-memory state + AsyncStorage `adroom-agent-store`). `authStore` tracks `lastUserId` and calls `useAgentStore.getState().clearAll()` on `signOut()` and on user-identity change in `onAuthStateChange` so account-A's chat history, strategy, and tokens never bleed into account-B.
+- **Plan downgrade enforcement (admin)**: `PUT /admin/api/users/:id/plan` now (a) deletes excess `ad_configs` keeping only the most-recent N allowed by the new plan, (b) broadcasts `platform_disconnected` per removed platform via `adminBroadcast`, (c) sends a push notification via `pushService.send` with smart copy (welcome / upgrade / downgrade / ended), and (d) returns `removed_platforms` in the JSON response. `GET /admin/api/users` now exposes `email_confirmed_at` + `email_verified`.
+- **Platform-config tier guard**: New `GET /api/platform-configs/check?platform=X` returns `{allowed, plan, limit, used, already_connected, reason}` based on `SUBSCRIPTION_PLAN_LIMITS.platforms` (starter=1, pro=2, pro_plus=99). New `POST /api/platform-configs/notify` lets the client tell the admin SSE stream that an OAuth-completed platform was just connected. `DELETE /api/platform-configs/:platform` now also broadcasts `platform_disconnected`.
+- **agentStore.handleAccountSelection**: Calls `/api/platform-configs/check` *before* invoking `<Service>.saveConfig(...)` and surfaces the server's friendly upgrade message in chat instead of silently failing on RLS. After a successful save, fires `/api/platform-configs/notify` (fire-and-forget) so the admin dashboard sees the new connection in realtime.
+
 ## Recent Updates (v2.2.3 — 2026-04-26)
 - **Backend URL**: Switched from Railway to `https://backend.adroomai.com` in `eas.json` (3 envs) and `app.json` extra.apiUrl. Bumped version to 2.2.3.
 - **strategies.status column**: Added migration `supabase/migrations/20260426000000_strategies_status_column.sql` (DEFAULT 'active' + index). Run via `supabase db push` to apply remotely.

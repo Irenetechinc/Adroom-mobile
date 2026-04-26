@@ -127,6 +127,7 @@ interface AgentState {
   handleAccountSelection: (platform: string, account: any) => Promise<void>;
   disconnectPlatform: (platform: string) => Promise<void>;
   loadConnectedPlatforms: () => Promise<void>;
+  clearAll: () => Promise<void>;
 
   // Legacy (Keep for compatibility if needed, but we'll use unified)
   initiateFacebookConnection: (fromFlow?: boolean) => void;
@@ -1093,6 +1094,37 @@ export const useAgentStore = create<AgentState>()(
           const accessToken = get().tokens[platform];
           if (!accessToken) throw new Error('Missing access token.');
 
+          // ── Pre-flight tier check ────────────────────────────────────────
+          // Verify the user's plan still allows another connected platform
+          // before we hit the database. This surfaces a friendly upgrade
+          // message instead of a silent failure when a user has hit their
+          // plan's platform cap (e.g. Starter = 1, Pro = 2).
+          if (BACKEND_URL) {
+            try {
+              const authToken = await getAuthToken();
+              if (authToken) {
+                const checkRes = await fetch(
+                  `${BACKEND_URL}/api/platform-configs/check?platform=${encodeURIComponent(platform)}`,
+                  { headers: { Authorization: `Bearer ${authToken}` } },
+                );
+                if (checkRes.ok) {
+                  const check = await checkRes.json();
+                  if (check && check.allowed === false) {
+                    set({ isTyping: false, isInputDisabled: false, connectionState: 'IDLE' });
+                    addMessage(
+                      check.reason || `Your current plan doesn't allow another connected platform. Please upgrade to add ${platform}.`,
+                      'agent',
+                    );
+                    return;
+                  }
+                }
+              }
+            } catch {
+              // Network blip — fall through and let the save attempt itself
+              // surface any RLS / server-side errors.
+            }
+          }
+
           if (platform === 'facebook') await FacebookService.saveConfig(account.id, account.name, accessToken);
           else if (platform === 'instagram') await InstagramService.saveConfig(account.id, accessToken, account.username);
           else if (platform === 'tiktok') await TikTokService.saveConfig(account.id, accessToken, account.name);
@@ -1113,6 +1145,31 @@ export const useAgentStore = create<AgentState>()(
               },
               isTyping: false
           }));
+
+          // Notify backend so the admin dashboard SSE picks up the new
+          // connection in realtime (the actual save is RLS-protected and
+          // happens client-side via Supabase, so the admin server only learns
+          // about it through this lightweight notify call).
+          if (BACKEND_URL) {
+            (async () => {
+              try {
+                const authToken = await getAuthToken();
+                if (!authToken) return;
+                fetch(`${BACKEND_URL}/api/platform-configs/notify`, {
+                  method: 'POST',
+                  headers: {
+                    'Content-Type': 'application/json',
+                    Authorization: `Bearer ${authToken}`,
+                  },
+                  body: JSON.stringify({
+                    platform,
+                    accountId: account.id,
+                    accountName: account.name || account.username || account.displayName || null,
+                  }),
+                }).catch(() => {});
+              } catch { /* fire-and-forget */ }
+            })();
+          }
 
           if (connectionSource === 'flow' && activeStrategy) {
               const platforms = activeStrategy.platforms || [];
@@ -1215,6 +1272,31 @@ export const useAgentStore = create<AgentState>()(
         headers: { Authorization: `Bearer ${token}` },
       });
     } catch {}
+  },
+
+  // Wipe all in-memory + persisted state. Called on signOut so a different
+  // user logging in on the same device never inherits the previous user's
+  // connected platforms, tokens, or chat history.
+  clearAll: async () => {
+    set({
+      messages: [],
+      isTyping: false,
+      isInputDisabled: false,
+      flowState: 'IDLE',
+      productDetails: { name: '', description: '' },
+      generatedStrategies: null,
+      activeStrategy: null,
+      connectionState: 'IDLE',
+      connectionSource: null,
+      tokens: {},
+      connectedPlatforms: {},
+      fetchedAccounts: {},
+      selectedAccounts: {},
+      fbAccessToken: null,
+    });
+    try {
+      await AsyncStorage.removeItem('adroom-agent-store');
+    } catch { /* ignore */ }
   },
 
   // Legacy Compatibility

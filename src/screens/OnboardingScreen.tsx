@@ -185,7 +185,7 @@ export default function OnboardingScreen({ navigation }: Props) {
         style={[styles.cta, { paddingBottom: Math.max(insets.bottom + 16, 32) }]}
       >
         <TouchableOpacity
-          onPress={() => navigation.replace('Signup')}
+          onPress={() => navigation.navigate('Signup')}
           style={styles.ctaButton}
           activeOpacity={0.85}
         >
@@ -195,7 +195,7 @@ export default function OnboardingScreen({ navigation }: Props) {
           </View>
         </TouchableOpacity>
         <Text style={styles.ctaNote}>Already have an account?{' '}
-          <Text style={{ color: '#00F0FF' }} onPress={() => navigation.replace('Login')}>Sign In</Text>
+          <Text style={{ color: '#00F0FF' }} onPress={() => navigation.navigate('Login')}>Sign In</Text>
         </Text>
       </Animated.View>
     </SafeAreaView>
