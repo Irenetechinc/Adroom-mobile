@@ -3,7 +3,7 @@
     "name": "AdRoom AI",
     "slug": "adroom-mobile",
     "scheme": "adroom",
-    "version": "2.2.1",
+    "version": "2.2.3",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
@@ -58,7 +58,7 @@
     "extra": {
       "supabaseUrl": "https://mrrgjvrntenlkvslfvfh.supabase.co",
       "supabaseAnonKey": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1ycmdqdnJudGVubGt2c2xmdmZoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njk1NzIxMzgsImV4cCI6MjA4NTE0ODEzOH0.wIwrxgBTsYsx1jGSDDgNw3iPPHN0TZ8v7psen51Z9ks",
-      "apiUrl": "http://localhost:8000",
+      "apiUrl": "https://backend.adroomai.com",
       "facebookAppId": "1536532767602012",
       "eas": {
         "projectId": "69c27cbc-28ff-42e8-ada2-e3226a6b7de9"

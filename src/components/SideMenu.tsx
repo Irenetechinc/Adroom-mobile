@@ -11,7 +11,7 @@ import Animated, { FadeInLeft } from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 const menuItems = [
-  { label: 'Agent', icon: Bot, route: 'AgentChat', description: 'AI Campaign Assistant' },
+  { label: 'Intelligence', icon: Bot, route: 'AgentChat', description: 'AI Campaign Assistant' },
   { label: 'Dashboard', icon: LayoutDashboard, route: 'Dashboard', description: 'Performance Overview' },
   { label: 'Strategy History', icon: History, route: 'StrategyHistory', description: 'Past Strategies' },
   { label: 'Interactions', icon: MessageSquare, route: 'Interactions', description: 'Real-time Comments & Messages' },

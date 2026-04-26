@@ -11,9 +11,14 @@ import SideMenu from '../components/SideMenu';
 
 const Drawer = createDrawerNavigator<MainTabParamList>();
 
-export default function DrawerNavigator() {
+interface DrawerNavigatorProps {
+  initialRoute?: keyof MainTabParamList;
+}
+
+export default function DrawerNavigator({ initialRoute }: DrawerNavigatorProps = {}) {
   return (
     <Drawer.Navigator
+      initialRouteName={initialRoute ?? 'AgentChat'}
       drawerContent={(props: any) => <SideMenu {...props} />}
       screenOptions={{
         headerShown: false,

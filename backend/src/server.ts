@@ -1657,10 +1657,33 @@ app.post('/api/auth/register', async (req, res) => {
     const cleanEmail = email.trim().toLowerCase();
     const svc = getServiceSupabaseClient();
 
-    // ROOT-CAUSE FIX: Use signUp() instead of admin.createUser().
-    // admin.createUser() creates the account but DOES NOT send the verification email,
-    // which is why users were never receiving it. signUp() triggers Supabase's built-in
-    // confirmation email automatically using the templates configured in your dashboard.
+    // 1) Hard duplicate-check via the admin API. signUp() will silently re-issue
+    //    a confirmation email for an unconfirmed account instead of erroring,
+    //    which lets a single email be re-registered repeatedly. Using
+    //    listUsers() with email filter gives us a definitive yes/no.
+    try {
+      const { data: existing } = await svc.auth.admin.listUsers({
+        page: 1,
+        perPage: 1,
+        // @ts-expect-error - filter is supported in supabase-js >= 2.x but not always typed
+        filter: `email.eq.${cleanEmail}`,
+      });
+      const existingUser = existing?.users?.find(
+        (u: any) => (u.email || '').toLowerCase() === cleanEmail,
+      );
+      if (existingUser) {
+        return res.status(409).json({
+          error: 'An account with this email already exists. Try signing in or reset your password.',
+        });
+      }
+    } catch (lookupErr: any) {
+      // Don't block signup on a transient admin lookup failure — fall through
+      // to signUp() which will still error on a true duplicate.
+      console.warn('[Register] Pre-check listUsers failed:', lookupErr?.message);
+    }
+
+    // 2) Use signUp() so Supabase sends the built-in confirmation email
+    //    using the templates configured in the dashboard.
     const { data, error } = await svc.auth.signUp({
       email: cleanEmail,
       password,
@@ -1680,6 +1703,15 @@ app.post('/api/auth/register', async (req, res) => {
       return res.status(400).json({ error: error.message });
     }
 
+    // Belt-and-braces: signUp() can sometimes succeed for an unconfirmed
+    // duplicate without throwing. If the returned user has identities=[]
+    // it means Supabase recognized it as an existing account.
+    if (data.user && Array.isArray((data.user as any).identities) && (data.user as any).identities.length === 0) {
+      return res.status(409).json({
+        error: 'An account with this email already exists. Try signing in or reset your password.',
+      });
+    }
+
     // Manually provision wallet / energy / subscription using the service role,
     // so trigger failures never block signup.
     const userId = data.user?.id;
@@ -1695,6 +1727,36 @@ app.post('/api/auth/register', async (req, res) => {
   } catch (err: any) {
     console.error('[Register] Error:', err.message);
     res.status(500).json({ error: 'Registration failed. Please try again.' });
+  }
+});
+
+/**
+ * POST /api/auth/reset-password — send a password reset email using the
+ * service role so we don't depend on the anon-key client succeeding.
+ */
+app.post('/api/auth/reset-password', async (req, res) => {
+  try {
+    const { email, redirectTo } = req.body;
+    if (!email || typeof email !== 'string' || !email.includes('@')) {
+      return res.status(400).json({ error: 'Valid email is required.' });
+    }
+    const cleanEmail = email.trim().toLowerCase();
+    const svc = getServiceSupabaseClient();
+    const { error } = await svc.auth.resetPasswordForEmail(cleanEmail, {
+      redirectTo: typeof redirectTo === 'string' && redirectTo ? redirectTo : 'adroom://reset-password',
+    });
+    if (error) {
+      const msg = error.message?.toLowerCase() || '';
+      if (msg.includes('rate limit') || msg.includes('too many')) {
+        return res.status(429).json({ error: 'Please wait a minute before requesting another reset email.' });
+      }
+      console.warn('[ResetPassword] Supabase error:', error.message);
+      // Still return success below to avoid leaking which emails exist.
+    }
+    res.json({ success: true });
+  } catch (err: any) {
+    console.error('[ResetPassword] Error:', err.message);
+    res.status(500).json({ error: 'Could not send reset email.' });
   }
 });
 

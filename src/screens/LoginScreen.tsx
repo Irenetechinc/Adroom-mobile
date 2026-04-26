@@ -9,8 +9,14 @@ import { RootStackParamList } from '../types';
 import { supabase } from '../services/supabase';
 import { Mail, Lock, Eye, EyeOff, KeyRound, CheckCircle, ArrowLeft, X } from 'lucide-react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import Constants from 'expo-constants';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Login'>;
+
+const BACKEND_URL =
+  process.env.EXPO_PUBLIC_API_URL ||
+  (Constants.expoConfig?.extra?.apiUrl as string) ||
+  '';
 
 export default function LoginScreen({ navigation }: Props) {
   const [email, setEmail] = useState('');
@@ -68,6 +74,25 @@ export default function LoginScreen({ navigation }: Props) {
   };
 
   const sendResetRequest = async (emailToSend: string): Promise<{ ok: boolean; error?: string }> => {
+    // Try the backend first — it uses the service role and bypasses anon-key
+    // rate limits / template issues that can silently swallow the request.
+    if (BACKEND_URL) {
+      try {
+        const res = await fetch(`${BACKEND_URL}/api/auth/reset-password`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email: emailToSend, redirectTo: 'adroom://reset-password' }),
+        });
+        if (res.ok) return { ok: true };
+        const data = await res.json().catch(() => ({}));
+        // 429 = rate-limit, surface the message; otherwise fall through to client SDK.
+        if (res.status === 429) {
+          return { ok: false, error: data.error || 'Too many requests. Please wait and try again.' };
+        }
+      } catch {
+        // network glitch — fall through to client SDK below
+      }
+    }
     const { error } = await supabase.auth.resetPasswordForEmail(emailToSend, {
       redirectTo: 'adroom://reset-password',
     });
@@ -134,7 +159,6 @@ export default function LoginScreen({ navigation }: Props) {
                 resizeMode="contain"
               />
             </View>
-            <Text style={styles.logoText}>AdRoom <Text style={{ color: '#00F0FF' }}>AI</Text></Text>
             <Text style={styles.logoSub}>Sign in to your account</Text>
           </Animated.View>
 
@@ -366,7 +390,6 @@ const styles = StyleSheet.create({
     alignItems: 'center', justifyContent: 'center', marginBottom: 18,
     overflow: 'hidden',
   },
-  logoText: { color: '#FFFFFF', fontSize: 32, fontWeight: '900', letterSpacing: -0.5 },
   logoSub: { color: '#64748B', fontSize: 14, marginTop: 6, fontWeight: '500' },
   form: { gap: 0 },
   fieldGroup: { marginBottom: 16 },

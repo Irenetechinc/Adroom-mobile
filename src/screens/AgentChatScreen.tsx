@@ -27,6 +27,7 @@ import { IntegrityService } from '../services/integrity';
 import { VisionService } from '../services/vision';
 import ImageUploadComponent from '../components/ImageUploadComponent';
 import VideoUploadComponent, { type VideoAsset } from '../components/VideoUploadComponent';
+import { AgentChatSkeleton } from '../components/Skeleton';
 import { useEnergyStore } from '../store/energyStore';
 import { useStrategyCreationStore } from '../store/strategyCreationStore';
 import Constants from 'expo-constants';
@@ -1183,6 +1184,10 @@ export default function AgentChatScreen({ navigation, route }: Props) {
     route.params?.fromStrategyApproval
   );
 
+  if (!historyLoaded) {
+    return <AgentChatSkeleton />;
+  }
+
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
       {/* Header */}
@@ -1198,7 +1203,7 @@ export default function AgentChatScreen({ navigation, route }: Props) {
         )}
         <View style={{ flex: 1 }}>
           <Text style={styles.headerLabel}>AdRoom AI</Text>
-          <Text style={styles.headerTitle}>Agent</Text>
+          <Text style={styles.headerTitle}>Intelligence</Text>
         </View>
         <View style={styles.headerRight}>
           <CreditTicker balance={parseFloat(String(energyAccount?.balance_credits ?? '0'))} onPress={() => (navigation as any).navigate('Subscription', { tab: 'topup' })} />
