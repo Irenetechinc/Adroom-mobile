@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { Session, User } from '@supabase/supabase-js';
 import { supabase } from '../services/supabase';
 import { useAgentStore } from './agentStore';
+import { unregisterPushToken } from '../services/notificationService';
 
 interface AuthState {
   session: Session | null;
@@ -87,6 +88,11 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     set({ hasActiveStrategy: active });
   },
   signOut: async () => {
+    // Deactivate this device's push token first — must happen while we still
+    // have a valid session so the backend authorizes the request. Otherwise
+    // the previous user keeps receiving pushes when someone else signs in
+    // on this device.
+    try { await unregisterPushToken(); } catch { /* ignore */ }
     // Wipe per-user persisted state BEFORE Supabase signOut so the next user
     // logging in on this device starts from a clean slate.
     try { await useAgentStore.getState().clearAll(); } catch { /* ignore */ }

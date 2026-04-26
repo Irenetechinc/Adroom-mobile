@@ -4,7 +4,8 @@ import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import * as Linking from 'expo-linking';
 import { RootStackParamList } from '../types';
 import { useAuthStore } from '../store/authStore';
-import { registerPushToken, setupNotificationListeners } from '../services/notificationService';
+// Push registration + notification listeners are owned by App.tsx (single
+// source of truth) so we don't double-register or attach listeners twice.
 
 import LoginScreen from '../screens/LoginScreen';
 import SignupScreen from '../screens/SignupScreen';
@@ -84,19 +85,6 @@ export default function AppNavigator() {
     const t = setTimeout(() => setSplashDone(true), remaining);
     return () => clearTimeout(t);
   }, [isLoading]);
-
-  useEffect(() => {
-    if (!session) return;
-    const timer = setTimeout(() => {
-      registerPushToken().catch(() => {});
-    }, 2000);
-    return () => clearTimeout(timer);
-  }, [session?.user?.id]);
-
-  useEffect(() => {
-    const cleanup = setupNotificationListeners();
-    return cleanup;
-  }, []);
 
   if (isLoading || !splashDone) {
     return <AuthLoadingSkeleton />;

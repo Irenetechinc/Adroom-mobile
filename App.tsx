@@ -1,51 +1,73 @@
 import './global.css';
 import React, { useEffect, useRef } from 'react';
-import { Platform } from 'react-native';
+import { Platform, AppState, AppStateStatus } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import AppNavigator from './src/navigation/AppNavigator';
-import { registerPushToken, setupNotificationListeners } from './src/services/notificationService';
+import {
+  registerPushToken,
+  setupNotificationListeners,
+  isRegistrationPending,
+} from './src/services/notificationService';
 import { supabase } from './src/services/supabase';
 
 export default function App() {
   const notifCleanupRef = useRef<(() => void) | null>(null);
+  const inFlightRef = useRef<Promise<unknown> | null>(null);
 
   useEffect(() => {
     if (Platform.OS === 'web') return;
 
-    let initialized = false;
-
-    const initNotifications = async () => {
-      if (initialized) return;
-      initialized = true;
-
-      await registerPushToken();
-
-      notifCleanupRef.current = setupNotificationListeners(
-        (notification) => {
-          console.log('[App] Notification received:', notification.request.content.title);
-        },
-        (response) => {
-          const data = response.notification.request.content.data;
-          console.log('[App] Notification tapped:', data);
-        }
-      );
+    // Single-flight push registration so concurrent triggers (initial session
+    // + onAuthStateChange + foreground) don't fire multiple parallel POSTs.
+    const triggerRegister = (reason: string) => {
+      if (inFlightRef.current) return;
+      console.log(`[App] Push registration trigger: ${reason}`);
+      inFlightRef.current = registerPushToken()
+        .catch((e) => console.warn('[App] registerPushToken threw:', e?.message))
+        .finally(() => {
+          inFlightRef.current = null;
+        });
     };
 
-    // Try immediately in case already signed in
+    // Listen for received/tapped notifications.
+    notifCleanupRef.current = setupNotificationListeners(
+      (notification) => {
+        console.log('[App] Notification received:', notification.request.content.title);
+      },
+      (response) => {
+        const data = response.notification.request.content.data;
+        console.log('[App] Notification tapped:', data);
+      },
+    );
+
+    // Initial check: if we already have a session at boot, register now.
     supabase.auth.getSession().then(({ data }) => {
-      if (data.session) setTimeout(initNotifications, 1500);
+      if (data.session) triggerRegister('initial-session');
     });
 
-    // Also wire up to auth state changes so new sign-ins register immediately
+    // Re-trigger on every auth event that yields a session — covers fresh
+    // sign-ins and silent token refreshes after the first launch.
     const { data: authListener } = supabase.auth.onAuthStateChange((event, session) => {
-      if ((event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') && session) {
-        setTimeout(initNotifications, 1500);
+      if ((event === 'SIGNED_IN' || event === 'INITIAL_SESSION' || event === 'TOKEN_REFRESHED') && session) {
+        triggerRegister(event);
       }
     });
+
+    // On foreground, retry if the last attempt left a pending flag.
+    const onAppStateChange = async (state: AppStateStatus) => {
+      if (state !== 'active') return;
+      const pending = await isRegistrationPending();
+      if (pending) {
+        const { data } = await supabase.auth.getSession();
+        if (data.session) triggerRegister('foreground-retry');
+      }
+    };
+    const appStateSub = AppState.addEventListener('change', onAppStateChange);
 
     return () => {
       notifCleanupRef.current?.();
       authListener?.subscription?.unsubscribe();
+      appStateSub.remove();
     };
   }, []);
 

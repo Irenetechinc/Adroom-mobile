@@ -1898,17 +1898,75 @@ app.post('/api/push/register', async (req, res) => {
     const { data: { user }, error: authErr } = await supabase.auth.getUser();
     if (authErr || !user) return res.status(401).json({ error: 'Unauthorized' });
 
-    const { token, platform, app_version } = req.body;
+    const { token, platform, app_version, device_id } = req.body || {};
     if (!token || typeof token !== 'string') return res.status(400).json({ error: 'token required' });
+    if (!device_id || typeof device_id !== 'string') return res.status(400).json({ error: 'device_id required' });
 
     const svc = getServiceSupabaseClient();
-    await svc.from('device_push_tokens').upsert(
-      { user_id: user.id, token, platform: platform || 'unknown', app_version: app_version || null, updated_at: new Date().toISOString() },
-      { onConflict: 'user_id,token' }
-    );
+    const now = new Date().toISOString();
 
+    // Per-device dedupe: replace whatever this user previously had on this
+    // physical device. Other users on the same device keep their own rows
+    // because the unique key is (user_id, device_id).
+    const { error: upsertErr } = await svc
+      .from('device_push_tokens')
+      .upsert(
+        {
+          user_id: user.id,
+          device_id,
+          token,
+          platform: platform || 'unknown',
+          app_version: app_version || null,
+          is_active: true,
+          last_seen_at: now,
+          updated_at: now,
+        },
+        { onConflict: 'user_id,device_id' },
+      );
+
+    if (upsertErr) {
+      console.error('[PushRegister] Upsert failed:', upsertErr.message);
+      return res.status(500).json({ error: upsertErr.message });
+    }
+
+    // Defensive cleanup: if this token was previously stored under a different
+    // user on this same device (account switch), deactivate those stale rows.
+    await svc
+      .from('device_push_tokens')
+      .update({ is_active: false })
+      .eq('token', token)
+      .neq('user_id', user.id);
+
+    console.log(`[PushRegister] user=${user.id} device=${device_id.slice(0, 8)} platform=${platform}`);
     res.json({ success: true });
   } catch (err: any) {
+    console.error('[PushRegister] Error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/push/unregister', async (req, res) => {
+  try {
+    const supabase = getSupabaseClient(req);
+    const { data: { user }, error: authErr } = await supabase.auth.getUser();
+    if (authErr || !user) return res.status(401).json({ error: 'Unauthorized' });
+
+    const { device_id, token } = req.body || {};
+    if (!device_id && !token) return res.status(400).json({ error: 'device_id or token required' });
+
+    const svc = getServiceSupabaseClient();
+    let q = svc.from('device_push_tokens').update({ is_active: false }).eq('user_id', user.id);
+    if (device_id) q = q.eq('device_id', device_id);
+    else q = q.eq('token', token);
+
+    const { error } = await q;
+    if (error) {
+      console.error('[PushUnregister] Update failed:', error.message);
+      return res.status(500).json({ error: error.message });
+    }
+    res.json({ success: true });
+  } catch (err: any) {
+    console.error('[PushUnregister] Error:', err.message);
     res.status(500).json({ error: err.message });
   }
 });
