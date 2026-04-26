@@ -1,7 +1,7 @@
 
 export type RootStackParamList = {
   Onboarding: undefined;
-  Login: undefined;
+  Login: { prefillEmail?: string } | undefined;
   Signup: undefined;
   ResetPassword: undefined;
   Main: { screen?: keyof MainTabParamList } | undefined;

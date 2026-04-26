@@ -18,8 +18,9 @@ const BACKEND_URL =
   (Constants.expoConfig?.extra?.apiUrl as string) ||
   '';
 
-export default function LoginScreen({ navigation }: Props) {
-  const [email, setEmail] = useState('');
+export default function LoginScreen({ navigation, route }: Props) {
+  const prefillEmail = route?.params?.prefillEmail ?? '';
+  const [email, setEmail] = useState(prefillEmail);
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
@@ -39,6 +40,14 @@ export default function LoginScreen({ navigation }: Props) {
   useEffect(() => {
     return () => { if (cooldownRef.current) clearInterval(cooldownRef.current); };
   }, []);
+
+  // Pick up email handed off from the Signup "already exists" flow
+  useEffect(() => {
+    if (prefillEmail && prefillEmail !== email) {
+      setEmail(prefillEmail);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [prefillEmail]);
 
   const handleLogin = async () => {
     if (!email || !password) {
