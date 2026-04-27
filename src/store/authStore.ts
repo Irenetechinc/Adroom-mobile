@@ -48,6 +48,11 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       if (session?.user?.id) {
         hasActive = await checkActiveStrategy(session.user.id);
         lastUserId = session.user.id;
+        // Ensure connected platforms are hydrated from the backend on app
+        // launch — the local persisted snapshot may be empty (e.g. after a
+        // previous signOut() wiped it) but the user's ad_configs in Supabase
+        // are the source of truth and must always be re-fetched on sign-in.
+        useAgentStore.getState().loadConnectedPlatforms().catch(() => {});
       }
       set({ session, user: session?.user ?? null, hasActiveStrategy: hasActive, isLoading: false });
 
@@ -72,6 +77,15 @@ export const useAuthStore = create<AuthState>((set, get) => ({
           hasActiveStrategy: active,
           isLoading: false,
         });
+
+        // Re-hydrate connected platforms from the backend on every sign-in
+        // (SIGNED_IN / TOKEN_REFRESHED / USER_UPDATED). This is what makes
+        // the Connected Accounts screen show the correct state after a user
+        // logs out and back in — without this, signOut wipes the in-memory
+        // map and re-login leaves it empty until the next manual refresh.
+        if (newUserId) {
+          useAgentStore.getState().loadConnectedPlatforms().catch(() => {});
+        }
       });
     } catch (error) {
       console.error('Auth initialization error:', error);
