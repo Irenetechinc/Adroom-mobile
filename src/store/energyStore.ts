@@ -29,6 +29,7 @@ export interface Subscription {
   flw_card_brand: string | null;
   billing_email: string | null;
   cancelled_at: string | null;
+  cancel_at_period_end?: boolean | null;
 }
 
 export interface EnergyTransaction {

@@ -17,7 +17,7 @@ import Animated, {
 } from 'react-native-reanimated';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuthStore } from '../store/authStore';
-import { DrawerActions } from '@react-navigation/native';
+import { DrawerActions, useFocusEffect } from '@react-navigation/native';
 import {
   Menu, Edit2, Check, Upload, DollarSign, Eye, Tag, Rocket, MapPin,
   RefreshCw, Users, Zap, Calendar, TrendingUp, Bot, RotateCcw, ArrowLeft,
@@ -927,7 +927,7 @@ export default function AgentChatScreen({ navigation, route }: Props) {
     disconnectPlatform, handleStrategyTypeSelection, handleServiceIntake,
     handleBrandIntake, handleManualProductSubmit, handleRetry,
     handleImageUpload: handleImageUploadStore, startStrategyFlow, handleWebsiteIntake,
-    goBackToMenu, goBackOneStep, dismissStrategyFlow,
+    goBackToMenu, goBackOneStep, dismissStrategyFlow, loadConnectedPlatforms,
   } = useAgentStore();
 
   const { user } = useAuthStore();
@@ -977,6 +977,17 @@ export default function AgentChatScreen({ navigation, route }: Props) {
     const creditPoll = setInterval(() => { fetchEnergy(); }, 15000);
     return () => clearInterval(creditPoll);
   }, []);
+
+  // Refresh connected platforms whenever the screen regains focus.
+  // This ensures the in-chat connect button updates after a user returns
+  // from completing OAuth in another screen / browser without manual reload.
+  useFocusEffect(
+    useCallback(() => {
+      loadConnectedPlatforms?.().catch(() => {});
+      fetchActiveWebsiteInfo();
+      fetchEnergy();
+    }, [loadConnectedPlatforms, fetchActiveWebsiteInfo, fetchEnergy])
+  );
 
   useEffect(() => {
     if (connectionState !== 'IDLE') return;

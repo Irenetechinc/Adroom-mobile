@@ -1,6 +1,7 @@
 import { getServiceSupabaseClient } from '../config/supabase';
 import { creditManagementAgent, CMAResult } from './creditManagementAgent';
 import { pushService } from './pushService';
+import { flutterwaveService } from './flutterwaveService';
 
 // ══════════════════════════════════════════════════════════════
 // ADROOM ENERGY ECONOMICS
@@ -427,38 +428,165 @@ export class EnergyService {
     return { success: true, credits: pack.energy_credits, newBalance };
   }
 
-  /** Check on-demand auto top-up */
+  /** Check on-demand auto top-up — actually charges the saved Flutterwave card */
   private async checkAndTriggerOnDemand(userId: string, currentBalance: number) {
     const account = await this.getAccount(userId);
     if (!account?.on_demand_enabled) return;
-    if (currentBalance > 0) return; // only trigger at actual zero/near-zero
+    if (currentBalance > ON_DEMAND_THRESHOLD) return;
 
     const sub = await this.getSubscription(userId);
-    if (!sub?.flw_card_token) return;
+    if (!sub?.flw_card_token) {
+      console.log(`[Energy] On-demand requested but no saved card for user ${userId}`);
+      return;
+    }
 
-    console.log(`[Energy] Triggering on-demand top-up for user ${userId}`);
-    // Emit an event that the server can pick up — in production, call Flutterwave charge API
+    // Map account.on_demand_top_up_amount (string pack id) to a TOPUP_PACK
+    const packId = (account.on_demand_top_up_amount && TOPUP_PACKS[account.on_demand_top_up_amount as keyof typeof TOPUP_PACKS])
+      ? account.on_demand_top_up_amount
+      : 'topup_100';
+    const pack = TOPUP_PACKS[packId as keyof typeof TOPUP_PACKS];
+
+    // Throttle: don't fire more than once every 10 minutes per user
+    const tenMinAgo = new Date(Date.now() - 10 * 60_000).toISOString();
+    const { data: recent } = await this.supabase
+      .from('energy_transactions')
+      .select('id')
+      .eq('user_id', userId)
+      .eq('type', 'on_demand_topup')
+      .gte('created_at', tenMinAgo)
+      .limit(1);
+    if (recent && recent.length > 0) {
+      console.log(`[Energy] On-demand throttled for user ${userId} (recent attempt)`);
+      return;
+    }
+
+    const txRef = flutterwaveService.generateTxRef('ADROOM-AUTO');
+    const email = sub.billing_email || '';
+    if (!email) {
+      console.warn(`[Energy] On-demand: no billing_email for user ${userId}, skipping`);
+      return;
+    }
+
+    console.log(`[Energy] Auto-topup: charging ${pack.label} ($${pack.price_usd}) for user ${userId}`);
+
+    // Insert pending row
     await this.supabase.from('energy_transactions').insert({
       user_id: userId,
       type: 'on_demand_topup',
-      credits: 0, // pending — will be updated after successful charge
+      credits: 0,
       balance_after: currentBalance,
-      description: 'On-demand top-up triggered (pending payment)',
-      metadata: { pack_id: account.on_demand_top_up_amount, status: 'pending' },
+      description: `Auto top-up triggered: ${pack.label} (pending)`,
+      metadata: { pack_id: packId, status: 'pending', tx_ref: txRef },
     });
+
+    try {
+      const charge = await flutterwaveService.chargeToken({
+        token: sub.flw_card_token,
+        email,
+        amount: pack.price_usd,
+        currency: 'USD',
+        tx_ref: txRef,
+        narration: `AdRoom Auto Top-Up — ${pack.label}`,
+      });
+
+      const ok = charge?.status === 'success' && (charge as any)?.data?.status === 'successful';
+      if (!ok) {
+        console.error(`[Energy] Auto-topup failed for user ${userId}:`, charge?.message);
+        await this.supabase.from('energy_transactions').insert({
+          user_id: userId,
+          type: 'on_demand_topup_failed',
+          credits: 0,
+          balance_after: currentBalance,
+          description: `Auto top-up failed: ${charge?.message ?? 'Card declined'}`,
+          metadata: { pack_id: packId, status: 'failed', tx_ref: txRef, flw: charge?.message },
+        });
+        // Push notify the user so they know their card was declined
+        pushService.send(userId, {
+          title: 'Auto top-up failed',
+          body: `We couldn't auto-charge your card for ${pack.label}. Update your payment method to keep services running.`,
+          data: { type: 'auto_topup_failed', pack_id: packId },
+          channelId: 'alerts',
+        }).catch(() => {});
+        return;
+      }
+
+      const flwId = String((charge as any).data?.id ?? '');
+      const result = await this.applyTopUp(userId, packId, flwId, txRef, 'on_demand_topup');
+      console.log(`[Energy] Auto-topup applied: +${result.credits} credits → balance ${result.newBalance}`);
+
+      // Push notify success
+      pushService.notifyTopupSuccess(userId, pack.label, result.credits, result.newBalance).catch(() => {});
+      // Admin broadcast
+      try {
+        const { adminBroadcast } = await import('../admin/adminRouter');
+        adminBroadcast('credit_adjusted', {
+          user_id: userId,
+          delta: result.credits,
+          new_balance: result.newBalance,
+          source: 'auto_topup',
+          pack_id: packId,
+        });
+      } catch { /* ignore */ }
+    } catch (err: any) {
+      console.error(`[Energy] Auto-topup exception for user ${userId}:`, err.message);
+    }
   }
 
-  /** Cancel subscription */
+  /**
+   * Cancel subscription — sets cancel_at_period_end so the user keeps access
+   * to credits & features until current_period_end, then a scheduled job (or
+   * the next billing-status read) flips status to 'cancelled'.
+   */
   async cancelSubscription(userId: string, reason?: string) {
+    const sub = await this.getSubscription(userId);
+    const now = new Date();
+
+    // Trial users or those with no active period: hard-cancel immediately
+    const periodEnd = sub?.current_period_end ? new Date(sub.current_period_end) : null;
+    const isTrialing = sub?.status === 'trialing';
+
+    if (!periodEnd || periodEnd <= now || isTrialing) {
+      await this.supabase
+        .from('subscriptions')
+        .update({
+          status: 'cancelled',
+          cancel_at_period_end: false,
+          cancelled_at: now.toISOString(),
+          cancel_reason: reason ?? 'user_requested',
+          updated_at: now.toISOString(),
+        })
+        .eq('user_id', userId);
+      return { cancelled_immediately: true, access_until: now.toISOString() };
+    }
+
+    // Active paid sub: schedule cancellation at period end
     await this.supabase
       .from('subscriptions')
       .update({
-        status: 'cancelled',
-        cancelled_at: new Date().toISOString(),
+        cancel_at_period_end: true,
+        cancelled_at: now.toISOString(),
         cancel_reason: reason ?? 'user_requested',
-        updated_at: new Date().toISOString(),
+        updated_at: now.toISOString(),
       })
       .eq('user_id', userId);
+    return { cancelled_immediately: false, access_until: periodEnd.toISOString() };
+  }
+
+  /**
+   * Sweep: flip subscriptions whose current_period_end has passed and
+   * cancel_at_period_end=true to status='cancelled'. Safe to call on every
+   * billing-status read or via a cron.
+   */
+  async expireOverdueSubscriptions(userId?: string) {
+    const nowIso = new Date().toISOString();
+    let q = this.supabase
+      .from('subscriptions')
+      .update({ status: 'cancelled', updated_at: nowIso })
+      .eq('cancel_at_period_end', true)
+      .eq('status', 'active')
+      .lt('current_period_end', nowIso);
+    if (userId) q = q.eq('user_id', userId);
+    await q;
   }
 
   /** Get usage summary for display */
