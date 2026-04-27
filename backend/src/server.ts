@@ -3,7 +3,7 @@ import bodyParser from 'body-parser';
 import dotenv from 'dotenv';
 import { EngagementService } from './services/engagement';
 import { CreativeService } from './services/creativeService';
-import { getSupabaseClient, getServiceSupabaseClient } from './config/supabase';
+import { getSupabaseClient, getServiceSupabaseClient, getAnonSupabaseClient } from './config/supabase';
 import { MemoryRetriever, type MemoryContext } from './services/memoryRetriever';
 import { DecisionEngine, type AIStrategy } from './services/decisionEngine';
 import { AIEngine } from './config/ai-models';
@@ -1855,9 +1855,12 @@ app.post('/api/auth/register', async (req, res) => {
       console.warn('[Register] Pre-check listUsers failed:', lookupErr?.message);
     }
 
-    // 2) Use signUp() so Supabase sends the built-in confirmation email
-    //    using the templates configured in the dashboard.
-    const { data, error } = await svc.auth.signUp({
+    // 2) Use the ANON-KEY client (not service-role) for signUp so Supabase
+    //    actually triggers the configured SMTP confirmation email. The
+    //    service-role client bypasses the email-sending path which is why
+    //    confirmation emails were silently never sent before.
+    const anon = getAnonSupabaseClient();
+    const { data, error } = await anon.auth.signUp({
       email: cleanEmail,
       password,
       options: {
@@ -1867,11 +1870,20 @@ app.post('/api/auth/register', async (req, res) => {
 
     if (error) {
       const msg = error.message?.toLowerCase() || '';
+      console.error('[Register] Supabase signUp error:', error.message);
       if (msg.includes('already registered') || msg.includes('already exists') || msg.includes('user already')) {
         return res.status(409).json({ error: 'An account with this email already exists.' });
       }
       if (msg.includes('rate limit') || msg.includes('too many')) {
         return res.status(429).json({ error: 'Too many sign-up attempts. Please wait a minute and try again.' });
+      }
+      // Surface SMTP / email-sending failures clearly so the user knows it's
+      // an email-delivery issue rather than a credential issue.
+      if (msg.includes('confirmation email') || msg.includes('sending') || msg.includes('smtp') || msg.includes('email')) {
+        return res.status(502).json({
+          error: 'We created your account but couldn\'t send the verification email. Please tap "Resend verification" in a moment, or contact support if this persists.',
+          code: 'EMAIL_DELIVERY_FAILED',
+        });
       }
       return res.status(400).json({ error: error.message });
     }
@@ -1914,17 +1926,29 @@ app.post('/api/auth/reset-password', async (req, res) => {
       return res.status(400).json({ error: 'Valid email is required.' });
     }
     const cleanEmail = email.trim().toLowerCase();
-    const svc = getServiceSupabaseClient();
-    const { error } = await svc.auth.resetPasswordForEmail(cleanEmail, {
+    // IMPORTANT: use the ANON-KEY client, not the service-role client. The
+    // service-role client bypasses Supabase's email-sending pipeline, so
+    // resetPasswordForEmail() returns success but no email is ever delivered.
+    // The anon-key client routes through the configured SMTP provider.
+    const anon = getAnonSupabaseClient();
+    const { error } = await anon.auth.resetPasswordForEmail(cleanEmail, {
       redirectTo: typeof redirectTo === 'string' && redirectTo ? redirectTo : 'adroom://reset-password',
     });
     if (error) {
       const msg = error.message?.toLowerCase() || '';
+      console.error('[ResetPassword] Supabase error:', error.message);
       if (msg.includes('rate limit') || msg.includes('too many')) {
         return res.status(429).json({ error: 'Please wait a minute before requesting another reset email.' });
       }
-      console.warn('[ResetPassword] Supabase error:', error.message);
-      // Still return success below to avoid leaking which emails exist.
+      // Surface SMTP / email-sending failures explicitly so the client can
+      // tell the user we couldn't send (instead of falsely claiming success).
+      if (msg.includes('smtp') || msg.includes('sending') || msg.includes('email')) {
+        return res.status(502).json({
+          error: 'We couldn\'t send the password reset email right now. Please try again in a few minutes or contact support.',
+          code: 'EMAIL_DELIVERY_FAILED',
+        });
+      }
+      // For other errors, still claim success to avoid leaking which emails exist.
     }
     res.json({ success: true });
   } catch (err: any) {
@@ -1943,18 +1967,26 @@ app.post('/api/auth/resend-verification', async (req, res) => {
     if (!email || typeof email !== 'string' || !email.includes('@')) {
       return res.status(400).json({ error: 'Valid email is required.' });
     }
-    const svc = getServiceSupabaseClient();
-    const { error } = await svc.auth.resend({
+    // Anon-key client routes through Supabase's SMTP pipeline; service-role
+    // does not, so verification emails were never being delivered.
+    const anon = getAnonSupabaseClient();
+    const { error } = await anon.auth.resend({
       type: 'signup',
       email: email.trim().toLowerCase(),
       options: { emailRedirectTo: 'adroom://verified' },
     });
     if (error) {
       const msg = error.message?.toLowerCase() || '';
+      console.error('[ResendVerification] Supabase error:', error.message);
       if (msg.includes('rate limit') || msg.includes('too many')) {
         return res.status(429).json({ error: 'Please wait a minute before requesting another email.' });
       }
-      console.warn('[ResendVerification] Supabase error:', error.message);
+      if (msg.includes('smtp') || msg.includes('sending') || msg.includes('email')) {
+        return res.status(502).json({
+          error: 'We couldn\'t send the verification email right now. Please try again in a few minutes.',
+          code: 'EMAIL_DELIVERY_FAILED',
+        });
+      }
     }
     // Always return success to avoid leaking which emails exist.
     res.json({ success: true });

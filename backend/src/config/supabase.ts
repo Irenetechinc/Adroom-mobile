@@ -30,6 +30,22 @@ export const getSupabaseClient = (req: Request) => {
   return client;
 };
 
+/**
+ * Returns an anon-key Supabase client WITHOUT a user auth header. Use this for
+ * unauthenticated endpoints like /auth/register and /auth/reset-password where
+ * we need the built-in email flow to fire. The service-role client bypasses
+ * the email-sending side of Supabase Auth (since it's meant for admin ops),
+ * which is why password-reset / signup confirmation emails silently never
+ * arrive when issued via the service-role client.
+ */
+export const getAnonSupabaseClient = () => {
+  const supabaseUrl = process.env.SUPABASE_URL;
+  const supabaseAnonKey = process.env.SUPABASE_ANON_KEY || process.env.SUPABASE_KEY;
+  if (!supabaseUrl) throw new Error('SUPABASE_URL is missing');
+  if (!supabaseAnonKey) throw new Error('SUPABASE_ANON_KEY is missing');
+  return createClient(supabaseUrl, supabaseAnonKey);
+};
+
 export const getServiceSupabaseClient = () => {
   const supabaseUrl = process.env.SUPABASE_URL;
   const supabaseServiceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
