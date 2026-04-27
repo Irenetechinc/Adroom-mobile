@@ -6,9 +6,13 @@ import { pushService } from '../services/pushService';
 
 const router = Router();
 
-const ADMIN_EMAIL = (process.env.ADMIN_EMAIL || 'ADMIN@ADROOMAI.COM').toLowerCase();
-const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'mEGER2200@DAV1960?';
+const ADMIN_EMAIL = (process.env.ADMIN_EMAIL || '').toLowerCase();
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || '';
 const JWT_SECRET = process.env.ADMIN_JWT_SECRET || crypto.randomBytes(64).toString('hex');
+const ADMIN_CONFIGURED = !!(ADMIN_EMAIL && ADMIN_PASSWORD);
+if (!ADMIN_CONFIGURED) {
+  console.warn('[Admin] ADMIN_EMAIL and/or ADMIN_PASSWORD not set — admin login is disabled until both are configured.');
+}
 
 // ─── SSE broadcast registry ──────────────────────────────────────────────────
 const sseClients = new Set<Response>();
@@ -65,6 +69,9 @@ async function logAction(action: string, targetUserId: string | null, targetEmai
 
 // ─── LOGIN ────────────────────────────────────────────────────────────────────
 router.post('/login', (req, res) => {
+  if (!ADMIN_CONFIGURED) {
+    return res.status(503).json({ error: 'Admin console is not configured. ADMIN_EMAIL and ADMIN_PASSWORD must be set on the server.' });
+  }
   const { email, password } = req.body || {};
   if (!email || !password) return res.status(400).json({ error: 'email and password required' });
   if (email.toLowerCase() !== ADMIN_EMAIL || password !== ADMIN_PASSWORD) {

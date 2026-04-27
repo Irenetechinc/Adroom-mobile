@@ -162,6 +162,51 @@ export const pushService = {
     ]);
   },
 
+  async notifyTopupSuccess(userId: string, packLabel: string, credits: number, newBalance: number): Promise<void> {
+    const tokens = await getUserTokens(userId);
+    const title = 'Energy Top-Up Successful';
+    const body = `+${credits} energy credits added (${packLabel}). New balance: ${newBalance.toFixed(1)}.`;
+    const data = { type: 'topup_success', credits, newBalance, pack: packLabel };
+    await Promise.all([
+      sendExpoPush(tokens, { title, body, data }),
+      insertNotification(userId, title, body, data),
+    ]);
+  },
+
+  async notifyPlanChanged(userId: string, planName: string, credits: number, newBalance: number): Promise<void> {
+    const tokens = await getUserTokens(userId);
+    const title = `Welcome to ${planName}`;
+    const body = `Your ${planName} plan is active. ${credits} energy credits added. New balance: ${newBalance.toFixed(1)}.`;
+    const data = { type: 'plan_changed', plan: planName, credits, newBalance };
+    await Promise.all([
+      sendExpoPush(tokens, { title, body, data }),
+      insertNotification(userId, title, body, data),
+    ]);
+  },
+
+  async notifyTrialStarted(userId: string, credits: number, daysLeft: number): Promise<void> {
+    const tokens = await getUserTokens(userId);
+    const title = 'Free Trial Started';
+    const body = `You've got ${credits} energy credits to explore AdRoom AI for the next ${daysLeft} days. No charge until your trial ends.`;
+    const data = { type: 'trial_started', credits, daysLeft };
+    await Promise.all([
+      sendExpoPush(tokens, { title, body, data }),
+      insertNotification(userId, title, body, data),
+    ]);
+  },
+
+  async notifySubscriptionCancelled(userId: string, accessUntil: string | null): Promise<void> {
+    const tokens = await getUserTokens(userId);
+    const dateText = accessUntil ? new Date(accessUntil).toLocaleDateString() : 'the end of your billing period';
+    const title = 'Subscription Cancelled';
+    const body = `Your subscription has been cancelled. You'll keep access until ${dateText}.`;
+    const data = { type: 'subscription_cancelled', accessUntil };
+    await Promise.all([
+      sendExpoPush(tokens, { title, body, data }),
+      insertNotification(userId, title, body, data),
+    ]);
+  },
+
   async send(userId: string, payload: PushPayload): Promise<void> {
     const tokens = await getUserTokens(userId);
     await Promise.all([

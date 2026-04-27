@@ -12,6 +12,7 @@ import { AgentOrchestrator } from './agents/agentOrchestrator';
 import { SchedulerService } from './services/scheduler';
 import { energyService, PLANS, TOPUP_PACKS } from './services/energyService';
 import { flutterwaveService } from './services/flutterwaveService';
+import { pushService } from './services/pushService';
 import { energyCheck, deductEnergyForUser } from './services/energyMiddleware';
 import { checkFeatureAccess, getSubscriptionGuard, SUBSCRIPTION_PLAN_LIMITS } from './services/subscriptionGuard';
 import adminRouter from './admin/adminRouter';
@@ -1149,6 +1150,14 @@ app.post('/api/billing/start-trial', async (req, res) => {
     if (!user) return res.status(401).json({ error: 'Unauthorized.' });
 
     const result = await energyService.grantTrial(user.id);
+    if (result.success) {
+      // Fire-and-forget push + admin broadcast
+      pushService.notifyTrialStarted(user.id, (result as any).credits ?? 50, 14).catch(() => {});
+      try {
+        const { adminBroadcast } = await import('./admin/adminRouter');
+        adminBroadcast('trial_started', { user_id: user.id, credits: (result as any).credits ?? 50 });
+      } catch { /* ignore */ }
+    }
     res.status(result.success ? 200 : 400).json(result);
   } catch (err: any) {
     res.status(500).json({ error: err.message });
@@ -1268,6 +1277,15 @@ app.post('/api/billing/verify-subscription', async (req, res) => {
       cardToken, cardLast4, cardBrand, billingEmail,
     );
 
+    // Push + admin broadcast (fire-and-forget)
+    pushService.notifyPlanChanged(user.id, plan.name, (result as any).credits ?? plan.energy_credits, (result as any).newBalance ?? 0).catch(() => {});
+    try {
+      const { adminBroadcast } = await import('./admin/adminRouter');
+      adminBroadcast('subscription_activated', {
+        user_id: user.id, plan_id, plan_name: plan.name, credits: plan.energy_credits, amount: paidAmount,
+      });
+    } catch { /* ignore */ }
+
     res.status(200).json({ ...result, message: `${plan.name} plan activated! ${plan.energy_credits} energy credits added.` });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
@@ -1307,6 +1325,16 @@ app.post('/api/billing/verify-topup', async (req, res) => {
     }
 
     const result = await energyService.applyTopUp(user.id, pack_id, String(verification.data?.id), tx_ref ?? '');
+
+    // Push + admin broadcast (fire-and-forget)
+    pushService.notifyTopupSuccess(user.id, pack.label, (result as any).credits ?? pack.energy_credits, (result as any).newBalance ?? 0).catch(() => {});
+    try {
+      const { adminBroadcast } = await import('./admin/adminRouter');
+      adminBroadcast('topup_completed', {
+        user_id: user.id, pack_id, pack_label: pack.label, credits: pack.energy_credits, amount: paidAmount,
+      });
+    } catch { /* ignore */ }
+
     res.status(200).json({ ...result, message: `${pack.energy_credits} energy credits added!` });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
@@ -1322,8 +1350,21 @@ app.post('/api/billing/cancel-subscription', async (req, res) => {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return res.status(401).json({ error: 'Unauthorized.' });
 
-    await energyService.cancelSubscription(user.id, req.body.reason);
-    res.status(200).json({ success: true });
+    const result = await energyService.cancelSubscription(user.id, req.body.reason);
+
+    // Push + admin broadcast (fire-and-forget)
+    pushService.notifySubscriptionCancelled(user.id, result.access_until).catch(() => {});
+    try {
+      const { adminBroadcast } = await import('./admin/adminRouter');
+      adminBroadcast('subscription_cancelled', {
+        user_id: user.id,
+        cancelled_immediately: result.cancelled_immediately,
+        access_until: result.access_until,
+        reason: req.body.reason,
+      });
+    } catch { /* ignore */ }
+
+    res.status(200).json({ success: true, ...result });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
@@ -1409,10 +1450,25 @@ app.post('/api/billing/charge-card', async (req, res) => {
       const cardToken = chargeResult.data.card?.token;
       const svc = getServiceSupabaseClient();
       if (type === 'subscription') {
-        await energyService.applySubscription(user.id, id, transactionId, txRef, cardToken, cardLast4, cardBrand, email);
+        const r = await energyService.applySubscription(user.id, id, transactionId, txRef, cardToken, cardLast4, cardBrand, email);
+        const planRef = PLANS[id as keyof typeof PLANS];
+        if (planRef) {
+          pushService.notifyPlanChanged(user.id, planRef.name, (r as any).credits ?? planRef.energy_credits, (r as any).newBalance ?? 0).catch(() => {});
+          try {
+            const { adminBroadcast } = await import('./admin/adminRouter');
+            adminBroadcast('subscription_activated', { user_id: user.id, plan_id: id, plan_name: planRef.name, credits: planRef.energy_credits, amount });
+          } catch { /* ignore */ }
+        }
       } else {
         const topupPack = TOPUP_PACKS[id as keyof typeof TOPUP_PACKS];
-        if (topupPack) await energyService.applyTopUp(user.id, topupPack.id, transactionId, txRef);
+        if (topupPack) {
+          const r = await energyService.applyTopUp(user.id, topupPack.id, transactionId, txRef);
+          pushService.notifyTopupSuccess(user.id, topupPack.label, (r as any).credits ?? topupPack.energy_credits, (r as any).newBalance ?? 0).catch(() => {});
+          try {
+            const { adminBroadcast } = await import('./admin/adminRouter');
+            adminBroadcast('topup_completed', { user_id: user.id, pack_id: topupPack.id, pack_label: topupPack.label, credits: topupPack.energy_credits, amount });
+          } catch { /* ignore */ }
+        }
         if (cardToken) {
           await svc.from('user_subscriptions').upsert({ user_id: user.id, flw_card_token: cardToken, flw_card_last4: cardLast4, flw_card_brand: cardBrand, billing_email: email }, { onConflict: 'user_id' });
         }
@@ -1465,11 +1521,27 @@ app.post('/api/billing/charge-card/validate-pin', async (req, res) => {
       const cardBrand = validation.data.card?.type;
       const cardToken = validation.data.card?.token;
       const email = user.email || '';
+      const amount = validation.data?.amount ?? 0;
       if (type === 'subscription') {
-        await energyService.applySubscription(user.id, id, transactionId, tx_ref, cardToken, cardLast4, cardBrand, email);
+        const r = await energyService.applySubscription(user.id, id, transactionId, tx_ref, cardToken, cardLast4, cardBrand, email);
+        const planRef = PLANS[id as keyof typeof PLANS];
+        if (planRef) {
+          pushService.notifyPlanChanged(user.id, planRef.name, (r as any).credits ?? planRef.energy_credits, (r as any).newBalance ?? 0).catch(() => {});
+          try {
+            const { adminBroadcast } = await import('./admin/adminRouter');
+            adminBroadcast('subscription_activated', { user_id: user.id, plan_id: id, plan_name: planRef.name, credits: planRef.energy_credits, amount });
+          } catch { /* ignore */ }
+        }
       } else {
         const topupPack = TOPUP_PACKS[id as keyof typeof TOPUP_PACKS];
-        if (topupPack) await energyService.applyTopUp(user.id, topupPack.id, transactionId, tx_ref);
+        if (topupPack) {
+          const r = await energyService.applyTopUp(user.id, topupPack.id, transactionId, tx_ref);
+          pushService.notifyTopupSuccess(user.id, topupPack.label, (r as any).credits ?? topupPack.energy_credits, (r as any).newBalance ?? 0).catch(() => {});
+          try {
+            const { adminBroadcast } = await import('./admin/adminRouter');
+            adminBroadcast('topup_completed', { user_id: user.id, pack_id: topupPack.id, pack_label: topupPack.label, credits: topupPack.energy_credits, amount });
+          } catch { /* ignore */ }
+        }
       }
       return res.json({ success: true, transaction_id: transactionId });
     }

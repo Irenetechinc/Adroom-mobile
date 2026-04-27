@@ -493,6 +493,43 @@ export default function SubscriptionScreen() {
             )}
           </View>
 
+          {/* Next billing date — active paid sub, no pending cancel */}
+          {isActive && !isTrialing && !subscription?.cancel_at_period_end && subscription?.current_period_end && (
+            <View style={styles.billingRow}>
+              <Text style={styles.billingLabel}>Next billing</Text>
+              <Text style={styles.billingValue}>
+                {new Date(subscription.current_period_end).toLocaleDateString(undefined, {
+                  year: 'numeric', month: 'short', day: 'numeric',
+                })}
+              </Text>
+            </View>
+          )}
+
+          {/* Trial: when does first charge land */}
+          {isTrialing && subscription?.trial_end && (
+            <View style={styles.billingRow}>
+              <Text style={styles.billingLabel}>First charge</Text>
+              <Text style={styles.billingValue}>
+                {new Date(subscription.trial_end).toLocaleDateString(undefined, {
+                  year: 'numeric', month: 'short', day: 'numeric',
+                })}
+              </Text>
+            </View>
+          )}
+
+          {/* Pending cancellation banner — sub still active until period end */}
+          {subscription?.cancel_at_period_end && subscription?.current_period_end && (
+            <View style={[styles.warningBox, { backgroundColor: '#F59E0B20', borderColor: '#F59E0B50' }]}>
+              <AlertCircle size={14} color={COLORS.amber} />
+              <Text style={[styles.warningText, { color: COLORS.amber }]}>
+                Subscription set to cancel. You keep access until{' '}
+                {new Date(subscription.current_period_end).toLocaleDateString(undefined, {
+                  year: 'numeric', month: 'short', day: 'numeric',
+                })}.
+              </Text>
+            </View>
+          )}
+
           {/* 72h Grace Countdown */}
           {graceActive && countdown && (
             <View style={[styles.warningBox, { backgroundColor: '#7C3AED20', borderColor: '#7C3AED50' }]}>
@@ -1165,6 +1202,14 @@ const styles = StyleSheet.create({
   balanceMeta: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 8 },
   metaText: { color: COLORS.muted, fontSize: 12 },
   trialBadge: { backgroundColor: '#F59E0B20', paddingHorizontal: 10, paddingVertical: 3, borderRadius: 20 },
+  billingRow: {
+    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
+    marginTop: 12, paddingHorizontal: 12, paddingVertical: 10,
+    borderRadius: 10, backgroundColor: 'rgba(15,23,42,0.6)',
+    borderWidth: 1, borderColor: 'rgba(0,240,255,0.12)',
+  },
+  billingLabel: { color: '#64748B', fontSize: 12, fontWeight: '600', letterSpacing: 0.5, textTransform: 'uppercase' },
+  billingValue: { color: '#E2E8F0', fontSize: 13, fontWeight: '700' },
   trialBadgeText: { color: COLORS.amber, fontSize: 11, fontWeight: '600' },
   warningBox: { flexDirection: 'row', alignItems: 'flex-start', gap: 8, backgroundColor: '#F59E0B15', borderWidth: 1, borderColor: '#F59E0B40', borderRadius: 8, padding: 10, marginTop: 12 },
   warningText: { color: COLORS.amber, fontSize: 12, flex: 1 },

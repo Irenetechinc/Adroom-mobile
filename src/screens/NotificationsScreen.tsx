@@ -1,13 +1,13 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet, FlatList,
-  ActivityIndicator, RefreshControl, ScrollView,
+  ActivityIndicator, RefreshControl, ScrollView, Modal, Pressable,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import { useFocusEffect } from '@react-navigation/native';
-import { ArrowLeft, Bell, BellOff, CheckCheck } from 'lucide-react-native';
-import Animated, { FadeInDown } from 'react-native-reanimated';
+import { ArrowLeft, Bell, BellOff, CheckCheck, X, Zap, CreditCard, AlertTriangle, Sparkles, Rocket } from 'lucide-react-native';
+import Animated, { FadeInDown, FadeIn } from 'react-native-reanimated';
 import { supabase } from '../services/supabase';
 import Constants from 'expo-constants';
 import { Skeleton } from '../components/Skeleton';
@@ -59,6 +59,39 @@ function timeAgo(dateStr: string): string {
   return `${days}d ago`;
 }
 
+function formatFullDate(dateStr: string): string {
+  try {
+    const d = new Date(dateStr);
+    return d.toLocaleString(undefined, {
+      year: 'numeric', month: 'short', day: 'numeric',
+      hour: 'numeric', minute: '2-digit',
+    });
+  } catch { return dateStr; }
+}
+
+function iconForType(type: string | undefined, isRead: boolean) {
+  const color = isRead ? '#475569' : '#00F0FF';
+  switch (type) {
+    case 'topup_success':
+    case 'plan_changed':
+      return <CreditCard size={16} color={color} />;
+    case 'low_credits':
+    case 'credits_exhausted':
+    case 'auto_topup_failed':
+    case 'insufficient_credits':
+      return <AlertTriangle size={16} color={isRead ? '#475569' : '#F59E0B'} />;
+    case 'trial_started':
+      return <Sparkles size={16} color={color} />;
+    case 'strategy_activated':
+    case 'strategy_stopped':
+      return <Rocket size={16} color={color} />;
+    case 'subscription_cancelled':
+      return <Zap size={16} color={color} />;
+    default:
+      return <Bell size={16} color={color} />;
+  }
+}
+
 export default function NotificationsScreen() {
   const navigation = useNavigation();
   const insets = useSafeAreaInsets();
@@ -67,6 +100,8 @@ export default function NotificationsScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [markingRead, setMarkingRead] = useState(false);
+  const [selected, setSelected] = useState<UserNotification | null>(null);
+  const channelRef = useRef<any>(null);
 
   const fetchNotifications = useCallback(async (showRefresh = false) => {
     try {
@@ -85,10 +120,64 @@ export default function NotificationsScreen() {
     }
   }, []);
 
+  // Initial fetch + Supabase realtime subscription on user_notifications.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user || cancelled) return;
+      // Start realtime channel scoped to this user
+      const channel = supabase
+        .channel(`notifications:${user.id}`)
+        .on(
+          'postgres_changes',
+          {
+            event: 'INSERT',
+            schema: 'public',
+            table: 'user_notifications',
+            filter: `user_id=eq.${user.id}`,
+          },
+          (payload) => {
+            const row = payload.new as UserNotification;
+            if (!row) return;
+            setNotifications((prev) => {
+              if (prev.some((n) => n.id === row.id)) return prev;
+              return [row, ...prev];
+            });
+            if (!row.is_read) setUnread((u) => u + 1);
+          }
+        )
+        .on(
+          'postgres_changes',
+          {
+            event: 'UPDATE',
+            schema: 'public',
+            table: 'user_notifications',
+            filter: `user_id=eq.${user.id}`,
+          },
+          (payload) => {
+            const row = payload.new as UserNotification;
+            if (!row) return;
+            setNotifications((prev) => prev.map((n) => (n.id === row.id ? row : n)));
+          }
+        )
+        .subscribe();
+      channelRef.current = channel;
+    })();
+    return () => {
+      cancelled = true;
+      if (channelRef.current) {
+        try { supabase.removeChannel(channelRef.current); } catch {}
+        channelRef.current = null;
+      }
+    };
+  }, []);
+
   useFocusEffect(useCallback(() => {
     fetchNotifications();
-    // Poll every 30 seconds while screen is focused
-    const interval = setInterval(() => fetchNotifications(), 30000);
+    // Light fallback poll (60s) — realtime handles instant updates;
+    // polling guards against missed events when app sleeps in background.
+    const interval = setInterval(() => fetchNotifications(), 60000);
     return () => clearInterval(interval);
   }, [fetchNotifications]));
 
@@ -123,29 +212,37 @@ export default function NotificationsScreen() {
     } catch {}
   }
 
-  const renderItem = ({ item, index }: { item: UserNotification; index: number }) => (
-    <Animated.View entering={FadeInDown.delay(index * 40).springify()}>
-      <TouchableOpacity
-        style={[styles.notifCard, !item.is_read && styles.notifCardUnread]}
-        onPress={() => !item.is_read && markOneRead(item.id)}
-        activeOpacity={item.is_read ? 1 : 0.8}
-      >
-        <View style={[styles.notifIconWrap, !item.is_read && styles.notifIconWrapUnread]}>
-          <Bell size={16} color={item.is_read ? '#475569' : '#00F0FF'} />
-        </View>
-        <View style={{ flex: 1 }}>
-          <View style={styles.notifRow}>
-            <Text style={[styles.notifTitle, !item.is_read && styles.notifTitleUnread]} numberOfLines={1}>
-              {item.title}
-            </Text>
-            {!item.is_read && <View style={styles.unreadDot} />}
+  function openDetail(item: UserNotification) {
+    setSelected(item);
+    if (!item.is_read) markOneRead(item.id);
+  }
+
+  const renderItem = ({ item, index }: { item: UserNotification; index: number }) => {
+    const type = (item.data as any)?.type;
+    return (
+      <Animated.View entering={FadeInDown.delay(Math.min(index, 8) * 30).springify()}>
+        <TouchableOpacity
+          style={[styles.notifCard, !item.is_read && styles.notifCardUnread]}
+          onPress={() => openDetail(item)}
+          activeOpacity={0.7}
+        >
+          <View style={[styles.notifIconWrap, !item.is_read && styles.notifIconWrapUnread]}>
+            {iconForType(type, item.is_read)}
           </View>
-          <Text style={styles.notifBody} numberOfLines={3}>{item.body}</Text>
-          <Text style={styles.notifTime}>{timeAgo(item.created_at)}</Text>
-        </View>
-      </TouchableOpacity>
-    </Animated.View>
-  );
+          <View style={{ flex: 1 }}>
+            <View style={styles.notifRow}>
+              <Text style={[styles.notifTitle, !item.is_read && styles.notifTitleUnread]} numberOfLines={1}>
+                {item.title}
+              </Text>
+              {!item.is_read && <View style={styles.unreadDot} />}
+            </View>
+            <Text style={styles.notifBody} numberOfLines={3}>{item.body}</Text>
+            <Text style={styles.notifTime}>{timeAgo(item.created_at)}</Text>
+          </View>
+        </TouchableOpacity>
+      </Animated.View>
+    );
+  };
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
@@ -211,6 +308,59 @@ export default function NotificationsScreen() {
           }
         />
       )}
+
+      {/* Detail modal */}
+      <Modal
+        visible={!!selected}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setSelected(null)}
+      >
+        <Pressable style={styles.modalBackdrop} onPress={() => setSelected(null)}>
+          <Pressable style={styles.modalCard} onPress={(e) => e.stopPropagation()}>
+            <Animated.View entering={FadeIn.duration(180)}>
+              <View style={styles.modalHeader}>
+                <View style={[styles.notifIconWrap, styles.notifIconWrapUnread]}>
+                  {iconForType((selected?.data as any)?.type, false)}
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.modalTitle}>{selected?.title}</Text>
+                  {selected?.created_at && (
+                    <Text style={styles.modalTime}>{formatFullDate(selected.created_at)}</Text>
+                  )}
+                </View>
+                <TouchableOpacity onPress={() => setSelected(null)} style={styles.modalCloseBtn}>
+                  <X size={18} color="#94A3B8" />
+                </TouchableOpacity>
+              </View>
+
+              <ScrollView style={styles.modalBodyWrap} contentContainerStyle={{ paddingBottom: 12 }}>
+                <Text style={styles.modalBody}>{selected?.body}</Text>
+
+                {selected?.data && Object.keys(selected.data).length > 0 && (
+                  <View style={styles.metaWrap}>
+                    <Text style={styles.metaLabel}>Details</Text>
+                    {Object.entries(selected.data).map(([k, v]) => {
+                      if (v === null || v === undefined || v === '') return null;
+                      const display = typeof v === 'object' ? JSON.stringify(v) : String(v);
+                      return (
+                        <View key={k} style={styles.metaRow}>
+                          <Text style={styles.metaKey}>{k.replace(/_/g, ' ')}</Text>
+                          <Text style={styles.metaValue} numberOfLines={2}>{display}</Text>
+                        </View>
+                      );
+                    })}
+                  </View>
+                )}
+              </ScrollView>
+
+              <TouchableOpacity style={styles.modalDoneBtn} onPress={() => setSelected(null)} activeOpacity={0.8}>
+                <Text style={styles.modalDoneText}>Done</Text>
+              </TouchableOpacity>
+            </Animated.View>
+          </Pressable>
+        </Pressable>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -273,4 +423,37 @@ const styles = StyleSheet.create({
   },
   emptyTitle: { color: '#E2E8F0', fontWeight: '700', fontSize: 16, marginBottom: 8 },
   emptySubtitle: { color: '#475569', fontSize: 13, textAlign: 'center', lineHeight: 20, maxWidth: 260 },
+
+  modalBackdrop: {
+    flex: 1, backgroundColor: 'rgba(2,6,23,0.78)',
+    alignItems: 'center', justifyContent: 'center',
+    paddingHorizontal: 20,
+  },
+  modalCard: {
+    width: '100%', maxWidth: 480, maxHeight: '80%',
+    backgroundColor: '#0F172A', borderRadius: 18,
+    borderWidth: 1, borderColor: 'rgba(0,240,255,0.18)',
+    padding: 18,
+  },
+  modalHeader: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 12 },
+  modalTitle: { color: '#E2E8F0', fontWeight: '800', fontSize: 16 },
+  modalTime: { color: '#475569', fontSize: 11, marginTop: 2 },
+  modalCloseBtn: {
+    width: 32, height: 32, borderRadius: 10,
+    backgroundColor: '#151B2B', borderWidth: 1, borderColor: '#1E293B',
+    alignItems: 'center', justifyContent: 'center',
+  },
+  modalBodyWrap: { maxHeight: 360 },
+  modalBody: { color: '#CBD5E1', fontSize: 14, lineHeight: 22 },
+  metaWrap: { marginTop: 16, padding: 12, borderRadius: 12, backgroundColor: '#0B0F19', borderWidth: 1, borderColor: '#1E293B' },
+  metaLabel: { color: '#64748B', fontSize: 11, fontWeight: '700', letterSpacing: 1, textTransform: 'uppercase', marginBottom: 8 },
+  metaRow: { flexDirection: 'row', justifyContent: 'space-between', gap: 12, paddingVertical: 4 },
+  metaKey: { color: '#64748B', fontSize: 12, textTransform: 'capitalize' },
+  metaValue: { color: '#94A3B8', fontSize: 12, fontWeight: '600', flexShrink: 1, textAlign: 'right' },
+  modalDoneBtn: {
+    marginTop: 14, paddingVertical: 12, borderRadius: 12,
+    backgroundColor: 'rgba(0,240,255,0.12)', borderWidth: 1, borderColor: 'rgba(0,240,255,0.3)',
+    alignItems: 'center',
+  },
+  modalDoneText: { color: '#00F0FF', fontWeight: '700', fontSize: 14 },
 });

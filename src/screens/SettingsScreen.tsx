@@ -171,7 +171,13 @@ export default function SettingsScreen() {
             <Text style={styles.avatarText}>{userInitial}</Text>
           </View>
           <View style={{ flex: 1 }}>
-            <Text style={styles.profileName}>{user?.email?.split('@')[0] || 'User'}</Text>
+            <Text style={styles.profileName}>
+              {(user as any)?.user_metadata?.display_name
+                || (user as any)?.user_metadata?.full_name
+                || (user as any)?.user_metadata?.name
+                || user?.email?.split('@')[0]
+                || 'User'}
+            </Text>
             <Text style={styles.profileEmail} numberOfLines={1}>{user?.email}</Text>
           </View>
           <View style={styles.profileBadge}>
