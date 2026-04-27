@@ -95,7 +95,7 @@ export default function AboutScreen() {
               resizeMode="contain"
             />
           </View>
-          <Text style={styles.heroTitle}>The Intelligent Marketing{'\n'}Framework. Fully Automated.</Text>
+          <Text style={styles.heroTitle}>Autonomus Intelligent Marketing{'\n'}Engine. </Text>
           <Text style={styles.heroSub}>
             AdRoom AI is not a tool. It's a full-stack intelligent marketing framework that works
             around the clock — without a single human in the loop.
