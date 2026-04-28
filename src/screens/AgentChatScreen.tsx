@@ -998,6 +998,22 @@ export default function AgentChatScreen({ navigation, route }: Props) {
   const [historyModalVisible, setHistoryModalVisible] = useState(false);
   const [historyModalLoading, setHistoryModalLoading] = useState(false);
   const [historySessions, setHistorySessions] = useState<ChatSession[]>([]);
+  // Count of restorable sessions in the last 7 days. Surfaced as a small
+  // numeric badge on the History icon so users can see at a glance whether
+  // there's anything to come back to. Refreshed on mount, on screen focus,
+  // after the History modal closes, and after the local message list grows
+  // (debounced so the just-saved message has time to land in chat_history).
+  const [historySessionCount, setHistorySessionCount] = useState<number>(0);
+
+  const refreshHistoryCount = useCallback(async () => {
+    try {
+      const sessions = await fetchRecentSessions(7);
+      setHistorySessionCount(sessions.length);
+    } catch {
+      // Leave the previous count in place rather than flickering to zero
+      // on a transient network error.
+    }
+  }, [fetchRecentSessions]);
 
   // Open the History picker. Loads recent sessions on demand so the modal
   // always shows fresh data (e.g. just-finished conversations).
@@ -1007,6 +1023,8 @@ export default function AgentChatScreen({ navigation, route }: Props) {
     try {
       const sessions = await fetchRecentSessions(7);
       setHistorySessions(sessions);
+      // Reuse the same fetch to keep the badge in sync — saves a round trip.
+      setHistorySessionCount(sessions.length);
     } catch {
       setHistorySessions([]);
     } finally {
@@ -1090,20 +1108,32 @@ export default function AgentChatScreen({ navigation, route }: Props) {
     }
     fetchActiveWebsiteInfo();
     fetchEnergy();
+    refreshHistoryCount();
 
     const creditPoll = setInterval(() => { fetchEnergy(); }, 15000);
     return () => clearInterval(creditPoll);
   }, []);
 
+  // Keep the History badge in sync with the underlying chat_history. We wait
+  // ~1.5s after the local message list grows to give the async insert into
+  // chat_history time to commit before re-counting sessions.
+  useEffect(() => {
+    const t = setTimeout(() => { refreshHistoryCount(); }, 1500);
+    return () => clearTimeout(t);
+  }, [messages.length, refreshHistoryCount]);
+
   // Refresh connected platforms whenever the screen regains focus.
   // This ensures the in-chat connect button updates after a user returns
   // from completing OAuth in another screen / browser without manual reload.
+  // Also refreshes the History badge so a session started or completed on
+  // another device is reflected immediately when the user comes back.
   useFocusEffect(
     useCallback(() => {
       loadConnectedPlatforms?.().catch(() => {});
       fetchActiveWebsiteInfo();
       fetchEnergy();
-    }, [loadConnectedPlatforms, fetchActiveWebsiteInfo, fetchEnergy])
+      refreshHistoryCount();
+    }, [loadConnectedPlatforms, fetchActiveWebsiteInfo, fetchEnergy, refreshHistoryCount])
   );
 
   useEffect(() => {
@@ -1349,14 +1379,27 @@ export default function AgentChatScreen({ navigation, route }: Props) {
             <View style={styles.liveDot} />
             <Text style={styles.liveText}>Live</Text>
           </View>
-          <TouchableOpacity
-            onPress={openHistoryModal}
-            disabled={restoringHistory}
-            style={[styles.resetBtn, restoringHistory && { opacity: 0.5 }]}
-            accessibilityLabel="Open chat history"
-          >
-            {restoringHistory ? <ActivityIndicator size="small" color="#00F0FF" /> : <History size={16} color="#00F0FF" />}
-          </TouchableOpacity>
+          <View>
+            <TouchableOpacity
+              onPress={openHistoryModal}
+              disabled={restoringHistory}
+              style={[styles.resetBtn, restoringHistory && { opacity: 0.5 }]}
+              accessibilityLabel={
+                historySessionCount > 0
+                  ? `Open chat history, ${historySessionCount} restorable session${historySessionCount === 1 ? '' : 's'}`
+                  : 'Open chat history'
+              }
+            >
+              {restoringHistory ? <ActivityIndicator size="small" color="#00F0FF" /> : <History size={16} color="#00F0FF" />}
+            </TouchableOpacity>
+            {historySessionCount > 0 && !restoringHistory && (
+              <View style={styles.historyBadge} pointerEvents="none">
+                <Text style={styles.historyBadgeText}>
+                  {historySessionCount > 9 ? '9+' : String(historySessionCount)}
+                </Text>
+              </View>
+            )}
+          </View>
           <TouchableOpacity onPress={() => startNewSession({ keepServerHistory: true })} style={styles.resetBtn} accessibilityLabel="Start a new chat">
             <RotateCcw size={16} color="#64748B" />
           </TouchableOpacity>
@@ -1604,6 +1647,20 @@ const styles = StyleSheet.create({
     width: 36, height: 36, borderRadius: 10,
     backgroundColor: '#151B2B', borderWidth: 1, borderColor: '#1E293B',
     alignItems: 'center', justifyContent: 'center',
+  },
+  historyBadge: {
+    position: 'absolute',
+    top: -4, right: -4,
+    minWidth: 18, height: 18,
+    paddingHorizontal: 4,
+    borderRadius: 9,
+    backgroundColor: '#00F0FF',
+    borderWidth: 2, borderColor: '#0B0F19',
+    alignItems: 'center', justifyContent: 'center',
+  },
+  historyBadgeText: {
+    color: '#020617', fontSize: 10, fontWeight: '800',
+    lineHeight: 12, includeFontPadding: false,
   },
 
   // Watermark
