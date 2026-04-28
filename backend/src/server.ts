@@ -1968,37 +1968,40 @@ app.post('/api/auth/reset-password', async (req, res) => {
       typeof redirectTo === 'string' && redirectTo ? redirectTo : 'adroom://reset-password';
     const svc = getServiceSupabaseClient();
 
-    // First check the user actually exists. If not, return success silently
-    // (so we don't leak which emails are registered) and skip sending.
-    let userExists = false;
-    try {
-      const { data: list } = await svc.auth.admin.listUsers({
-        page: 1,
-        perPage: 1,
-        // @ts-expect-error filter supported in supabase-js >= 2.x but not always typed
-        filter: `email.eq.${cleanEmail}`,
-      });
-      userExists = !!list?.users?.find((u: any) => (u.email || '').toLowerCase() === cleanEmail);
-    } catch (lookupErr: any) {
-      console.warn('[ResetPassword] Pre-check listUsers failed:', lookupErr?.message);
-    }
-
-    if (!userExists) {
-      // Return success to avoid leaking which emails are registered.
-      return res.json({ success: true });
-    }
-
-    // Generate the recovery action link via admin API. This bypasses
-    // Supabase's broken SMTP relay entirely — admin.generateLink doesn't
-    // send any email, it just returns the signed URL.
+    // Try to generate the recovery link directly. supabase-js's
+    // admin.listUsers() doesn't actually support a server-side `filter`
+    // parameter — passing one was silently returning "no match" for almost
+    // every email, which short-circuited the flow and never sent the email.
+    // Instead, we attempt generateLink straight away and treat
+    // "user not found" / "User not found" as a silent success so we don't
+    // leak which emails are registered.
     const { data: linkData, error: linkErr } = await svc.auth.admin.generateLink({
       type: 'recovery',
       email: cleanEmail,
       options: { redirectTo: finalRedirect },
     });
 
-    if (linkErr || !linkData?.properties?.action_link) {
-      console.error('[ResetPassword] generateLink error:', linkErr?.message);
+    if (linkErr) {
+      const msg = (linkErr.message || '').toLowerCase();
+      const isMissingUser =
+        msg.includes('user not found') ||
+        msg.includes('not found') ||
+        msg.includes('no user') ||
+        (linkErr as any).status === 404;
+      if (isMissingUser) {
+        // Silent success — don't leak account existence.
+        console.log(`[ResetPassword] No account for ${cleanEmail} — returning silent success.`);
+        return res.json({ success: true });
+      }
+      console.error('[ResetPassword] generateLink error:', linkErr.message);
+      return res.status(502).json({
+        error: 'We couldn\'t generate your reset link right now. Please try again in a few minutes.',
+        code: 'LINK_GENERATION_FAILED',
+      });
+    }
+
+    if (!linkData?.properties?.action_link) {
+      console.error('[ResetPassword] generateLink returned no action_link');
       return res.status(502).json({
         error: 'We couldn\'t generate your reset link right now. Please try again in a few minutes.',
         code: 'LINK_GENERATION_FAILED',
@@ -2038,26 +2041,12 @@ app.post('/api/auth/resend-verification', async (req, res) => {
     const cleanEmail = email.trim().toLowerCase();
     const svc = getServiceSupabaseClient();
 
-    // Look up the user. If they don't exist OR are already verified, return
-    // success silently to avoid leaking account state.
-    let user: any = null;
-    try {
-      const { data: list } = await svc.auth.admin.listUsers({
-        page: 1,
-        perPage: 1,
-        // @ts-expect-error filter param supported but loosely typed
-        filter: `email.eq.${cleanEmail}`,
-      });
-      user = list?.users?.find((u: any) => (u.email || '').toLowerCase() === cleanEmail) || null;
-    } catch (lookupErr: any) {
-      console.warn('[ResendVerification] Pre-check listUsers failed:', lookupErr?.message);
-    }
-
-    if (!user || user.email_confirmed_at) {
-      return res.json({ success: true });
-    }
-
-    // Generate a fresh signup verification link via admin API (no SMTP touch).
+    // Skip the pre-check — supabase-js admin.listUsers doesn't actually
+    // support a server-side `filter` parameter, which was silently returning
+    // "no match" for almost every email and short-circuiting the flow.
+    // Instead we attempt generateLink directly: if the user doesn't exist
+    // or is already confirmed, the API tells us — and we return silent
+    // success so we don't leak account state.
     const { data: linkData, error: linkErr } = await svc.auth.admin.generateLink({
       type: 'signup',
       email: cleanEmail,
@@ -2067,8 +2056,25 @@ app.post('/api/auth/resend-verification', async (req, res) => {
       options: { redirectTo: 'adroom://verified' },
     });
 
-    if (linkErr || !linkData?.properties?.action_link) {
-      console.error('[ResendVerification] generateLink error:', linkErr?.message);
+    if (linkErr) {
+      const msg = (linkErr.message || '').toLowerCase();
+      const isAlreadyConfirmed =
+        msg.includes('already') && (msg.includes('registered') || msg.includes('confirmed'));
+      const isMissingUser =
+        !isAlreadyConfirmed &&
+        (msg.includes('user not found') || msg.includes('not found') || (linkErr as any).status === 404);
+      if (isAlreadyConfirmed || isMissingUser) {
+        return res.json({ success: true });
+      }
+      console.error('[ResendVerification] generateLink error:', linkErr.message);
+      return res.status(502).json({
+        error: 'We couldn\'t generate a new verification link right now. Please try again in a few minutes.',
+        code: 'LINK_GENERATION_FAILED',
+      });
+    }
+
+    if (!linkData?.properties?.action_link) {
+      console.error('[ResendVerification] generateLink returned no action_link');
       return res.status(502).json({
         error: 'We couldn\'t generate a new verification link right now. Please try again in a few minutes.',
         code: 'LINK_GENERATION_FAILED',

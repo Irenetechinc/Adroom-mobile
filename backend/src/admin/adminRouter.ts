@@ -264,6 +264,25 @@ router.post('/api/users/:id/credits', auth, async (req, res) => {
 
     await logAction(`credit_${type}`, id, user?.email || null, { amount: credits, reason, old_balance: currentBalance, new_balance: newBalance });
     broadcast('credit_adjusted', { userId: id, email: user?.email, type, amount: credits, newBalance });
+
+    // Notify the user on their device + in-app inbox so they actually find
+    // out their balance changed. Without this, admin top-ups happened
+    // silently and users had no idea they'd been credited.
+    if (type === 'credit') {
+      pushService
+        .notifyCreditsAwarded(id, credits, reason || 'Credits added by AdRoom team', newBalance)
+        .catch((e: any) => console.error('[Admin] notifyCreditsAwarded failed:', e?.message));
+    } else {
+      pushService
+        .send(id, {
+          title: 'Energy Credits Adjusted',
+          body: `${credits} energy credit${credits === 1 ? '' : 's'} were deducted from your balance. New balance: ${newBalance.toFixed(0)}.`,
+          data: { type: 'credits_deducted', credits, reason, newBalance },
+          channelId: 'alerts',
+        })
+        .catch((e: any) => console.error('[Admin] credit-deduction push failed:', e?.message));
+    }
+
     res.json({ success: true, old_balance: currentBalance, new_balance: newBalance });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
