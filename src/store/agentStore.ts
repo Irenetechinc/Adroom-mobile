@@ -239,6 +239,15 @@ interface AgentState {
    */
   restoreLastSession: () => Promise<boolean>;
   /**
+   * Permanently delete a single session from the user's history. Removes the
+   * underlying `chat_history` rows AND the corresponding MemPalace
+   * (`ai_conversation_memory`) entries in the same time range so the agent's
+   * long-term memory of that conversation is wiped too. If the deleted
+   * session matches what's currently on screen, the chat is reset to a fresh
+   * greeting. Returns true on success, false on failure.
+   */
+  deleteSession: (session: ChatSession) => Promise<boolean>;
+  /**
    * Mark that the next `loadMessages()` should surface the restore prompt
    * instead of auto-loading. Persisted to AsyncStorage so it survives the
    * brief window between sign-in and the chat screen mounting.
@@ -1026,6 +1035,56 @@ export const useAgentStore = create<AgentState>()(
     const last = sessions[0];
     if (!last) return false;
     get().applySession(last);
+    return true;
+  },
+
+  deleteSession: async (session: ChatSession) => {
+    if (!session || !Array.isArray(session.messages) || session.messages.length === 0) {
+      return false;
+    }
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return false;
+
+    // Step 1: delete the chat_history rows that belong to this session.
+    // RLS scopes the delete to the current user's rows automatically.
+    const ids = session.messages.map((m) => m.id).filter((id): id is string => typeof id === 'string' && id.length > 0);
+    if (ids.length > 0) {
+      const { error } = await supabase
+        .from('chat_history')
+        .delete()
+        .eq('user_id', user.id)
+        .in('id', ids);
+      if (error) return false;
+    }
+
+    // Step 2: delete the matching MemPalace entries by timestamp range so the
+    // agent's long-term memory of this conversation is wiped too. Best-effort:
+    // a backend hiccup here shouldn't block the UI from updating since the
+    // chat_history rows (the source of truth for the History picker) are
+    // already gone.
+    try {
+      const token = await getAuthToken();
+      if (token && BACKEND_URL) {
+        await fetch(`${BACKEND_URL}/api/chat/history/range`, {
+          method: 'DELETE',
+          headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            from: new Date(session.startTime).toISOString(),
+            to: new Date(session.endTime).toISOString(),
+          }),
+        });
+      }
+    } catch { /* non-fatal */ }
+
+    // Step 3: if the on-screen messages overlap the deleted session, reset to
+    // a fresh greeting so the user isn't staring at a session that no longer
+    // exists in their history.
+    const onScreenIds = new Set(get().messages.map((m) => m.id));
+    const overlaps = ids.some((id) => onScreenIds.has(id));
+    if (overlaps) {
+      await get().startNewSession({ keepServerHistory: true });
+    }
+
     return true;
   },
 

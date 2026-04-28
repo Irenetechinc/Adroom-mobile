@@ -1670,6 +1670,46 @@ app.delete('/api/chat/history', async (req, res) => {
 });
 
 /**
+ * DELETE /api/chat/history/range — delete a single chat session worth of
+ * MemPalace memory by inclusive [from, to] ISO timestamp range. Used by the
+ * mobile client when the user removes one session from the History popup so
+ * the agent's long-term memory of that conversation is wiped alongside the
+ * `chat_history` rows the client deletes directly via Supabase.
+ *
+ * Body: { from: ISO string, to: ISO string }
+ */
+app.delete('/api/chat/history/range', async (req, res) => {
+  try {
+    const supabase = getSupabaseClient(req as any);
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return res.status(401).json({ error: 'Unauthorized.' });
+
+    const { from, to } = req.body || {};
+    if (typeof from !== 'string' || typeof to !== 'string') {
+      return res.status(400).json({ error: '`from` and `to` ISO timestamps required.' });
+    }
+    const fromMs = Date.parse(from);
+    const toMs = Date.parse(to);
+    if (!Number.isFinite(fromMs) || !Number.isFinite(toMs) || fromMs > toMs) {
+      return res.status(400).json({ error: 'Invalid `from` / `to` range.' });
+    }
+
+    const svc = getServiceSupabaseClient();
+    const { error } = await svc
+      .from('ai_conversation_memory')
+      .delete()
+      .eq('user_id', user.id)
+      .gte('created_at', new Date(fromMs).toISOString())
+      .lte('created_at', new Date(toMs).toISOString());
+
+    if (error) return res.status(500).json({ error: error.message });
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
  * Credit Management Agent — Stats endpoint (admin-level)
  * Returns total credits saved, USD saved, and per-operation breakdown.
  */
