@@ -21,7 +21,7 @@ import { DrawerActions, useFocusEffect } from '@react-navigation/native';
 import {
   Menu, Edit2, Check, Upload, DollarSign, Eye, Tag, Rocket, MapPin,
   RefreshCw, Users, Zap, Calendar, TrendingUp, Bot, RotateCcw, ArrowLeft,
-  ChevronDown, Package,
+  ChevronDown, Package, History, Clock, Sparkles,
 } from 'lucide-react-native';
 import { IntegrityService } from '../services/integrity';
 import { VisionService } from '../services/vision';
@@ -838,6 +838,69 @@ const CompletionCard = ({ onDashboard, disabled }: { onDashboard: () => void; di
   </View>
 );
 
+const SessionRestorePromptCard = ({
+  lastMessageAt, windowDays, onRestore, onStartNew, disabled, busy,
+}: {
+  lastMessageAt?: number;
+  windowDays?: number;
+  onRestore: () => void;
+  onStartNew: () => void;
+  disabled?: boolean;
+  busy?: boolean;
+}) => {
+  const formatRelative = (ts?: number): string => {
+    if (!ts || isNaN(ts)) return 'recently';
+    const diffMs = Date.now() - ts;
+    const mins = Math.floor(diffMs / 60000);
+    if (mins < 1) return 'just now';
+    if (mins < 60) return `${mins} minute${mins === 1 ? '' : 's'} ago`;
+    const hrs = Math.floor(mins / 60);
+    if (hrs < 24) return `${hrs} hour${hrs === 1 ? '' : 's'} ago`;
+    const days = Math.floor(hrs / 24);
+    return `${days} day${days === 1 ? '' : 's'} ago`;
+  };
+  return (
+    <View style={[styles.card, { paddingVertical: 16 }]}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+        <Clock size={14} color="#00F0FF" />
+        <Text style={{ color: '#00F0FF', fontSize: 11, fontWeight: '700', letterSpacing: 1, textTransform: 'uppercase' }}>
+          Last activity {formatRelative(lastMessageAt)}
+        </Text>
+      </View>
+      <Text style={[styles.cardSub, { marginBottom: 14 }]}>
+        Pick up where you left off, or start a fresh session. You can restore your last {windowDays ?? 7} days at any time from the history icon in the header.
+      </Text>
+      <TouchableOpacity
+        onPress={onRestore}
+        disabled={disabled || busy}
+        style={[styles.primaryBtn, { flexDirection: 'row' }, (disabled || busy) && { opacity: 0.5 }]}
+      >
+        {busy ? (
+          <ActivityIndicator size="small" color="#020617" />
+        ) : (
+          <>
+            <History size={15} color="#0B0F19" />
+            <Text style={[styles.primaryBtnText, { marginLeft: 6 }]}>Restore previous session</Text>
+          </>
+        )}
+      </TouchableOpacity>
+      <TouchableOpacity
+        onPress={onStartNew}
+        disabled={disabled || busy}
+        style={{
+          marginTop: 10, flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+          paddingVertical: 12, paddingHorizontal: 16, borderRadius: 12,
+          borderWidth: 1, borderColor: 'rgba(0,240,255,0.3)', backgroundColor: 'transparent',
+          opacity: (disabled || busy) ? 0.5 : 1,
+        }}
+      >
+        <Sparkles size={15} color="#00F0FF" />
+        <Text style={{ color: '#00F0FF', fontWeight: '700', fontSize: 14, marginLeft: 6 }}>Start a new session</Text>
+      </TouchableOpacity>
+    </View>
+  );
+};
+
 const CreateStrategyPromptCard = ({ onStartStrategy, disabled }: { onStartStrategy: () => void; disabled?: boolean }) => (
   <View style={[styles.card, styles.completionCard]}>
     <View style={[styles.completionIcon, { backgroundColor: 'rgba(0,240,255,0.1)' }]}>
@@ -928,7 +991,55 @@ export default function AgentChatScreen({ navigation, route }: Props) {
     handleBrandIntake, handleManualProductSubmit, handleRetry,
     handleImageUpload: handleImageUploadStore, startStrategyFlow, handleWebsiteIntake,
     goBackToMenu, goBackOneStep, dismissStrategyFlow, loadConnectedPlatforms,
+    restoreRecentHistory,
   } = useAgentStore();
+
+  const [restoringHistory, setRestoringHistory] = useState(false);
+
+  const handleManualRestore = useCallback(async () => {
+    Alert.alert(
+      'Restore previous chat',
+      'Replace the current conversation with your messages from the last 7 days?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Restore',
+          onPress: async () => {
+            setRestoringHistory(true);
+            try {
+              const ok = await restoreRecentHistory(7);
+              if (!ok) Alert.alert('No history found', 'You don\'t have any chat from the past 7 days yet.');
+            } catch {
+              Alert.alert('Couldn\'t restore', 'Something went wrong while loading your history. Please try again.');
+            } finally {
+              setRestoringHistory(false);
+            }
+          },
+        },
+      ]
+    );
+  }, [restoreRecentHistory]);
+
+  const handleSessionPromptRestore = useCallback(async () => {
+    setRestoringHistory(true);
+    try {
+      const ok = await restoreRecentHistory(7);
+      if (!ok) {
+        Alert.alert('No recent history', 'I couldn\'t find any chat from the past 7 days. Starting a fresh session.');
+        await startNewSession({ keepServerHistory: true });
+      }
+    } catch {
+      await startNewSession({ keepServerHistory: true });
+    } finally {
+      setRestoringHistory(false);
+    }
+  }, [restoreRecentHistory, startNewSession]);
+
+  const handleSessionPromptStartNew = useCallback(async () => {
+    // Keep server history so the user can still hit the History icon later
+    // and restore the last 7 days if they change their mind.
+    await startNewSession({ keepServerHistory: true });
+  }, [startNewSession]);
 
   const { user } = useAuthStore();
   const { subscription: userSubscription, account: energyAccount, fetchEnergy } = useEnergyStore();
@@ -1055,7 +1166,7 @@ export default function AgentChatScreen({ navigation, route }: Props) {
     'service_intake_form', 'brand_intake_form', 'attribute_editor',
     'strategy_type_selection', 'goal_selection', 'duration_selection',
     'strategy_preview', 'facebook_connect', 'page_selection',
-    'retry_action', 'session_restore', 'create_strategy_prompt',
+    'retry_action', 'session_restore', 'session_restore_prompt', 'create_strategy_prompt',
   ];
 
   const isLastInteractiveMessage = (index: number, uiType: string) => {
@@ -1181,6 +1292,16 @@ export default function AgentChatScreen({ navigation, route }: Props) {
           {item.uiType === 'create_strategy_prompt' && (
             <CreateStrategyPromptCard onStartStrategy={startStrategyFlow} disabled={isDisabled} />
           )}
+          {item.uiType === 'session_restore_prompt' && (
+            <SessionRestorePromptCard
+              lastMessageAt={item.uiData?.lastMessageAt}
+              windowDays={item.uiData?.windowDays}
+              onRestore={handleSessionPromptRestore}
+              onStartNew={handleSessionPromptStartNew}
+              disabled={isDisabled}
+              busy={restoringHistory}
+            />
+          )}
         </View>
       </Animated.View>
     );
@@ -1222,7 +1343,15 @@ export default function AgentChatScreen({ navigation, route }: Props) {
             <View style={styles.liveDot} />
             <Text style={styles.liveText}>Live</Text>
           </View>
-          <TouchableOpacity onPress={startNewSession} style={styles.resetBtn}>
+          <TouchableOpacity
+            onPress={handleManualRestore}
+            disabled={restoringHistory}
+            style={[styles.resetBtn, restoringHistory && { opacity: 0.5 }]}
+            accessibilityLabel="Restore last 7 days of chat"
+          >
+            {restoringHistory ? <ActivityIndicator size="small" color="#00F0FF" /> : <History size={16} color="#00F0FF" />}
+          </TouchableOpacity>
+          <TouchableOpacity onPress={() => startNewSession({ keepServerHistory: true })} style={styles.resetBtn} accessibilityLabel="Start a new chat">
             <RotateCcw size={16} color="#64748B" />
           </TouchableOpacity>
         </View>
