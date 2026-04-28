@@ -74,6 +74,98 @@ type ExtendedProductDetails = ProductDetails & {
 export const SESSION_RESTORE_WINDOW_DAYS = 7;
 export const SESSION_RESTORE_PROMPT_FLAG_KEY = 'adroom-pending-session-prompt';
 
+/**
+ * Two consecutive messages more than SESSION_GAP_MS apart are treated as
+ * belonging to different sessions. Two hours covers normal "I closed the app
+ * and came back later" gaps without splitting on quick pauses to type.
+ */
+const SESSION_GAP_MS = 2 * 60 * 60 * 1000;
+
+/** Greeting that `startNewSession` emits — every match starts a fresh session. */
+const GREETING_RE = /^Hello\b.*\bI am AdRoom AI\b/i;
+
+export type ChatSession = {
+  /** Stable identifier — the start timestamp in ms since epoch. */
+  id: string;
+  startTime: number;
+  endTime: number;
+  messageCount: number;
+  /** Short preview text — first user prompt if any, else first agent line. */
+  preview: string;
+  /** Full ordered list of messages in the session, ready for `applySession`. */
+  messages: ChatMessage[];
+};
+
+/**
+ * Walk a chronologically-ordered list of chat_history rows and group them
+ * into sessions. A new session starts whenever:
+ *   1. The agent emits its greeting (`Hello … I am AdRoom AI…`), OR
+ *   2. There's a >SESSION_GAP_MS gap between consecutive messages.
+ *
+ * Returns sessions in chronological order (oldest first).
+ */
+function splitIntoSessions(rows: any[]): ChatSession[] {
+  const sessions: ChatSession[] = [];
+  let current: ChatSession | null = null;
+  let lastTs = 0;
+
+  const filtered = rows.filter((m: any) => m.ui_type !== 'session_restore' && m.ui_type !== 'session_restore_prompt');
+
+  for (const row of filtered) {
+    const ts = new Date(row.created_at).getTime();
+    const text: string = typeof row.text === 'string' ? row.text : '';
+    const isGreeting = row.sender === 'agent' && GREETING_RE.test(text);
+    const hasGap = current !== null && ts - lastTs > SESSION_GAP_MS;
+
+    if (!current || isGreeting || hasGap) {
+      current = {
+        id: String(ts),
+        startTime: ts,
+        endTime: ts,
+        messageCount: 0,
+        preview: '',
+        messages: [],
+      };
+      sessions.push(current);
+    }
+
+    const msg: ChatMessage = {
+      id: row.id,
+      text: row.text,
+      sender: row.sender as 'user' | 'agent',
+      timestamp: ts,
+      imageUri: row.image_uri,
+      uiType: row.ui_type,
+      uiData: row.ui_data,
+    } as any;
+    current.messages.push(msg);
+    current.endTime = ts;
+    current.messageCount += 1;
+    lastTs = ts;
+  }
+
+  // Compute previews + drop "empty" sessions (greeting only). A session is
+  // considered meaningful only if it has at least one user message OR more
+  // than one agent message — a lone greeting is not worth restoring.
+  const meaningful: ChatSession[] = [];
+  for (const s of sessions) {
+    const hasUser = s.messages.some((m) => m.sender === 'user');
+    const agentCount = s.messages.filter((m) => m.sender === 'agent').length;
+    if (!hasUser && agentCount <= 1) continue;
+
+    const firstUser = s.messages.find((m) => m.sender === 'user' && (m.text || '').trim().length > 0);
+    const firstNonGreetingAgent = s.messages.find(
+      (m) => m.sender === 'agent' && (m.text || '').trim().length > 0 && !GREETING_RE.test(m.text || '')
+    );
+    const previewSrc = firstUser?.text || firstNonGreetingAgent?.text || s.messages[0]?.text || 'Strategy session';
+    s.preview = previewSrc.replace(/\s+/g, ' ').trim().slice(0, 90);
+
+    meaningful.push(s);
+  }
+
+  return meaningful;
+}
+
 interface AgentState {
   messages: ChatMessage[];
   isTyping: boolean;
@@ -130,12 +222,22 @@ interface AgentState {
   resetAgent: () => void;
   restoreSession: () => Promise<void>;
   /**
-   * Restore chat history from the server within the configured window
-   * (default 7 days). Returns true if any messages were restored.
-   * Used by both the in-chat "Restore previous session" prompt button and
-   * the dedicated history icon in the chat header.
+   * Fetch the user's chat history within the configured window and group it
+   * into discrete sessions, newest first. Used by the History icon's modal
+   * picker to let the user pick which past session to restore.
    */
-  restoreRecentHistory: (days?: number) => Promise<boolean>;
+  fetchRecentSessions: (days?: number) => Promise<ChatSession[]>;
+  /**
+   * Restore the messages of a previously-fetched session as the current
+   * conversation. Replaces whatever is on screen.
+   */
+  applySession: (session: ChatSession) => void;
+  /**
+   * Restore the most recent meaningful session (used by the in-chat
+   * "Restore previous session" prompt button). Returns true if a session was
+   * restored, false if there was nothing recent to restore.
+   */
+  restoreLastSession: () => Promise<boolean>;
   /**
    * Mark that the next `loadMessages()` should surface the restore prompt
    * instead of auto-loading. Persisted to AsyncStorage so it survives the
@@ -795,42 +897,46 @@ export const useAgentStore = create<AgentState>()(
       'page_selection', 'retry_action',
     ];
 
-    // ── Pending sign-in prompt path ──────────────────────────────────────
-    // The user just signed in. Don't auto-restore yesterday's chat — instead
-    // check if they HAVE history within the restore window, and if so render
-    // a single prompt card asking them to restore or start fresh.
+    // ── Pending sign-in / cold-start prompt path ─────────────────────────
+    // Either the user just signed in, OR they reopened the app on a fresh
+    // process. In both cases we should NOT auto-restore yesterday's chat;
+    // instead surface the prompt card. Detect the most recent meaningful
+    // session within the 7-day window and offer to restore it.
     if (promptPending) {
       // Always clear the flag first so we never re-prompt after a refresh.
       await get().setPendingSessionPrompt(false);
 
       const sinceIso = new Date(Date.now() - SESSION_RESTORE_WINDOW_DAYS * 24 * 60 * 60 * 1000).toISOString();
-      const { data: recent, error: recentErr } = await supabase
+      const { data: recentRows, error: recentErr } = await supabase
         .from('chat_history')
-        .select('id, created_at, ui_type')
+        .select('*')
         .eq('user_id', user.id)
         .gte('created_at', sinceIso)
-        .order('created_at', { ascending: false })
-        .limit(1);
+        .order('created_at', { ascending: true });
 
-      const hasRecentHistory = !recentErr && Array.isArray(recent) && recent.length > 0;
-
-      if (hasRecentHistory) {
-        // Show the restore prompt card and stop. The agent's greeting and
-        // strategy flow will fire only after the user picks "Start fresh".
-        const lastTs = new Date(recent![0].created_at).getTime();
-        const promptMessage: ChatMessage = {
-          id: `session-restore-prompt-${Date.now()}`,
-          text: "Welcome back. I noticed you have a previous conversation from the last few days. Would you like to pick up where you left off, or start a fresh session?",
-          sender: 'agent',
-          timestamp: Date.now(),
-          uiType: 'session_restore_prompt' as any,
-          uiData: { lastMessageAt: lastTs, windowDays: SESSION_RESTORE_WINDOW_DAYS },
-        } as any;
-        set({ messages: [promptMessage], isTyping: false, isInputDisabled: true });
-        return;
+      if (!recentErr && Array.isArray(recentRows) && recentRows.length > 0) {
+        const sessions = splitIntoSessions(recentRows);
+        const lastSession = sessions[sessions.length - 1];
+        if (lastSession) {
+          const promptMessage: ChatMessage = {
+            id: `session-restore-prompt-${Date.now()}`,
+            text: "Welcome back. I noticed you have a previous conversation. Would you like to pick up where you left off, or start a fresh session?",
+            sender: 'agent',
+            timestamp: Date.now(),
+            uiType: 'session_restore_prompt' as any,
+            uiData: {
+              lastMessageAt: lastSession.endTime,
+              sessionId: lastSession.id,
+              messageCount: lastSession.messageCount,
+              preview: lastSession.preview,
+            },
+          } as any;
+          set({ messages: [promptMessage], isTyping: false, isInputDisabled: true });
+          return;
+        }
       }
 
-      // No recent history — nothing to restore. Just start fresh.
+      // No meaningful session found in the window — start fresh.
       await get().startNewSession({ keepServerHistory: true });
       return;
     }
@@ -880,10 +986,9 @@ export const useAgentStore = create<AgentState>()(
     await get().startNewSession({ keepServerHistory: true });
   },
 
-  restoreRecentHistory: async (days = SESSION_RESTORE_WINDOW_DAYS) => {
+  fetchRecentSessions: async (days = SESSION_RESTORE_WINDOW_DAYS) => {
     const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return false;
-    set({ isTyping: true });
+    if (!user) return [];
 
     const sinceIso = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
     const { data, error } = await supabase
@@ -893,37 +998,34 @@ export const useAgentStore = create<AgentState>()(
       .gte('created_at', sinceIso)
       .order('created_at', { ascending: true });
 
-    if (error || !data || data.length === 0) {
-      set({ isTyping: false });
-      return false;
-    }
+    if (error || !data || data.length === 0) return [];
 
-    const filtered = data.filter((m: any) => m.ui_type !== 'session_restore' && m.ui_type !== 'session_restore_prompt');
-    if (filtered.length === 0) {
-      set({ isTyping: false });
-      return false;
-    }
+    // splitIntoSessions returns oldest-first; reverse so the picker shows
+    // the most recent session at the top of the list.
+    return splitIntoSessions(data).reverse();
+  },
 
-    const loadedMessages: ChatMessage[] = filtered.map((m: any) => ({
-      id: m.id,
-      text: m.text,
-      sender: m.sender as 'user' | 'agent',
-      timestamp: new Date(m.created_at).getTime(),
-      imageUri: m.image_uri,
-      uiType: m.ui_type,
-      uiData: m.ui_data,
-    }));
+  applySession: (session: ChatSession) => {
+    if (!session || !Array.isArray(session.messages) || session.messages.length === 0) return;
 
-    const lastMsg = filtered[filtered.length - 1];
     const activeInteractiveTypes = [
       'strategy_type_selection', 'product_intake_form', 'product_manual_form',
       'service_intake_form', 'brand_intake_form', 'goal_selection',
       'duration_selection', 'strategy_comparison', 'facebook_connect',
       'page_selection', 'retry_action',
     ];
-    const needsDisabled = lastMsg && activeInteractiveTypes.includes(lastMsg.ui_type);
+    const last = session.messages[session.messages.length - 1];
+    const needsDisabled = !!(last.uiType && activeInteractiveTypes.includes(last.uiType));
 
-    set({ messages: loadedMessages, isTyping: false, isInputDisabled: needsDisabled });
+    set({ messages: session.messages, isTyping: false, isInputDisabled: needsDisabled });
+  },
+
+  restoreLastSession: async () => {
+    const sessions = await get().fetchRecentSessions(SESSION_RESTORE_WINDOW_DAYS);
+    // fetchRecentSessions returns newest-first, so [0] is "the last session".
+    const last = sessions[0];
+    if (!last) return false;
+    get().applySession(last);
     return true;
   },
 

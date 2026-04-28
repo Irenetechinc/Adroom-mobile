@@ -86,6 +86,14 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         await writePersistedLastUserId(session.user.id);
         // Always re-hydrate connected platforms from the backend on launch.
         useAgentStore.getState().loadConnectedPlatforms().catch(() => {});
+
+        // ── Cold-start session-restore prompt ────────────────────────────
+        // The user reopened the app on a fresh process with an existing
+        // session. Surface the "Restore previous session or start fresh?"
+        // prompt the next time the chat screen mounts. This is set BEFORE
+        // the onAuthStateChange listener attaches so it always wins the
+        // race against the chat screen's loadMessages().
+        try { await useAgentStore.getState().setPendingSessionPrompt(true); } catch { /* ignore */ }
       }
       set({ session, user: session?.user ?? null, hasActiveStrategy: hasActive, isLoading: false });
 
