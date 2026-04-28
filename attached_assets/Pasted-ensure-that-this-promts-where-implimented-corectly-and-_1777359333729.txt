@@ -1,0 +1,14 @@
+ensure that this promts where implimented corectly and complitly with no incomplet implimentations or fix check what been done, what been done incompletly, what wasnt done, what was leftout and impliment accordinly
+promt:
+ok good but Cold app starts should trigger the restor previous session prompt and it shouldnt be the last 7 days it should be the last session, but the history icon when clicked should show user chat history and thier dates and time for the lasr 7 days in a popup then user can select which day history/ session they want to restor mean while every other thing remain same where required
+Cold app starts also trigger the prompt (not just fresh sign-ins)
+The prompt restores only the last session (most recent conversation block), not 7 days
+The history icon opens a popup listing the sessions from the last 7 days with date/time, and user picks one
+Let me implement them. I need to define what a "session" is — a contiguous block of messages bounded by either the agent's greeting ("Hello … I am AdRoom AI") or a >2-hour gap between consecutive messages.
+
+add a small numeric badge on the History icon showing the count of restorable sessions, so users at a glance know whether there's anything to come back to.
+
+after user has verfied email for sing up user is redirected to localhost which returns a 404 insted of a page that will 
+shpw the user that email ahs been vefied succefully nither the less email is still verifed. so fix this so suer can see s nice verifcation successfull page after verfication successfull every other thing work user recives confirmation email and when user clicks verify button they are verfied . same thing gose for the reset pasword user recived reset pasword email bbut when they click reset password button they are redirected to a localhost:300 page wich reture an error that this site cannot be reached hence preventing user from completing reset password fix this as well from root couse
+
+Please remeber no demo implementation, all implementation and fix must be made for realtime and production, no hard coded data, no simplified method, no unresolved comments
