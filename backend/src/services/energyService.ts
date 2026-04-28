@@ -346,6 +346,9 @@ export class EnergyService {
 
     await this.creditEnergy(userId, TRIAL_CREDITS, 'trial_grant', '14-day free trial — 50 energy credits');
 
+    // Push-notify the trial start so the user sees confirmation on their device.
+    pushService.notifyTrialStarted(userId, TRIAL_CREDITS, 14).catch(() => {});
+
     return { success: true, message: `Trial started! You have ${TRIAL_CREDITS} energy credits for 14 days.` };
   }
 

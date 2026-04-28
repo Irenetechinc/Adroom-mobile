@@ -336,22 +336,6 @@ export default function NotificationsScreen() {
 
               <ScrollView style={styles.modalBodyWrap} contentContainerStyle={{ paddingBottom: 12 }}>
                 <Text style={styles.modalBody}>{selected?.body}</Text>
-
-                {selected?.data && Object.keys(selected.data).length > 0 && (
-                  <View style={styles.metaWrap}>
-                    <Text style={styles.metaLabel}>Details</Text>
-                    {Object.entries(selected.data).map(([k, v]) => {
-                      if (v === null || v === undefined || v === '') return null;
-                      const display = typeof v === 'object' ? JSON.stringify(v) : String(v);
-                      return (
-                        <View key={k} style={styles.metaRow}>
-                          <Text style={styles.metaKey}>{k.replace(/_/g, ' ')}</Text>
-                          <Text style={styles.metaValue} numberOfLines={2}>{display}</Text>
-                        </View>
-                      );
-                    })}
-                  </View>
-                )}
               </ScrollView>
 
               <TouchableOpacity style={styles.modalDoneBtn} onPress={() => setSelected(null)} activeOpacity={0.8}>

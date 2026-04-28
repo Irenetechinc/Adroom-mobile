@@ -4,6 +4,10 @@ import dotenv from 'dotenv';
 import { EngagementService } from './services/engagement';
 import { CreativeService } from './services/creativeService';
 import { getSupabaseClient, getServiceSupabaseClient, getAnonSupabaseClient } from './config/supabase';
+import {
+  sendSignupConfirmationEmail,
+  sendPasswordResetEmail,
+} from './services/resendEmailService';
 import { MemoryRetriever, type MemoryContext } from './services/memoryRetriever';
 import { DecisionEngine, type AIStrategy } from './services/decisionEngine';
 import { AIEngine } from './config/ai-models';
@@ -1855,60 +1859,94 @@ app.post('/api/auth/register', async (req, res) => {
       console.warn('[Register] Pre-check listUsers failed:', lookupErr?.message);
     }
 
-    // 2) Use the ANON-KEY client (not service-role) for signUp so Supabase
-    //    actually triggers the configured SMTP confirmation email. The
-    //    service-role client bypasses the email-sending path which is why
-    //    confirmation emails were silently never sent before.
-    const anon = getAnonSupabaseClient();
-    const { data, error } = await anon.auth.signUp({
+    // 2) Bypass Supabase's broken SMTP relay entirely. We:
+    //    a. Create the auth user via admin API (email_confirm: false so the
+    //       account exists but is unverified). This NEVER touches SMTP.
+    //    b. Generate a signup verification link via admin.generateLink. This
+    //       also doesn't touch SMTP — it just returns the signed action URL.
+    //    c. Send the email through Resend's API directly (resendEmailService),
+    //       which guarantees delivery as long as the Resend domain is verified.
+    const { data: createData, error: createErr } = await svc.auth.admin.createUser({
+      email: cleanEmail,
+      password,
+      email_confirm: false,
+    });
+
+    if (createErr) {
+      const msg = createErr.message?.toLowerCase() || '';
+      console.error('[Register] admin.createUser error:', createErr.message);
+      if (msg.includes('already') || msg.includes('exists') || msg.includes('registered')) {
+        return res.status(409).json({
+          error: 'An account with this email already exists. Try signing in or reset your password.',
+        });
+      }
+      if (msg.includes('rate') || msg.includes('too many')) {
+        return res.status(429).json({ error: 'Too many sign-up attempts. Please wait a minute and try again.' });
+      }
+      if (msg.includes('password')) {
+        return res.status(400).json({ error: createErr.message });
+      }
+      return res.status(400).json({ error: createErr.message });
+    }
+
+    const userId = createData?.user?.id;
+    if (!userId) {
+      return res.status(500).json({ error: 'Account creation succeeded but no user ID was returned.' });
+    }
+
+    // Provision wallet / energy / subscription so the user has working
+    // records the moment they verify and sign in.
+    await Promise.allSettled([
+      svc.from('wallets').upsert({ user_id: userId }, { onConflict: 'user_id' }),
+      svc.from('energy_accounts').upsert({ user_id: userId, balance_credits: 0 }, { onConflict: 'user_id' }),
+      svc.from('subscriptions').upsert({ user_id: userId, plan: 'none', status: 'inactive' }, { onConflict: 'user_id' }),
+    ]);
+
+    // Generate the verification action link via admin API.
+    const { data: linkData, error: linkErr } = await svc.auth.admin.generateLink({
+      type: 'signup',
       email: cleanEmail,
       password,
       options: {
-        emailRedirectTo: 'adroom://verified',
+        redirectTo: 'adroom://verified',
       },
     });
 
-    if (error) {
-      const msg = error.message?.toLowerCase() || '';
-      console.error('[Register] Supabase signUp error:', error.message);
-      if (msg.includes('already registered') || msg.includes('already exists') || msg.includes('user already')) {
-        return res.status(409).json({ error: 'An account with this email already exists.' });
-      }
-      if (msg.includes('rate limit') || msg.includes('too many')) {
-        return res.status(429).json({ error: 'Too many sign-up attempts. Please wait a minute and try again.' });
-      }
-      // Surface SMTP / email-sending failures clearly so the user knows it's
-      // an email-delivery issue rather than a credential issue.
-      if (msg.includes('confirmation email') || msg.includes('sending') || msg.includes('smtp') || msg.includes('email')) {
-        return res.status(502).json({
-          error: 'We created your account but couldn\'t send the verification email. Please tap "Resend verification" in a moment, or contact support if this persists.',
-          code: 'EMAIL_DELIVERY_FAILED',
-        });
-      }
-      return res.status(400).json({ error: error.message });
-    }
-
-    // Belt-and-braces: signUp() can sometimes succeed for an unconfirmed
-    // duplicate without throwing. If the returned user has identities=[]
-    // it means Supabase recognized it as an existing account.
-    if (data.user && Array.isArray((data.user as any).identities) && (data.user as any).identities.length === 0) {
-      return res.status(409).json({
-        error: 'An account with this email already exists. Try signing in or reset your password.',
+    if (linkErr || !linkData?.properties?.action_link) {
+      console.error('[Register] generateLink error:', linkErr?.message);
+      // The user exists but we couldn't mint a link. Roll back so they can
+      // retry signup cleanly instead of being stuck in an unverified state
+      // with no link.
+      await svc.auth.admin.deleteUser(userId).catch(() => {});
+      return res.status(502).json({
+        error: 'We couldn\'t generate your verification link. Please try again in a moment.',
+        code: 'LINK_GENERATION_FAILED',
       });
     }
 
-    // Manually provision wallet / energy / subscription using the service role,
-    // so trigger failures never block signup.
-    const userId = data.user?.id;
-    if (userId) {
-      await Promise.allSettled([
-        svc.from('wallets').upsert({ user_id: userId }, { onConflict: 'user_id' }),
-        svc.from('energy_accounts').upsert({ user_id: userId, balance_credits: 0 }, { onConflict: 'user_id' }),
-        svc.from('subscriptions').upsert({ user_id: userId, plan: 'none', status: 'inactive' }, { onConflict: 'user_id' }),
-      ]);
+    const actionLink = linkData.properties.action_link;
+
+    // Send the email via Resend directly.
+    const emailResult = await sendSignupConfirmationEmail(cleanEmail, actionLink);
+
+    if (!emailResult.ok) {
+      console.error('[Register] Resend send failed:', emailResult.error);
+      // The user account exists. Don't roll back — they can hit "Resend
+      // verification" to try again. But surface the failure so the client
+      // shows an honest error instead of falsely claiming success.
+      return res.status(502).json({
+        error: emailResult.error?.includes('not configured')
+          ? 'Email service is not configured on the server. Please contact support.'
+          : 'Your account was created but we couldn\'t send the verification email. Please tap "Resend verification" in a moment.',
+        code: 'EMAIL_DELIVERY_FAILED',
+        accountCreated: true,
+      });
     }
 
-    res.json({ success: true, message: 'Account created. Please check your email to verify your address.' });
+    res.json({
+      success: true,
+      message: 'Account created. Please check your email to verify your address.',
+    });
   } catch (err: any) {
     console.error('[Register] Error:', err.message);
     res.status(500).json({ error: 'Registration failed. Please try again.' });
@@ -1926,30 +1964,60 @@ app.post('/api/auth/reset-password', async (req, res) => {
       return res.status(400).json({ error: 'Valid email is required.' });
     }
     const cleanEmail = email.trim().toLowerCase();
-    // IMPORTANT: use the ANON-KEY client, not the service-role client. The
-    // service-role client bypasses Supabase's email-sending pipeline, so
-    // resetPasswordForEmail() returns success but no email is ever delivered.
-    // The anon-key client routes through the configured SMTP provider.
-    const anon = getAnonSupabaseClient();
-    const { error } = await anon.auth.resetPasswordForEmail(cleanEmail, {
-      redirectTo: typeof redirectTo === 'string' && redirectTo ? redirectTo : 'adroom://reset-password',
-    });
-    if (error) {
-      const msg = error.message?.toLowerCase() || '';
-      console.error('[ResetPassword] Supabase error:', error.message);
-      if (msg.includes('rate limit') || msg.includes('too many')) {
-        return res.status(429).json({ error: 'Please wait a minute before requesting another reset email.' });
-      }
-      // Surface SMTP / email-sending failures explicitly so the client can
-      // tell the user we couldn't send (instead of falsely claiming success).
-      if (msg.includes('smtp') || msg.includes('sending') || msg.includes('email')) {
-        return res.status(502).json({
-          error: 'We couldn\'t send the password reset email right now. Please try again in a few minutes or contact support.',
-          code: 'EMAIL_DELIVERY_FAILED',
-        });
-      }
-      // For other errors, still claim success to avoid leaking which emails exist.
+    const finalRedirect =
+      typeof redirectTo === 'string' && redirectTo ? redirectTo : 'adroom://reset-password';
+    const svc = getServiceSupabaseClient();
+
+    // First check the user actually exists. If not, return success silently
+    // (so we don't leak which emails are registered) and skip sending.
+    let userExists = false;
+    try {
+      const { data: list } = await svc.auth.admin.listUsers({
+        page: 1,
+        perPage: 1,
+        // @ts-expect-error filter supported in supabase-js >= 2.x but not always typed
+        filter: `email.eq.${cleanEmail}`,
+      });
+      userExists = !!list?.users?.find((u: any) => (u.email || '').toLowerCase() === cleanEmail);
+    } catch (lookupErr: any) {
+      console.warn('[ResetPassword] Pre-check listUsers failed:', lookupErr?.message);
     }
+
+    if (!userExists) {
+      // Return success to avoid leaking which emails are registered.
+      return res.json({ success: true });
+    }
+
+    // Generate the recovery action link via admin API. This bypasses
+    // Supabase's broken SMTP relay entirely — admin.generateLink doesn't
+    // send any email, it just returns the signed URL.
+    const { data: linkData, error: linkErr } = await svc.auth.admin.generateLink({
+      type: 'recovery',
+      email: cleanEmail,
+      options: { redirectTo: finalRedirect },
+    });
+
+    if (linkErr || !linkData?.properties?.action_link) {
+      console.error('[ResetPassword] generateLink error:', linkErr?.message);
+      return res.status(502).json({
+        error: 'We couldn\'t generate your reset link right now. Please try again in a few minutes.',
+        code: 'LINK_GENERATION_FAILED',
+      });
+    }
+
+    // Send the email via Resend directly — guaranteed delivery as long as
+    // the Resend domain is verified.
+    const emailResult = await sendPasswordResetEmail(cleanEmail, linkData.properties.action_link);
+    if (!emailResult.ok) {
+      console.error('[ResetPassword] Resend send failed:', emailResult.error);
+      return res.status(502).json({
+        error: emailResult.error?.includes('not configured')
+          ? 'Email service is not configured on the server. Please contact support.'
+          : 'We couldn\'t send the password-reset email right now. Please try again in a few minutes.',
+        code: 'EMAIL_DELIVERY_FAILED',
+      });
+    }
+
     res.json({ success: true });
   } catch (err: any) {
     console.error('[ResetPassword] Error:', err.message);
@@ -1967,28 +2035,58 @@ app.post('/api/auth/resend-verification', async (req, res) => {
     if (!email || typeof email !== 'string' || !email.includes('@')) {
       return res.status(400).json({ error: 'Valid email is required.' });
     }
-    // Anon-key client routes through Supabase's SMTP pipeline; service-role
-    // does not, so verification emails were never being delivered.
-    const anon = getAnonSupabaseClient();
-    const { error } = await anon.auth.resend({
-      type: 'signup',
-      email: email.trim().toLowerCase(),
-      options: { emailRedirectTo: 'adroom://verified' },
-    });
-    if (error) {
-      const msg = error.message?.toLowerCase() || '';
-      console.error('[ResendVerification] Supabase error:', error.message);
-      if (msg.includes('rate limit') || msg.includes('too many')) {
-        return res.status(429).json({ error: 'Please wait a minute before requesting another email.' });
-      }
-      if (msg.includes('smtp') || msg.includes('sending') || msg.includes('email')) {
-        return res.status(502).json({
-          error: 'We couldn\'t send the verification email right now. Please try again in a few minutes.',
-          code: 'EMAIL_DELIVERY_FAILED',
-        });
-      }
+    const cleanEmail = email.trim().toLowerCase();
+    const svc = getServiceSupabaseClient();
+
+    // Look up the user. If they don't exist OR are already verified, return
+    // success silently to avoid leaking account state.
+    let user: any = null;
+    try {
+      const { data: list } = await svc.auth.admin.listUsers({
+        page: 1,
+        perPage: 1,
+        // @ts-expect-error filter param supported but loosely typed
+        filter: `email.eq.${cleanEmail}`,
+      });
+      user = list?.users?.find((u: any) => (u.email || '').toLowerCase() === cleanEmail) || null;
+    } catch (lookupErr: any) {
+      console.warn('[ResendVerification] Pre-check listUsers failed:', lookupErr?.message);
     }
-    // Always return success to avoid leaking which emails exist.
+
+    if (!user || user.email_confirmed_at) {
+      return res.json({ success: true });
+    }
+
+    // Generate a fresh signup verification link via admin API (no SMTP touch).
+    const { data: linkData, error: linkErr } = await svc.auth.admin.generateLink({
+      type: 'signup',
+      email: cleanEmail,
+      // For an existing unconfirmed user, password is required by the API
+      // but ignored — we pass a throwaway placeholder.
+      password: 'placeholder-not-used-' + Math.random().toString(36).slice(2),
+      options: { redirectTo: 'adroom://verified' },
+    });
+
+    if (linkErr || !linkData?.properties?.action_link) {
+      console.error('[ResendVerification] generateLink error:', linkErr?.message);
+      return res.status(502).json({
+        error: 'We couldn\'t generate a new verification link right now. Please try again in a few minutes.',
+        code: 'LINK_GENERATION_FAILED',
+      });
+    }
+
+    // Send via Resend directly.
+    const emailResult = await sendSignupConfirmationEmail(cleanEmail, linkData.properties.action_link);
+    if (!emailResult.ok) {
+      console.error('[ResendVerification] Resend send failed:', emailResult.error);
+      return res.status(502).json({
+        error: emailResult.error?.includes('not configured')
+          ? 'Email service is not configured on the server. Please contact support.'
+          : 'We couldn\'t send the verification email right now. Please try again in a few minutes.',
+        code: 'EMAIL_DELIVERY_FAILED',
+      });
+    }
+
     res.json({ success: true });
   } catch (err: any) {
     console.error('[ResendVerification] Error:', err.message);
