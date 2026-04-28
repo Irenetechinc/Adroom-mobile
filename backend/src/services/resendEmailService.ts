@@ -134,7 +134,7 @@ function buildEmailShell(opts: {
   <div class="wrapper">
     <div class="card">
       <div class="logo">AdRoom AI</div>
-      <div class="tag">Intelligent Marketing Framework</div>
+      <div class="tag">Intelligent Autonomus Marketing Framework</div>
       <h1>${opts.heading}</h1>
       <p>${opts.intro}</p>
       <a href="${opts.ctaUrl}" class="btn">${opts.ctaLabel}</a>

@@ -101,6 +101,16 @@ export const useAuthStore = create<AuthState>((set, get) => ({
           try { await useAgentStore.getState().clearAll(); } catch { /* ignore */ }
         }
 
+        // ── Session-restore prompt ────────────────────────────────────────
+        // Every fresh sign-in (NOT cold starts / token refreshes) should
+        // surface the "Restore previous session or start fresh?" prompt the
+        // next time the chat screen mounts. Setting the flag here covers the
+        // race where loadMessages() runs before this handler completes —
+        // the flag is also persisted to AsyncStorage by the agent store.
+        if (event === 'SIGNED_IN' && newUserId) {
+          try { await useAgentStore.getState().setPendingSessionPrompt(true); } catch { /* ignore */ }
+        }
+
         if (newUserId) {
           lastUserIdMem = newUserId;
           await writePersistedLastUserId(newUserId);

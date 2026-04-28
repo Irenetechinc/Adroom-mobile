@@ -20,11 +20,35 @@ import { pushService } from './services/pushService';
 import { energyCheck, deductEnergyForUser } from './services/energyMiddleware';
 import { checkFeatureAccess, getSubscriptionGuard, SUBSCRIPTION_PLAN_LIMITS } from './services/subscriptionGuard';
 import adminRouter from './admin/adminRouter';
+import authPagesRouter from './auth/authPagesRouter';
 
 dotenv.config();
 
 const app = express();
 const PORT = process.env.PORT || 8000;
+
+/**
+ * Build the public, externally-reachable base URL of the backend.
+ * Used to point Resend email `redirectTo` URLs at our own /auth/* HTML pages
+ * (which work in any browser) instead of the `adroom://` deep links (which
+ * only work inside an installed mobile app).
+ *
+ * Order of precedence:
+ *   1. PUBLIC_BASE_URL env var (set this on Railway to your custom domain)
+ *   2. Inferred from the incoming request (works behind Railway's proxy)
+ */
+function getPublicBaseUrl(req: Request): string {
+  const fromEnv = process.env.PUBLIC_BASE_URL?.trim();
+  if (fromEnv) return fromEnv.replace(/\/+$/, '');
+  const proto = (req.get('x-forwarded-proto') || req.protocol || 'https').split(',')[0].trim();
+  const host = req.get('x-forwarded-host') || req.get('host') || '';
+  return `${proto}://${host}`;
+}
+
+// Behind Railway's load balancer / Replit proxy, trust the X-Forwarded-* hop
+// so req.protocol returns the public scheme (https) instead of the internal
+// http used between the proxy and our process.
+app.set('trust proxy', true);
 const VERIFY_TOKEN = process.env.FB_VERIFY_TOKEN;
 const FB_APP_ID = process.env.FB_APP_ID;
 const FB_APP_SECRET = process.env.FB_APP_SECRET;
@@ -58,6 +82,11 @@ app.use(bodyParser.json({ limit: '10mb' }));
 
 // Admin panel
 app.use('/admin', adminRouter);
+
+// Public auth pages opened from Resend email links (signup verified +
+// password reset form). Mounted before the /api routes so they're reachable
+// in a browser without an Authorization header.
+app.use(authPagesRouter);
 
 // Root endpoint
 app.get('/', (_req, res) => {
@@ -1902,13 +1931,16 @@ app.post('/api/auth/register', async (req, res) => {
       svc.from('subscriptions').upsert({ user_id: userId, plan: 'none', status: 'inactive' }, { onConflict: 'user_id' }),
     ]);
 
-    // Generate the verification action link via admin API.
+    // Generate the verification action link via admin API. The redirect
+    // target is our public /auth/verified HTML page (works in any browser);
+    // it then deep-links back into the app for installed users.
+    const verifiedRedirect = `${getPublicBaseUrl(req)}/auth/verified`;
     const { data: linkData, error: linkErr } = await svc.auth.admin.generateLink({
       type: 'signup',
       email: cleanEmail,
       password,
       options: {
-        redirectTo: 'adroom://verified',
+        redirectTo: verifiedRedirect,
       },
     });
 
@@ -1964,8 +1996,14 @@ app.post('/api/auth/reset-password', async (req, res) => {
       return res.status(400).json({ error: 'Valid email is required.' });
     }
     const cleanEmail = email.trim().toLowerCase();
-    const finalRedirect =
-      typeof redirectTo === 'string' && redirectTo ? redirectTo : 'adroom://reset-password';
+    // Always send the user to our hosted reset-password HTML form so the link
+    // works in any browser. The mobile client used to pass `adroom://reset-password`,
+    // which 404'd on desktop and silently fell back to Supabase's Site URL
+    // (often localhost). We ignore any client-supplied redirectTo here on
+    // purpose — the hosted form is the right destination for everyone.
+    const _ignoredClientRedirect = redirectTo;
+    void _ignoredClientRedirect;
+    const finalRedirect = `${getPublicBaseUrl(req)}/auth/reset-password`;
     const svc = getServiceSupabaseClient();
 
     // Try to generate the recovery link directly. supabase-js's
@@ -2053,7 +2091,7 @@ app.post('/api/auth/resend-verification', async (req, res) => {
       // For an existing unconfirmed user, password is required by the API
       // but ignored — we pass a throwaway placeholder.
       password: 'placeholder-not-used-' + Math.random().toString(36).slice(2),
-      options: { redirectTo: 'adroom://verified' },
+      options: { redirectTo: `${getPublicBaseUrl(req)}/auth/verified` },
     });
 
     if (linkErr) {

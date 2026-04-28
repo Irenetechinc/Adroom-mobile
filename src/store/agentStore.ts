@@ -69,10 +69,24 @@ type ExtendedProductDetails = ProductDetails & {
   selectedDuration?: number;
 };
 
+// Number of days of history that are eligible for restore. After this window
+// the agent will not surface old chats — even via the manual "restore" button.
+export const SESSION_RESTORE_WINDOW_DAYS = 7;
+export const SESSION_RESTORE_PROMPT_FLAG_KEY = 'adroom-pending-session-prompt';
+
 interface AgentState {
   messages: ChatMessage[];
   isTyping: boolean;
   isInputDisabled: boolean;
+  /**
+   * When true, the next call to loadMessages() will NOT auto-restore the
+   * user's chat history. Instead it surfaces a "Restore previous session or
+   * Start fresh?" prompt card. Set on every fresh SIGNED_IN event by
+   * authStore so users can always pick up where they left off — or
+   * deliberately start over — without us silently bringing back yesterday's
+   * conversation.
+   */
+  pendingSessionPrompt: boolean;
   
   flowState: FlowState;
   productDetails: ExtendedProductDetails;
@@ -115,7 +129,20 @@ interface AgentState {
   loadMessages: () => Promise<void>;
   resetAgent: () => void;
   restoreSession: () => Promise<void>;
-  startNewSession: () => Promise<void>;
+  /**
+   * Restore chat history from the server within the configured window
+   * (default 7 days). Returns true if any messages were restored.
+   * Used by both the in-chat "Restore previous session" prompt button and
+   * the dedicated history icon in the chat header.
+   */
+  restoreRecentHistory: (days?: number) => Promise<boolean>;
+  /**
+   * Mark that the next `loadMessages()` should surface the restore prompt
+   * instead of auto-loading. Persisted to AsyncStorage so it survives the
+   * brief window between sign-in and the chat screen mounting.
+   */
+  setPendingSessionPrompt: (v: boolean) => Promise<void>;
+  startNewSession: (opts?: { keepServerHistory?: boolean }) => Promise<void>;
   goBackToMenu: () => void;
   goBackOneStep: () => void;
   dismissStrategyFlow: () => void;
@@ -143,6 +170,7 @@ export const useAgentStore = create<AgentState>()(
   messages: [],
   isTyping: false,
   isInputDisabled: false,
+  pendingSessionPrompt: false,
   flowState: 'IDLE',
   productDetails: {
     name: '',
@@ -734,6 +762,14 @@ export const useAgentStore = create<AgentState>()(
     // Stub
   },
 
+  setPendingSessionPrompt: async (v: boolean) => {
+    set({ pendingSessionPrompt: v });
+    try {
+      if (v) await AsyncStorage.setItem(SESSION_RESTORE_PROMPT_FLAG_KEY, '1');
+      else await AsyncStorage.removeItem(SESSION_RESTORE_PROMPT_FLAG_KEY);
+    } catch { /* non-fatal */ }
+  },
+
   loadMessages: async () => {
     // Refresh platform connection state from backend in background.
     // AsyncStorage already hydrates the persisted state before this runs.
@@ -742,6 +778,16 @@ export const useAgentStore = create<AgentState>()(
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
 
+    // Hydrate the prompt flag from disk so an authStore SIGNED_IN that ran
+    // milliseconds before the chat screen mounted is still respected.
+    let promptPending = get().pendingSessionPrompt;
+    if (!promptPending) {
+      try {
+        const persisted = await AsyncStorage.getItem(SESSION_RESTORE_PROMPT_FLAG_KEY);
+        if (persisted === '1') promptPending = true;
+      } catch { /* non-fatal */ }
+    }
+
     const activeInteractiveTypes = [
       'strategy_type_selection', 'product_intake_form', 'product_manual_form',
       'service_intake_form', 'brand_intake_form', 'goal_selection',
@@ -749,8 +795,52 @@ export const useAgentStore = create<AgentState>()(
       'page_selection', 'retry_action',
     ];
 
+    // ── Pending sign-in prompt path ──────────────────────────────────────
+    // The user just signed in. Don't auto-restore yesterday's chat — instead
+    // check if they HAVE history within the restore window, and if so render
+    // a single prompt card asking them to restore or start fresh.
+    if (promptPending) {
+      // Always clear the flag first so we never re-prompt after a refresh.
+      await get().setPendingSessionPrompt(false);
+
+      const sinceIso = new Date(Date.now() - SESSION_RESTORE_WINDOW_DAYS * 24 * 60 * 60 * 1000).toISOString();
+      const { data: recent, error: recentErr } = await supabase
+        .from('chat_history')
+        .select('id, created_at, ui_type')
+        .eq('user_id', user.id)
+        .gte('created_at', sinceIso)
+        .order('created_at', { ascending: false })
+        .limit(1);
+
+      const hasRecentHistory = !recentErr && Array.isArray(recent) && recent.length > 0;
+
+      if (hasRecentHistory) {
+        // Show the restore prompt card and stop. The agent's greeting and
+        // strategy flow will fire only after the user picks "Start fresh".
+        const lastTs = new Date(recent![0].created_at).getTime();
+        const promptMessage: ChatMessage = {
+          id: `session-restore-prompt-${Date.now()}`,
+          text: "Welcome back. I noticed you have a previous conversation from the last few days. Would you like to pick up where you left off, or start a fresh session?",
+          sender: 'agent',
+          timestamp: Date.now(),
+          uiType: 'session_restore_prompt' as any,
+          uiData: { lastMessageAt: lastTs, windowDays: SESSION_RESTORE_WINDOW_DAYS },
+        } as any;
+        set({ messages: [promptMessage], isTyping: false, isInputDisabled: true });
+        return;
+      }
+
+      // No recent history — nothing to restore. Just start fresh.
+      await get().startNewSession({ keepServerHistory: true });
+      return;
+    }
+
+    // ── Default path (app cold-start with existing session, or screen
+    // remount during the same session): preserve current behaviour and
+    // restore from the server. ───────────────────────────────────────────
+
     const processRows = (rows: any[]) => {
-      const filtered = rows.filter((m: any) => m.ui_type !== 'session_restore');
+      const filtered = rows.filter((m: any) => m.ui_type !== 'session_restore' && m.ui_type !== 'session_restore_prompt');
       if (filtered.length === 0) return null;
       const lastMessage = filtered[filtered.length - 1];
       const isCompleted = lastMessage.ui_type === 'completion_card';
@@ -787,7 +877,54 @@ export const useAgentStore = create<AgentState>()(
       if (result) { set({ messages: result.messages, isTyping: false, isInputDisabled: result.needsDisabled }); return; }
     }
 
-    await get().startNewSession();
+    await get().startNewSession({ keepServerHistory: true });
+  },
+
+  restoreRecentHistory: async (days = SESSION_RESTORE_WINDOW_DAYS) => {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return false;
+    set({ isTyping: true });
+
+    const sinceIso = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
+    const { data, error } = await supabase
+      .from('chat_history')
+      .select('*')
+      .eq('user_id', user.id)
+      .gte('created_at', sinceIso)
+      .order('created_at', { ascending: true });
+
+    if (error || !data || data.length === 0) {
+      set({ isTyping: false });
+      return false;
+    }
+
+    const filtered = data.filter((m: any) => m.ui_type !== 'session_restore' && m.ui_type !== 'session_restore_prompt');
+    if (filtered.length === 0) {
+      set({ isTyping: false });
+      return false;
+    }
+
+    const loadedMessages: ChatMessage[] = filtered.map((m: any) => ({
+      id: m.id,
+      text: m.text,
+      sender: m.sender as 'user' | 'agent',
+      timestamp: new Date(m.created_at).getTime(),
+      imageUri: m.image_uri,
+      uiType: m.ui_type,
+      uiData: m.ui_data,
+    }));
+
+    const lastMsg = filtered[filtered.length - 1];
+    const activeInteractiveTypes = [
+      'strategy_type_selection', 'product_intake_form', 'product_manual_form',
+      'service_intake_form', 'brand_intake_form', 'goal_selection',
+      'duration_selection', 'strategy_comparison', 'facebook_connect',
+      'page_selection', 'retry_action',
+    ];
+    const needsDisabled = lastMsg && activeInteractiveTypes.includes(lastMsg.ui_type);
+
+    set({ messages: loadedMessages, isTyping: false, isInputDisabled: needsDisabled });
+    return true;
   },
 
   restoreSession: async () => {
@@ -830,7 +967,7 @@ export const useAgentStore = create<AgentState>()(
     }
   },
 
-  startNewSession: async () => {
+  startNewSession: async (opts?: { keepServerHistory?: boolean }) => {
     // ── Step 1: reset UI state IMMEDIATELY ──────────────────────────────────
     // `tokens` and `connectedPlatforms` are intentionally NOT reset here.
     // They are persisted via AsyncStorage and must survive session resets so
@@ -865,21 +1002,27 @@ export const useAgentStore = create<AgentState>()(
       if (email) userName = email.split('@')[0] || 'there';
     } catch { /* use default name */ }
 
-    // ── Step 4: delete history in background — never block the greeting ──────
-    (async () => {
-      try {
-        const { data: { user } } = await supabase.auth.getUser();
-        if (!user) return;
-        supabase.from('chat_history').delete().eq('user_id', user.id).catch(() => {});
-        const authToken = await getAuthToken();
-        if (authToken && BACKEND_URL) {
-          fetch(`${BACKEND_URL}/api/chat/history`, {
-            method: 'DELETE',
-            headers: { Authorization: `Bearer ${authToken}` },
-          }).catch(() => {});
-        }
-      } catch { /* non-fatal */ }
-    })();
+    // ── Step 4: optionally delete history in background ─────────────────────
+    // We default to KEEPING server-side history so the user can always
+    // restore the last 7 days from the chat header icon. Pass
+    // { keepServerHistory: false } only when you really want a hard wipe
+    // (e.g. user explicitly chose "delete & start over" — currently unused).
+    if (opts?.keepServerHistory === false) {
+      (async () => {
+        try {
+          const { data: { user } } = await supabase.auth.getUser();
+          if (!user) return;
+          supabase.from('chat_history').delete().eq('user_id', user.id).catch(() => {});
+          const authToken = await getAuthToken();
+          if (authToken && BACKEND_URL) {
+            fetch(`${BACKEND_URL}/api/chat/history`, {
+              method: 'DELETE',
+              headers: { Authorization: `Bearer ${authToken}` },
+            }).catch(() => {});
+          }
+        } catch { /* non-fatal */ }
+      })();
+    }
 
     // ── Step 5: send greeting and kick off strategy flow ─────────────────────
     const { addMessage, setTyping, startStrategyFlow } = get();
