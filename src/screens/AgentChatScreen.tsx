@@ -8,7 +8,7 @@ import {
 } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../types';
-import { useAgentStore } from '../store/agentStore';
+import { useAgentStore, type ChatSession } from '../store/agentStore';
 import * as ImagePicker from 'expo-image-picker';
 import Animated, {
   FadeInUp, FadeInRight, FadeInLeft, Layout,
@@ -991,41 +991,47 @@ export default function AgentChatScreen({ navigation, route }: Props) {
     handleBrandIntake, handleManualProductSubmit, handleRetry,
     handleImageUpload: handleImageUploadStore, startStrategyFlow, handleWebsiteIntake,
     goBackToMenu, goBackOneStep, dismissStrategyFlow, loadConnectedPlatforms,
-    restoreRecentHistory,
+    fetchRecentSessions, applySession, restoreLastSession,
   } = useAgentStore();
 
   const [restoringHistory, setRestoringHistory] = useState(false);
+  const [historyModalVisible, setHistoryModalVisible] = useState(false);
+  const [historyModalLoading, setHistoryModalLoading] = useState(false);
+  const [historySessions, setHistorySessions] = useState<ChatSession[]>([]);
 
-  const handleManualRestore = useCallback(async () => {
-    Alert.alert(
-      'Restore previous chat',
-      'Replace the current conversation with your messages from the last 7 days?',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Restore',
-          onPress: async () => {
-            setRestoringHistory(true);
-            try {
-              const ok = await restoreRecentHistory(7);
-              if (!ok) Alert.alert('No history found', 'You don\'t have any chat from the past 7 days yet.');
-            } catch {
-              Alert.alert('Couldn\'t restore', 'Something went wrong while loading your history. Please try again.');
-            } finally {
-              setRestoringHistory(false);
-            }
-          },
-        },
-      ]
-    );
-  }, [restoreRecentHistory]);
+  // Open the History picker. Loads recent sessions on demand so the modal
+  // always shows fresh data (e.g. just-finished conversations).
+  const openHistoryModal = useCallback(async () => {
+    setHistoryModalVisible(true);
+    setHistoryModalLoading(true);
+    try {
+      const sessions = await fetchRecentSessions(7);
+      setHistorySessions(sessions);
+    } catch {
+      setHistorySessions([]);
+    } finally {
+      setHistoryModalLoading(false);
+    }
+  }, [fetchRecentSessions]);
+
+  const handlePickSession = useCallback((session: ChatSession) => {
+    setHistoryModalVisible(false);
+    setRestoringHistory(true);
+    try {
+      applySession(session);
+    } catch {
+      Alert.alert('Couldn\'t restore', 'Something went wrong while loading that session. Please try again.');
+    } finally {
+      setRestoringHistory(false);
+    }
+  }, [applySession]);
 
   const handleSessionPromptRestore = useCallback(async () => {
     setRestoringHistory(true);
     try {
-      const ok = await restoreRecentHistory(7);
+      const ok = await restoreLastSession();
       if (!ok) {
-        Alert.alert('No recent history', 'I couldn\'t find any chat from the past 7 days. Starting a fresh session.');
+        Alert.alert('No recent session', 'I couldn\'t find a previous conversation. Starting a fresh session.');
         await startNewSession({ keepServerHistory: true });
       }
     } catch {
@@ -1033,11 +1039,11 @@ export default function AgentChatScreen({ navigation, route }: Props) {
     } finally {
       setRestoringHistory(false);
     }
-  }, [restoreRecentHistory, startNewSession]);
+  }, [restoreLastSession, startNewSession]);
 
   const handleSessionPromptStartNew = useCallback(async () => {
     // Keep server history so the user can still hit the History icon later
-    // and restore the last 7 days if they change their mind.
+    // and restore a past session if they change their mind.
     await startNewSession({ keepServerHistory: true });
   }, [startNewSession]);
 
@@ -1344,10 +1350,10 @@ export default function AgentChatScreen({ navigation, route }: Props) {
             <Text style={styles.liveText}>Live</Text>
           </View>
           <TouchableOpacity
-            onPress={handleManualRestore}
+            onPress={openHistoryModal}
             disabled={restoringHistory}
             style={[styles.resetBtn, restoringHistory && { opacity: 0.5 }]}
-            accessibilityLabel="Restore last 7 days of chat"
+            accessibilityLabel="Open chat history"
           >
             {restoringHistory ? <ActivityIndicator size="small" color="#00F0FF" /> : <History size={16} color="#00F0FF" />}
           </TouchableOpacity>
@@ -1401,9 +1407,177 @@ export default function AgentChatScreen({ navigation, route }: Props) {
         {/* Watermark */}
         <WatermarkOverlay visible={!isActive && messages.length === 0} />
       </KeyboardAvoidingView>
+
+      {/* History picker modal — shows the last 7 days of conversations,
+          grouped into sessions, so the user can pick which one to restore. */}
+      <Modal
+        visible={historyModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setHistoryModalVisible(false)}
+      >
+        <View style={historyModalStyles.backdrop}>
+          <View style={historyModalStyles.card}>
+            <View style={historyModalStyles.headerRow}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                <History size={18} color="#00F0FF" />
+                <Text style={historyModalStyles.title}>Chat history</Text>
+              </View>
+              <TouchableOpacity
+                onPress={() => setHistoryModalVisible(false)}
+                accessibilityLabel="Close history"
+                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+              >
+                <Text style={historyModalStyles.closeText}>Close</Text>
+              </TouchableOpacity>
+            </View>
+            <Text style={historyModalStyles.subtitle}>
+              Pick a session from the last 7 days to bring it back into the chat.
+            </Text>
+
+            {historyModalLoading ? (
+              <View style={historyModalStyles.loadingBox}>
+                <ActivityIndicator size="small" color="#00F0FF" />
+                <Text style={historyModalStyles.loadingText}>Loading your sessions…</Text>
+              </View>
+            ) : historySessions.length === 0 ? (
+              <View style={historyModalStyles.emptyBox}>
+                <Text style={historyModalStyles.emptyTitle}>No recent sessions</Text>
+                <Text style={historyModalStyles.emptyBody}>
+                  You don't have any chat from the past 7 days yet. Start a new conversation and it'll show up here.
+                </Text>
+              </View>
+            ) : (
+              <ScrollView style={{ maxHeight: 380 }} contentContainerStyle={{ paddingBottom: 8 }}>
+                {historySessions.map((session) => {
+                  const start = new Date(session.startTime);
+                  const end = new Date(session.endTime);
+                  const dateStr = start.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
+                  const startTimeStr = start.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+                  const endTimeStr = end.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+                  const sameTime = startTimeStr === endTimeStr;
+                  return (
+                    <TouchableOpacity
+                      key={session.id}
+                      style={historyModalStyles.sessionRow}
+                      onPress={() => handlePickSession(session)}
+                      activeOpacity={0.7}
+                    >
+                      <View style={{ flex: 1 }}>
+                        <Text style={historyModalStyles.sessionDate}>{dateStr}</Text>
+                        <Text style={historyModalStyles.sessionTime}>
+                          {sameTime ? startTimeStr : `${startTimeStr} – ${endTimeStr}`} · {session.messageCount} message{session.messageCount === 1 ? '' : 's'}
+                        </Text>
+                        <Text style={historyModalStyles.sessionPreview} numberOfLines={2}>
+                          {session.preview}
+                        </Text>
+                      </View>
+                      <Clock size={16} color="#64748B" />
+                    </TouchableOpacity>
+                  );
+                })}
+              </ScrollView>
+            )}
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
+
+const historyModalStyles = StyleSheet.create({
+  backdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.55)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  card: {
+    width: '100%',
+    maxWidth: 480,
+    backgroundColor: '#0B0F19',
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(0,240,255,0.18)',
+    padding: 20,
+  },
+  headerRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 6,
+  },
+  title: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  closeText: {
+    color: '#64748B',
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  subtitle: {
+    color: '#94A3B8',
+    fontSize: 12,
+    marginBottom: 14,
+  },
+  loadingBox: {
+    paddingVertical: 28,
+    alignItems: 'center',
+    gap: 10,
+  },
+  loadingText: {
+    color: '#64748B',
+    fontSize: 13,
+  },
+  emptyBox: {
+    paddingVertical: 22,
+    alignItems: 'center',
+  },
+  emptyTitle: {
+    color: '#E2E8F0',
+    fontSize: 14,
+    fontWeight: '600',
+    marginBottom: 6,
+  },
+  emptyBody: {
+    color: '#64748B',
+    fontSize: 12,
+    textAlign: 'center',
+    lineHeight: 18,
+  },
+  sessionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 12,
+    borderRadius: 10,
+    backgroundColor: 'rgba(255,255,255,0.03)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.06)',
+    marginBottom: 8,
+  },
+  sessionDate: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  sessionTime: {
+    color: '#00F0FF',
+    fontSize: 11,
+    fontWeight: '600',
+    marginTop: 2,
+  },
+  sessionPreview: {
+    color: '#94A3B8',
+    fontSize: 12,
+    marginTop: 4,
+    lineHeight: 16,
+  },
+});
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: '#0B0F19' },
