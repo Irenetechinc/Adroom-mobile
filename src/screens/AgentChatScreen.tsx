@@ -21,7 +21,7 @@ import { DrawerActions, useFocusEffect } from '@react-navigation/native';
 import {
   Menu, Edit2, Check, Upload, DollarSign, Eye, Tag, Rocket, MapPin,
   RefreshCw, Users, Zap, Calendar, TrendingUp, Bot, RotateCcw, ArrowLeft,
-  ChevronDown, Package, History, Clock, Sparkles,
+  ChevronDown, Package, History, Clock, Sparkles, Trash2,
 } from 'lucide-react-native';
 import { IntegrityService } from '../services/integrity';
 import { VisionService } from '../services/vision';
@@ -991,7 +991,7 @@ export default function AgentChatScreen({ navigation, route }: Props) {
     handleBrandIntake, handleManualProductSubmit, handleRetry,
     handleImageUpload: handleImageUploadStore, startStrategyFlow, handleWebsiteIntake,
     goBackToMenu, goBackOneStep, dismissStrategyFlow, loadConnectedPlatforms,
-    fetchRecentSessions, applySession, restoreLastSession,
+    fetchRecentSessions, applySession, restoreLastSession, deleteSession,
   } = useAgentStore();
 
   const [restoringHistory, setRestoringHistory] = useState(false);
@@ -1043,6 +1043,49 @@ export default function AgentChatScreen({ navigation, route }: Props) {
       setRestoringHistory(false);
     }
   }, [applySession]);
+
+  // Track which session row is mid-delete so we can dim it / show a spinner
+  // and prevent double-taps without blocking other rows in the list.
+  const [deletingSessionId, setDeletingSessionId] = useState<string | null>(null);
+
+  const handleDeleteSession = useCallback(
+    (session: ChatSession) => {
+      if (deletingSessionId) return;
+      const start = new Date(session.startTime);
+      const dateStr = start.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
+      const timeStr = start.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+      Alert.alert(
+        'Delete this session?',
+        `This will permanently remove the conversation from ${dateStr} at ${timeStr} (${session.messageCount} message${session.messageCount === 1 ? '' : 's'}). This can't be undone.`,
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Delete',
+            style: 'destructive',
+            onPress: async () => {
+              setDeletingSessionId(session.id);
+              try {
+                const ok = await deleteSession(session);
+                if (!ok) {
+                  Alert.alert('Couldn\'t delete', 'Something went wrong while removing that session. Please try again.');
+                  return;
+                }
+                // Drop it from the open list immediately and refresh the badge
+                // so both views agree without needing a manual close-and-reopen.
+                setHistorySessions((prev) => prev.filter((s) => s.id !== session.id));
+                setHistorySessionCount((prev) => Math.max(0, prev - 1));
+              } catch {
+                Alert.alert('Couldn\'t delete', 'Something went wrong while removing that session. Please try again.');
+              } finally {
+                setDeletingSessionId(null);
+              }
+            },
+          },
+        ],
+      );
+    },
+    [deleteSession, deletingSessionId],
+  );
 
   const handleSessionPromptRestore = useCallback(async () => {
     setRestoringHistory(true);
@@ -1499,24 +1542,41 @@ export default function AgentChatScreen({ navigation, route }: Props) {
                   const startTimeStr = start.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
                   const endTimeStr = end.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
                   const sameTime = startTimeStr === endTimeStr;
+                  const isDeleting = deletingSessionId === session.id;
                   return (
-                    <TouchableOpacity
+                    <View
                       key={session.id}
-                      style={historyModalStyles.sessionRow}
-                      onPress={() => handlePickSession(session)}
-                      activeOpacity={0.7}
+                      style={[historyModalStyles.sessionRow, isDeleting && { opacity: 0.5 }]}
                     >
-                      <View style={{ flex: 1 }}>
-                        <Text style={historyModalStyles.sessionDate}>{dateStr}</Text>
-                        <Text style={historyModalStyles.sessionTime}>
-                          {sameTime ? startTimeStr : `${startTimeStr} – ${endTimeStr}`} · {session.messageCount} message{session.messageCount === 1 ? '' : 's'}
-                        </Text>
-                        <Text style={historyModalStyles.sessionPreview} numberOfLines={2}>
-                          {session.preview}
-                        </Text>
-                      </View>
-                      <Clock size={16} color="#64748B" />
-                    </TouchableOpacity>
+                      <TouchableOpacity
+                        style={{ flex: 1, flexDirection: 'row', alignItems: 'center' }}
+                        onPress={() => handlePickSession(session)}
+                        disabled={isDeleting}
+                        activeOpacity={0.7}
+                      >
+                        <View style={{ flex: 1 }}>
+                          <Text style={historyModalStyles.sessionDate}>{dateStr}</Text>
+                          <Text style={historyModalStyles.sessionTime}>
+                            {sameTime ? startTimeStr : `${startTimeStr} – ${endTimeStr}`} · {session.messageCount} message{session.messageCount === 1 ? '' : 's'}
+                          </Text>
+                          <Text style={historyModalStyles.sessionPreview} numberOfLines={2}>
+                            {session.preview}
+                          </Text>
+                        </View>
+                        <Clock size={16} color="#64748B" />
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        onPress={() => handleDeleteSession(session)}
+                        disabled={isDeleting}
+                        style={historyModalStyles.deleteBtn}
+                        accessibilityLabel="Delete this session"
+                        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                      >
+                        {isDeleting
+                          ? <ActivityIndicator size="small" color="#EF4444" />
+                          : <Trash2 size={16} color="#EF4444" />}
+                      </TouchableOpacity>
+                    </View>
                   );
                 })}
               </ScrollView>
@@ -1619,6 +1679,14 @@ const historyModalStyles = StyleSheet.create({
     fontSize: 12,
     marginTop: 4,
     lineHeight: 16,
+  },
+  deleteBtn: {
+    width: 34, height: 34,
+    borderRadius: 8,
+    alignItems: 'center', justifyContent: 'center',
+    backgroundColor: 'rgba(239,68,68,0.08)',
+    borderWidth: 1, borderColor: 'rgba(239,68,68,0.25)',
+    marginLeft: 8,
   },
 });
 
