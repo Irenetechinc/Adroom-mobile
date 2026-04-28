@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, TouchableOpacity, Alert, StyleSheet, ScrollView } from 'react-native';
 import { useAuthStore } from '../store/authStore';
+import { supabase } from '../services/supabase';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../types';
@@ -54,10 +55,50 @@ export default function SettingsScreen() {
   const insets = useSafeAreaInsets();
   const { account, subscription, fetchEnergy, isLoading: energyLoading } = useEnergyStore();
   const [ready, setReady] = useState(false);
+  const [unreadCount, setUnreadCount] = useState(0);
 
   useEffect(() => {
     fetchEnergy().finally(() => setReady(true));
   }, []);
+
+  // Track unread notifications in realtime so the Settings → Notifications row
+  // shows an accurate badge that updates the moment a new push arrives or the
+  // user marks something as read elsewhere in the app.
+  useEffect(() => {
+    if (!user?.id) {
+      setUnreadCount(0);
+      return;
+    }
+
+    let cancelled = false;
+
+    const refreshUnread = async () => {
+      try {
+        const { count, error } = await supabase
+          .from('user_notifications')
+          .select('id', { count: 'exact', head: true })
+          .eq('user_id', user.id)
+          .eq('is_read', false);
+        if (!cancelled && !error) setUnreadCount(count ?? 0);
+      } catch { /* ignore */ }
+    };
+
+    refreshUnread();
+
+    const channel = supabase
+      .channel(`user_notifications_unread_${user.id}`)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'user_notifications', filter: `user_id=eq.${user.id}` },
+        () => { refreshUnread(); },
+      )
+      .subscribe();
+
+    return () => {
+      cancelled = true;
+      supabase.removeChannel(channel);
+    };
+  }, [user?.id]);
 
   const balance = parseFloat(String(account?.balance_credits ?? '0'));
   const plan = subscription?.plan ?? 'none';
@@ -112,8 +153,12 @@ export default function SettingsScreen() {
         {
           icon: Bell,
           label: 'Notifications',
-          sublabel: 'Campaign alerts & updates',
+          sublabel:
+            unreadCount > 0
+              ? `${unreadCount} unread • Campaign alerts & updates`
+              : 'Campaign alerts & updates',
           color: '#F59E0B',
+          badge: unreadCount,
           onPress: () => navigation.navigate('Notifications'),
         },
         {
@@ -206,6 +251,13 @@ export default function SettingsScreen() {
                       <Text style={styles.groupItemLabel}>{item.label}</Text>
                       <Text style={styles.groupItemSublabel}>{item.sublabel}</Text>
                     </View>
+                    {(item as any).badge && (item as any).badge > 0 ? (
+                      <View style={styles.unreadBadge}>
+                        <Text style={styles.unreadBadgeText}>
+                          {(item as any).badge > 99 ? '99+' : String((item as any).badge)}
+                        </Text>
+                      </View>
+                    ) : null}
                     <ChevronRight size={16} color="#334155" />
                   </TouchableOpacity>
                 );
@@ -278,6 +330,22 @@ const styles = StyleSheet.create({
   },
   groupItemLabel: { color: '#E2E8F0', fontWeight: '600', fontSize: 14, marginBottom: 2 },
   groupItemSublabel: { color: '#475569', fontSize: 12 },
+  unreadBadge: {
+    minWidth: 22,
+    height: 22,
+    borderRadius: 11,
+    paddingHorizontal: 7,
+    backgroundColor: '#EF4444',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 6,
+  },
+  unreadBadgeText: {
+    color: '#FFFFFF',
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 0.2,
+  },
   signOutWrap: { marginBottom: 16 },
   signOutBtn: {
     backgroundColor: 'rgba(239,68,68,0.07)', borderWidth: 1, borderColor: 'rgba(239,68,68,0.2)',

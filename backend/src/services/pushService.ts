@@ -184,6 +184,20 @@ export const pushService = {
     ]);
   },
 
+  /**
+   * Generic credit-award notification for any positive credit grant that
+   * doesn't have a dedicated notifier (admin grants, promo codes, etc.).
+   * Top-ups and plan changes already use notifyTopupSuccess /
+   * notifyPlanChanged so we don't double-notify those.
+   */
+  async notifyCreditsAwarded(userId: string, credits: number, reason: string, newBalance: number): Promise<void> {
+    return this.send(userId, {
+      title: `+${credits} energy credits`,
+      body: `${reason} — new balance: ${newBalance.toFixed(0)} credits`,
+      data: { type: 'credits_awarded', credits, reason, newBalance },
+    });
+  },
+
   async notifyTrialStarted(userId: string, credits: number, daysLeft: number): Promise<void> {
     const tokens = await getUserTokens(userId);
     const title = 'Free Trial Started';
