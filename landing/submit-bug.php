@@ -23,8 +23,8 @@
 // Prefer environment variables; fall back to in-file constants if you can't
 // set env vars on your hosting plan.
 $RESEND_API_KEY = getenv('RESEND_API_KEY') ?: '';        // re_xxxxxxxx
-$TO_EMAIL       = getenv('BUG_TO_EMAIL')   ?: 'bugs@adroomai.com';
-$FROM_EMAIL     = getenv('BUG_FROM_EMAIL') ?: 'AdRoom Bugs <noreply@adroomai.com>';
+$TO_EMAIL       = getenv('BUG_TO_EMAIL')   ?: 'reportbugs@adroomai.com';
+$FROM_EMAIL     = getenv('BUG_FROM_EMAIL') ?: 'AdRoom AI Bugs <noreply@adroomai.com>';
 $LOG_FILE       = __DIR__ . '/bug-reports.json';
 // ====================================================================
 
