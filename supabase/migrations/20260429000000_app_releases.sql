@@ -65,12 +65,7 @@ VALUES
     TRUE,
     FALSE,
     'https://play.google.com/store/apps/details?id=com.adroom.mobile',
-    E'• Push notifications now arrive reliably when the app is closed (FCM v1 wired end-to-end).\n'
-    E'• New diagnostic in Notifications — tap the paper-airplane icon to see in plain English why a push isn''t reaching this device.\n'
-    E'• Bug reports and feature requests on the website now go straight to the AdRoom team and the database, with email confirmation.\n'
-    E'• Help, bug-report and feature-request pages were rebuilt to look great on phones and tablets.\n'
-    E'• New "What''s New" screen so you can see exactly what changed every time you update.\n'
-    E'• Built-in update check on launch — you''ll be prompted (or required) to upgrade when a new build ships.',
+    E'• Push notifications now arrive reliably when the app is closed (FCM v1 wired end-to-end).\n• New diagnostic in Notifications — tap the paper-airplane icon to see in plain English why a push isn''t reaching this device.\n• Bug reports and feature requests on the website now go straight to the AdRoom team and the database, with email confirmation.\n• Help, bug-report and feature-request pages were rebuilt to look great on phones and tablets.\n• New "What''s New" screen so you can see exactly what changed every time you update.\n• Built-in update check on launch — you''ll be prompted (or required) to upgrade when a new build ships.',
     NOW()
   )
 ON CONFLICT (platform, version) DO NOTHING;
