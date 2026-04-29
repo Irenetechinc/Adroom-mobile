@@ -9,6 +9,7 @@ import { useFocusEffect } from '@react-navigation/native';
 import { ArrowLeft, Bell, BellOff, CheckCheck, X, Zap, CreditCard, AlertTriangle, Sparkles, Rocket } from 'lucide-react-native';
 import Animated, { FadeInDown, FadeIn } from 'react-native-reanimated';
 import { supabase } from '../services/supabase';
+import { useNotificationStore } from '../store/notificationStore';
 import Constants from 'expo-constants';
 import { Skeleton } from '../components/Skeleton';
 
@@ -113,6 +114,8 @@ export default function NotificationsScreen() {
       const data = await res.json();
       setNotifications(data.notifications || []);
       setUnread(data.unread || 0);
+      // Keep the shared store (driving the Settings badge) in sync.
+      useNotificationStore.getState().setUnread(data.unread || 0);
     } catch {
     } finally {
       setLoading(false);
@@ -144,7 +147,12 @@ export default function NotificationsScreen() {
               if (prev.some((n) => n.id === row.id)) return prev;
               return [row, ...prev];
             });
-            if (!row.is_read) setUnread((u) => u + 1);
+            if (!row.is_read) {
+              setUnread((u) => u + 1);
+              // Mirror into the shared store so the Settings badge bumps too.
+              const cur = useNotificationStore.getState().unreadCount;
+              useNotificationStore.getState().setUnread(cur + 1);
+            }
           }
         )
         .on(
@@ -193,6 +201,7 @@ export default function NotificationsScreen() {
       });
       setNotifications(prev => prev.map(n => ({ ...n, is_read: true })));
       setUnread(0);
+      useNotificationStore.getState().setUnread(0);
     } catch {
     } finally {
       setMarkingRead(false);
@@ -208,7 +217,11 @@ export default function NotificationsScreen() {
         headers,
       });
       setNotifications(prev => prev.map(n => n.id === id ? { ...n, is_read: true } : n));
-      setUnread(prev => Math.max(0, prev - 1));
+      setUnread(prev => {
+        const next = Math.max(0, prev - 1);
+        useNotificationStore.getState().setUnread(next);
+        return next;
+      });
     } catch {}
   }
 

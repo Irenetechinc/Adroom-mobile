@@ -9,10 +9,50 @@ import {
   isRegistrationPending,
 } from './src/services/notificationService';
 import { supabase } from './src/services/supabase';
+import { useProfileStore } from './src/store/profileStore';
+import { useNotificationStore } from './src/store/notificationStore';
 
 export default function App() {
   const notifCleanupRef = useRef<(() => void) | null>(null);
   const inFlightRef = useRef<Promise<unknown> | null>(null);
+
+  // Hydrate the shared profile + unread-notifications stores the moment we
+  // have a session, and keep them in sync with auth events. This is what
+  // makes the username and the notification badge update everywhere in
+  // realtime without a sign-out / reload.
+  useEffect(() => {
+    const hydrateForUser = async (userId?: string | null, email?: string | null) => {
+      if (!userId) {
+        useProfileStore.getState().reset();
+        useNotificationStore.getState().detach();
+        return;
+      }
+      await Promise.all([
+        useProfileStore.getState().load(userId, email),
+        useNotificationStore.getState().attach(userId),
+      ]);
+    };
+
+    supabase.auth.getSession().then(({ data }) => {
+      hydrateForUser(data.session?.user?.id, data.session?.user?.email);
+    });
+
+    const { data: sub } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === 'SIGNED_OUT') {
+        useProfileStore.getState().reset();
+        useNotificationStore.getState().detach();
+        return;
+      }
+      // USER_UPDATED fires after the client picks up new user_metadata
+      // (e.g. display name change); we re-hydrate the profile so the UI
+      // reflects it without a sign-out.
+      if (session?.user?.id) {
+        hydrateForUser(session.user.id, session.user.email);
+      }
+    });
+
+    return () => { sub?.subscription?.unsubscribe(); };
+  }, []);
 
   useEffect(() => {
     if (Platform.OS === 'web') return;

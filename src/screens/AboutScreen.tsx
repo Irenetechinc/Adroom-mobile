@@ -22,7 +22,7 @@ const CAPABILITIES = [
     icon: TrendingUp,
     color: '#00F0FF',
     title: 'Explosive Sales Growth',
-    body: 'AdRoom AI applies dedicated sales intelligence that identifies buying signals, crafts persuasive content, and drives conversions across every platform — continuously, without you lifting a finger.',
+    body: 'AdRoom AI applies dedicated sales intelligent engine that finds and identifies buying signals, crafts persuasive content, and drives conversions across every platform — continuously, without you lifting a finger.',
   },
   {
     icon: Globe,
@@ -46,7 +46,7 @@ const CAPABILITIES = [
     icon: Users,
     color: '#EF4444',
     title: 'Promotions That Actually Convert',
-    body: 'Forget generic discount posts. AdRoom AI\'s promotional intelligence crafts time-sensitive, high-urgency campaigns tailored to your product and audience, proven to drive immediate action and revenue.',
+    body: 'Forget generic discount posts. AdRoom AI\'s promotional intelligent engine crafts time-sensitive, high-urgency campaigns tailored to your product and audience, proven to drive immediate action and revenue.',
   },
   {
     icon: Star,
@@ -95,9 +95,9 @@ export default function AboutScreen() {
               resizeMode="contain"
             />
           </View>
-          <Text style={styles.heroTitle}>Autonomus Intelligent Marketing{'\n'}Engine. </Text>
+          <Text style={styles.heroTitle}>Autonomus Intelligent Marketing Engine. </Text>
           <Text style={styles.heroSub}>
-            AdRoom AI is not a tool. It's a full-stack intelligent marketing framework that works
+            AdRoom AI is not a tool. It's a full-stack intelligent marketing engine that works
             around the clock — without a single human in the loop.
           </Text>
           <View style={styles.heroBadge}>
