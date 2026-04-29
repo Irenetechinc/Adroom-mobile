@@ -93,6 +93,106 @@ app.get('/', (_req, res) => {
   res.send('AdRoom Backend is running.');
 });
 
+/**
+ * GET /api/app/version — public version + changelog feed used by the mobile
+ * app on launch. Drives the "What's New" modal and the force-update gate.
+ *
+ * Query params:
+ *   platform — 'android' | 'ios' (defaults to 'android')
+ *   current  — installed app version, e.g. '2.2.7'
+ *
+ * No auth: must work before sign-in and on the very first launch.
+ */
+function semverCompareInt(a: string, b: string): number {
+  const parse = (v: string) => {
+    const core = (v || '0.0.0').split('-')[0].split('+')[0];
+    const p = core.split('.').map((n) => parseInt(n, 10));
+    return [p[0] || 0, p[1] || 0, p[2] || 0];
+  };
+  const [a1, a2, a3] = parse(a);
+  const [b1, b2, b3] = parse(b);
+  if (a1 !== b1) return a1 - b1;
+  if (a2 !== b2) return a2 - b2;
+  return a3 - b3;
+}
+
+app.get('/api/app/version', async (req, res) => {
+  try {
+    const platformRaw = String(req.query.platform || 'android').toLowerCase();
+    const platform = platformRaw === 'ios' ? 'ios' : 'android';
+    const current = String(req.query.current || '0.0.0');
+
+    const svc = getServiceSupabaseClient();
+    const { data: rows, error } = await svc
+      .from('app_releases')
+      .select('platform, version, is_min_supported, force_update, store_url, changelog_md, released_at')
+      .in('platform', ['all', platform])
+      .eq('is_published', true)
+      .order('released_at', { ascending: false })
+      .limit(50);
+
+    if (error) {
+      console.error('[AppVersion] Supabase error:', error.message);
+      // Fail open: never brick the app on a query error.
+      return res.json({
+        currentVersion: current,
+        latestVersion: null,
+        minSupportedVersion: null,
+        storeUrl: null,
+        updateAvailable: false,
+        forceUpdate: false,
+        changelog: [],
+      });
+    }
+
+    const releases = (rows ?? []).slice().sort((a, b) =>
+      semverCompareInt(b.version, a.version),
+    );
+    const latest = releases[0];
+    const minSupported = releases
+      .filter((r) => r.is_min_supported)
+      .sort((a, b) => semverCompareInt(b.version, a.version))[0];
+
+    const updateAvailable = latest
+      ? semverCompareInt(current, latest.version) < 0
+      : false;
+    const belowMin = minSupported
+      ? semverCompareInt(current, minSupported.version) < 0
+      : false;
+    // A release row can also force the update directly (e.g. a hotfix).
+    const exactRowForcesUpdate = releases.some(
+      (r) => r.force_update && semverCompareInt(r.version, current) > 0,
+    );
+    const forceUpdate = belowMin || exactRowForcesUpdate;
+
+    res.json({
+      currentVersion: current,
+      latestVersion: latest?.version ?? null,
+      minSupportedVersion: minSupported?.version ?? null,
+      storeUrl: latest?.store_url ?? null,
+      updateAvailable,
+      forceUpdate,
+      changelog: releases.map((r) => ({
+        version: r.version,
+        releasedAt: r.released_at,
+        notes: r.changelog_md ?? '',
+      })),
+    });
+  } catch (err: any) {
+    console.error('[AppVersion] Error:', err.message);
+    // Fail open.
+    res.json({
+      currentVersion: String(req.query.current || '0.0.0'),
+      latestVersion: null,
+      minSupportedVersion: null,
+      storeUrl: null,
+      updateAvailable: false,
+      forceUpdate: false,
+      changelog: [],
+    });
+  }
+});
+
 app.get('/auth/facebook/callback', (req, res) => {
   const code = typeof req.query.code === 'string' ? req.query.code : undefined;
   const state = typeof req.query.state === 'string' ? req.query.state : undefined;

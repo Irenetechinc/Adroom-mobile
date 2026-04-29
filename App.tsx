@@ -1,5 +1,5 @@
 import './global.css';
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Platform, AppState, AppStateStatus } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import AppNavigator from './src/navigation/AppNavigator';
@@ -11,6 +11,18 @@ import {
 import { supabase } from './src/services/supabase';
 import { useProfileStore } from './src/store/profileStore';
 import { useNotificationStore } from './src/store/notificationStore';
+import {
+  fetchAppVersionInfo,
+  getCurrentAppVersion,
+  getUnseenChangelog,
+  setLastSeenChangelogVersion,
+  shouldForceUpdate,
+  shouldOfferOptionalUpdate,
+  type AppVersionInfo,
+  type ChangelogEntry,
+} from './src/services/appVersionService';
+import WhatsNewModal from './src/components/WhatsNewModal';
+import ForceUpdateModal from './src/components/ForceUpdateModal';
 
 export default function App() {
   const notifCleanupRef = useRef<(() => void) | null>(null);
@@ -111,9 +123,113 @@ export default function App() {
     };
   }, []);
 
+  // ── App-version + changelog gating ─────────────────────────────────────
+  // On every cold launch (and again when the app comes back to the
+  // foreground after a long pause) we ask the backend for the latest
+  // version + changelog. The backend may tell us:
+  //   - forceUpdate ⇒ render a blocking modal that only links to the store
+  //   - updateAvailable (soft) ⇒ render a dismissable "Update?" prompt
+  //   - changelog newer than the last version this device acknowledged
+  //     ⇒ render the "What's New" modal once.
+  const [versionInfo, setVersionInfo] = useState<AppVersionInfo | null>(null);
+  const [unseenChangelog, setUnseenChangelog] = useState<ChangelogEntry[]>([]);
+  const [whatsNewVisible, setWhatsNewVisible] = useState(false);
+  const [optionalUpdateVisible, setOptionalUpdateVisible] = useState(false);
+  // Once dismissed in this session, don't keep nagging on every foreground.
+  const optionalDismissedRef = useRef(false);
+  const lastVersionCheckRef = useRef<number>(0);
+
+  const runVersionCheck = React.useCallback(async () => {
+    const info = await fetchAppVersionInfo();
+    if (!info) return;
+    setVersionInfo(info);
+
+    // What's New takes priority over the optional update prompt — if the
+    // user just updated, show them what changed BEFORE asking them to
+    // update again.
+    const unseen = await getUnseenChangelog(info);
+    if (unseen.length > 0) {
+      setUnseenChangelog(unseen);
+      setWhatsNewVisible(true);
+      return;
+    }
+
+    if (
+      shouldOfferOptionalUpdate(info) &&
+      !optionalDismissedRef.current
+    ) {
+      setOptionalUpdateVisible(true);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (Platform.OS === 'web') return;
+    runVersionCheck();
+    lastVersionCheckRef.current = Date.now();
+
+    // Re-check on foreground, but throttle to once per 30 minutes so we
+    // never hammer the endpoint or pop the same modal repeatedly.
+    const sub = AppState.addEventListener('change', (state) => {
+      if (state !== 'active') return;
+      const since = Date.now() - lastVersionCheckRef.current;
+      if (since < 30 * 60 * 1000) return;
+      lastVersionCheckRef.current = Date.now();
+      runVersionCheck();
+    });
+    return () => sub.remove();
+  }, [runVersionCheck]);
+
+  const dismissWhatsNew = React.useCallback(async () => {
+    setWhatsNewVisible(false);
+    await setLastSeenChangelogVersion(getCurrentAppVersion());
+    // After acknowledging the changelog, surface the optional update
+    // prompt if one is still pending.
+    if (
+      versionInfo &&
+      shouldOfferOptionalUpdate(versionInfo) &&
+      !optionalDismissedRef.current
+    ) {
+      setOptionalUpdateVisible(true);
+    }
+  }, [versionInfo]);
+
+  const dismissOptional = React.useCallback(() => {
+    optionalDismissedRef.current = true;
+    setOptionalUpdateVisible(false);
+  }, []);
+
+  const forceUpdateActive = !!versionInfo && shouldForceUpdate(versionInfo);
+
   return (
     <SafeAreaProvider>
       <AppNavigator />
+
+      {/* What's New — first launch on a new version */}
+      <WhatsNewModal
+        visible={whatsNewVisible && !forceUpdateActive}
+        entries={unseenChangelog}
+        currentVersion={getCurrentAppVersion()}
+        onDismiss={dismissWhatsNew}
+      />
+
+      {/* Optional update — soft prompt */}
+      <ForceUpdateModal
+        visible={optionalUpdateVisible && !forceUpdateActive && !whatsNewVisible}
+        mode="optional"
+        currentVersion={versionInfo?.currentVersion ?? getCurrentAppVersion()}
+        latestVersion={versionInfo?.latestVersion ?? null}
+        storeUrl={versionInfo?.storeUrl ?? null}
+        onLater={dismissOptional}
+      />
+
+      {/* Force update — non-dismissable, rendered last so it's on top */}
+      <ForceUpdateModal
+        visible={forceUpdateActive}
+        mode="required"
+        currentVersion={versionInfo?.currentVersion ?? getCurrentAppVersion()}
+        latestVersion={versionInfo?.latestVersion ?? null}
+        storeUrl={versionInfo?.storeUrl ?? null}
+      />
     </SafeAreaProvider>
   );
 }
