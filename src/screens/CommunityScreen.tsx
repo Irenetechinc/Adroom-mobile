@@ -50,9 +50,9 @@ const CHANNELS = [
 ];
 
 const SUPPORT_LINKS = [
-  { label: 'Help Center & Docs', url: 'https://docs.adroomai.com' },
-  { label: 'Report a Bug', url: 'https://adroomai.com/bugs' },
-  { label: 'Request a Feature', url: 'https://adroomai.com/features' },
+  { label: 'Help Center & Docs', url: 'https://adroomai.com/help.html' },
+  { label: 'Report a Bug', url: 'https://adroomai.com/report-bug.html' },
+  { label: 'Request a Feature', url: 'https://adroomai.com/request-feature.html' },
   { label: 'Contact Support', url: 'mailto:support@adroomai.com' },
 ];
 
