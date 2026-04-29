@@ -25,7 +25,6 @@
       "package": "com.adroom.mobile",
       "edgeToEdgeEnabled": true,
       "googleServicesFile": "./google-services.json",
-      "useNextNotificationsApi": true,
       "permissions": [
         "RECEIVE_BOOT_COMPLETED",
         "VIBRATE",
