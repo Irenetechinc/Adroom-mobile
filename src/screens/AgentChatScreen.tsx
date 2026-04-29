@@ -20,7 +20,7 @@ import { useAuthStore } from '../store/authStore';
 import { DrawerActions, useFocusEffect } from '@react-navigation/native';
 import {
   Menu, Edit2, Check, Upload, DollarSign, Eye, Tag, Rocket, MapPin,
-  RefreshCw, Users, Zap, Calendar, TrendingUp, Bot, RotateCcw, ArrowLeft,
+  RefreshCw, Users, Zap, Calendar, TrendingUp, Bot, MessageSquarePlus, ArrowLeft,
   ChevronDown, Package, History, Clock, Sparkles, Trash2,
 } from 'lucide-react-native';
 import { IntegrityService } from '../services/integrity';
@@ -860,14 +860,14 @@ const SessionRestorePromptCard = ({
     return `${days} day${days === 1 ? '' : 's'} ago`;
   };
   return (
-    <View style={[styles.card, { paddingVertical: 16 }]}>
-      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+    <View style={[styles.card, { paddingVertical: 16, paddingHorizontal: 16 }]}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', alignSelf: 'flex-start', gap: 8, marginBottom: 6 }}>
         <Clock size={14} color="#00F0FF" />
-        <Text style={{ color: '#00F0FF', fontSize: 11, fontWeight: '700', letterSpacing: 1, textTransform: 'uppercase' }}>
+        <Text style={{ color: '#00F0FF', fontSize: 11, fontWeight: '700', letterSpacing: 1, textTransform: 'uppercase', textAlign: 'left' }}>
           Last activity {formatRelative(lastMessageAt)}
         </Text>
       </View>
-      <Text style={[styles.cardSub, { marginBottom: 14 }]}>
+      <Text style={[styles.cardSub, { marginBottom: 14, textAlign: 'left' }]}>
         Pick up where you left off, or start a fresh session. You can restore your last {windowDays ?? 7} days at any time from the history icon in the header.
       </Text>
       <TouchableOpacity
@@ -1418,10 +1418,6 @@ export default function AgentChatScreen({ navigation, route }: Props) {
         </View>
         <View style={styles.headerRight}>
           <CreditTicker balance={parseFloat(String(energyAccount?.balance_credits ?? '0'))} onPress={() => (navigation as any).navigate('Subscription', { tab: 'topup' })} />
-          <View style={styles.liveIndicator}>
-            <View style={styles.liveDot} />
-            <Text style={styles.liveText}>Live</Text>
-          </View>
           <View>
             <TouchableOpacity
               onPress={openHistoryModal}
@@ -1444,7 +1440,7 @@ export default function AgentChatScreen({ navigation, route }: Props) {
             )}
           </View>
           <TouchableOpacity onPress={() => startNewSession({ keepServerHistory: true })} style={styles.resetBtn} accessibilityLabel="Start a new chat">
-            <RotateCcw size={16} color="#64748B" />
+            <MessageSquarePlus size={16} color="#64748B" />
           </TouchableOpacity>
         </View>
       </View>
@@ -1704,13 +1700,6 @@ const styles = StyleSheet.create({
   headerLabel: { color: '#64748B', fontSize: 10, fontWeight: '700', letterSpacing: 1.5, textTransform: 'uppercase' },
   headerTitle: { color: '#FFFFFF', fontSize: 20, fontWeight: '800', marginTop: 1 },
   headerRight: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  liveIndicator: {
-    flexDirection: 'row', alignItems: 'center',
-    backgroundColor: 'rgba(16,185,129,0.1)', borderWidth: 1, borderColor: 'rgba(16,185,129,0.25)',
-    borderRadius: 20, paddingHorizontal: 10, paddingVertical: 5, gap: 5,
-  },
-  liveDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: '#10B981' },
-  liveText: { color: '#10B981', fontSize: 11, fontWeight: '700' },
   resetBtn: {
     width: 36, height: 36, borderRadius: 10,
     backgroundColor: '#151B2B', borderWidth: 1, borderColor: '#1E293B',

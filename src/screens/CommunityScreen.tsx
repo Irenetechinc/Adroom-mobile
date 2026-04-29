@@ -16,7 +16,7 @@ const CHANNELS = [
     desc: 'Join live discussions, get strategy help, and share wins with other AdRoom users.',
     letter: 'T',
     bg: '#2AABEE',
-    action: 'https://t.me/adroomai',
+    action: 'https://t.me/+WnLXzsoxrSJmNTI8',
     cta: 'Join Telegram',
   },
   {

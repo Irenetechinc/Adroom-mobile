@@ -1,0 +1,397 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<meta name="description" content="AdRoom AI Help Center — Documentation, guides, and support for the world's first autonomous AI marketing workforce." />
+<meta name="theme-color" content="#0B0F19" />
+<title>AdRoom AI — Help Center & Docs</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" referrerpolicy="no-referrer" />
+<link rel="icon" type="image/png" href="assets/logo.png" />
+<link rel="apple-touch-icon" href="assets/logo.png" />
+<style>
+  :root{
+    --bg:#0B0F19; --bg-2:#0D1526; --card:#151B2B; --line:#1E293B;
+    --txt:#FFFFFF; --txt-2:#CBD5E1; --txt-3:#94A3B8; --txt-4:#64748B;
+    --cyan:#00F0FF; --cyan-soft:rgba(0,240,255,.08); --cyan-line:rgba(0,240,255,.18);
+    --amber:#F59E0B; --green:#10B981; --purple:#7C3AED; --red:#EF4444;
+    --maxw:1100px;
+  }
+  *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;min-width:0}
+  html{scroll-behavior:smooth;-webkit-text-size-adjust:100%;overflow-x:hidden;width:100%;max-width:100vw}
+  body{
+    font-family:'Inter',system-ui,-apple-system,sans-serif;
+    background:var(--bg);color:var(--txt);line-height:1.65;
+    overflow-x:hidden;-webkit-font-smoothing:antialiased;
+    width:100%;max-width:100vw;
+    word-wrap:break-word;overflow-wrap:break-word;
+  }
+  img,svg,video,iframe,table,canvas{max-width:100%;height:auto}
+  h1,h2,h3,h4{font-family:'Space Grotesk',sans-serif;line-height:1.2;font-weight:700}
+  a{color:inherit;text-decoration:none}
+
+  body::before{
+    content:'';position:fixed;inset:0;pointer-events:none;z-index:0;
+    background:
+      radial-gradient(ellipse 80% 50% at 20% 0%, rgba(0,240,255,.08), transparent 60%),
+      radial-gradient(ellipse 60% 40% at 80% 50%, rgba(124,58,237,.06), transparent 60%),
+      radial-gradient(ellipse 60% 40% at 30% 100%, rgba(245,158,11,.04), transparent 60%);
+  }
+
+  nav{
+    position:fixed;top:0;left:0;right:0;z-index:50;
+    backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);
+    background:rgba(11,15,25,.72);
+    border-bottom:1px solid rgba(0,240,255,.08);
+    padding:14px 24px;
+  }
+  .nav-inner{max-width:var(--maxw);margin:0 auto;display:flex;align-items:center;justify-content:space-between;gap:14px}
+  .logo{display:flex;align-items:center;gap:10px;font-weight:800;letter-spacing:.5px;font-size:18px}
+  .logo-img{width:36px;height:36px;border-radius:8px}
+  .nav-cta{
+    display:inline-flex;align-items:center;gap:8px;
+    background:var(--cyan-soft);border:1px solid var(--cyan-line);
+    color:var(--cyan);padding:8px 14px;border-radius:10px;
+    font-weight:600;font-size:13px;
+    transition:all .25s ease;
+  }
+  .nav-cta:hover{background:rgba(0,240,255,.14);transform:translateY(-1px)}
+
+  header.hero{
+    position:relative;z-index:1;padding:140px 24px 60px;text-align:center;
+    max-width:var(--maxw);margin:0 auto;
+  }
+  .badge{
+    display:inline-flex;align-items:center;gap:8px;
+    background:var(--cyan-soft);border:1px solid var(--cyan-line);
+    color:var(--cyan);padding:7px 14px;border-radius:99px;
+    font-weight:700;font-size:12px;letter-spacing:1px;text-transform:uppercase;
+    margin-bottom:18px;
+  }
+  header.hero h1{font-size:46px;letter-spacing:-1px;margin-bottom:14px}
+  header.hero h1 .accent{color:var(--cyan)}
+  header.hero p{color:var(--txt-3);font-size:16.5px;max-width:680px;margin:0 auto}
+
+  .search{
+    max-width:680px;margin:28px auto 0;position:relative;
+  }
+  .search input{
+    width:100%;background:var(--card);border:1px solid var(--line);
+    color:var(--txt);font-size:15px;padding:16px 16px 16px 48px;
+    border-radius:14px;outline:none;
+    transition:border-color .2s ease, background .2s ease;
+  }
+  .search input::placeholder{color:var(--txt-4)}
+  .search input:focus{border-color:var(--cyan-line);background:#0F1626}
+  .search i{position:absolute;left:18px;top:50%;transform:translateY(-50%);color:var(--txt-4)}
+
+  section{position:relative;z-index:1;padding:50px 24px;max-width:var(--maxw);margin:0 auto}
+  .section-eyebrow{color:var(--cyan);font-size:11px;font-weight:700;letter-spacing:2px;text-transform:uppercase;margin-bottom:10px}
+  .section-title{font-size:30px;letter-spacing:-.5px;margin-bottom:10px}
+  .section-sub{color:var(--txt-3);font-size:15px;max-width:640px;margin-bottom:32px}
+
+  .grid{display:grid;grid-template-columns:repeat(3,1fr);gap:18px}
+  .topic{
+    background:var(--card);border:1px solid var(--line);border-radius:18px;
+    padding:24px;transition:transform .25s ease, border-color .25s ease, background .25s ease;
+    cursor:pointer;
+  }
+  .topic:hover{transform:translateY(-4px);border-color:var(--cyan-line);background:#161E32}
+  .topic .ic{
+    width:44px;height:44px;border-radius:12px;display:flex;align-items:center;justify-content:center;
+    background:var(--cyan-soft);color:var(--cyan);margin-bottom:14px;font-size:18px;
+  }
+  .topic h3{font-size:17px;margin-bottom:6px}
+  .topic p{color:var(--txt-3);font-size:13.5px;line-height:1.55}
+  .topic .meta{margin-top:14px;color:var(--txt-4);font-size:12px;display:flex;align-items:center;gap:6px}
+
+  .faq-list{display:flex;flex-direction:column;gap:12px}
+  details.faq{
+    background:var(--card);border:1px solid var(--line);border-radius:14px;
+    padding:0;overflow:hidden;transition:border-color .2s ease;
+  }
+  details.faq[open]{border-color:var(--cyan-line)}
+  details.faq summary{
+    list-style:none;cursor:pointer;padding:18px 20px;
+    display:flex;align-items:center;justify-content:space-between;gap:12px;
+    font-weight:600;font-size:15px;color:var(--txt);
+  }
+  details.faq summary::-webkit-details-marker{display:none}
+  details.faq summary i{color:var(--cyan);transition:transform .25s ease}
+  details.faq[open] summary i{transform:rotate(180deg)}
+  details.faq .ans{padding:0 20px 18px;color:var(--txt-3);font-size:14px;line-height:1.7}
+
+  .docs-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:18px}
+  .doc{
+    background:linear-gradient(180deg, #0F1626 0%, #0C1320 100%);
+    border:1px solid var(--line);border-radius:18px;
+    padding:26px;display:flex;gap:18px;align-items:flex-start;
+    transition:transform .25s ease, border-color .25s ease;
+  }
+  .doc:hover{transform:translateY(-3px);border-color:var(--cyan-line)}
+  .doc .ic{
+    width:48px;height:48px;border-radius:12px;flex:none;
+    display:flex;align-items:center;justify-content:center;
+    color:var(--cyan);background:var(--cyan-soft);font-size:20px;
+  }
+  .doc h4{font-size:16px;margin-bottom:5px}
+  .doc p{color:var(--txt-3);font-size:13.5px;margin-bottom:10px}
+  .doc .arrow{color:var(--cyan);font-size:13px;font-weight:600}
+
+  .contact-card{
+    background:linear-gradient(135deg, rgba(0,240,255,.08), rgba(124,58,237,.05));
+    border:1px solid var(--cyan-line);border-radius:22px;
+    padding:36px;text-align:center;margin:24px 0;
+  }
+  .contact-card h3{font-size:24px;margin-bottom:8px}
+  .contact-card p{color:var(--txt-3);margin-bottom:22px;font-size:15px}
+  .contact-actions{display:flex;gap:12px;justify-content:center;flex-wrap:wrap}
+  .btn{
+    display:inline-flex;align-items:center;gap:8px;
+    padding:13px 22px;border-radius:12px;font-weight:700;font-size:14px;
+    transition:all .25s ease;border:1px solid transparent;
+  }
+  .btn-primary{background:var(--cyan);color:#0B0F19}
+  .btn-primary:hover{transform:translateY(-2px);box-shadow:0 10px 30px rgba(0,240,255,.25)}
+  .btn-ghost{border-color:var(--cyan-line);color:var(--cyan);background:var(--cyan-soft)}
+  .btn-ghost:hover{background:rgba(0,240,255,.14)}
+
+  footer{
+    border-top:1px solid var(--line);padding:36px 24px;text-align:center;
+    color:var(--txt-4);font-size:13px;position:relative;z-index:1;
+  }
+  footer .ftr-links{display:flex;gap:22px;justify-content:center;margin-bottom:12px;flex-wrap:wrap}
+  footer .ftr-links a:hover{color:var(--cyan)}
+
+  /* Recurring scroll animations — re-trigger on every entry */
+  .anim{opacity:0;transform:translateY(36px);transition:opacity .8s ease, transform .8s ease}
+  .anim.in{opacity:1;transform:translateY(0)}
+  .anim-l{opacity:0;transform:translateX(-36px);transition:opacity .8s ease, transform .8s ease}
+  .anim-l.in{opacity:1;transform:translateX(0)}
+  .anim-r{opacity:0;transform:translateX(36px);transition:opacity .8s ease, transform .8s ease}
+  .anim-r.in{opacity:1;transform:translateX(0)}
+  .anim-scale{opacity:0;transform:scale(.93);transition:opacity .8s ease, transform .8s ease}
+  .anim-scale.in{opacity:1;transform:scale(1)}
+  .delay-1{transition-delay:.08s}
+  .delay-2{transition-delay:.16s}
+  .delay-3{transition-delay:.24s}
+  .delay-4{transition-delay:.32s}
+  .delay-5{transition-delay:.4s}
+
+  @media (max-width:900px){
+    .grid{grid-template-columns:repeat(2,1fr)}
+    .docs-grid{grid-template-columns:1fr}
+  }
+  @media (max-width:600px){
+    nav{padding:12px 16px}
+    .logo{font-size:16px}
+    .logo-img{width:32px;height:32px}
+    .nav-cta{padding:7px 12px;font-size:12px}
+    header.hero{padding:120px 16px 40px}
+    header.hero h1{font-size:32px;letter-spacing:-.5px}
+    header.hero p{font-size:14.5px}
+    section{padding:40px 16px}
+    .section-title{font-size:24px}
+    .grid{grid-template-columns:1fr}
+    .topic{padding:20px}
+    .contact-card{padding:26px 18px}
+  }
+</style>
+</head>
+<body>
+
+<nav>
+  <div class="nav-inner">
+    <a href="index.html" class="logo">
+      <img src="assets/logo.png" alt="AdRoom AI" class="logo-img" /> AdRoom AI
+    </a>
+    <a href="index.html" class="nav-cta"><i class="fa-solid fa-arrow-left"></i> Back to Home</a>
+  </div>
+</nav>
+
+<header class="hero">
+  <span class="badge anim"><i class="fa-solid fa-circle-question"></i> Help Center</span>
+  <h1 class="anim delay-1">How can we <span class="accent">help</span> you today?</h1>
+  <p class="anim delay-2">Guides, documentation, and answers for getting the most out of your autonomous AI marketing workforce.</p>
+  <div class="search anim delay-3">
+    <i class="fa-solid fa-magnifying-glass"></i>
+    <input id="searchInput" type="text" placeholder="Search docs, guides, and topics…" />
+  </div>
+</header>
+
+<section>
+  <div class="anim">
+    <div class="section-eyebrow">Browse Topics</div>
+    <h2 class="section-title">Find what you're looking for</h2>
+    <p class="section-sub">Pick a category to dive into step-by-step guides and answers from our knowledge base.</p>
+  </div>
+
+  <div class="grid" id="topicsGrid">
+    <div class="topic anim-scale delay-1" data-topic="Getting Started">
+      <div class="ic"><i class="fa-solid fa-rocket"></i></div>
+      <h3>Getting Started</h3>
+      <p>Set up your account, connect your first ad platform, and run your inaugural campaign in under 10 minutes.</p>
+      <div class="meta"><i class="fa-regular fa-file-lines"></i> 8 articles</div>
+    </div>
+    <div class="topic anim-scale delay-2" data-topic="Connecting Accounts">
+      <div class="ic"><i class="fa-solid fa-link"></i></div>
+      <h3>Connecting Accounts</h3>
+      <p>Link Facebook, Instagram, TikTok, Google Ads, and other platforms with secure OAuth integrations.</p>
+      <div class="meta"><i class="fa-regular fa-file-lines"></i> 6 articles</div>
+    </div>
+    <div class="topic anim-scale delay-3" data-topic="Strategy & Campaigns">
+      <div class="ic"><i class="fa-solid fa-bullseye"></i></div>
+      <h3>Strategy & Campaigns</h3>
+      <p>Understand how the AI builds, optimizes, and reports on your campaigns 24/7 — and how to steer it.</p>
+      <div class="meta"><i class="fa-regular fa-file-lines"></i> 12 articles</div>
+    </div>
+    <div class="topic anim-scale delay-1" data-topic="Energy & Billing">
+      <div class="ic"><i class="fa-solid fa-bolt"></i></div>
+      <h3>Energy & Billing</h3>
+      <p>Plans, energy credits, top-ups, invoices, and how subscription auto-renews work.</p>
+      <div class="meta"><i class="fa-regular fa-file-lines"></i> 9 articles</div>
+    </div>
+    <div class="topic anim-scale delay-2" data-topic="Privacy & Security">
+      <div class="ic"><i class="fa-solid fa-shield-halved"></i></div>
+      <h3>Privacy & Security</h3>
+      <p>Data residency, encryption, account deletion, two-factor authentication, and our security posture.</p>
+      <div class="meta"><i class="fa-regular fa-file-lines"></i> 7 articles</div>
+    </div>
+    <div class="topic anim-scale delay-3" data-topic="Troubleshooting">
+      <div class="ic"><i class="fa-solid fa-screwdriver-wrench"></i></div>
+      <h3>Troubleshooting</h3>
+      <p>Fix sign-in issues, reconnect dropped platforms, and resolve the most common error states.</p>
+      <div class="meta"><i class="fa-regular fa-file-lines"></i> 10 articles</div>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="anim">
+    <div class="section-eyebrow">Frequently Asked</div>
+    <h2 class="section-title">Quick answers</h2>
+    <p class="section-sub">The questions our customers ask most often, answered in plain language.</p>
+  </div>
+  <div class="faq-list">
+    <details class="faq anim-l delay-1">
+      <summary>What exactly does AdRoom AI do for me?<i class="fa-solid fa-chevron-down"></i></summary>
+      <div class="ans">AdRoom AI is an autonomous marketing workforce. After you connect your ad accounts, the AI plans, launches, monitors, and optimizes campaigns 24/7 across Meta, TikTok, Google, and other platforms — without you having to touch the dashboard. You set the goal; the AI does the work.</div>
+    </details>
+    <details class="faq anim-l delay-2">
+      <summary>Do I need ad spend to use AdRoom AI?<i class="fa-solid fa-chevron-down"></i></summary>
+      <div class="ans">Yes — paid platforms still require their own ad budget that you control through your platform billing. Energy credits cover the AI's work (planning, optimization, creative generation, monitoring). Your media spend is paid directly to Meta, Google, etc., not to us.</div>
+    </details>
+    <details class="faq anim-l delay-3">
+      <summary>What are energy credits?<i class="fa-solid fa-chevron-down"></i></summary>
+      <div class="ans">Energy credits are the unit of work for the AI. Each plan includes a monthly allowance, and you can top up at any time. Heavy operations (creative generation, deep research, long strategy runs) cost more credits than lightweight monitoring.</div>
+    </details>
+    <details class="faq anim-l delay-4">
+      <summary>Can I cancel anytime?<i class="fa-solid fa-chevron-down"></i></summary>
+      <div class="ans">Yes. There are no long-term contracts. You can cancel from Settings → Energy → Subscription. Your access continues through the end of the current billing cycle, and your data stays with you.</div>
+    </details>
+    <details class="faq anim-l delay-5">
+      <summary>How do you protect my data?<i class="fa-solid fa-chevron-down"></i></summary>
+      <div class="ans">All data is encrypted in transit (TLS 1.3) and at rest. Authentication tokens are stored in hardware-backed secure storage on your device. We never sell or share your campaign data, and you can request a full export or deletion at any time from Privacy & Security.</div>
+    </details>
+  </div>
+</section>
+
+<section>
+  <div class="anim">
+    <div class="section-eyebrow">Documentation</div>
+    <h2 class="section-title">Deep dives & references</h2>
+    <p class="section-sub">For builders, operators, and the simply curious.</p>
+  </div>
+  <div class="docs-grid">
+    <a href="#" class="doc anim-l delay-1">
+      <div class="ic"><i class="fa-solid fa-book"></i></div>
+      <div>
+        <h4>Platform Guide</h4>
+        <p>The complete walkthrough of every screen, setting, and capability in the app.</p>
+        <span class="arrow">Read the guide <i class="fa-solid fa-arrow-right"></i></span>
+      </div>
+    </a>
+    <a href="#" class="doc anim-r delay-1">
+      <div class="ic"><i class="fa-solid fa-code"></i></div>
+      <div>
+        <h4>Integrations Reference</h4>
+        <p>Connect Meta, TikTok, Google Ads, Shopify, and more — with troubleshooting for each.</p>
+        <span class="arrow">View integrations <i class="fa-solid fa-arrow-right"></i></span>
+      </div>
+    </a>
+    <a href="#" class="doc anim-l delay-2">
+      <div class="ic"><i class="fa-solid fa-graduation-cap"></i></div>
+      <div>
+        <h4>Strategy Playbooks</h4>
+        <p>Proven AI strategies for e-commerce, lead generation, app installs, and brand awareness.</p>
+        <span class="arrow">Browse playbooks <i class="fa-solid fa-arrow-right"></i></span>
+      </div>
+    </a>
+    <a href="#" class="doc anim-r delay-2">
+      <div class="ic"><i class="fa-solid fa-shield-halved"></i></div>
+      <div>
+        <h4>Trust & Security</h4>
+        <p>Our security posture, compliance roadmap, and data handling practices, in detail.</p>
+        <span class="arrow">Learn more <i class="fa-solid fa-arrow-right"></i></span>
+      </div>
+    </a>
+  </div>
+</section>
+
+<section>
+  <div class="contact-card anim-scale">
+    <h3>Still need a hand?</h3>
+    <p>Our support team typically replies within a few hours. Bug reports and feature ideas have their own homes too.</p>
+    <div class="contact-actions">
+      <a href="mailto:support@adroomai.com" class="btn btn-primary"><i class="fa-solid fa-envelope"></i> Email Support</a>
+      <a href="report-bug.html" class="btn btn-ghost"><i class="fa-solid fa-bug"></i> Report a Bug</a>
+      <a href="request-feature.html" class="btn btn-ghost"><i class="fa-solid fa-lightbulb"></i> Request a Feature</a>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="ftr-links">
+    <a href="index.html">Home</a>
+    <a href="help.html">Help Center</a>
+    <a href="report-bug.html">Report a Bug</a>
+    <a href="request-feature.html">Request a Feature</a>
+    <a href="mailto:support@adroomai.com">support@adroomai.com</a>
+  </div>
+  © <span id="year"></span> AdRoom AI — All rights reserved.
+</footer>
+
+<script>
+  document.getElementById('year').textContent = new Date().getFullYear();
+
+  // Recurring scroll animations: re-trigger every time element enters the viewport.
+  const animEls = document.querySelectorAll('.anim, .anim-l, .anim-r, .anim-scale');
+  const observer = new IntersectionObserver((entries) => {
+    entries.forEach(entry => {
+      if (entry.isIntersecting) entry.target.classList.add('in');
+      else entry.target.classList.remove('in');
+    });
+  }, { threshold: 0.12, rootMargin: '0px 0px -40px 0px' });
+  animEls.forEach(el => observer.observe(el));
+
+  // Lightweight client-side topic filter.
+  const search = document.getElementById('searchInput');
+  const topics = document.querySelectorAll('#topicsGrid .topic');
+  const faqs = document.querySelectorAll('details.faq');
+  search.addEventListener('input', () => {
+    const q = search.value.trim().toLowerCase();
+    topics.forEach(t => {
+      const text = (t.textContent || '').toLowerCase();
+      t.style.display = !q || text.includes(q) ? '' : 'none';
+    });
+    faqs.forEach(f => {
+      const text = (f.textContent || '').toLowerCase();
+      f.style.display = !q || text.includes(q) ? '' : 'none';
+    });
+  });
+</script>
+</body>
+</html>

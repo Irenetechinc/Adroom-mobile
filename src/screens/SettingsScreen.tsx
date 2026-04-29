@@ -1,7 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, TouchableOpacity, Alert, StyleSheet, ScrollView } from 'react-native';
 import { useAuthStore } from '../store/authStore';
-import { supabase } from '../services/supabase';
+import { useProfileStore } from '../store/profileStore';
+import { useNotificationStore } from '../store/notificationStore';
+// supabase no longer needed here — unread count is supplied by the shared
+// notification store, which is wired in App.tsx.
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../types';
@@ -55,50 +58,25 @@ export default function SettingsScreen() {
   const insets = useSafeAreaInsets();
   const { account, subscription, fetchEnergy, isLoading: energyLoading } = useEnergyStore();
   const [ready, setReady] = useState(false);
-  const [unreadCount, setUnreadCount] = useState(0);
+
+  // Single source of truth for unread notifications — App.tsx attaches the
+  // realtime subscription as soon as we have a session, so this badge stays
+  // current the moment a push lands or the Notifications screen marks one
+  // as read.
+  const unreadCount = useNotificationStore((s) => s.unreadCount);
+  const refreshUnread = useNotificationStore((s) => s.refresh);
+  const profileName = useProfileStore((s) => s.displayName);
+  const profileInitial = useProfileStore((s) => s.initial);
 
   useEffect(() => {
     fetchEnergy().finally(() => setReady(true));
   }, []);
 
-  // Track unread notifications in realtime so the Settings → Notifications row
-  // shows an accurate badge that updates the moment a new push arrives or the
-  // user marks something as read elsewhere in the app.
+  // Belt-and-braces refresh whenever the Settings screen mounts so the
+  // counter is correct even if the realtime channel is reconnecting.
   useEffect(() => {
-    if (!user?.id) {
-      setUnreadCount(0);
-      return;
-    }
-
-    let cancelled = false;
-
-    const refreshUnread = async () => {
-      try {
-        const { count, error } = await supabase
-          .from('user_notifications')
-          .select('id', { count: 'exact', head: true })
-          .eq('user_id', user.id)
-          .eq('is_read', false);
-        if (!cancelled && !error) setUnreadCount(count ?? 0);
-      } catch { /* ignore */ }
-    };
-
-    refreshUnread();
-
-    const channel = supabase
-      .channel(`user_notifications_unread_${user.id}`)
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'user_notifications', filter: `user_id=eq.${user.id}` },
-        () => { refreshUnread(); },
-      )
-      .subscribe();
-
-    return () => {
-      cancelled = true;
-      supabase.removeChannel(channel);
-    };
-  }, [user?.id]);
+    if (user?.id) refreshUnread(user.id);
+  }, [user?.id, refreshUnread]);
 
   const balance = parseFloat(String(account?.balance_credits ?? '0'));
   const plan = subscription?.plan ?? 'none';
@@ -125,7 +103,9 @@ export default function SettingsScreen() {
     ]);
   };
 
-  const userInitial = user?.email ? user.email.charAt(0).toUpperCase() : 'U';
+  const userInitial = profileInitial && profileInitial !== 'U'
+    ? profileInitial
+    : (user?.email ? user.email.charAt(0).toUpperCase() : 'U');
 
   const settingsGroups = [
     {
@@ -217,11 +197,7 @@ export default function SettingsScreen() {
           </View>
           <View style={{ flex: 1 }}>
             <Text style={styles.profileName}>
-              {(user as any)?.user_metadata?.display_name
-                || (user as any)?.user_metadata?.full_name
-                || (user as any)?.user_metadata?.name
-                || user?.email?.split('@')[0]
-                || 'User'}
+              {profileName || user?.email?.split('@')[0] || 'User'}
             </Text>
             <Text style={styles.profileEmail} numberOfLines={1}>{user?.email}</Text>
           </View>

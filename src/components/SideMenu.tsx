@@ -1,9 +1,9 @@
-import React, { useEffect, useState } from 'react';
+import React from 'react';
 import { View, Text, TouchableOpacity } from 'react-native';
 import { DrawerContentComponentProps } from '@react-navigation/drawer';
 import { useNavigation } from '@react-navigation/native';
 import { useAuthStore } from '../store/authStore';
-import { supabase } from '../services/supabase';
+import { useProfileStore } from '../store/profileStore';
 import {
   Bot, LayoutDashboard, Settings, LogOut, X, History,
   ChevronRight, Users, MessageSquare, Zap,
@@ -23,44 +23,14 @@ const menuItems = [
 export default function SideMenu(props: DrawerContentComponentProps) {
   const { signOut, user } = useAuthStore();
   const navigation = useNavigation<any>();
-  const [profileName, setProfileName] = useState<string>('');
-
-  useEffect(() => {
-    let active = true;
-    if (!user?.id) { setProfileName(''); return; }
-
-    // Prefer auth user_metadata.full_name (set during signup)
-    const metaName: string | undefined =
-      (user as any)?.user_metadata?.full_name ||
-      (user as any)?.user_metadata?.name ||
-      (user as any)?.user_metadata?.username;
-
-    if (metaName && typeof metaName === 'string' && metaName.trim()) {
-      setProfileName(metaName.trim());
-    }
-
-    // Then enrich from public.profiles if a row exists with a username
-    (async () => {
-      try {
-        const { data } = await supabase
-          .from('profiles')
-          .select('username, full_name')
-          .eq('id', user.id)
-          .maybeSingle();
-        if (!active) return;
-        const name = (data?.full_name || data?.username || '').toString().trim();
-        if (name) setProfileName(name);
-      } catch {
-        /* profiles table may not exist — silent fallback */
-      }
-    })();
-
-    return () => { active = false; };
-  }, [user?.id]);
+  const profileName = useProfileStore((s) => s.displayName);
+  const profileInitial = useProfileStore((s) => s.initial);
 
   const userEmail = user?.email || '';
   const displayName = profileName || (userEmail ? userEmail.split('@')[0] : 'User');
-  const userInitial = (profileName || userEmail || 'U').charAt(0).toUpperCase();
+  const userInitial = profileInitial && profileInitial !== 'U'
+    ? profileInitial
+    : (userEmail || 'U').charAt(0).toUpperCase();
 
   return (
     <View style={{ flex: 1, backgroundColor: '#050B14' }}>

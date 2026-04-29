@@ -8,6 +8,7 @@ import { useNavigation } from '@react-navigation/native';
 import { ArrowLeft, Shield, User, Lock, Trash2, ChevronRight, CheckCircle } from 'lucide-react-native';
 import Animated, { FadeInDown } from 'react-native-reanimated';
 import { supabase } from '../services/supabase';
+import { useProfileStore } from '../store/profileStore';
 import Constants from 'expo-constants';
 
 const BACKEND_URL = process.env.EXPO_PUBLIC_API_URL || Constants.expoConfig?.extra?.apiUrl || '';
@@ -58,6 +59,19 @@ export default function PrivacySecurityScreen() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed to update');
+
+      // 1) Optimistically push the new name into the shared profile store so
+      //    the side menu, settings header, and chat avatar all flip
+      //    immediately — no sign-out, no reload.
+      useProfileStore.getState().setDisplayName(displayName.trim());
+
+      // 2) Force the local Supabase client to pull fresh user_metadata from
+      //    the server. This emits USER_UPDATED, which App.tsx listens for
+      //    and uses to re-hydrate the profile store from the source of truth.
+      try {
+        await supabase.auth.refreshSession();
+      } catch { /* non-fatal — store already has the new name */ }
+
       Alert.alert('Success', 'Your display name has been updated.');
       setActiveSection(null);
     } catch (err: any) {
