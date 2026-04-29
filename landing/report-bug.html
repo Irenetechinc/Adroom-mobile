@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
 <meta name="description" content="Report a bug in AdRoom AI — help us hunt it down fast." />
 <meta name="theme-color" content="#0B0F19" />
 <title>AdRoom AI — Report a Bug</title>
@@ -19,6 +19,8 @@
     --cyan:#00F0FF; --cyan-soft:rgba(0,240,255,.08); --cyan-line:rgba(0,240,255,.18);
     --amber:#F59E0B; --green:#10B981; --purple:#7C3AED; --red:#EF4444;
     --maxw:980px;
+    --safe-l:env(safe-area-inset-left,0);
+    --safe-r:env(safe-area-inset-right,0);
   }
   *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;min-width:0}
   html{scroll-behavior:smooth;-webkit-text-size-adjust:100%;overflow-x:hidden;width:100%;max-width:100vw}
@@ -30,8 +32,9 @@
     word-wrap:break-word;overflow-wrap:break-word;
   }
   img,svg{max-width:100%;height:auto}
-  h1,h2,h3,h4{font-family:'Space Grotesk',sans-serif;line-height:1.2;font-weight:700}
+  h1,h2,h3,h4{font-family:'Space Grotesk',sans-serif;line-height:1.2;font-weight:700;word-break:break-word}
   a{color:inherit;text-decoration:none}
+  button{font-family:inherit}
 
   body::before{
     content:'';position:fixed;inset:0;pointer-events:none;z-index:0;
@@ -44,19 +47,19 @@
   nav{
     position:fixed;top:0;left:0;right:0;z-index:50;
     backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);
-    background:rgba(11,15,25,.72);
+    background:rgba(11,15,25,.78);
     border-bottom:1px solid rgba(0,240,255,.08);
-    padding:14px 24px;
+    padding:14px max(24px,var(--safe-l)) 14px max(24px,var(--safe-r));
   }
   .nav-inner{max-width:var(--maxw);margin:0 auto;display:flex;align-items:center;justify-content:space-between;gap:14px}
   .logo{display:flex;align-items:center;gap:10px;font-weight:800;font-size:18px;letter-spacing:.5px}
-  .logo-img{width:36px;height:36px;border-radius:8px}
+  .logo-img{width:36px;height:36px;border-radius:8px;flex:none}
   .nav-cta{
     display:inline-flex;align-items:center;gap:8px;
     background:var(--cyan-soft);border:1px solid var(--cyan-line);
-    color:var(--cyan);padding:8px 14px;border-radius:10px;
-    font-weight:600;font-size:13px;
-    transition:all .25s ease;
+    color:var(--cyan);padding:9px 14px;border-radius:10px;
+    font-weight:600;font-size:13px;white-space:nowrap;
+    transition:all .25s ease;min-height:40px;
   }
   .nav-cta:hover{background:rgba(0,240,255,.14);transform:translateY(-1px)}
 
@@ -71,9 +74,9 @@
     font-weight:700;font-size:12px;letter-spacing:1px;text-transform:uppercase;
     margin-bottom:18px;
   }
-  header.hero h1{font-size:46px;letter-spacing:-1px;margin-bottom:14px}
+  header.hero h1{font-size:clamp(28px,5vw,46px);letter-spacing:-1px;margin-bottom:14px}
   header.hero h1 .accent{color:#FCA5A5}
-  header.hero p{color:var(--txt-3);font-size:16.5px;max-width:680px;margin:0 auto}
+  header.hero p{color:var(--txt-3);font-size:clamp(14px,1.6vw,16.5px);max-width:680px;margin:0 auto}
 
   section{position:relative;z-index:1;padding:30px 24px;max-width:var(--maxw);margin:0 auto}
 
@@ -90,9 +93,14 @@
   .form-row .req{color:var(--red)}
   .form-row input,.form-row select,.form-row textarea{
     width:100%;background:#0B0F19;border:1px solid var(--line);
-    color:var(--txt);font-size:14.5px;padding:13px 14px;
+    color:var(--txt);font-size:15px;padding:14px;
     border-radius:12px;outline:none;font-family:inherit;
     transition:border-color .2s ease, background .2s ease;
+    -webkit-appearance:none;appearance:none;
+  }
+  .form-row select{
+    background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'><path fill='%2300F0FF' d='M6 8 0 0h12z'/></svg>");
+    background-repeat:no-repeat;background-position:right 16px center;padding-right:38px;
   }
   .form-row textarea{min-height:120px;resize:vertical;line-height:1.6}
   .form-row input:focus,.form-row select:focus,.form-row textarea:focus{
@@ -105,9 +113,10 @@
   .sev-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
   .sev{
     border:1px solid var(--line);background:#0B0F19;
-    color:var(--txt-3);padding:10px 6px;border-radius:10px;
+    color:var(--txt-3);padding:12px 6px;border-radius:10px;
     text-align:center;font-size:12.5px;font-weight:600;cursor:pointer;
-    transition:all .2s ease;
+    transition:all .2s ease;min-height:46px;
+    display:flex;align-items:center;justify-content:center;
   }
   .sev:hover{border-color:var(--cyan-line);color:var(--txt)}
   .sev.active.low{background:rgba(16,185,129,.1);border-color:rgba(16,185,129,.4);color:#34D399}
@@ -115,12 +124,12 @@
   .sev.active.high{background:rgba(249,115,22,.1);border-color:rgba(249,115,22,.4);color:#FB923C}
   .sev.active.crit{background:rgba(239,68,68,.1);border-color:rgba(239,68,68,.4);color:#F87171}
 
-  .submit-row{display:flex;justify-content:flex-end;gap:12px;margin-top:8px}
+  .submit-row{display:flex;justify-content:flex-end;gap:12px;margin-top:8px;flex-wrap:wrap}
   .btn{
-    display:inline-flex;align-items:center;gap:8px;
-    padding:13px 22px;border-radius:12px;font-weight:700;font-size:14px;
+    display:inline-flex;align-items:center;justify-content:center;gap:8px;
+    padding:14px 22px;border-radius:12px;font-weight:700;font-size:14px;
     transition:all .25s ease;border:1px solid transparent;cursor:pointer;
-    font-family:inherit;
+    font-family:inherit;min-height:48px;
   }
   .btn-primary{background:var(--cyan);color:#0B0F19;border-color:var(--cyan)}
   .btn-primary:hover{transform:translateY(-2px);box-shadow:0 10px 30px rgba(0,240,255,.25)}
@@ -128,7 +137,7 @@
   .btn-ghost{border-color:var(--line);color:var(--txt-2);background:transparent}
   .btn-ghost:hover{border-color:var(--cyan-line);color:var(--cyan)}
 
-  .msg{margin-top:14px;padding:12px 14px;border-radius:10px;font-size:13.5px;display:none}
+  .msg{margin-top:14px;padding:12px 14px;border-radius:10px;font-size:13.5px;display:none;line-height:1.55}
   .msg.show{display:block}
   .msg.ok{background:rgba(16,185,129,.08);border:1px solid rgba(16,185,129,.3);color:#34D399}
   .msg.err{background:rgba(239,68,68,.08);border:1px solid rgba(239,68,68,.3);color:#F87171}
@@ -136,22 +145,23 @@
   .info-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-top:20px}
   .info{
     background:var(--card);border:1px solid var(--line);border-radius:16px;
-    padding:20px;
+    padding:22px;
     transition:transform .25s ease, border-color .25s ease;
   }
   .info:hover{transform:translateY(-3px);border-color:var(--cyan-line)}
   .info .ic{
-    width:40px;height:40px;border-radius:10px;display:flex;align-items:center;justify-content:center;
+    width:42px;height:42px;border-radius:10px;display:flex;align-items:center;justify-content:center;
     background:rgba(239,68,68,.1);color:#F87171;margin-bottom:12px;font-size:16px;
   }
   .info h4{font-size:15px;margin-bottom:5px}
-  .info p{color:var(--txt-3);font-size:13px}
+  .info p{color:var(--txt-3);font-size:13px;line-height:1.55}
 
   footer{
     border-top:1px solid var(--line);padding:36px 24px;text-align:center;
     color:var(--txt-4);font-size:13px;position:relative;z-index:1;margin-top:40px;
   }
   footer .ftr-links{display:flex;gap:22px;justify-content:center;margin-bottom:12px;flex-wrap:wrap}
+  footer .ftr-links a{padding:6px 4px;display:inline-block}
   footer .ftr-links a:hover{color:var(--cyan)}
 
   /* Recurring scroll animations */
@@ -167,23 +177,70 @@
   .delay-2{transition-delay:.16s}
   .delay-3{transition-delay:.24s}
 
-  @media (max-width:760px){
-    .info-grid{grid-template-columns:1fr}
-    .two-col{grid-template-columns:1fr}
-    .sev-grid{grid-template-columns:repeat(2,1fr)}
+  /* ============ TABLET — 1024px ============ */
+  @media (max-width:1024px){
+    section{padding:28px 22px}
+    header.hero{padding:130px 22px 40px}
   }
+
+  /* ============ TABLET — 900px ============ */
+  @media (max-width:900px){
+    .info-grid{grid-template-columns:repeat(2,1fr)}
+    .info-grid .info:last-child{grid-column:1 / -1;max-width:50%;justify-self:center}
+  }
+
+  /* ============ SMALL TABLET — 768px ============ */
+  @media (max-width:768px){
+    nav{padding:12px 18px}
+    section{padding:24px 18px}
+    .form-card{padding:28px;border-radius:18px}
+    .info-grid{grid-template-columns:1fr;gap:12px}
+    .info-grid .info:last-child{max-width:100%}
+    .two-col{grid-template-columns:1fr;gap:0}
+    .sev-grid{grid-template-columns:repeat(2,1fr);gap:10px}
+  }
+
+  /* ============ MOBILE — 600px ============ */
   @media (max-width:600px){
-    nav{padding:12px 16px}
-    .logo{font-size:16px}
-    .logo-img{width:32px;height:32px}
-    .nav-cta{padding:7px 12px;font-size:12px}
-    header.hero{padding:120px 16px 40px}
-    header.hero h1{font-size:30px;letter-spacing:-.5px}
-    header.hero p{font-size:14.5px}
-    section{padding:24px 16px}
-    .form-card{padding:22px}
-    .submit-row{flex-direction:column-reverse}
-    .submit-row .btn{width:100%;justify-content:center}
+    nav{padding:11px 14px}
+    .logo{font-size:15px;gap:8px}
+    .logo-img{width:30px;height:30px}
+    .nav-cta{padding:8px 11px;font-size:12px;border-radius:9px}
+    header.hero{padding:100px 16px 30px}
+    header.hero h1{margin-bottom:12px;letter-spacing:-.5px}
+    header.hero p{font-size:14px;line-height:1.55}
+    .badge{font-size:10.5px;padding:6px 12px;margin-bottom:14px;letter-spacing:.5px}
+    section{padding:18px 16px}
+    .form-card{padding:22px 18px;border-radius:16px}
+    .form-row{margin-bottom:18px}
+    .form-row label{font-size:10.5px;letter-spacing:.8px;margin-bottom:7px}
+    .form-row input,.form-row select,.form-row textarea{font-size:15px;padding:13px 14px;border-radius:11px}
+    .form-row textarea{min-height:110px}
+    .form-row .hint{font-size:11.5px}
+    .sev-grid{gap:8px}
+    .sev{font-size:12px;padding:11px 6px;min-height:42px}
+    .submit-row{flex-direction:column-reverse;gap:10px}
+    .submit-row .btn{width:100%}
+    .btn{padding:14px 18px;font-size:13.5px;border-radius:10px}
+    .info{padding:18px;border-radius:14px}
+    .info .ic{width:38px;height:38px;font-size:15px;margin-bottom:10px}
+    .info h4{font-size:14.5px}
+    .info p{font-size:12.5px}
+    footer{padding:28px 16px;font-size:12.5px;margin-top:30px}
+    footer .ftr-links{gap:14px;margin-bottom:10px}
+    footer .ftr-links a{font-size:12.5px}
+  }
+
+  /* ============ TINY PHONES — 380px ============ */
+  @media (max-width:380px){
+    nav{padding:10px 12px}
+    .logo{font-size:14px}
+    .logo-img{width:28px;height:28px}
+    .nav-cta{padding:7px 9px;font-size:11.5px}
+    .nav-cta span{display:none}
+    header.hero{padding:92px 14px 26px}
+    section{padding:14px 12px}
+    .form-card{padding:18px 14px}
   }
 </style>
 </head>
@@ -194,7 +251,7 @@
     <a href="index.html" class="logo">
       <img src="assets/logo.png" alt="AdRoom AI" class="logo-img" /> AdRoom AI
     </a>
-    <a href="index.html" class="nav-cta"><i class="fa-solid fa-arrow-left"></i> Back to Home</a>
+    <a href="index.html" class="nav-cta"><i class="fa-solid fa-arrow-left"></i> <span>Back to Home</span></a>
   </div>
 </nav>
 
@@ -209,11 +266,11 @@
     <div class="two-col">
       <div class="form-row">
         <label>Your name</label>
-        <input type="text" name="name" id="b-name" placeholder="Jane Doe" maxlength="80" />
+        <input type="text" name="name" id="b-name" placeholder="Jane Doe" maxlength="80" autocomplete="name" />
       </div>
       <div class="form-row">
         <label>Email <span class="req">*</span></label>
-        <input type="email" name="email" id="b-email" placeholder="you@example.com" required maxlength="120" />
+        <input type="email" name="email" id="b-email" placeholder="you@example.com" required maxlength="120" inputmode="email" autocomplete="email" />
       </div>
     </div>
 
@@ -283,8 +340,8 @@
 
 <section>
   <div class="anim">
-    <h2 style="font-size:24px;margin-bottom:6px">What happens next?</h2>
-    <p style="color:var(--txt-3);font-size:14.5px">Our engineering team treats bug reports as priority signal.</p>
+    <h2 style="font-size:clamp(20px,2.6vw,24px);margin-bottom:6px">What happens next?</h2>
+    <p style="color:var(--txt-3);font-size:clamp(13.5px,1.5vw,14.5px)">Our engineering team treats bug reports as priority signal.</p>
   </div>
   <div class="info-grid">
     <div class="info anim-l delay-1">
@@ -319,7 +376,6 @@
 <script>
   document.getElementById('year').textContent = new Date().getFullYear();
 
-  // Recurring scroll animations
   const animEls = document.querySelectorAll('.anim, .anim-l, .anim-r, .anim-scale');
   const observer = new IntersectionObserver((entries) => {
     entries.forEach(entry => {
@@ -339,7 +395,7 @@
     });
   });
 
-  // Auto-detect device for the convenience field.
+  // Auto-detect device
   (function autoFillDevice(){
     const dev = document.getElementById('b-device');
     if (dev.value) return;
@@ -359,25 +415,25 @@
     dev.placeholder = label.length > 80 ? label.slice(0,80) + '…' : label;
   })();
 
-  // Submission — opens prefilled email so this works on plain hosting
-  // with zero backend. If you later wire up a server endpoint, swap the
-  // body of submitBug() to POST and surface the JSON result in #formMsg.
-  function submitBug(e){
+  // Submit to PHP backend (submit-bug.php)
+  async function submitBug(e){
     e.preventDefault();
     const btn = document.getElementById('submitBtn');
     const msg = document.getElementById('formMsg');
 
-    const name = document.getElementById('b-name').value.trim();
-    const email = document.getElementById('b-email').value.trim();
-    const title = document.getElementById('b-title').value.trim();
-    const area = document.getElementById('b-area').value;
-    const device = document.getElementById('b-device').value.trim() || (document.getElementById('b-device').placeholder || 'unknown');
-    const severity = sevInput.value;
-    const steps = document.getElementById('b-steps').value.trim();
-    const expected = document.getElementById('b-expected').value.trim();
-    const actual = document.getElementById('b-actual').value.trim();
+    const payload = {
+      name:     document.getElementById('b-name').value.trim(),
+      email:    document.getElementById('b-email').value.trim(),
+      title:    document.getElementById('b-title').value.trim(),
+      area:     document.getElementById('b-area').value,
+      device:   document.getElementById('b-device').value.trim() || (document.getElementById('b-device').placeholder || 'unknown'),
+      severity: sevInput.value,
+      steps:    document.getElementById('b-steps').value.trim(),
+      expected: document.getElementById('b-expected').value.trim(),
+      actual:   document.getElementById('b-actual').value.trim(),
+    };
 
-    if (!email || !title || !steps || !actual){
+    if (!payload.email || !payload.title || !payload.steps || !payload.actual){
       msg.className = 'msg show err';
       msg.textContent = 'Please fill in the required fields before submitting.';
       return false;
@@ -385,28 +441,36 @@
 
     btn.disabled = true;
     btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Sending…';
+    msg.className = 'msg';
+    msg.textContent = '';
 
-    const subject = encodeURIComponent(`[Bug · ${severity.toUpperCase()}] ${title}`);
-    const body = encodeURIComponent(
-      `Name: ${name || '(not provided)'}\n` +
-      `Email: ${email}\n` +
-      `Area: ${area}\n` +
-      `Device: ${device}\n` +
-      `Severity: ${severity}\n\n` +
-      `--- Steps to reproduce ---\n${steps}\n\n` +
-      `--- Expected ---\n${expected || '(not provided)'}\n\n` +
-      `--- Actual ---\n${actual}\n`
-    );
+    try {
+      const res = await fetch('submit-bug.php', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      const json = await res.json().catch(() => ({}));
 
-    window.location.href = `mailto:bugs@adroomai.com?subject=${subject}&body=${body}`;
-
-    setTimeout(() => {
-      msg.className = 'msg show ok';
-      msg.textContent = '✓ Thanks! Your email client should be opening now. If nothing happens, please email bugs@adroomai.com directly.';
+      if (res.ok && json.ok){
+        msg.className = 'msg show ok';
+        msg.innerHTML = '✓ ' + (json.message || 'Thanks — your bug report has been received.') +
+          (json.id ? ' <span style="opacity:.7">(Reference: '+json.id+')</span>' : '');
+        document.getElementById('bugForm').reset();
+        document.querySelectorAll('#sevGrid .sev').forEach(x => x.classList.remove('active'));
+        document.querySelector('#sevGrid .sev[data-sev="medium"]').classList.add('active');
+        sevInput.value = 'medium';
+      } else {
+        msg.className = 'msg show err';
+        msg.textContent = json.error || 'Something went wrong. Please try again or email bugs@adroomai.com.';
+      }
+    } catch (err){
+      msg.className = 'msg show err';
+      msg.textContent = 'Network error. Please check your connection and try again.';
+    } finally {
       btn.disabled = false;
       btn.innerHTML = '<i class="fa-solid fa-bug-slash"></i> Send Bug Report';
-    }, 600);
-
+    }
     return false;
   }
 </script>

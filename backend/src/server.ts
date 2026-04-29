@@ -2231,6 +2231,66 @@ app.post('/api/push/register', async (req, res) => {
   }
 });
 
+/**
+ * POST /api/push/test — diagnostic. Sends a real test push to all of the
+ * authenticated user's active devices and returns Expo's full response so
+ * we can pinpoint exactly why a push isn't being delivered to a closed
+ * Android app (FCM v1 not configured, MismatchSenderId, DeviceNotRegistered…).
+ */
+app.post('/api/push/test', async (req, res) => {
+  try {
+    const supabase = getSupabaseClient(req);
+    const { data: { user }, error: authErr } = await supabase.auth.getUser();
+    if (authErr || !user) return res.status(401).json({ error: 'Unauthorized' });
+
+    const { pushService } = await import('./services/pushService');
+    const out = await pushService.sendTest(user.id);
+
+    let diagnosis = 'OK — push delivered to Expo successfully.';
+    let actionable: string | null = null;
+
+    if (out.tokensFound === 0) {
+      diagnosis = 'No active push tokens registered for this account.';
+      actionable = 'Open the app, allow notifications when prompted, and try again. Push tokens are only registered after sign-in on a real device build (not Expo Go).';
+    } else if (!out.result.ok) {
+      const sum = out.result.errorSummary || '';
+      if (/MismatchSenderId/i.test(sum)) {
+        diagnosis = 'FCM Sender ID mismatch — your google-services.json does not match the FCM project linked to Expo.';
+        actionable = 'In Firebase Console download a fresh google-services.json for this Android app, place it in the project root, and re-build with EAS.';
+      } else if (/InvalidCredentials/i.test(sum)) {
+        diagnosis = 'Expo cannot reach FCM — your FCM v1 Service Account is missing or invalid in your Expo dashboard.';
+        actionable = 'In Firebase Console → Project Settings → Service Accounts → "Generate new private key", then upload that JSON to https://expo.dev/accounts/<you>/projects/adroom-mobile/credentials → "Push Notifications: Android" → "Add a service account key".';
+      } else if (/DeviceNotRegistered/i.test(sum)) {
+        diagnosis = 'The push token on this device has been invalidated by FCM (app uninstalled / reinstalled / data cleared).';
+        actionable = 'Open the app on the device — a new token will be registered automatically.';
+      } else {
+        diagnosis = 'Expo accepted the request but reported an error.';
+        actionable = sum || 'See raw response for details.';
+      }
+    }
+
+    res.json({
+      success: out.result.ok,
+      diagnosis,
+      actionable,
+      tokensFound: out.tokensFound,
+      devices: out.devices,
+      expo: {
+        ok: out.result.ok,
+        httpStatus: out.result.httpStatus,
+        tokensSent: out.result.tokensSent,
+        invalidTokens: out.result.invalidTokens.length,
+        errorSummary: out.result.errorSummary,
+        ticketCount: out.result.tickets.length,
+        rawResponse: out.result.rawResponse,
+      },
+    });
+  } catch (err: any) {
+    console.error('[PushTest] Error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 app.post('/api/push/unregister', async (req, res) => {
   try {
     const supabase = getSupabaseClient(req);

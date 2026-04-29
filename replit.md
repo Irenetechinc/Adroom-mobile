@@ -184,6 +184,19 @@ Key tables:
 - **Backend auth hardening**: `/api/auth/register` now does `admin.listUsers({filter})` pre-check and treats `identities=[]` as duplicate (prevents re-registering an existing email). Added `/api/auth/reset-password` using service role.
 - **Rebrand**: "Agent" → "Intelligence" in AgentChatScreen header, SideMenu label, and CampaignList empty-state CTA. AgentChatScreen now renders `AgentChatSkeleton` until message history finishes loading.
 
+## Android Push Notifications (April 2026)
+Root cause of "works when open, silent when closed": Expo deprecated legacy FCM in mid-2024; without an FCM v1 service-account key uploaded at expo.dev → Credentials → Android, Google silently drops every notification to a closed Android app. **See `ANDROID_PUSH_SETUP.md` for the full 5-step user-facing fix.**
+
+Codebase pieces wired up:
+- `app.json` android section references `./google-services.json`, declares `POST_NOTIFICATIONS`/`WAKE_LOCK`/`RECEIVE_BOOT_COMPLETED`/`VIBRATE`, sets `useNextNotificationsApi: true`.
+- `backend/src/services/pushService.ts` sends every push with `priority: 'high'`; `sendTest(userId)` returns full Expo response including ticket details, error summary and raw body.
+- `backend/src/server.ts` exposes `POST /api/push/test` (auth required) → returns `{ success, diagnosis, actionable, tokensFound, devices, expo:{…} }`. Diagnoses MismatchSenderId, InvalidCredentials (no FCM v1 key), DeviceNotRegistered, and "no token registered" with a plain-English next step.
+- `src/screens/NotificationsScreen.tsx` — paper-airplane icon in header runs the diagnostic and shows the result in `Alert.alert`.
+
+## Landing-page Forms (April 2026)
+- `landing/submit-bug.php` and `landing/submit-feature.php` — drop-in PHP for cPanel (no Composer / no installs). Uses cURL → Resend HTTPS API. JSON file logging (`bug-reports.json`, `feature-requests.json`), per-IP rate limit (5/10 min), branded HTML emails. Configurable via env vars or hard-coded constants at the top of the file.
+- `landing/help.html`, `landing/request-feature.html`, `landing/report-bug.html` — fully responsive (1024/900/768/600/380 breakpoints, `clamp()` typography, safe-area insets, ≥46px tap targets, proper mobile select/input styling, autocomplete attributes). Feature/Bug pages POST JSON to their PHP endpoints with proper error handling and reference-ID success messages.
+
 ## Recent Feature Additions
 - **Plan Gating**: "Sales" and "Leads" goals are Pro-only; "Connect Website" in ProductIntakeCard is Pro-only — shows dimmed UPGRADE TO PRO label and routes to Subscription screen
 - **MemPalace Integration**: `agentStore` saves every chat message to backend `/api/chat/history` (POST with `role`/`content`/`metadata`) and loads history from backend first, falling back to Supabase. Messages are mapped between agent format (text/sender/ui_type/ui_data) and backend format (content/role/metadata)

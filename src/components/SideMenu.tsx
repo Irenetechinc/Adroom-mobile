@@ -175,7 +175,7 @@ export default function SideMenu(props: DrawerContentComponentProps) {
             <Text style={{ color: '#EF4444', fontWeight: '700', fontSize: 15, marginLeft: 12 }}>Sign Out</Text>
           </TouchableOpacity>
           <Text style={{ color: '#1E293B', fontSize: 10, textAlign: 'center', marginTop: 14, letterSpacing: 0.5 }}>
-            AdRoom AI • v2.2.1
+            AdRoom AI • v2.2.7
           </Text>
         </View>
       </SafeAreaView>

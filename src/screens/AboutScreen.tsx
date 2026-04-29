@@ -126,7 +126,7 @@ export default function AboutScreen() {
             and still spend hours managing campaigns. AdRoom AI eliminates all of that.
           </Text>
           <Text style={[styles.sectionBody, { marginTop: 10 }]}>
-            From the moment you set up your product, AdRoom AI's agents take over completely.
+            From the moment you set up your product, AdRoom AI's autonomus agents take over completely.
             They research your market, identify your audience, create platform-native content,
             publish at optimal times, monitor performance, and adapt — continuously — with
             no instructions from you.
@@ -221,7 +221,7 @@ export default function AboutScreen() {
 
         <Text style={styles.footer}>
           © {new Date().getFullYear()} AdRoom AI · All rights reserved{'\n'}
-          Version 2.2.1 · Built for ambitious businesses worldwide
+          Version 2.2.7 · Built for ambitious businesses worldwide
         </Text>
       </ScrollView>
     </SafeAreaView>

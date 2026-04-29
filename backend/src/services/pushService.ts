@@ -25,8 +25,20 @@ async function deactivateInvalidTokens(invalidTokens: string[]): Promise<void> {
   }
 }
 
-async function sendExpoPush(tokens: string[], payload: PushPayload): Promise<void> {
-  if (!tokens.length) return;
+interface ExpoSendResult {
+  ok: boolean;
+  httpStatus: number;
+  tokensSent: number;
+  tickets: any[];
+  invalidTokens: string[];
+  errorSummary?: string;
+  rawResponse?: string;
+}
+
+async function sendExpoPush(tokens: string[], payload: PushPayload): Promise<ExpoSendResult> {
+  if (!tokens.length) {
+    return { ok: false, httpStatus: 0, tokensSent: 0, tickets: [], invalidTokens: [], errorSummary: 'No active tokens for this user' };
+  }
   const messages = tokens.map((token) => ({
     to: token,
     sound: payload.sound ?? 'default',
@@ -35,6 +47,8 @@ async function sendExpoPush(tokens: string[], payload: PushPayload): Promise<voi
     data: payload.data ?? {},
     badge: payload.badge,
     channelId: payload.channelId,
+    priority: 'high',
+    _displayInForeground: true,
   }));
 
   try {
@@ -43,31 +57,49 @@ async function sendExpoPush(tokens: string[], payload: PushPayload): Promise<voi
       headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
       body: JSON.stringify(messages),
     });
+    const rawText = await res.text();
     if (!res.ok) {
-      const err = await res.text();
-      console.error('[PushService] Expo push failed:', err);
-      return;
+      console.error('[PushService] Expo push HTTP error:', res.status, rawText.slice(0, 400));
+      return { ok: false, httpStatus: res.status, tokensSent: tokens.length, tickets: [], invalidTokens: [], errorSummary: `Expo HTTP ${res.status}`, rawResponse: rawText.slice(0, 600) };
     }
 
-    // Inspect per-message tickets and deactivate tokens Expo flags as invalid
-    // so we don't keep retrying dead devices.
-    const json: any = await res.json().catch(() => null);
+    let json: any = null;
+    try { json = JSON.parse(rawText); } catch { /* keep null */ }
+
     const tickets: any[] = Array.isArray(json?.data) ? json.data : [];
     const invalid: string[] = [];
+    const errorMessages: string[] = [];
+
     tickets.forEach((ticket, idx) => {
-      if (
-        ticket?.status === 'error' &&
-        (ticket?.details?.error === 'DeviceNotRegistered' ||
-          ticket?.details?.error === 'InvalidCredentials' ||
-          ticket?.details?.error === 'MismatchSenderId')
-      ) {
-        const token = tokens[idx];
-        if (token) invalid.push(token);
+      if (ticket?.status === 'error') {
+        const errCode = ticket?.details?.error;
+        const msg = ticket?.message || 'unknown error';
+        errorMessages.push(`${errCode || 'error'}: ${msg}`);
+        if (
+          errCode === 'DeviceNotRegistered' ||
+          errCode === 'InvalidCredentials' ||
+          errCode === 'MismatchSenderId'
+        ) {
+          const token = tokens[idx];
+          if (token) invalid.push(token);
+        }
       }
     });
     if (invalid.length) await deactivateInvalidTokens(invalid);
+
+    const allOk = tickets.length > 0 && tickets.every((t) => t?.status === 'ok');
+    return {
+      ok: allOk,
+      httpStatus: res.status,
+      tokensSent: tokens.length,
+      tickets,
+      invalidTokens: invalid,
+      errorSummary: errorMessages.length ? errorMessages.join(' | ') : undefined,
+      rawResponse: allOk ? undefined : rawText.slice(0, 600),
+    };
   } catch (e: any) {
     console.error('[PushService] Network error sending push:', e.message);
+    return { ok: false, httpStatus: 0, tokensSent: tokens.length, tickets: [], invalidTokens: [], errorSummary: `Network error: ${e.message}` };
   }
 }
 
@@ -227,5 +259,43 @@ export const pushService = {
       sendExpoPush(tokens, payload),
       insertNotification(userId, payload.title, payload.body, payload.data ?? {}),
     ]);
+  },
+
+  /**
+   * Diagnostic helper used by /api/push/test. Sends a real push to all of
+   * the user's active devices and returns the full Expo response so the
+   * client can show exactly why a push isn't being delivered (FCM not
+   * configured, token invalid, MismatchSenderId, etc.).
+   */
+  async sendTest(userId: string): Promise<{
+    tokensFound: number;
+    result: ExpoSendResult;
+    devices: Array<{ device_id: string; platform: string; app_version: string | null; last_seen_at: string }>;
+  }> {
+    const supabase = getServiceSupabaseClient();
+    const { data: rows } = await supabase
+      .from('device_push_tokens')
+      .select('token, device_id, platform, app_version, last_seen_at')
+      .eq('user_id', userId)
+      .eq('is_active', true);
+
+    const tokens = (rows ?? []).map((r: any) => r.token).filter(Boolean);
+    const devices = (rows ?? []).map((r: any) => ({
+      device_id: String(r.device_id || '').slice(0, 8) + '…',
+      platform: r.platform,
+      app_version: r.app_version,
+      last_seen_at: r.last_seen_at,
+    }));
+
+    const result = await sendExpoPush(tokens, {
+      title: 'AdRoom AI Test Push',
+      body: 'If you can see this with the app closed, push is working correctly.',
+      data: { type: 'test_push', sentAt: new Date().toISOString() },
+      channelId: 'alerts',
+    });
+
+    // Don't insert into user_notifications for test pushes — keep the
+    // bell uncluttered.
+    return { tokensFound: tokens.length, result, devices };
   },
 };

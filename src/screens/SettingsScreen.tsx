@@ -163,7 +163,7 @@ export default function SettingsScreen() {
         {
           icon: Info,
           label: 'About AdRoom AI',
-          sublabel: 'Version 1.0.0',
+          sublabel: 'Version 2.2.7',
           color: '#94A3B8',
           onPress: () => navigation.navigate('About'),
         },
@@ -255,7 +255,7 @@ export default function SettingsScreen() {
           </TouchableOpacity>
         </Animated.View>
 
-        <Text style={styles.versionText}>AdRoom AI • v3.2.0</Text>
+        <Text style={styles.versionText}>AdRoom AI • v2.2.7</Text>
       </ScrollView>
     </SafeAreaView>
   );
