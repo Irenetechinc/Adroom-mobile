@@ -943,6 +943,128 @@ const TypingIndicator = () => {
   );
 };
 
+// ─── Typewriter (per-character reveal for agent messages) ────────────────
+//
+// Renders `text` one character at a time with a tiny delay between each
+// character. We deliberately keep `revealedRef` outside React state so a
+// parent re-render (e.g. a sibling message updating) doesn't reset the
+// reveal animation mid-way through. Once `done` flips true we render the
+// full text without any further timers.
+const TypewriterText = ({
+  text,
+  style,
+  speedMs = 14,
+  onTick,
+  enabled = true,
+}: {
+  text: string;
+  style: any;
+  speedMs?: number;
+  onTick?: () => void;
+  enabled?: boolean;
+}) => {
+  const [displayed, setDisplayed] = useState<string>(enabled ? '' : text);
+  const indexRef = useRef<number>(enabled ? 0 : text.length);
+  const doneRef = useRef<boolean>(!enabled);
+
+  useEffect(() => {
+    if (!enabled || doneRef.current) {
+      setDisplayed(text);
+      indexRef.current = text.length;
+      doneRef.current = true;
+      return;
+    }
+    let cancelled = false;
+    const tick = () => {
+      if (cancelled) return;
+      if (indexRef.current >= text.length) {
+        doneRef.current = true;
+        return;
+      }
+      indexRef.current += 1;
+      setDisplayed(text.slice(0, indexRef.current));
+      onTick?.();
+      setTimeout(tick, speedMs);
+    };
+    const t = setTimeout(tick, speedMs);
+    return () => {
+      cancelled = true;
+      clearTimeout(t);
+    };
+    // We intentionally do NOT depend on `text` changing — the text passed
+    // in for an existing message id is immutable once added, and changing
+    // the dependency would re-trigger the typewriter on every parent
+    // re-render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  return <Text style={style}>{displayed || (enabled ? ' ' : text)}</Text>;
+};
+
+// ─── Thinking Indicator (rotating, generic phrases) ──────────────────────
+//
+// Replaces the plain "•••" while AdRoom AI is composing a strategy. The
+// phrases are intentionally generic and do NOT name any internal pipeline
+// stage — users see "Analyzing your goals…" / "Drafting your strategy…",
+// never "Calling DecisionEngine" or "Fetching memory context".
+const THINKING_PHRASES = [
+  'Analyzing your goals…',
+  'Reviewing what has worked before…',
+  'Considering your audience…',
+  'Mapping the best channels…',
+  'Drafting your strategy…',
+  'Putting it all together…',
+];
+
+const ThinkingIndicator = () => {
+  const dot1 = useSharedValue(0.3);
+  const dot2 = useSharedValue(0.3);
+  const dot3 = useSharedValue(0.3);
+  const [phraseIdx, setPhraseIdx] = useState(0);
+  const opacity = useSharedValue(1);
+
+  useEffect(() => {
+    dot1.value = withRepeat(withSequence(withTiming(1, { duration: 500 }), withTiming(0.3, { duration: 500 })), -1);
+    setTimeout(() => {
+      dot2.value = withRepeat(withSequence(withTiming(1, { duration: 500 }), withTiming(0.3, { duration: 500 })), -1);
+    }, 160);
+    setTimeout(() => {
+      dot3.value = withRepeat(withSequence(withTiming(1, { duration: 500 }), withTiming(0.3, { duration: 500 })), -1);
+    }, 320);
+
+    const interval = setInterval(() => {
+      // Quick fade out → swap phrase → fade in.
+      opacity.value = withTiming(0, { duration: 220 }, (finished) => {
+        if (finished) {
+          runOnJS(setPhraseIdx)((Math.floor(Math.random() * 100000)));
+          opacity.value = withTiming(1, { duration: 220 });
+        }
+      });
+    }, 2400);
+    return () => clearInterval(interval);
+  }, []);
+
+  const s1 = useAnimatedStyle(() => ({ opacity: dot1.value }));
+  const s2 = useAnimatedStyle(() => ({ opacity: dot2.value }));
+  const s3 = useAnimatedStyle(() => ({ opacity: dot3.value }));
+  const phraseStyle = useAnimatedStyle(() => ({ opacity: opacity.value }));
+
+  const phrase = THINKING_PHRASES[phraseIdx % THINKING_PHRASES.length];
+
+  return (
+    <View style={[styles.typingWrap, { flexDirection: 'column', alignItems: 'flex-start', gap: 6, paddingVertical: 10 }]}>
+      <View style={{ flexDirection: 'row', gap: 4 }}>
+        <Animated.View style={[styles.typingDot, s1]} />
+        <Animated.View style={[styles.typingDot, s2]} />
+        <Animated.View style={[styles.typingDot, s3]} />
+      </View>
+      <Animated.Text style={[{ color: '#94A3B8', fontSize: 12, fontStyle: 'italic' }, phraseStyle]}>
+        {phrase}
+      </Animated.Text>
+    </View>
+  );
+};
+
 // ─── Credit Ticker ───────────────────────────────────────────────────────────
 
 function CreditTicker({ balance, onPress }: { balance: number; onPress: () => void }) {
@@ -998,6 +1120,12 @@ export default function AgentChatScreen({ navigation, route }: Props) {
   const [historyModalVisible, setHistoryModalVisible] = useState(false);
   const [historyModalLoading, setHistoryModalLoading] = useState(false);
   const [historySessions, setHistorySessions] = useState<ChatSession[]>([]);
+
+  // Used to decide which agent messages should typewriter on screen.
+  // Anything older than this timestamp was loaded from chat history (or
+  // was already on screen at mount) and renders instantly. Anything newer
+  // is a freshly-arrived agent reply and animates in character-by-character.
+  const mountedAtRef = useRef<number>(Date.now());
   // Count of restorable sessions in the last 7 days. Surfaced as a small
   // numeric badge on the History icon so users can see at a glance whether
   // there's anything to come back to. Refreshed on mount, on screen focus,
@@ -1288,9 +1416,20 @@ export default function AgentChatScreen({ navigation, route }: Props) {
           {item.imageUri ? (
             <Image source={{ uri: item.imageUri }} style={styles.messageImage} resizeMode="cover" />
           ) : null}
-          <Text style={item.sender === 'user' ? styles.userBubbleText : styles.agentBubbleText}>
-            {item.text}
-          </Text>
+          {item.sender === 'agent' ? (
+            <TypewriterText
+              text={item.text}
+              style={styles.agentBubbleText}
+              enabled={item.timestamp > mountedAtRef.current}
+              onTick={() => {
+                // Keep the list pinned to the bottom while the bubble grows
+                // so long replies don't push themselves off-screen mid-reveal.
+                flatListRef.current?.scrollToEnd({ animated: false });
+              }}
+            />
+          ) : (
+            <Text style={styles.userBubbleText}>{item.text}</Text>
+          )}
 
           {item.uiType === 'product_intake_form' && (
             <ProductIntakeCard
@@ -1459,7 +1598,13 @@ export default function AgentChatScreen({ navigation, route }: Props) {
           onScrollBeginDrag={() => markActive()}
           showsVerticalScrollIndicator={false}
           contentContainerStyle={[styles.flatListContent, { paddingBottom: insets.bottom + 24 }]}
-          ListFooterComponent={(isTyping || uploading) ? <TypingIndicator /> : null}
+          ListFooterComponent={
+            flowState === 'STRATEGY_GENERATION'
+              ? <ThinkingIndicator />
+              : (isTyping || uploading)
+                ? <TypingIndicator />
+                : null
+          }
           keyboardShouldPersistTaps="handled"
         />
 

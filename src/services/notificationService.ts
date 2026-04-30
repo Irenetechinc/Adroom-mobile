@@ -30,9 +30,10 @@ const DEVICE_ID_KEY = 'adroom.push.device_id';
 const LAST_REG_KEY = 'adroom.push.last_registration';
 const PENDING_KEY = 'adroom.push.pending';
 
-// Re-confirm registration with the backend at most once per 7 days even if
-// nothing changed, so last_seen_at stays fresh.
-const REREGISTER_AFTER_MS = 7 * 24 * 60 * 60 * 1000;
+// Re-confirm registration with the backend at most once per 24 hours even if
+// nothing changed, so last_seen_at stays fresh and the row in
+// device_push_tokens is rebuilt quickly if it was wiped server-side.
+const REREGISTER_AFTER_MS = 24 * 60 * 60 * 1000;
 
 interface LastRegistration {
   token: string;
@@ -111,6 +112,21 @@ export async function isRegistrationPending(): Promise<boolean> {
 
 export function getLastRegistrationError(): string | null {
   return lastError;
+}
+
+/**
+ * Wipe the cached "last successful registration" record and re-run the full
+ * registration flow with `force: true`. Intended to be called from the
+ * Notifications diagnostic screen when the user taps "Test push" and the
+ * backend reports `tokensFound === 0` — in that case the local cache
+ * wrongly believes the device is registered, so we throw it away and try
+ * again from scratch.
+ */
+export async function forcePushReregistration(): Promise<string | null> {
+  try {
+    await SecureStore.deleteItemAsync(LAST_REG_KEY);
+  } catch {}
+  return registerPushToken({ force: true });
 }
 
 export async function requestNotificationPermissions(): Promise<boolean> {

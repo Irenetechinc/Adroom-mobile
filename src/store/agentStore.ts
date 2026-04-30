@@ -737,7 +737,10 @@ export const useAgentStore = create<AgentState>()(
       set({ flowState: 'STRATEGY_GENERATION', isTyping: true, isInputDisabled: true });
 
       addMessage(`${duration} days`, 'user');
-      addMessage("Analyzing historical data and global trends to generate optimal strategies...", 'agent');
+      // Generic, user-friendly framing only — the rotating ThinkingIndicator
+      // below the chat list will surface the in-progress phrases. We
+      // intentionally do not name any internal pipeline stage here.
+      addMessage("Got it. Crafting your strategy now — this usually takes a few seconds.", 'agent');
 
       // Recover productId and selectedGoal from duration_selection uiData if missing (session restore)
       let resolvedProductId = productDetails.id;
@@ -771,7 +774,7 @@ export const useAgentStore = create<AgentState>()(
           });
           
           addMessage(
-              "Strategy generation complete. Here is your optimized plan.",
+              "All set. Here's the strategy I put together for you.",
               'agent',
               undefined,
               'strategy_preview', 
@@ -780,7 +783,7 @@ export const useAgentStore = create<AgentState>()(
 
       } catch (error: any) {
           set({ isTyping: false });
-          addMessage(`Strategy generation failed: ${error.message}`, 'agent');
+          addMessage(`Sorry — I couldn't put together a strategy just now. ${error.message}`, 'agent');
       }
   },
 
@@ -1494,8 +1497,30 @@ export const useAgentStore = create<AgentState>()(
   },
 
   loadConnectedPlatforms: async () => {
-    const applyConfigs = (configs: Record<string, any>) => {
+    // When `authoritative` is true, the response represents the *full* set of
+    // connected platforms for this user (i.e. came from the backend / Supabase
+    // directly). In that case we replace local state instead of merging so
+    // platforms that have been disconnected on another device disappear, and
+    // platforms re-connected after a reinstall reappear immediately.
+    const applyConfigs = (configs: Record<string, any>, authoritative: boolean) => {
       set((state) => {
+        if (authoritative) {
+          // Drop any locally-cached "connected" stubs that the server no
+          // longer knows about. Preserve real OAuth access tokens that are
+          // still mid-session (anything not equal to the literal 'connected'
+          // placeholder) so an in-flight OAuth flow isn't clobbered.
+          const newTokens: Record<string, any> = {};
+          for (const platform of Object.keys(configs)) {
+            newTokens[platform] = state.tokens[platform] || 'connected';
+          }
+          for (const platform of Object.keys(state.tokens)) {
+            const val = state.tokens[platform];
+            if (val && val !== 'connected' && !newTokens[platform]) {
+              newTokens[platform] = val;
+            }
+          }
+          return { tokens: newTokens, connectedPlatforms: { ...configs } };
+        }
         const newTokens = { ...state.tokens };
         for (const platform of Object.keys(configs)) {
           if (!newTokens[platform]) {
@@ -1513,7 +1538,7 @@ export const useAgentStore = create<AgentState>()(
         const token = await getAuthToken();
         if (!token) throw new Error('No auth token');
         const controller = new AbortController();
-        const timer = setTimeout(() => controller.abort(), 6000);
+        const timer = setTimeout(() => controller.abort(), 15000);
         let res: Response;
         try {
           res = await fetch(`${BACKEND_URL}/api/platform-configs`, {
@@ -1526,7 +1551,7 @@ export const useAgentStore = create<AgentState>()(
         if (res.ok) {
           const data = await res.json();
           const configs: Record<string, any> = data.configs || {};
-          applyConfigs(configs);
+          applyConfigs(configs, true);
           return;
         }
       } catch {}
@@ -1540,7 +1565,10 @@ export const useAgentStore = create<AgentState>()(
         .from('ad_configs')
         .select('platform, page_id, page_name, ad_account_id, instagram_account_id, person_urn, org_urn, open_id, updated_at')
         .eq('user_id', user.id);
-      if (!rows || rows.length === 0) return;
+      // rows === null indicates a query error — leave existing state intact.
+      // An empty array is authoritative ("user has no connected platforms")
+      // and must clear stale local entries.
+      if (!rows) return;
       const configs: Record<string, any> = {};
       for (const c of rows) {
         configs[c.platform] = {
@@ -1556,7 +1584,7 @@ export const useAgentStore = create<AgentState>()(
           connected: true,
         };
       }
-      applyConfigs(configs);
+      applyConfigs(configs, true);
     } catch {}
   },
 
