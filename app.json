@@ -3,7 +3,7 @@
     "name": "AdRoom AI",
     "slug": "adroom-mobile",
     "scheme": "adroom",
-    "version": "3.7.0",
+    "version": "3.8.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
