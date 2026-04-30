@@ -58,12 +58,12 @@ export default function App() {
       } catch { /* store may not be ready yet */ }
     };
 
-    supabase.auth.getSession().then(({ data }) => {
+    supabase.auth.getSession().then(({ data }: any) => {
       hydrateForUser(data.session?.user?.id, data.session?.user?.email);
       if (data.session?.user?.id) refreshConnectedPlatforms();
     });
 
-    const { data: sub } = supabase.auth.onAuthStateChange((event, session) => {
+    const { data: sub } = supabase.auth.onAuthStateChange((event: string, session: any) => {
       if (event === 'SIGNED_OUT') {
         useProfileStore.getState().reset();
         useNotificationStore.getState().detach();
@@ -110,13 +110,13 @@ export default function App() {
     );
 
     // Initial check: if we already have a session at boot, register now.
-    supabase.auth.getSession().then(({ data }) => {
+    supabase.auth.getSession().then(({ data }: any) => {
       if (data.session) triggerRegister('initial-session');
     });
 
     // Re-trigger on every auth event that yields a session — covers fresh
     // sign-ins and silent token refreshes after the first launch.
-    const { data: authListener } = supabase.auth.onAuthStateChange((event, session) => {
+    const { data: authListener } = supabase.auth.onAuthStateChange((event: string, session: any) => {
       if ((event === 'SIGNED_IN' || event === 'INITIAL_SESSION' || event === 'TOKEN_REFRESHED') && session) {
         triggerRegister(event);
       }

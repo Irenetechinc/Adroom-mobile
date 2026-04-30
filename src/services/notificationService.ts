@@ -45,7 +45,8 @@ interface LastRegistration {
 
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
-    shouldShowAlert: true,
+    shouldShowBanner: true,
+    shouldShowList: true,
     shouldPlaySound: true,
     shouldSetBadge: true,
   }),
@@ -141,7 +142,6 @@ export async function requestNotificationPermissions(): Promise<boolean> {
       allowBadge: true,
       allowSound: true,
       allowProvisional: false,
-      allowAnnouncements: true,
     },
   });
 

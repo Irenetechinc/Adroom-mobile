@@ -188,7 +188,7 @@ export default function NotificationsScreen() {
             table: 'user_notifications',
             filter: `user_id=eq.${user.id}`,
           },
-          (payload) => {
+          (payload: any) => {
             const row = payload.new as UserNotification;
             if (!row) return;
             setNotifications((prev) => {
@@ -211,7 +211,7 @@ export default function NotificationsScreen() {
             table: 'user_notifications',
             filter: `user_id=eq.${user.id}`,
           },
-          (payload) => {
+          (payload: any) => {
             const row = payload.new as UserNotification;
             if (!row) return;
             setNotifications((prev) => prev.map((n) => (n.id === row.id ? row : n)));
