@@ -127,7 +127,6 @@ export default function OnboardingScreen({ navigation }: Props) {
               allowAlert: true,
               allowBadge: true,
               allowSound: true,
-              allowAnnouncements: true,
             },
           });
         }

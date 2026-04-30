@@ -245,7 +245,7 @@ export default function InteractionsScreen() {
         { event: '*', schema: 'public', table: 'messages', filter: `user_id=eq.${user.id}` },
         () => { loadInteractions(); }
       )
-      .subscribe((status) => {
+      .subscribe((status: string) => {
         setConnected(status === 'SUBSCRIBED');
       });
 

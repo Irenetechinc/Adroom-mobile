@@ -37,7 +37,8 @@ export default function PrivacySecurityScreen() {
   const [activeSection, setActiveSection] = useState<string | null>(null);
 
   useEffect(() => {
-    supabase.auth.getUser().then(({ data: { user } }) => {
+    supabase.auth.getUser().then(({ data }: any) => {
+      const user = data?.user;
       if (user?.user_metadata?.display_name) setDisplayName(user.user_metadata.display_name);
       else if (user?.user_metadata?.full_name) setDisplayName(user.user_metadata.full_name);
     });

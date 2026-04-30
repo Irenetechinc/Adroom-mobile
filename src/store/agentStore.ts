@@ -1337,7 +1337,7 @@ export const useAgentStore = create<AgentState>()(
       const { addMessage, handleAccountSelection } = get();
       set({ isTyping: true, isInputDisabled: true });
       try {
-          let token = null;
+          let token: string | null = null;
           let accounts: any[] = [];
 
           if (platform === 'facebook') {
@@ -1347,8 +1347,25 @@ export const useAgentStore = create<AgentState>()(
               token = await InstagramService.login();
               if (token) accounts = await InstagramService.getInstagramAccounts(token);
           } else if (platform === 'tiktok') {
-              token = await TikTokService.login();
-              if (token) accounts = await TikTokService.getAdvertiserAccounts(token);
+              // TikTok Login Kit returns one authenticated user (no advertiser
+              // list). Treat the logged-in profile as the single "account" so
+              // the existing single-account branch in the flow below handles it.
+              const tikTokAuth = await TikTokService.login();
+              if (tikTokAuth) {
+                  token = tikTokAuth.access_token;
+                  const profile = await TikTokService.getProfile(tikTokAuth.access_token);
+                  if (profile) {
+                      accounts = [{
+                          id: profile.open_id,
+                          name: profile.display_name,
+                          avatar_url: profile.avatar_url,
+                      }];
+                  } else {
+                      // Fall back to a minimal account record built from the
+                      // OAuth response so saveConfig still has an open_id.
+                      accounts = [{ id: tikTokAuth.open_id, name: 'TikTok Account' }];
+                  }
+              }
           } else if (platform === 'linkedin') {
               token = await LinkedInService.login();
               if (token) accounts = await LinkedInService.getAdAccounts(token);
