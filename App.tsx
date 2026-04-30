@@ -11,6 +11,7 @@ import {
 import { supabase } from './src/services/supabase';
 import { useProfileStore } from './src/store/profileStore';
 import { useNotificationStore } from './src/store/notificationStore';
+import { useAgentStore } from './src/store/agentStore';
 import {
   fetchAppVersionInfo,
   getCurrentAppVersion,
@@ -45,8 +46,21 @@ export default function App() {
       ]);
     };
 
+    // Pull the connected-platforms list from the backend the moment we
+    // have a session. This is what lets connected accounts survive an APK
+    // update / fresh install — AsyncStorage may be wiped, but `ad_configs`
+    // on Supabase is the source of truth and we re-hydrate from it on
+    // every cold start instead of waiting for the user to open the
+    // ConnectedAccounts screen.
+    const refreshConnectedPlatforms = () => {
+      try {
+        useAgentStore.getState().loadConnectedPlatforms().catch(() => {});
+      } catch { /* store may not be ready yet */ }
+    };
+
     supabase.auth.getSession().then(({ data }) => {
       hydrateForUser(data.session?.user?.id, data.session?.user?.email);
+      if (data.session?.user?.id) refreshConnectedPlatforms();
     });
 
     const { data: sub } = supabase.auth.onAuthStateChange((event, session) => {
@@ -60,6 +74,9 @@ export default function App() {
       // reflects it without a sign-out.
       if (session?.user?.id) {
         hydrateForUser(session.user.id, session.user.email);
+        if (event === 'SIGNED_IN' || event === 'INITIAL_SESSION' || event === 'TOKEN_REFRESHED') {
+          refreshConnectedPlatforms();
+        }
       }
     });
 

@@ -65,12 +65,14 @@ export default function PrivacySecurityScreen() {
       //    immediately — no sign-out, no reload.
       useProfileStore.getState().setDisplayName(displayName.trim());
 
-      // 2) Force the local Supabase client to pull fresh user_metadata from
-      //    the server. This emits USER_UPDATED, which App.tsx listens for
-      //    and uses to re-hydrate the profile store from the source of truth.
-      try {
-        await supabase.auth.refreshSession();
-      } catch { /* non-fatal — store already has the new name */ }
+      // 2) Fire-and-forget: ask the local Supabase client to pull fresh
+      //    user_metadata from the server. This emits USER_UPDATED which
+      //    re-hydrates the profile store from the source of truth.
+      //    We deliberately do NOT await this — refreshSession() can hang
+      //    indefinitely on a flaky connection, which previously left the
+      //    Save button spinning forever even though the name had already
+      //    been persisted server-side and pushed into local state.
+      supabase.auth.refreshSession().catch(() => { /* non-fatal */ });
 
       Alert.alert('Success', 'Your display name has been updated.');
       setActiveSection(null);

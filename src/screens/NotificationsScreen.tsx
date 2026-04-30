@@ -10,6 +10,7 @@ import { ArrowLeft, Bell, BellOff, CheckCheck, X, Zap, CreditCard, AlertTriangle
 import Animated, { FadeInDown, FadeIn } from 'react-native-reanimated';
 import { supabase } from '../services/supabase';
 import { useNotificationStore } from '../store/notificationStore';
+import { forcePushReregistration } from '../services/notificationService';
 import Constants from 'expo-constants';
 import { Skeleton } from '../components/Skeleton';
 
@@ -115,8 +116,22 @@ export default function NotificationsScreen() {
         Alert.alert('Sign in required', 'Please sign in before running the push test.');
         return;
       }
-      const res = await fetch(`${BACKEND_URL}/api/push/test`, { method: 'POST', headers });
-      const json = await res.json().catch(() => ({} as any));
+      let res = await fetch(`${BACKEND_URL}/api/push/test`, { method: 'POST', headers });
+      let json: any = await res.json().catch(() => ({} as any));
+
+      // Self-heal: if the backend reports no registered tokens for this
+      // user, the device's local "we already registered" cache is stale.
+      // Wipe it, force a fresh Expo push token registration, then re-test
+      // automatically so the user doesn't have to do anything else.
+      if (json && json.tokensFound === 0) {
+        try {
+          const freshToken = await forcePushReregistration();
+          if (freshToken) {
+            res = await fetch(`${BACKEND_URL}/api/push/test`, { method: 'POST', headers });
+            json = await res.json().catch(() => ({} as any));
+          }
+        } catch { /* fall through and report whatever the second test returned */ }
+      }
 
       const lines: string[] = [];
       lines.push(json.diagnosis || 'No diagnosis returned.');
