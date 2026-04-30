@@ -1,0 +1,51 @@
+below is my promt and what hs been implemnted form the promt so fah you job is to check if my promt requesat was fully implimented, with no errors and rember all implemention must be for realtime and production, no dummy or demo, no hard coded data, no unresolved to do or comments, no halucinations , no type script error 
+this app must run 100% off replit, backend is running on railway, supabase for database railway is just an enditor here 
+
+promt :
+
+ Implement a video file upload to product intake form. also ensure that adroom ai genrate video asset where required in a stragy number of videos assets generation by adroom ai allowed per account will be strictly on subscription types(stater=no video asset creation by adroom except user uploud their own video that adroom can use that. Pro plan = 2 video asset generation. Pro plus = 4 video asset generation
+ALSO ENSURE THAT ALL SUBSCRUPTION TIER ACTUALLY ENFORCE THIER LIMITS TO USER ACCOUNT AND NOT JUST A TEXT ON THE SUBSCRIPTION PLANES
+
+what has been done:
+
+Now let me update the backend server to enforce all these limits, and update the frontend plan details:
+
+
+2 actions
+Now enforce scraping, image generation, video generation, and agent activation:
+
+
+4 actions
+Now enforce agent and platform limits on the activate-agents endpoint, and register the video operation in energy service:
+
+
+2 actions
+Now enforce agent type and platform limits in the activate-agents endpoint:
+
+
+2 actions
+Let me verify the CreativeService has generateVideoAsset and also add a plan-limits endpoint:
+
+
+7 actions
+Now add the plan-limits API endpoint so the frontend can show real-time usage, and update the generate_strategy endpoint to pass plan limits into the AI context:
+
+
+4 actions
+Now let me update the frontend — fix PLAN_DETAILS, add plan limits fetching to the store, fix video upload properly, and add the video generation service:
+
+
+2 actions
+Now add fetchPlanLimits to energyStore and create the video generation service:
+
+
+6 actions
+Now create the frontend video generation service and update ProductIntakeScreen with the "Generate AI Video" button plus real remaining counts:
+
+
+2 actions
+Now rewrite ProductIntakeScreen with the fixed video upload, the AI generate button with real limit enforcement, and plan usage counters:
+
+
+2 actions
+Now update the SubscriptionScreen to show real-time usage from the backend, and restart the backend to apply the changes:

@@ -1,0 +1,102 @@
+thiscode contain the promt and what ahs been done so far, using the promt ivistigate and and implemnt whats left and inconplet ly implimented and make sure thier all production and realtime 
+
+promt:
+direct card charging via Flutterwave API, add new endpoints for billing and chat history did not take effect in the app, the duration card in the summary dosnt still dosnt recognise slected user curency from teh form modal like in service form aftrer filling the form, selecting goal and the next is duration modal in the sumarry still displaies the user price in dollars insted of the selected curency selected in the intial form same gose for other stregy form flow, also adroom app still dosnt request notifications and other permissions required if not allowed and when notifcation allowed manually notidication token is not genrated and poush notifcation from admin dosnt work fix this from root couse
+
+what has bveen done so far:
+29 minutes ago
+
+Analyzing billing and notification systems (4 seconds)
+Let me check the current state of all affected areas before fixing anything:
+
+
+45 actions
+Now I have complete understanding of all four root causes. Let me fix everything simultaneously.
+
+Issues found:
+
+handleGoalSelection hardcodes $ symbol — currency from productDetails.currency is ignored. DurationSelectionCard has no price/currency props at all.
+loadMessages reads only from chat_history Supabase table — the backend /api/chat/history (MemPalace ai_conversation_memory) is never queried.
+Direct Flutterwave card charge endpoint exists in service but has NO backend route and no app UI wired to it.
+Push notifications: permissions are requested in OnboardingScreen only (on a button press), token is never generated or saved to the backend, no app-level notification handler exists.
+
+3 actions
+Now I have everything I need. Let me fix all four issues in parallel:
+
+
+3 actions
+Now I'll fix all four issues simultaneously. Let me start with all the fixes:
+
+Fix 1: Currency in AgentChatScreen DurationSelectionCard
+
+
+2 actions
+Now update the call site to pass currency data from uiData:
+
+
+2 actions
+Now fix handleGoalSelection in agentStore.ts to use real currency and pass all product data to the duration card:
+
+
+2 actions
+Fix 2: Chat history — make loadMessages use the backend endpoint and also fix the service-flow currency (price submitted with currency symbol prefix):
+
+
+13 actions
+Found the root cause: startNewSession only clears chat_history but NOT ai_conversation_memory, so MemPalace always restores the old session. Let me now fix everything:
+
+
+6 actions
+Good - both charge-card endpoints exist. Now I need to:
+
+Add DELETE /api/chat/history to backend and fix startNewSession
+Add direct card input UI in SubscriptionScreen
+Create full notification service and wire to App.tsx
+Let me do all three in parallel:
+
+
+4 actions
+Now fix startNewSession to also clear MemPalace memory:
+
+
+2 actions
+Now create the full notification service:
+
+
+2 actions
+Now update App.tsx to initialize notifications on app start:
+
+
+5 actions
+Now check if expo-device is installed (needed by the notification service):
+
+
+4 actions
+expo-device isn't installed — update the notification service to remove that dependency:
+
+
+4 actions
+Now add the direct card charging UI to SubscriptionScreen.tsx. Let me read the bottom part of that file first:
+
+
+2 actions
+Now add the full direct card charging UI to SubscriptionScreen.tsx:
+
+
+4 actions
+Now add the card charging logic and replace openFlutterwavePayment with the direct charge flow:
+
+
+2 actions
+Now update handleStartTrial, handleSubscribe, and handleTopUp to use the direct card modal:
+
+
+2 actions
+Now add the Card Modal and PIN Modal UI into the screen's JSX:
+
+
+2 actions
+Now add the card input styles to the StyleSheet:
+
+
+Opened src/screens/SubscriptionScreen.tsx

@@ -1,9 +1,9 @@
 {
   "expo": {
-    "name": "adroom",
+    "name": "AdRoom AI",
     "slug": "adroom-mobile",
     "scheme": "adroom",
-    "version": "1.0.0",
+    "version": "3.7.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
@@ -24,7 +24,13 @@
       },
       "package": "com.adroom.mobile",
       "edgeToEdgeEnabled": true,
-      "predictiveBackGestureEnabled": false
+      "googleServicesFile": "./google-services.json",
+      "permissions": [
+        "RECEIVE_BOOT_COMPLETED",
+        "VIBRATE",
+        "WAKE_LOCK",
+        "POST_NOTIFICATIONS"
+      ]
     },
     "web": {
       "favicon": "./assets/favicon.png"
@@ -32,6 +38,21 @@
     "plugins": [
       "expo-secure-store",
       "expo-web-browser",
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/icon.png",
+          "color": "#00F0FF",
+          "defaultChannel": "default"
+        }
+      ],
+      [
+        "expo-location",
+        {
+          "locationAlwaysAndWhenInUsePermission": "AdRoom AI uses your location to find local trends and optimize campaign targeting.",
+          "locationWhenInUsePermission": "AdRoom AI uses your location to find local trends and optimize campaign targeting."
+        }
+      ],
       [
         "expo-build-properties",
         {
@@ -42,8 +63,12 @@
       ]
     ],
     "extra": {
+      "supabaseUrl": "https://mrrgjvrntenlkvslfvfh.supabase.co",
+      "supabaseAnonKey": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1ycmdqdnJudGVubGt2c2xmdmZoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njk1NzIxMzgsImV4cCI6MjA4NTE0ODEzOH0.wIwrxgBTsYsx1jGSDDgNw3iPPHN0TZ8v7psen51Z9ks",
+      "apiUrl": "https://backend.adroomai.com",
+      "facebookAppId": "1536532767602012",
       "eas": {
-        "projectId": "3b1fdc27-8b2b-4661-9f92-072a73d5425e"
+        "projectId": "69c27cbc-28ff-42e8-ada2-e3226a6b7de9"
       }
     }
   }

@@ -1,0 +1,101 @@
+thiscode contain the promt and what ahs been done so far, using the promt ivistigate and and implemnt whats left and inconplet ly implimented and make sure thier all production and realtime 
+
+promt:
+Dashboard should show which agent is currently working in realtime but not details and can't reveal adroom secrets like how adroom ensures complains that beats paid ads and a hive smad results with organic complains /marketing 
+
+Admin dashboard shoikd show how many accounts are currently connected to individual users
+
+Usr should be able to connect accounts on all plans but when it comes to the ai using the platform that is where the tire limitation should come in 
+
+So the check out form is being redirected but do check out form is displayed but their is the problem do not use checkout redirect user should be able to add their card or billing info in app and the only thing that will require redirect should be payment processing, user enter card details in app and proceed to payment after which user is redirected to confirm payment with otp then user payment is verified and user is redirected back to the app and after suss full payment billing card is added to user account anx will be used to automatically resubscribe in the next billing circle
+
+When user install and opens app for the first time all required permissions should be requested by app like notification, location and they rest that will be relevant
+
+The coonect website in the product intake modal should not be highlited for starter plan user it should be displayed but not hilited and click able with upgrade to pro srtagicslly written when user attempt to click it should take user to the energy screen and the pro plan section 
+
+Same gose for the sale option in the goal modal it should be hilited for starter and free user it should say upgrade to pro,u see becouse the sale goal is what activates the sale man agent which is only suppose to be avaible to pro and pro plus users  
+
+Service intake form should have and input form where user can enter portfolio link if avaible so it should be optional. 
+
+The duration modal in the agent chat screen after during service intake still dosnt recognize the user selected currency the gaol sumarry text still using the dollar sign instead of user selected currency
+
+Integret mempalace memory system adroom ai should be able to remeber ecry user conversions during chat, comment and intersections, improve what on ground with eh following
+
+all implementations and fix must be for realtime and production, no dummy data, no demo implemntations, no hardcoded data, no unresolved todo or comments, no type script erros in code base and implementation this app must run 100% off replit. i use railway for backend and supabase for front end
+
+what hs been done:
+Let me explore all the relevant files simultaneously before implementing:
+
+
+15 actions
+Let me read more key parts before implementing:
+
+
+26 actions
+Now I have everything I need. Let me write the session plan and implement all changes in parallel batches:
+
+
+Proposed plan
+
+Planning parallel implementation batches
+Now implementing all changes — starting with GoalSelectionScreen, DashboardScreen, and the backend MemPalace endpoint simultaneously:
+
+
+2 actions
+Now implement DashboardScreen with real-time agent status, and the backend MemPalace endpoint simultaneously:
+
+
+2 actions
+Now let me fix AgentChatScreen's GoalSelectionCard, ServiceIntakeCard portfolio link, and the StrategyPreviewCard currency — all in one edit pass:
+
+
+5 actions
+Now let me make all the AgentChatScreen edits needed:
+
+
+2 actions
+Now update the GOALS array and GoalSelectionCard in AgentChatScreen to lock Sales/Leads:
+
+
+2 actions
+Now fix the StrategyPreviewCard currency and add portfolio link to ServiceIntakeCard:
+
+
+2 actions
+Now insert the PaidEquivalentValue helper component and add the portfolio link to ServiceIntakeCard:
+
+
+2 actions
+Fix the require() anti-pattern and add useStrategyCreationStore properly at the top import, and add portfolio link to ServiceIntakeCard:
+
+
+2 actions
+Now fix the require() anti-pattern in PaidEquivalentValue:
+
+
+2 actions
+Now add the portfolio link to ServiceIntakeCard:
+
+
+2 actions
+Now pass navigation to GoalSelectionCard when rendering:
+
+
+2 actions
+Now let me implement the in-app card form for SubscriptionScreen and the backend charge-card + MemPalace endpoints simultaneously:
+
+
+6 actions
+Now add the chargeCard method to FlutterwaveService and create the charge-card backend endpoint:
+
+
+2 actions
+Now add the /api/billing/charge-card and /api/chat/history endpoints to the backend:
+
+
+2 actions
+Now add the charge-card and MemPalace endpoints to the backend, then implement first-launch permissions:
+
+
+2 actions
+Let me check if TOPUP_PACKS and PLANS are defined in the backend server:

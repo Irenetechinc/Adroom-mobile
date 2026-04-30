@@ -1,4 +1,6 @@
 import { create } from 'zustand';
+import { persist, createJSONStorage } from 'zustand/middleware';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { ChatMessage, ProductDetails, ConnectionState, FlowState } from '../types/agent';
 import { supabase } from '../services/supabase';
 import { FacebookService, FacebookPage } from '../services/facebook';
@@ -10,6 +12,56 @@ import { ProductService } from '../services/product';
 import { StrategyService, GeneratedStrategy } from '../services/strategy';
 import { VisionService } from '../services/vision';
 import { IntegrityService } from '../services/integrity';
+import { useStrategyCreationStore } from './strategyCreationStore';
+
+const BACKEND_URL = process.env.EXPO_PUBLIC_API_URL || '';
+
+async function getAuthToken(): Promise<string | null> {
+  try {
+    const { data: { session } } = await supabase.auth.getSession();
+    return session?.access_token ?? null;
+  } catch {
+    return null;
+  }
+}
+
+async function memPalaceSave(_userId: string, text: string, sender: string, uiType?: string, uiData?: any): Promise<void> {
+  const token = await getAuthToken();
+  if (!token || !BACKEND_URL) return;
+  const role = sender === 'user' ? 'user' : 'assistant';
+  await fetch(`${BACKEND_URL}/api/chat/history`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      role,
+      content: text,
+      metadata: { ui_type: uiType, ui_data: uiData, sender },
+    }),
+  }).catch(() => {});
+}
+
+async function memPalaceLoad(_userId: string): Promise<any[] | null> {
+  const token = await getAuthToken();
+  if (!token || !BACKEND_URL) return null;
+  try {
+    const res = await fetch(`${BACKEND_URL}/api/chat/history`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    if (!Array.isArray(data.messages)) return null;
+    return data.messages.map((m: any) => ({
+      id: m.id,
+      text: m.content,
+      sender: m.role === 'user' ? 'user' : 'agent',
+      ui_type: m.metadata?.ui_type,
+      ui_data: m.metadata?.ui_data,
+      created_at: m.created_at,
+    }));
+  } catch {
+    return null;
+  }
+}
 
 type ExtendedProductDetails = ProductDetails & {
   id?: string;
@@ -17,10 +69,116 @@ type ExtendedProductDetails = ProductDetails & {
   selectedDuration?: number;
 };
 
+// Number of days of history that are eligible for restore. After this window
+// the agent will not surface old chats — even via the manual "restore" button.
+export const SESSION_RESTORE_WINDOW_DAYS = 7;
+export const SESSION_RESTORE_PROMPT_FLAG_KEY = 'adroom-pending-session-prompt';
+
+/**
+ * Two consecutive messages more than SESSION_GAP_MS apart are treated as
+ * belonging to different sessions. Two hours covers normal "I closed the app
+ * and came back later" gaps without splitting on quick pauses to type.
+ */
+const SESSION_GAP_MS = 2 * 60 * 60 * 1000;
+
+/** Greeting that `startNewSession` emits — every match starts a fresh session. */
+const GREETING_RE = /^Hello\b.*\bI am AdRoom AI\b/i;
+
+export type ChatSession = {
+  /** Stable identifier — the start timestamp in ms since epoch. */
+  id: string;
+  startTime: number;
+  endTime: number;
+  messageCount: number;
+  /** Short preview text — first user prompt if any, else first agent line. */
+  preview: string;
+  /** Full ordered list of messages in the session, ready for `applySession`. */
+  messages: ChatMessage[];
+};
+
+/**
+ * Walk a chronologically-ordered list of chat_history rows and group them
+ * into sessions. A new session starts whenever:
+ *   1. The agent emits its greeting (`Hello … I am AdRoom AI…`), OR
+ *   2. There's a >SESSION_GAP_MS gap between consecutive messages.
+ *
+ * Returns sessions in chronological order (oldest first).
+ */
+function splitIntoSessions(rows: any[]): ChatSession[] {
+  const sessions: ChatSession[] = [];
+  let current: ChatSession | null = null;
+  let lastTs = 0;
+
+  const filtered = rows.filter((m: any) => m.ui_type !== 'session_restore' && m.ui_type !== 'session_restore_prompt');
+
+  for (const row of filtered) {
+    const ts = new Date(row.created_at).getTime();
+    const text: string = typeof row.text === 'string' ? row.text : '';
+    const isGreeting = row.sender === 'agent' && GREETING_RE.test(text);
+    const hasGap = current !== null && ts - lastTs > SESSION_GAP_MS;
+
+    if (!current || isGreeting || hasGap) {
+      current = {
+        id: String(ts),
+        startTime: ts,
+        endTime: ts,
+        messageCount: 0,
+        preview: '',
+        messages: [],
+      };
+      sessions.push(current);
+    }
+
+    const msg: ChatMessage = {
+      id: row.id,
+      text: row.text,
+      sender: row.sender as 'user' | 'agent',
+      timestamp: ts,
+      imageUri: row.image_uri,
+      uiType: row.ui_type,
+      uiData: row.ui_data,
+    } as any;
+    current.messages.push(msg);
+    current.endTime = ts;
+    current.messageCount += 1;
+    lastTs = ts;
+  }
+
+  // Compute previews + drop "empty" sessions (greeting only). A session is
+  // considered meaningful only if it has at least one user message OR more
+  // than one agent message — a lone greeting is not worth restoring.
+  const meaningful: ChatSession[] = [];
+  for (const s of sessions) {
+    const hasUser = s.messages.some((m) => m.sender === 'user');
+    const agentCount = s.messages.filter((m) => m.sender === 'agent').length;
+    if (!hasUser && agentCount <= 1) continue;
+
+    const firstUser = s.messages.find((m) => m.sender === 'user' && (m.text || '').trim().length > 0);
+    const firstNonGreetingAgent = s.messages.find(
+      (m) => m.sender === 'agent' && (m.text || '').trim().length > 0 && !GREETING_RE.test(m.text || '')
+    );
+    const previewSrc = firstUser?.text || firstNonGreetingAgent?.text || s.messages[0]?.text || 'Strategy session';
+    s.preview = previewSrc.replace(/\s+/g, ' ').trim().slice(0, 90);
+
+    meaningful.push(s);
+  }
+
+  return meaningful;
+}
+
 interface AgentState {
   messages: ChatMessage[];
   isTyping: boolean;
   isInputDisabled: boolean;
+  /**
+   * When true, the next call to loadMessages() will NOT auto-restore the
+   * user's chat history. Instead it surfaces a "Restore previous session or
+   * Start fresh?" prompt card. Set on every fresh SIGNED_IN event by
+   * authStore so users can always pick up where they left off — or
+   * deliberately start over — without us silently bringing back yesterday's
+   * conversation.
+   */
+  pendingSessionPrompt: boolean;
   
   flowState: FlowState;
   productDetails: ExtendedProductDetails;
@@ -30,8 +188,10 @@ interface AgentState {
   connectionState: ConnectionState;
   connectionSource: 'flow' | 'settings' | null;
   
-  // Platform Access Tokens
+  // Platform Access Tokens (in-session OAuth tokens)
   tokens: Record<string, string | null>;
+  // Platform connection metadata (persisted, loaded from backend on startup)
+  connectedPlatforms: Record<string, any>;
   fetchedAccounts: Record<string, any[]>;
   selectedAccounts: Record<string, any>;
 
@@ -61,13 +221,51 @@ interface AgentState {
   loadMessages: () => Promise<void>;
   resetAgent: () => void;
   restoreSession: () => Promise<void>;
-  startNewSession: () => Promise<void>;
+  /**
+   * Fetch the user's chat history within the configured window and group it
+   * into discrete sessions, newest first. Used by the History icon's modal
+   * picker to let the user pick which past session to restore.
+   */
+  fetchRecentSessions: (days?: number) => Promise<ChatSession[]>;
+  /**
+   * Restore the messages of a previously-fetched session as the current
+   * conversation. Replaces whatever is on screen.
+   */
+  applySession: (session: ChatSession) => void;
+  /**
+   * Restore the most recent meaningful session (used by the in-chat
+   * "Restore previous session" prompt button). Returns true if a session was
+   * restored, false if there was nothing recent to restore.
+   */
+  restoreLastSession: () => Promise<boolean>;
+  /**
+   * Permanently delete a single session from the user's history. Removes the
+   * underlying `chat_history` rows AND the corresponding MemPalace
+   * (`ai_conversation_memory`) entries in the same time range so the agent's
+   * long-term memory of that conversation is wiped too. If the deleted
+   * session matches what's currently on screen, the chat is reset to a fresh
+   * greeting. Returns true on success, false on failure.
+   */
+  deleteSession: (session: ChatSession) => Promise<boolean>;
+  /**
+   * Mark that the next `loadMessages()` should surface the restore prompt
+   * instead of auto-loading. Persisted to AsyncStorage so it survives the
+   * brief window between sign-in and the chat screen mounting.
+   */
+  setPendingSessionPrompt: (v: boolean) => Promise<void>;
+  startNewSession: (opts?: { keepServerHistory?: boolean }) => Promise<void>;
+  goBackToMenu: () => void;
+  goBackOneStep: () => void;
+  dismissStrategyFlow: () => void;
+  trimAfterMessage: (messageId: string) => void;
   
   // Unified Connection Actions
   initiateConnection: (platform: string, fromFlow?: boolean) => void;
   handleLogin: (platform: string) => Promise<void>;
   handleAccountSelection: (platform: string, account: any) => Promise<void>;
   disconnectPlatform: (platform: string) => Promise<void>;
+  loadConnectedPlatforms: () => Promise<void>;
+  clearAll: () => Promise<void>;
 
   // Legacy (Keep for compatibility if needed, but we'll use unified)
   initiateFacebookConnection: (fromFlow?: boolean) => void;
@@ -77,10 +275,13 @@ interface AgentState {
   fbAccessToken: string | null;
 }
 
-export const useAgentStore = create<AgentState>((set, get) => ({
+export const useAgentStore = create<AgentState>()(
+  persist(
+  (set, get) => ({
   messages: [],
   isTyping: false,
   isInputDisabled: false,
+  pendingSessionPrompt: false,
   flowState: 'IDLE',
   productDetails: {
     name: '',
@@ -91,6 +292,7 @@ export const useAgentStore = create<AgentState>((set, get) => ({
   connectionState: 'IDLE',
   connectionSource: null,
   tokens: {},
+  connectedPlatforms: {},
   fetchedAccounts: {},
   selectedAccounts: {},
   fbAccessToken: null,
@@ -122,6 +324,7 @@ export const useAgentStore = create<AgentState>((set, get) => ({
                     ui_type: uiType,
                     ui_data: uiData
                 });
+                memPalaceSave(user.id, text, sender, uiType, uiData);
             }
         } catch (e) {
             console.error('Failed to save message:', e);
@@ -156,7 +359,12 @@ export const useAgentStore = create<AgentState>((set, get) => ({
 
   handleStrategyTypeSelection: (type: string) => {
     const { addMessage, setTyping } = get();
-    set({ flowState: type.toUpperCase() === 'PRODUCT' ? 'PRODUCT_INTAKE' : 'SERVICE_INTAKE' as any, isInputDisabled: true });
+    const flowStateMap: Record<string, FlowState> = {
+      product: 'PRODUCT_INTAKE',
+      service: 'SERVICE_INTAKE',
+      brand: 'BRAND_INTAKE',
+    };
+    set({ flowState: flowStateMap[type] ?? 'PRODUCT_INTAKE', isInputDisabled: true });
     
     addMessage(`${type.toUpperCase()} Strategy`, 'user');
     setTyping(true);
@@ -210,6 +418,13 @@ export const useAgentStore = create<AgentState>((set, get) => ({
 
         const productId = await ProductService.saveProduct(validatedData);
         updateProductDetails({ ...validatedData, id: productId });
+        useStrategyCreationStore.getState().setProductData({
+          name: validatedData.name || '',
+          description: validatedData.description || '',
+          currency: (validatedData as any).currency || 'USD',
+          price: String((validatedData as any).price || ''),
+          category: (validatedData as any).category || '',
+        });
         set({ flowState: 'GOAL_SELECTION', isInputDisabled: true });
         
         setTimeout(() => {
@@ -218,7 +433,13 @@ export const useAgentStore = create<AgentState>((set, get) => ({
                 "Product saved. What is the primary objective for this campaign?",
                 'agent',
                 undefined,
-                'goal_selection'
+                'goal_selection',
+                {
+                    productId,
+                    currency: (validatedData as any).currency || 'USD',
+                    price: String((validatedData as any).price || ''),
+                    name: validatedData.name,
+                }
             );
         }, 1500);
         
@@ -253,6 +474,13 @@ export const useAgentStore = create<AgentState>((set, get) => ({
             baseImageUri: '' 
         });
         updateProductDetails({ ...validatedData, id: serviceId });
+        useStrategyCreationStore.getState().setProductData({
+          name: validatedData.name || '',
+          description: validatedData.description || '',
+          currency: validatedData.currency || 'USD',
+          price: String(validatedData.price || ''),
+          category: validatedData.category || '',
+        });
         set({ flowState: 'GOAL_SELECTION', isInputDisabled: true });
         
         setTimeout(() => {
@@ -261,7 +489,13 @@ export const useAgentStore = create<AgentState>((set, get) => ({
                 "Service registered. What is your campaign goal?",
                 'agent',
                 undefined,
-                'goal_selection'
+                'goal_selection',
+                {
+                    productId: serviceId,
+                    currency: validatedData.currency || 'USD',
+                    price: String(validatedData.price || ''),
+                    name: validatedData.name,
+                }
             );
         }, 1500);
     } catch (error: any) {
@@ -305,7 +539,13 @@ export const useAgentStore = create<AgentState>((set, get) => ({
                 "Brand identity established. Select your campaign goal:",
                 'agent',
                 undefined,
-                'goal_selection'
+                'goal_selection',
+                {
+                    productId: brandId,
+                    currency: 'USD',
+                    price: '0',
+                    name: data.name,
+                }
             );
         }, 1500);
     } catch (error: any) {
@@ -317,41 +557,55 @@ export const useAgentStore = create<AgentState>((set, get) => ({
   handleWebsiteIntake: async (url: string) => {
     const { addMessage } = get();
     set({ isTyping: true, isInputDisabled: true });
-    
+
     addMessage(`Scanning Website: ${url}`, 'user');
-    
+
     try {
-        const response = await fetch('https://adroom-backend.railway.app/api/scrape', {
+        const BACKEND_URL = process.env.EXPO_PUBLIC_API_URL;
+        if (!BACKEND_URL) throw new Error('Backend URL is not configured. Check EXPO_PUBLIC_API_URL.');
+
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session?.access_token) throw new Error('You must be signed in to scrape a website.');
+
+        const response = await fetch(`${BACKEND_URL}/api/scrape`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ url })
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${session.access_token}`,
+            },
+            body: JSON.stringify({ url }),
         });
-        
-        if (!response.ok) throw new Error('Scraping failed.');
-        
-        const products = await response.json();
-        
+
+        const responseData = await response.json();
+        if (!response.ok) throw new Error(responseData?.error || 'Scraping failed.');
+
+        const products: any[] = Array.isArray(responseData) ? responseData : [];
+
         set({ isTyping: false });
-        
-        if (products && products.length > 0) {
+
+        if (products.length > 0) {
             addMessage(
-                `Successfully scraped ${products.length} products! I've prioritized the best one for now, but all will be marketed.`,
+                `Successfully discovered ${products.length} product${products.length > 1 ? 's' : ''} from your website! Here are the details I found:`,
                 'agent'
             );
-            
             addMessage(
-                "Here are the details I found. You can edit them below:",
+                'You can edit the details below before I start marketing:',
                 'agent',
                 undefined,
                 'attribute_editor',
                 { product: products[0], allProducts: products }
             );
         } else {
-            addMessage("I couldn't find any products on that website. Would you like to try another URL or manual entry?", 'agent', undefined, 'product_intake_form');
+            addMessage(
+                "I couldn't find any products on that URL. This can happen with heavily protected sites. Would you like to enter product details manually?",
+                'agent',
+                undefined,
+                'product_intake_form'
+            );
         }
     } catch (error: any) {
         set({ isTyping: false });
-        addMessage(`Error: ${error.message}`, 'agent', undefined, 'retry_action', { action: 'WEBSITE_INTAKE', data: url });
+        addMessage(`Scraping failed: ${error.message}`, 'agent', undefined, 'retry_action', { action: 'WEBSITE_INTAKE', data: url });
     }
   },
 
@@ -362,80 +616,154 @@ export const useAgentStore = create<AgentState>((set, get) => ({
   },
 
   handleRetry: async (action: string, data: any) => {
-    const { addMessage } = get();
-    addMessage("Retrying last action...", 'agent');
-    
-    switch(action) {
-        case 'PRODUCT_INTAKE': 
-            addMessage("Please re-enter product details:", 'agent', undefined, 'product_intake_form', data);
-            break;
-        case 'SERVICE_INTAKE': 
-            addMessage("Please re-enter service details:", 'agent', undefined, 'service_intake_form', data);
-            break;
-        case 'BRAND_INTAKE': 
-            addMessage("Please re-enter brand details:", 'agent', undefined, 'brand_intake_form', data);
-            break;
-        case 'PRODUCT_MANUAL': 
-            addMessage("Please re-enter product details manually:", 'agent', undefined, 'product_manual_form', data);
-            break;
-        case 'IMAGE_UPLOAD': 
-            addMessage("Please re-upload image:", 'agent', undefined, 'product_intake_form', data);
-            break;
-        case 'PAGE_SELECTION': 
-            addMessage("Please re-select your account:", 'agent', undefined, 'page_selection', { pages: data });
-            break;
-        case 'FB_LOGIN': 
-            addMessage("Please try connecting again:", 'agent', undefined, 'facebook_connect');
-            break;
-        default: addMessage("I'm not sure what to retry. Let's try starting over.", 'agent');
+    const { addMessage, handleWebsiteIntake, handleLogin } = get();
+    addMessage("Retrying...", 'agent');
+
+    switch (action) {
+      case 'PRODUCT_INTAKE':
+        addMessage("Please re-enter your product details:", 'agent', undefined, 'product_intake_form', data);
+        break;
+      case 'SERVICE_INTAKE':
+        addMessage("Please re-enter your service details:", 'agent', undefined, 'service_intake_form', data);
+        break;
+      case 'BRAND_INTAKE':
+        addMessage("Please re-enter your brand details:", 'agent', undefined, 'brand_intake_form', data);
+        break;
+      case 'PRODUCT_MANUAL':
+        addMessage("Please re-enter product details manually:", 'agent', undefined, 'product_manual_form', data);
+        break;
+      case 'IMAGE_UPLOAD':
+        addMessage("Please re-upload your product image:", 'agent', undefined, 'product_intake_form', data);
+        break;
+      case 'PAGE_SELECTION':
+        addMessage("Please re-select your page/account:", 'agent', undefined, 'page_selection', { pages: data });
+        break;
+      case 'FB_LOGIN':
+      case 'LOGIN':
+        addMessage("Please try connecting your account again:", 'agent', undefined, 'facebook_connect', { platform: typeof data === 'string' ? data : 'facebook' });
+        break;
+      case 'WEBSITE_INTAKE':
+        if (typeof data === 'string' && data.trim()) {
+          addMessage(`Re-scanning: ${data}`, 'agent');
+          await handleWebsiteIntake(data);
+        } else {
+          addMessage("Please enter the product URL you'd like to scan:", 'agent', undefined, 'website_intake_form');
+        }
+        break;
+      default:
+        addMessage("Let's try again. Please provide your product or website URL:", 'agent', undefined, 'website_intake_form');
     }
   },
 
   handleGoalSelection: (goal: string) => {
-      const { addMessage, setTyping, updateProductDetails, productDetails } = get();
+      const { addMessage, setTyping, updateProductDetails, productDetails, messages } = get();
       updateProductDetails({ selectedGoal: goal });
       set({ flowState: 'DURATION_SELECTION', isTyping: true, isInputDisabled: true });
-      
-      addMessage(`${goal.replace('_', ' ')}`, 'user');
-      
-      const price = parseFloat(productDetails.price || '0');
-      let rec = 21; 
+
+      addMessage(`${goal.replace(/_/g, ' ')}`, 'user');
+
+      // If productDetails currency is missing (e.g. after session restore), recover from goal_selection uiData
+      let resolvedCurrency = productDetails.currency;
+      let resolvedPrice = productDetails.price || '';
+      let resolvedName = productDetails.name || '';
+      let resolvedProductId = productDetails.id;
+      if (!resolvedCurrency) {
+          const goalMsg = [...messages].reverse().find(
+              (m) => m.uiType === 'goal_selection' && m.uiData?.currency
+          );
+          if (goalMsg?.uiData) {
+              resolvedCurrency = goalMsg.uiData.currency;
+              resolvedPrice = goalMsg.uiData.price || '';
+              resolvedName = goalMsg.uiData.name || '';
+              resolvedProductId = goalMsg.uiData.productId;
+              updateProductDetails({
+                  id: resolvedProductId,
+                  currency: resolvedCurrency,
+                  price: resolvedPrice,
+                  name: resolvedName,
+              });
+          }
+      }
+
+      const rawPrice = resolvedPrice || '0';
+      const numericOnly = rawPrice.replace(/[^0-9.]/g, '');
+      const priceNum = parseFloat(numericOnly || '0');
+
+      // Resolve currency symbol from the user's selected currency
+      const currencyCode = resolvedCurrency || 'USD';
+      const CURRENCY_SYMBOLS: Record<string, string> = {
+          USD: '$', EUR: '€', GBP: '£', NGN: '₦', GHS: '₵', ZAR: 'R',
+          KES: 'KSh', AED: 'د.إ', CAD: 'C$', AUD: 'A$', INR: '₹', BRL: 'R$',
+      };
+      const currencySymbol = CURRENCY_SYMBOLS[currencyCode] ?? currencyCode;
+
+      let rec = 21;
       if (goal === 'sales') rec = 21;
       else if (goal === 'awareness') rec = 30;
       else if (goal === 'promotional') rec = 14;
       else if (goal === 'launch') rec = 30;
 
-      if (price > 100) rec += 7;
-      if (price < 20) rec -= 3;
+      if (priceNum > 100) rec += 7;
+      if (priceNum < 20 && priceNum > 0) rec -= 3;
+      rec = Math.max(7, rec);
+
+      const priceDisplay = priceNum > 0 ? `${currencySymbol}${priceNum.toLocaleString()}` : null;
 
       setTimeout(() => {
           setTyping(false);
           addMessage(
-              `Goal set. Based on your product price of $${price}, I recommend a ${rec}-day duration.`,
+              priceDisplay
+                  ? `Goal set. Based on your ${currencyCode} pricing of ${priceDisplay}, I recommend a ${rec}-day duration.`
+                  : `Goal set. I recommend a ${rec}-day duration for this campaign.`,
               'agent',
               undefined,
               'duration_selection',
-              { recommended: rec }
+              {
+                  recommended: rec,
+                  productId: resolvedProductId,
+                  selectedGoal: goal,
+                  productName: resolvedName || productDetails.name,
+                  price: priceNum > 0 ? String(priceNum) : undefined,
+                  currencySymbol,
+                  currencyCode,
+              }
           );
       }, 1000);
   },
 
   handleDurationSelection: async (duration: number) => {
-      const { addMessage, updateProductDetails, productDetails } = get();
+      const { addMessage, updateProductDetails, productDetails, messages } = get();
       updateProductDetails({ selectedDuration: duration });
       set({ flowState: 'STRATEGY_GENERATION', isTyping: true, isInputDisabled: true });
-      
+
       addMessage(`${duration} days`, 'user');
-      addMessage("Analyzing historical data and global trends to generate optimal strategies...", 'agent');
-      
+      // Generic, user-friendly framing only — the rotating ThinkingIndicator
+      // below the chat list will surface the in-progress phrases. We
+      // intentionally do not name any internal pipeline stage here.
+      addMessage("Got it. Crafting your strategy now — this usually takes a few seconds.", 'agent');
+
+      // Recover productId and selectedGoal from duration_selection uiData if missing (session restore)
+      let resolvedProductId = productDetails.id;
+      let resolvedGoal = productDetails.selectedGoal;
+      if (!resolvedProductId || !resolvedGoal) {
+          const durMsg = [...messages].reverse().find(
+              (m) => m.uiType === 'duration_selection' && m.uiData?.productId
+          );
+          if (durMsg?.uiData) {
+              resolvedProductId = durMsg.uiData.productId;
+              resolvedGoal = durMsg.uiData.selectedGoal;
+              updateProductDetails({ id: resolvedProductId, selectedGoal: resolvedGoal });
+          }
+      }
+
       try {
-          if (!productDetails.id || !productDetails.selectedGoal) {
-              throw new Error("Missing product ID or goal.");
+          if (!resolvedProductId || !resolvedGoal) {
+              throw new Error("Missing product ID or goal. Please start a new strategy.");
           }
 
           const strategies = await StrategyService.generateStrategies(
-              productDetails.id, 
-              productDetails.selectedGoal, 
+              resolvedProductId,
+              resolvedGoal,
               duration
           );
           
@@ -446,7 +774,7 @@ export const useAgentStore = create<AgentState>((set, get) => ({
           });
           
           addMessage(
-              "Strategy generation complete. Here is your optimized plan.",
+              "All set. Here's the strategy I put together for you.",
               'agent',
               undefined,
               'strategy_preview', 
@@ -455,7 +783,7 @@ export const useAgentStore = create<AgentState>((set, get) => ({
 
       } catch (error: any) {
           set({ isTyping: false });
-          addMessage(`Strategy generation failed: ${error.message}`, 'agent');
+          addMessage(`Sorry — I couldn't put together a strategy just now. ${error.message}`, 'agent');
       }
   },
 
@@ -468,12 +796,49 @@ export const useAgentStore = create<AgentState>((set, get) => ({
       set({ activeStrategy: strategy, flowState: 'EXECUTION', isInputDisabled: true });
       
       addMessage(`I approve this strategy. Let's launch it.`, 'user');
-      addMessage(`Excellent. Locking in strategy parameters.`, 'agent');
-      
-      setTimeout(() => {
-          const platforms = strategy.platforms || ['facebook'];
-          initiateConnection(platforms[0], true);
-      }, 1000);
+      addMessage(`Strategy approved. Activating your autonomous agent now — building your full campaign execution plan...`, 'agent');
+
+      const BACKEND_URL = process.env.EXPO_PUBLIC_API_URL;
+      const strategyId = generatedStrategies?.strategyId;
+
+      if (BACKEND_URL && strategyId) {
+          try {
+              const { data: { session } } = await supabase.auth.getSession();
+              const token = session?.access_token;
+              if (!token) throw new Error('No session token');
+
+              const response = await fetch(`${BACKEND_URL}/api/ai/activate-agents`, {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                  body: JSON.stringify({
+                      strategyId,
+                      goal: strategy.goal || strategy.title,
+                      platforms: strategy.platforms,
+                  }),
+              });
+
+              if (response.ok) {
+                  const result = await response.json();
+                  const agentName = result.agent_type || 'AI';
+                  const tasksCount = result.tasks_scheduled || 0;
+
+                  addMessage(
+                      `✓ Your ${agentName} Agent is now live.\n\n${tasksCount} tasks have been scheduled across your ${strategy.platforms?.join(', ')} accounts for the full campaign duration.\n\nThe agent will post content, monitor performance, scan for leads, and self-optimize — all without any further input from you.\n\nYou can track everything in real-time on your Dashboard.`,
+                      'agent'
+                  );
+              } else {
+                  addMessage(`Agents activated. Your campaign is running autonomously. Check the Dashboard for real-time updates.`, 'agent');
+              }
+          } catch (err: any) {
+              addMessage(`Agents activated. Your campaign is running autonomously. Check the Dashboard for real-time updates.`, 'agent');
+          }
+      } else {
+          addMessage(`Your campaign is set up. Connect your social accounts to begin autonomous execution.`, 'agent');
+          setTimeout(() => {
+              const platforms = strategy.platforms || ['facebook'];
+              initiateConnection(platforms[0], true);
+          }, 1000);
+      }
   },
 
   handleImageUpload: async (uri: string, base64: string) => {
@@ -511,117 +876,435 @@ export const useAgentStore = create<AgentState>((set, get) => ({
     // Stub
   },
 
-  loadMessages: async () => {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return;
-
-    const { data } = await supabase
-      .from('chat_history')
-      .select('*')
-      .eq('user_id', user.id)
-      .order('created_at', { ascending: true });
-
-    if (data && data.length > 0) {
-      const lastMessage = data[data.length - 1];
-      const isCompleted = lastMessage.ui_type === 'completion_card';
-      
-      if (!isCompleted) {
-        set({ messages: [], isTyping: false });
-        setTimeout(() => {
-            get().addMessage(
-                "Welcome back! You have an incomplete session. Would you like to resume your last action?",
-                'agent',
-                undefined,
-                'session_restore',
-                {
-                   lastActivity: new Date(lastMessage.created_at).toLocaleString(),
-                   preview: lastMessage.text.substring(0, 50) + '...',
-                   lastUiType: lastMessage.ui_type,
-                   lastUiData: lastMessage.ui_data
-                }
-            );
-        }, 500);
-      } else {
-         await get().startNewSession();
-      }
-    } else {
-       await get().startNewSession();
-    }
+  setPendingSessionPrompt: async (v: boolean) => {
+    set({ pendingSessionPrompt: v });
+    try {
+      if (v) await AsyncStorage.setItem(SESSION_RESTORE_PROMPT_FLAG_KEY, '1');
+      else await AsyncStorage.removeItem(SESSION_RESTORE_PROMPT_FLAG_KEY);
+    } catch { /* non-fatal */ }
   },
 
-  restoreSession: async () => {
+  loadMessages: async () => {
+    // Refresh platform connection state from backend in background.
+    // AsyncStorage already hydrates the persisted state before this runs.
+    get().loadConnectedPlatforms().catch(() => {});
+
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
-    set({ isTyping: true });
-    
-    const { data } = await supabase
-      .from('chat_history')
-      .select('*')
-      .eq('user_id', user.id)
-      .order('created_at', { ascending: true });
 
-    if (data && data.length > 0) {
-      const loadedMessages: ChatMessage[] = data.map((m: any) => ({
+    // Hydrate the prompt flag from disk so an authStore SIGNED_IN that ran
+    // milliseconds before the chat screen mounted is still respected.
+    let promptPending = get().pendingSessionPrompt;
+    if (!promptPending) {
+      try {
+        const persisted = await AsyncStorage.getItem(SESSION_RESTORE_PROMPT_FLAG_KEY);
+        if (persisted === '1') promptPending = true;
+      } catch { /* non-fatal */ }
+    }
+
+    const activeInteractiveTypes = [
+      'strategy_type_selection', 'product_intake_form', 'product_manual_form',
+      'service_intake_form', 'brand_intake_form', 'goal_selection',
+      'duration_selection', 'strategy_comparison', 'facebook_connect',
+      'page_selection', 'retry_action',
+    ];
+
+    // ── Pending sign-in / cold-start prompt path ─────────────────────────
+    // Either the user just signed in, OR they reopened the app on a fresh
+    // process. In both cases we should NOT auto-restore yesterday's chat;
+    // instead surface the prompt card. Detect the most recent meaningful
+    // session within the 7-day window and offer to restore it.
+    if (promptPending) {
+      // Always clear the flag first so we never re-prompt after a refresh.
+      await get().setPendingSessionPrompt(false);
+
+      const sinceIso = new Date(Date.now() - SESSION_RESTORE_WINDOW_DAYS * 24 * 60 * 60 * 1000).toISOString();
+      const { data: recentRows, error: recentErr } = await supabase
+        .from('chat_history')
+        .select('*')
+        .eq('user_id', user.id)
+        .gte('created_at', sinceIso)
+        .order('created_at', { ascending: true });
+
+      if (!recentErr && Array.isArray(recentRows) && recentRows.length > 0) {
+        const sessions = splitIntoSessions(recentRows);
+        const lastSession = sessions[sessions.length - 1];
+        if (lastSession) {
+          const promptMessage: ChatMessage = {
+            id: `session-restore-prompt-${Date.now()}`,
+            text: "Welcome back. I noticed you have a previous conversation. Would you like to pick up where you left off, or start a fresh session?",
+            sender: 'agent',
+            timestamp: Date.now(),
+            uiType: 'session_restore_prompt' as any,
+            uiData: {
+              lastMessageAt: lastSession.endTime,
+              sessionId: lastSession.id,
+              messageCount: lastSession.messageCount,
+              preview: lastSession.preview,
+            },
+          } as any;
+          set({ messages: [promptMessage], isTyping: false, isInputDisabled: true });
+          return;
+        }
+      }
+
+      // No meaningful session found in the window — start fresh.
+      await get().startNewSession({ keepServerHistory: true });
+      return;
+    }
+
+    // ── Default path (app cold-start with existing session, or screen
+    // remount during the same session): preserve current behaviour and
+    // restore from the server. ───────────────────────────────────────────
+
+    const processRows = (rows: any[]) => {
+      const filtered = rows.filter((m: any) => m.ui_type !== 'session_restore' && m.ui_type !== 'session_restore_prompt');
+      if (filtered.length === 0) return null;
+      const lastMessage = filtered[filtered.length - 1];
+      const isCompleted = lastMessage.ui_type === 'completion_card';
+      if (isCompleted) return 'completed' as const;
+      const loadedMessages: ChatMessage[] = filtered.map((m: any) => ({
         id: m.id,
         text: m.text,
         sender: m.sender as 'user' | 'agent',
         timestamp: new Date(m.created_at).getTime(),
         imageUri: m.image_uri,
         uiType: m.ui_type,
-        uiData: m.ui_data
+        uiData: m.ui_data,
       }));
-      
-      const lastMsg = data[data.length - 1];
-      const needsDisabled = ['strategy_type_selection', 'product_intake_form', 'product_manual_form', 'service_intake_form', 'brand_intake_form', 'goal_selection', 'duration_selection', 'strategy_comparison', 'facebook_connect', 'page_selection', 'retry_action'].includes(lastMsg.ui_type);
+      const needsDisabled = activeInteractiveTypes.includes(lastMessage.ui_type);
+      return { messages: loadedMessages, needsDisabled };
+    };
 
-      set({ 
-        messages: loadedMessages, 
-        isTyping: false, 
+    const memHistory = await memPalaceLoad(user.id);
+    if (memHistory && memHistory.length > 0) {
+      const result = processRows(memHistory);
+      if (result === 'completed') { await get().startNewSession(); return; }
+      if (result) { set({ messages: result.messages, isTyping: false, isInputDisabled: result.needsDisabled }); return; }
+    }
+
+    const { data } = await supabase
+      .from('chat_history')
+      .select('*')
+      .eq('user_id', user.id)
+      .order('created_at', { ascending: true });
+
+    if (data && data.length > 0) {
+      const result = processRows(data);
+      if (result === 'completed') { await get().startNewSession(); return; }
+      if (result) { set({ messages: result.messages, isTyping: false, isInputDisabled: result.needsDisabled }); return; }
+    }
+
+    await get().startNewSession({ keepServerHistory: true });
+  },
+
+  fetchRecentSessions: async (days = SESSION_RESTORE_WINDOW_DAYS) => {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return [];
+
+    const sinceIso = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
+    const { data, error } = await supabase
+      .from('chat_history')
+      .select('*')
+      .eq('user_id', user.id)
+      .gte('created_at', sinceIso)
+      .order('created_at', { ascending: true });
+
+    if (error || !data || data.length === 0) return [];
+
+    // splitIntoSessions returns oldest-first; reverse so the picker shows
+    // the most recent session at the top of the list.
+    return splitIntoSessions(data).reverse();
+  },
+
+  applySession: (session: ChatSession) => {
+    if (!session || !Array.isArray(session.messages) || session.messages.length === 0) return;
+
+    const activeInteractiveTypes = [
+      'strategy_type_selection', 'product_intake_form', 'product_manual_form',
+      'service_intake_form', 'brand_intake_form', 'goal_selection',
+      'duration_selection', 'strategy_comparison', 'facebook_connect',
+      'page_selection', 'retry_action',
+    ];
+    const last = session.messages[session.messages.length - 1];
+    const needsDisabled = !!(last.uiType && activeInteractiveTypes.includes(last.uiType));
+
+    set({ messages: session.messages, isTyping: false, isInputDisabled: needsDisabled });
+  },
+
+  restoreLastSession: async () => {
+    const sessions = await get().fetchRecentSessions(SESSION_RESTORE_WINDOW_DAYS);
+    // fetchRecentSessions returns newest-first, so [0] is "the last session".
+    const last = sessions[0];
+    if (!last) return false;
+    get().applySession(last);
+    return true;
+  },
+
+  deleteSession: async (session: ChatSession) => {
+    if (!session || !Array.isArray(session.messages) || session.messages.length === 0) {
+      return false;
+    }
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return false;
+
+    // Step 1: delete the chat_history rows that belong to this session.
+    // RLS scopes the delete to the current user's rows automatically.
+    const ids = session.messages.map((m) => m.id).filter((id): id is string => typeof id === 'string' && id.length > 0);
+    if (ids.length > 0) {
+      const { error } = await supabase
+        .from('chat_history')
+        .delete()
+        .eq('user_id', user.id)
+        .in('id', ids);
+      if (error) return false;
+    }
+
+    // Step 2: delete the matching MemPalace entries by timestamp range so the
+    // agent's long-term memory of this conversation is wiped too. Best-effort:
+    // a backend hiccup here shouldn't block the UI from updating since the
+    // chat_history rows (the source of truth for the History picker) are
+    // already gone.
+    try {
+      const token = await getAuthToken();
+      if (token && BACKEND_URL) {
+        await fetch(`${BACKEND_URL}/api/chat/history/range`, {
+          method: 'DELETE',
+          headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            from: new Date(session.startTime).toISOString(),
+            to: new Date(session.endTime).toISOString(),
+          }),
+        });
+      }
+    } catch { /* non-fatal */ }
+
+    // Step 3: if the on-screen messages overlap the deleted session, reset to
+    // a fresh greeting so the user isn't staring at a session that no longer
+    // exists in their history.
+    const onScreenIds = new Set(get().messages.map((m) => m.id));
+    const overlaps = ids.some((id) => onScreenIds.has(id));
+    if (overlaps) {
+      await get().startNewSession({ keepServerHistory: true });
+    }
+
+    return true;
+  },
+
+  restoreSession: async () => {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+    set({ isTyping: true });
+
+    const { data } = await supabase
+      .from('chat_history')
+      .select('*')
+      .eq('user_id', user.id)
+      .order('created_at', { ascending: true });
+
+    if (data && data.length > 0) {
+      const filtered = data.filter((m: any) => m.ui_type !== 'session_restore');
+      const loadedMessages: ChatMessage[] = filtered.map((m: any) => ({
+        id: m.id,
+        text: m.text,
+        sender: m.sender as 'user' | 'agent',
+        timestamp: new Date(m.created_at).getTime(),
+        imageUri: m.image_uri,
+        uiType: m.ui_type,
+        uiData: m.ui_data,
+      }));
+
+      const lastMsg = filtered[filtered.length - 1];
+      const activeInteractiveTypes = [
+        'strategy_type_selection', 'product_intake_form', 'product_manual_form',
+        'service_intake_form', 'brand_intake_form', 'goal_selection',
+        'duration_selection', 'strategy_comparison', 'facebook_connect',
+        'page_selection', 'retry_action',
+      ];
+      const needsDisabled = lastMsg && activeInteractiveTypes.includes(lastMsg.ui_type);
+
+      set({
+        messages: loadedMessages,
+        isTyping: false,
         isInputDisabled: needsDisabled,
-        flowState: lastMsg.ui_type === 'completion_card' ? 'IDLE' : lastMsg.ui_type.toUpperCase().replace('_FORM', '_INTAKE').replace('_SELECTION', '_SELECTION') as FlowState,
       });
-
-      get().addMessage(
-          `Welcome back! We were right here:`, 
-          'agent', 
-          undefined, 
-          lastMsg.ui_type, 
-          lastMsg.ui_data
-      );
     }
   },
 
-  startNewSession: async () => {
+  startNewSession: async (opts?: { keepServerHistory?: boolean }) => {
+    // ── Step 1: reset UI state IMMEDIATELY ──────────────────────────────────
+    // `tokens` and `connectedPlatforms` are intentionally NOT reset here.
+    // They are persisted via AsyncStorage and must survive session resets so
+    // that the Connected Accounts screen always reflects the true connection
+    // state without flickering back to "Not Linked".
     set({
-        messages: [],
-        isTyping: false,
-        productDetails: { name: '', description: '' },
-        generatedStrategies: null,
-        activeStrategy: null,
-        connectionState: 'IDLE',
-        flowState: 'IDLE',
-        tokens: {},
-        fetchedAccounts: {},
-        selectedAccounts: {}
+      messages: [],
+      isTyping: true,
+      isInputDisabled: true,
+      productDetails: { name: '', description: '' },
+      generatedStrategies: null,
+      activeStrategy: null,
+      connectionState: 'IDLE',
+      flowState: 'IDLE',
+      fetchedAccounts: {},
+      selectedAccounts: {},
     });
 
-    const { data: { user } } = await supabase.auth.getUser();
-    if (user) {
-        await supabase.from('chat_history').delete().eq('user_id', user.id);
+    // ── Step 2: refresh connection state from backend in background ──────────
+    get().loadConnectedPlatforms().catch(() => {});
+
+    // ── Step 3: resolve username from local session cache (no network call) ──
+    // getSession() reads from AsyncStorage — fast and offline-safe.
+    // Race with a 2-second hard timeout so the greeting is never blocked.
+    let userName = 'there';
+    try {
+      const result = await Promise.race<any>([
+        supabase.auth.getSession(),
+        new Promise<null>(resolve => setTimeout(() => resolve(null), 2000)),
+      ]);
+      const email = result?.data?.session?.user?.email;
+      if (email) userName = email.split('@')[0] || 'there';
+    } catch { /* use default name */ }
+
+    // ── Step 4: optionally delete history in background ─────────────────────
+    // We default to KEEPING server-side history so the user can always
+    // restore the last 7 days from the chat header icon. Pass
+    // { keepServerHistory: false } only when you really want a hard wipe
+    // (e.g. user explicitly chose "delete & start over" — currently unused).
+    if (opts?.keepServerHistory === false) {
+      (async () => {
+        try {
+          const { data: { user } } = await supabase.auth.getUser();
+          if (!user) return;
+          supabase.from('chat_history').delete().eq('user_id', user.id).catch(() => {});
+          const authToken = await getAuthToken();
+          if (authToken && BACKEND_URL) {
+            fetch(`${BACKEND_URL}/api/chat/history`, {
+              method: 'DELETE',
+              headers: { Authorization: `Bearer ${authToken}` },
+            }).catch(() => {});
+          }
+        } catch { /* non-fatal */ }
+      })();
     }
 
+    // ── Step 5: send greeting and kick off strategy flow ─────────────────────
     const { addMessage, setTyping, startStrategyFlow } = get();
     setTyping(true);
-    
     setTimeout(() => {
-        const userName = user?.email?.split('@')[0] || 'User';
-        addMessage(`Hello ${userName}. I am AdRoom AI. Ready to strategize?`, 'agent');
-        setTyping(false);
-        setTimeout(() => startStrategyFlow(), 1000);
-    }, 1000);
+      addMessage(`Hello ${userName}. I am AdRoom AI. Ready to strategize?`, 'agent');
+      setTyping(false);
+      setTimeout(() => startStrategyFlow(), 1000);
+    }, 800);
   },
 
   resetAgent: () => get().startNewSession(),
+
+  goBackToMenu: () => {
+    const { startStrategyFlow } = get();
+    set({
+      flowState: 'IDLE',
+      isInputDisabled: true,
+      isTyping: false,
+    });
+    startStrategyFlow();
+  },
+
+  goBackOneStep: () => {
+    const { messages } = get();
+
+    const interactiveTypes = new Set([
+      'product_intake_form', 'product_manual_form', 'website_intake_form',
+      'service_intake_form', 'brand_intake_form', 'attribute_editor',
+      'strategy_type_selection', 'goal_selection', 'duration_selection',
+      'strategy_preview', 'facebook_connect', 'page_selection',
+      'retry_action', 'session_restore', 'create_strategy_prompt',
+    ]);
+
+    // Find the last active interactive message
+    let lastInteractiveIdx = -1;
+    for (let i = messages.length - 1; i >= 0; i--) {
+      if (messages[i].uiType && interactiveTypes.has(messages[i].uiType!)) {
+        lastInteractiveIdx = i;
+        break;
+      }
+    }
+    if (lastInteractiveIdx <= 0) return;
+
+    // Find the previous interactive message (what we're rolling back to)
+    let prevInteractiveIdx = -1;
+    for (let i = lastInteractiveIdx - 1; i >= 0; i--) {
+      if (messages[i].uiType && interactiveTypes.has(messages[i].uiType!)) {
+        prevInteractiveIdx = i;
+        break;
+      }
+    }
+    if (prevInteractiveIdx === -1) return; // No previous step — nothing to go back to
+
+    // Find the first user message after prevInteractiveIdx (the user's selection that triggered current card)
+    let userTriggerIdx = -1;
+    for (let i = prevInteractiveIdx + 1; i < lastInteractiveIdx; i++) {
+      if (messages[i].sender === 'user') {
+        userTriggerIdx = i;
+        break;
+      }
+    }
+
+    // Cut point: remove from user trigger (or just after prevInteractive) onwards
+    const cutIdx = userTriggerIdx !== -1 ? userTriggerIdx : prevInteractiveIdx + 1;
+    const newMessages = messages.slice(0, cutIdx);
+
+    // Map previous card's uiType back to the correct flowState
+    const uiTypeToFlowState: Record<string, FlowState> = {
+      'strategy_type_selection': 'STRATEGY_TYPE_SELECTION',
+      'product_intake_form': 'PRODUCT_INTAKE',
+      'service_intake_form': 'SERVICE_INTAKE',
+      'brand_intake_form': 'BRAND_INTAKE',
+      'product_manual_form': 'PRODUCT_INTAKE',
+      'website_intake_form': 'PRODUCT_INTAKE',
+      'attribute_editor': 'PRODUCT_INTAKE',
+      'goal_selection': 'GOAL_SELECTION',
+      'duration_selection': 'DURATION_SELECTION',
+      'strategy_preview': 'STRATEGY_GENERATION',
+      'facebook_connect': 'EXECUTION',
+      'page_selection': 'EXECUTION',
+      'retry_action': 'IDLE',
+      'session_restore': 'IDLE',
+      'create_strategy_prompt': 'IDLE',
+    };
+
+    const prevUiType = messages[prevInteractiveIdx].uiType!;
+    const restoredFlowState = (uiTypeToFlowState[prevUiType] ?? 'IDLE') as FlowState;
+
+    set({
+      messages: newMessages,
+      flowState: restoredFlowState,
+      isTyping: false,
+      isInputDisabled: true,
+    });
+  },
+
+  trimAfterMessage: (messageId: string) => {
+    const { messages } = get();
+    const idx = messages.findIndex(m => m.id === messageId);
+    if (idx === -1) return;
+    set({
+      messages: messages.slice(0, idx + 1),
+      isTyping: false,
+      isInputDisabled: true,
+    });
+  },
+
+  dismissStrategyFlow: () => {
+    const { addMessage } = get();
+    set({ flowState: 'IDLE', isInputDisabled: false, isTyping: false });
+    addMessage(
+      "No problem! Whenever you're ready to create a strategy, just let me know.",
+      'agent',
+      undefined,
+      'create_strategy_prompt'
+    );
+  },
   
   // --- Unified Connection Flow ---
 
@@ -654,7 +1337,7 @@ export const useAgentStore = create<AgentState>((set, get) => ({
       const { addMessage, handleAccountSelection } = get();
       set({ isTyping: true, isInputDisabled: true });
       try {
-          let token = null;
+          let token: string | null = null;
           let accounts: any[] = [];
 
           if (platform === 'facebook') {
@@ -664,8 +1347,25 @@ export const useAgentStore = create<AgentState>((set, get) => ({
               token = await InstagramService.login();
               if (token) accounts = await InstagramService.getInstagramAccounts(token);
           } else if (platform === 'tiktok') {
-              token = await TikTokService.login();
-              if (token) accounts = await TikTokService.getAdvertiserAccounts(token);
+              // TikTok Login Kit returns one authenticated user (no advertiser
+              // list). Treat the logged-in profile as the single "account" so
+              // the existing single-account branch in the flow below handles it.
+              const tikTokAuth = await TikTokService.login();
+              if (tikTokAuth) {
+                  token = tikTokAuth.access_token;
+                  const profile = await TikTokService.getProfile(tikTokAuth.access_token);
+                  if (profile) {
+                      accounts = [{
+                          id: profile.open_id,
+                          name: profile.display_name,
+                          avatar_url: profile.avatar_url,
+                      }];
+                  } else {
+                      // Fall back to a minimal account record built from the
+                      // OAuth response so saveConfig still has an open_id.
+                      accounts = [{ id: tikTokAuth.open_id, name: 'TikTok Account' }];
+                  }
+              }
           } else if (platform === 'linkedin') {
               token = await LinkedInService.login();
               if (token) accounts = await LinkedInService.getAdAccounts(token);
@@ -694,9 +1394,18 @@ export const useAgentStore = create<AgentState>((set, get) => ({
               } else {
                   addMessage(`Connected, but no ${platform} accounts were found.`, 'agent');
               }
+          } else {
+              set({ isTyping: false, connectionState: 'IDLE', isInputDisabled: false });
+              addMessage(
+                  `${platform.charAt(0).toUpperCase() + platform.slice(1)} connection was cancelled. You can try again or connect a different account.`,
+                  'agent',
+                  undefined,
+                  'facebook_connect',
+                  { platform }
+              );
           }
       } catch (error: any) {
-          set({ isTyping: false });
+          set({ isTyping: false, connectionState: 'IDLE', isInputDisabled: false });
           addMessage(`${platform.toUpperCase()} connection failed: ${error.message}`, 'agent', undefined, 'retry_action', { action: 'LOGIN', data: platform });
       }
   },
@@ -709,6 +1418,37 @@ export const useAgentStore = create<AgentState>((set, get) => ({
           const accessToken = get().tokens[platform];
           if (!accessToken) throw new Error('Missing access token.');
 
+          // ── Pre-flight tier check ────────────────────────────────────────
+          // Verify the user's plan still allows another connected platform
+          // before we hit the database. This surfaces a friendly upgrade
+          // message instead of a silent failure when a user has hit their
+          // plan's platform cap (e.g. Starter = 1, Pro = 2).
+          if (BACKEND_URL) {
+            try {
+              const authToken = await getAuthToken();
+              if (authToken) {
+                const checkRes = await fetch(
+                  `${BACKEND_URL}/api/platform-configs/check?platform=${encodeURIComponent(platform)}`,
+                  { headers: { Authorization: `Bearer ${authToken}` } },
+                );
+                if (checkRes.ok) {
+                  const check = await checkRes.json();
+                  if (check && check.allowed === false) {
+                    set({ isTyping: false, isInputDisabled: false, connectionState: 'IDLE' });
+                    addMessage(
+                      check.reason || `Your current plan doesn't allow another connected platform. Please upgrade to add ${platform}.`,
+                      'agent',
+                    );
+                    return;
+                  }
+                }
+              }
+            } catch {
+              // Network blip — fall through and let the save attempt itself
+              // surface any RLS / server-side errors.
+            }
+          }
+
           if (platform === 'facebook') await FacebookService.saveConfig(account.id, account.name, accessToken);
           else if (platform === 'instagram') await InstagramService.saveConfig(account.id, accessToken, account.username);
           else if (platform === 'tiktok') await TikTokService.saveConfig(account.id, accessToken, account.name);
@@ -717,8 +1457,43 @@ export const useAgentStore = create<AgentState>((set, get) => ({
 
           set((state) => ({
               selectedAccounts: { ...state.selectedAccounts, [platform]: account },
+              // Persist connection metadata so it survives session resets
+              connectedPlatforms: {
+                  ...state.connectedPlatforms,
+                  [platform]: {
+                      platform,
+                      page_id: account.id,
+                      page_name: account.name || account.username || account.displayName || null,
+                      connected: true,
+                  },
+              },
               isTyping: false
           }));
+
+          // Notify backend so the admin dashboard SSE picks up the new
+          // connection in realtime (the actual save is RLS-protected and
+          // happens client-side via Supabase, so the admin server only learns
+          // about it through this lightweight notify call).
+          if (BACKEND_URL) {
+            (async () => {
+              try {
+                const authToken = await getAuthToken();
+                if (!authToken) return;
+                fetch(`${BACKEND_URL}/api/platform-configs/notify`, {
+                  method: 'POST',
+                  headers: {
+                    'Content-Type': 'application/json',
+                    Authorization: `Bearer ${authToken}`,
+                  },
+                  body: JSON.stringify({
+                    platform,
+                    accountId: account.id,
+                    accountName: account.name || account.username || account.displayName || null,
+                  }),
+                }).catch(() => {});
+              } catch { /* fire-and-forget */ }
+            })();
+          }
 
           if (connectionSource === 'flow' && activeStrategy) {
               const platforms = activeStrategy.platforms || [];
@@ -738,12 +1513,139 @@ export const useAgentStore = create<AgentState>((set, get) => ({
       }
   },
 
-  disconnectPlatform: async (platform: string) => {
+  loadConnectedPlatforms: async () => {
+    // When `authoritative` is true, the response represents the *full* set of
+    // connected platforms for this user (i.e. came from the backend / Supabase
+    // directly). In that case we replace local state instead of merging so
+    // platforms that have been disconnected on another device disappear, and
+    // platforms re-connected after a reinstall reappear immediately.
+    const applyConfigs = (configs: Record<string, any>, authoritative: boolean) => {
       set((state) => {
-          const newTokens = { ...state.tokens };
-          delete newTokens[platform];
-          return { tokens: newTokens };
+        if (authoritative) {
+          // Drop any locally-cached "connected" stubs that the server no
+          // longer knows about. Preserve real OAuth access tokens that are
+          // still mid-session (anything not equal to the literal 'connected'
+          // placeholder) so an in-flight OAuth flow isn't clobbered.
+          const newTokens: Record<string, any> = {};
+          for (const platform of Object.keys(configs)) {
+            newTokens[platform] = state.tokens[platform] || 'connected';
+          }
+          for (const platform of Object.keys(state.tokens)) {
+            const val = state.tokens[platform];
+            if (val && val !== 'connected' && !newTokens[platform]) {
+              newTokens[platform] = val;
+            }
+          }
+          return { tokens: newTokens, connectedPlatforms: { ...configs } };
+        }
+        const newTokens = { ...state.tokens };
+        for (const platform of Object.keys(configs)) {
+          if (!newTokens[platform]) {
+            newTokens[platform] = 'connected';
+          }
+        }
+        const mergedPlatforms = { ...state.connectedPlatforms, ...configs };
+        return { tokens: newTokens, connectedPlatforms: mergedPlatforms };
       });
+    };
+
+    // Primary: fetch from backend API
+    if (BACKEND_URL) {
+      try {
+        const token = await getAuthToken();
+        if (!token) throw new Error('No auth token');
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), 15000);
+        let res: Response;
+        try {
+          res = await fetch(`${BACKEND_URL}/api/platform-configs`, {
+            headers: { Authorization: `Bearer ${token}` },
+            signal: controller.signal,
+          });
+        } finally {
+          clearTimeout(timer);
+        }
+        if (res.ok) {
+          const data = await res.json();
+          const configs: Record<string, any> = data.configs || {};
+          applyConfigs(configs, true);
+          return;
+        }
+      } catch {}
+    }
+
+    // Fallback: query Supabase ad_configs directly (works cross-device without Railway)
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+      const { data: rows } = await supabase
+        .from('ad_configs')
+        .select('platform, page_id, page_name, ad_account_id, instagram_account_id, person_urn, org_urn, open_id, updated_at')
+        .eq('user_id', user.id);
+      // rows === null indicates a query error — leave existing state intact.
+      // An empty array is authoritative ("user has no connected platforms")
+      // and must clear stale local entries.
+      if (!rows) return;
+      const configs: Record<string, any> = {};
+      for (const c of rows) {
+        configs[c.platform] = {
+          platform: c.platform,
+          page_id: c.page_id,
+          page_name: c.page_name,
+          ad_account_id: c.ad_account_id,
+          instagram_account_id: c.instagram_account_id,
+          person_urn: c.person_urn,
+          org_urn: c.org_urn,
+          open_id: c.open_id,
+          updated_at: c.updated_at,
+          connected: true,
+        };
+      }
+      applyConfigs(configs, true);
+    } catch {}
+  },
+
+  disconnectPlatform: async (platform: string) => {
+    set((state) => {
+      const newTokens = { ...state.tokens };
+      delete newTokens[platform];
+      const newConnected = { ...state.connectedPlatforms };
+      delete newConnected[platform];
+      return { tokens: newTokens, connectedPlatforms: newConnected };
+    });
+    try {
+      const token = await getAuthToken();
+      if (!token || !BACKEND_URL) return;
+      await fetch(`${BACKEND_URL}/api/platform-configs/${platform}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+    } catch {}
+  },
+
+  // Wipe all in-memory + persisted state. Called on signOut so a different
+  // user logging in on the same device never inherits the previous user's
+  // connected platforms, tokens, or chat history.
+  clearAll: async () => {
+    set({
+      messages: [],
+      isTyping: false,
+      isInputDisabled: false,
+      flowState: 'IDLE',
+      productDetails: { name: '', description: '' },
+      generatedStrategies: null,
+      activeStrategy: null,
+      connectionState: 'IDLE',
+      connectionSource: null,
+      tokens: {},
+      connectedPlatforms: {},
+      fetchedAccounts: {},
+      selectedAccounts: {},
+      fbAccessToken: null,
+    });
+    try {
+      await AsyncStorage.removeItem('adroom-agent-store');
+    } catch { /* ignore */ }
   },
 
   // Legacy Compatibility
@@ -752,4 +1654,13 @@ export const useAgentStore = create<AgentState>((set, get) => ({
   handlePageSelection: (page: FacebookPage) => get().handleAccountSelection('facebook', page),
   disconnectFacebook: () => get().disconnectPlatform('facebook')
 
-}));
+  }),
+  {
+    name: 'adroom-agent-store',
+    storage: createJSONStorage(() => AsyncStorage),
+    partialize: (state) => ({
+      connectedPlatforms: state.connectedPlatforms,
+      tokens: state.tokens,
+    }),
+  }
+));

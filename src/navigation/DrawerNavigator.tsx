@@ -5,13 +5,20 @@ import DashboardScreen from '../screens/DashboardScreen';
 import StrategyHistoryScreen from '../screens/StrategyHistoryScreen';
 import SettingsScreen from '../screens/SettingsScreen';
 import AgentChatScreen from '../screens/AgentChatScreen';
+import CommunityScreen from '../screens/CommunityScreen';
+import InteractionsScreen from '../screens/InteractionsScreen';
 import SideMenu from '../components/SideMenu';
 
 const Drawer = createDrawerNavigator<MainTabParamList>();
 
-export default function DrawerNavigator() {
+interface DrawerNavigatorProps {
+  initialRoute?: keyof MainTabParamList;
+}
+
+export default function DrawerNavigator({ initialRoute }: DrawerNavigatorProps = {}) {
   return (
     <Drawer.Navigator
+      initialRouteName={initialRoute ?? 'AgentChat'}
       drawerContent={(props: any) => <SideMenu {...props} />}
       screenOptions={{
         headerShown: false,
@@ -23,22 +30,12 @@ export default function DrawerNavigator() {
         overlayColor: 'rgba(0,0,0,0.7)',
       }}
     >
-      <Drawer.Screen 
-        name="AgentChat" 
-        component={AgentChatScreen} 
-      />
-      <Drawer.Screen 
-        name="Dashboard" 
-        component={DashboardScreen} 
-      />
-      <Drawer.Screen 
-        name="StrategyHistory" 
-        component={StrategyHistoryScreen} 
-      />
-      <Drawer.Screen 
-        name="Settings" 
-        component={SettingsScreen} 
-      />
+      <Drawer.Screen name="AgentChat" component={AgentChatScreen} />
+      <Drawer.Screen name="Dashboard" component={DashboardScreen} />
+      <Drawer.Screen name="StrategyHistory" component={StrategyHistoryScreen} />
+      <Drawer.Screen name="Interactions" component={InteractionsScreen} />
+      <Drawer.Screen name="Community" component={CommunityScreen} />
+      <Drawer.Screen name="Settings" component={SettingsScreen} />
     </Drawer.Navigator>
   );
 }
