@@ -542,6 +542,95 @@ Return STRICT JSON only (no markdown, no explanation):
         this.log(`TikTok comment ${commentId} replied`);
     }
 
+    async likeTikTokComment(tokens: AgentTokens['tiktok'], videoId: string, commentId: string): Promise<void> {
+        if (!tokens) throw new Error('TikTok tokens not configured');
+        this.log(`Liking TikTok comment ${commentId} on video ${videoId}`);
+        const resp = await fetch(`${TIKTOK_API}/comment/like/`, {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${tokens.access_token}`,
+                'Content-Type': 'application/json; charset=UTF-8',
+            },
+            body: JSON.stringify({ video_id: videoId, comment_id: commentId }),
+        });
+        if (!resp.ok) {
+            const err: any = await resp.json().catch(() => ({}));
+            this.log(`TikTok like comment failed: ${err?.error?.message || resp.statusText}`);
+        } else {
+            this.log(`TikTok comment ${commentId} liked`);
+        }
+    }
+
+    async fetchTikTokVideoMetrics(tokens: AgentTokens['tiktok'], videoId: string): Promise<Record<string, number>> {
+        if (!tokens) return {};
+        try {
+            const resp = await fetch(`${TIKTOK_API}/video/query/`, {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${tokens.access_token}`,
+                    'Content-Type': 'application/json; charset=UTF-8',
+                },
+                body: JSON.stringify({
+                    filters: { video_ids: [videoId] },
+                    fields: ['id', 'like_count', 'comment_count', 'share_count', 'view_count', 'play_count'],
+                }),
+            });
+            if (!resp.ok) return {};
+            const data: any = await resp.json();
+            const video = data?.data?.videos?.[0] || {};
+            return {
+                likes: video.like_count || 0,
+                comments: video.comment_count || 0,
+                shares: video.share_count || 0,
+                views: video.view_count || video.play_count || 0,
+            };
+        } catch { return {}; }
+    }
+
+    async scanTikTokLeads(tokens: AgentTokens['tiktok'], videoId: string): Promise<Array<{ open_id: string; display_name: string; bio_description?: string }>> {
+        if (!tokens) return [];
+        try {
+            // Fetch top commenters on this video — they are warm leads who engaged.
+            const resp = await fetch(`${TIKTOK_API}/comment/list/`, {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${tokens.access_token}`,
+                    'Content-Type': 'application/json; charset=UTF-8',
+                },
+                body: JSON.stringify({
+                    video_id: videoId,
+                    count: 50,
+                    fields: ['id', 'text', 'create_time', 'user.open_id', 'user.display_name', 'user.bio_description'],
+                }),
+            });
+            if (!resp.ok) return [];
+            const data: any = await resp.json();
+            const comments: any[] = data?.data?.comments || [];
+            const seen = new Set<string>();
+            const leads: Array<{ open_id: string; display_name: string; bio_description?: string }> = [];
+            for (const c of comments) {
+                const uid = c?.user?.open_id;
+                if (uid && !seen.has(uid)) {
+                    seen.add(uid);
+                    leads.push({
+                        open_id: uid,
+                        display_name: c?.user?.display_name || '',
+                        bio_description: c?.user?.bio_description || undefined,
+                    });
+                }
+            }
+            this.log(`TikTok lead scan: found ${leads.length} unique commenters on video ${videoId}`);
+            return leads;
+        } catch { return []; }
+    }
+
+    async sendTikTokOutreach(tokens: AgentTokens['tiktok'], videoId: string, targetCommentId: string, message: string): Promise<void> {
+        // TikTok's public API does not support direct messaging to arbitrary users.
+        // The best available engagement alternative is replying publicly to their comment,
+        // which surfaces the message to the lead directly in their notification feed.
+        await this.replyToTikTokComment(tokens, videoId, targetCommentId, message);
+    }
+
     // ─── UNIFIED PUBLISH DISPATCHER ──────────────────────────────────────────────
 
     async publishToplatform(platform: string, tokens: AgentTokens, body: string, mediaUrl?: string): Promise<PublishResult> {
@@ -575,8 +664,40 @@ Return STRICT JSON only (no markdown, no explanation):
             case 'instagram': await this.sendInstagramDM(tokens.instagram, recipientId, message); break;
             case 'twitter': case 'x': await this.sendTwitterDM(tokens.twitter, recipientId, message); break;
             case 'linkedin': await this.sendLinkedInMessage(tokens.linkedin, recipientId, message); break;
-            case 'tiktok': throw new Error('TikTok does not support agent DMs via API');
+            case 'tiktok':
+                // TikTok public API does not support DMs. We outreach via comment reply instead.
+                // recipientId should be formatted as "videoId:commentId" for TikTok outreach.
+                {
+                    const [videoId, commentId] = recipientId.split(':');
+                    if (videoId && commentId) {
+                        await this.sendTikTokOutreach(tokens.tiktok, videoId, commentId, message);
+                    } else {
+                        this.log(`TikTok outreach skipped: recipientId must be "videoId:commentId", got "${recipientId}"`);
+                    }
+                }
+                break;
             default: throw new Error(`Unsupported platform for DM: ${platform}`);
+        }
+    }
+
+    async likeObject(platform: string, tokens: AgentTokens, objectId: string, videoId?: string): Promise<void> {
+        this.log(`Liking object ${objectId} on ${platform}`);
+        switch (platform.toLowerCase()) {
+            case 'facebook': await this.likeFacebookObject(tokens.facebook, objectId); break;
+            case 'tiktok':
+                if (!videoId) { this.log('TikTok like requires videoId'); return; }
+                await this.likeTikTokComment(tokens.tiktok, videoId, objectId);
+                break;
+            default: this.log(`Like not implemented for ${platform}`);
+        }
+    }
+
+    async fetchPostMetrics(platform: string, tokens: AgentTokens, postId: string): Promise<Record<string, number>> {
+        switch (platform.toLowerCase()) {
+            case 'facebook': return this.fetchFacebookPostMetrics(postId, tokens.facebook?.access_token || '');
+            case 'twitter': case 'x': return this.fetchTwitterPostMetrics(postId, tokens.twitter?.access_token || '');
+            case 'tiktok': return this.fetchTikTokVideoMetrics(tokens.tiktok, postId);
+            default: return {};
         }
     }
 

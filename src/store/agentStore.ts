@@ -16,6 +16,9 @@ import { useStrategyCreationStore } from './strategyCreationStore';
 
 const BACKEND_URL = process.env.EXPO_PUBLIC_API_URL || '';
 
+// Module-level timer for the 60s stuck-typing safety guard.
+let _agentSafetyTimer: ReturnType<typeof setTimeout> | null = null;
+
 async function getAuthToken(): Promise<string | null> {
   try {
     const { data: { session } } = await supabase.auth.getSession();
@@ -332,7 +335,23 @@ export const useAgentStore = create<AgentState>()(
     })();
   },
 
-  setTyping: (typing) => set({ isTyping: typing }),
+  setTyping: (typing) => {
+    // Safety: if isTyping is set to true but the store never clears it
+    // (e.g. due to a backend hang or unhandled rejection), auto-clear after
+    // 60 seconds so the UI never gets permanently stuck on the spinner.
+    if (_agentSafetyTimer) {
+      clearTimeout(_agentSafetyTimer);
+      _agentSafetyTimer = null;
+    }
+    if (typing) {
+      _agentSafetyTimer = setTimeout(() => {
+        if (useAgentStore.getState().isTyping) {
+          useAgentStore.setState({ isTyping: false });
+        }
+      }, 60000);
+    }
+    set({ isTyping: typing });
+  },
   setInputDisabled: (disabled) => set({ isInputDisabled: disabled }),
 
   updateProductDetails: (details) => {

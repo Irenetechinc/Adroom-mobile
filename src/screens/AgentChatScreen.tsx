@@ -602,6 +602,12 @@ const StrategyPreviewCard = ({ strategy, onLaunch, onBack, onStepBack, disabled 
   </View>
 );
 
+const DELIVERY_TYPES = [
+  { key: 'payment_on_delivery', label: 'Cash on Delivery' },
+  { key: 'pay_before_delivery', label: 'Pay Before Delivery' },
+  { key: 'pay_for_delivery', label: 'Customer Pays Shipping' },
+];
+
 const ProductManualIntakeCard = ({ onSubmit, onBack, onStepBack, disabled }: { onSubmit: (data: any) => void; onBack?: () => void; onStepBack?: () => void; disabled?: boolean }) => {
   const [name, setName] = useState('');
   const [category, setCategory] = useState('');
@@ -613,16 +619,45 @@ const ProductManualIntakeCard = ({ onSubmit, onBack, onStepBack, disabled }: { o
   const [quantity, setQuantity] = useState('');
   const [images, setImages] = useState<{ uri: string; base64: string | null }[]>([]);
   const [video, setVideo] = useState<VideoAsset | null>(null);
+  const [productType, setProductType] = useState<'physical' | 'digital'>('physical');
+  const [deliveryType, setDeliveryType] = useState('payment_on_delivery');
+  const [deliveryAddress, setDeliveryAddress] = useState('');
+  const [phone, setPhone] = useState('');
+  const [bankAccount, setBankAccount] = useState('');
 
   const toggleSize = (size: string) =>
     setSelectedSizes((prev) => prev.includes(size) ? prev.filter(s => s !== size) : [...prev, size]);
 
   const currencySymbol = CURRENCIES.find(c => c.code === currency)?.symbol || '$';
 
+  const chipBase: any = {
+    paddingHorizontal: 14, paddingVertical: 8, borderRadius: 10,
+    borderWidth: 1, marginRight: 8, marginBottom: 4,
+  };
+  const chipActive: any = { backgroundColor: 'rgba(0,240,255,0.12)', borderColor: '#00F0FF' };
+  const chipInactive: any = { backgroundColor: 'rgba(30,41,59,0.7)', borderColor: '#334155' };
+
   return (
     <View style={[styles.card, { padding: 14 }, disabled && styles.cardDisabled]}>
       <Text style={[styles.fieldLabel, { marginBottom: 8 }]}>PRODUCT DETAILS</Text>
       <ScrollView nestedScrollEnabled keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+
+        {/* Product type toggle */}
+        <Text style={[styles.fieldLabel, { marginBottom: 6 }]}>PRODUCT TYPE</Text>
+        <View style={{ flexDirection: 'row', marginBottom: 12 }}>
+          {(['physical', 'digital'] as const).map(type => (
+            <TouchableOpacity
+              key={type}
+              onPress={() => !disabled && setProductType(type)}
+              style={[chipBase, productType === type ? chipActive : chipInactive]}
+            >
+              <Text style={{ color: productType === type ? '#00F0FF' : '#94A3B8', fontWeight: '600', fontSize: 13 }}>
+                {type === 'physical' ? 'Physical Product' : 'Digital Product'}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+
         <TextInput placeholder="Product Name *" placeholderTextColor="#475569" style={[styles.input, { marginBottom: 10 }]} value={name} onChangeText={setName} editable={!disabled} />
         <TextInput placeholder="Category (e.g. Fashion, Electronics)" placeholderTextColor="#475569" style={[styles.input, { marginBottom: 10 }]} value={category} onChangeText={setCategory} editable={!disabled} />
 
@@ -651,15 +686,78 @@ const ProductManualIntakeCard = ({ onSubmit, onBack, onStepBack, disabled }: { o
 
         <TextInput placeholder="Product Description" placeholderTextColor="#475569" multiline style={[styles.input, { height: 70, marginBottom: 12 }]} value={description} onChangeText={setDescription} editable={!disabled} />
 
+        {/* Physical-only fields */}
+        {productType === 'physical' && (
+          <>
+            <Text style={[styles.fieldLabel, { marginBottom: 6 }]}>DELIVERY TYPE</Text>
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', marginBottom: 12 }}>
+              {DELIVERY_TYPES.map(dt => (
+                <TouchableOpacity
+                  key={dt.key}
+                  onPress={() => !disabled && setDeliveryType(dt.key)}
+                  style={[chipBase, deliveryType === dt.key ? chipActive : chipInactive]}
+                >
+                  <Text style={{ color: deliveryType === dt.key ? '#00F0FF' : '#94A3B8', fontWeight: '600', fontSize: 12 }}>
+                    {dt.label}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            <TextInput
+              placeholder="Delivery / Pickup Address"
+              placeholderTextColor="#475569"
+              style={[styles.input, { marginBottom: 10 }]}
+              value={deliveryAddress}
+              onChangeText={setDeliveryAddress}
+              editable={!disabled}
+            />
+
+            {deliveryType === 'pay_before_delivery' && (
+              <>
+                <TextInput
+                  placeholder="Contact Phone *"
+                  placeholderTextColor="#475569"
+                  keyboardType="phone-pad"
+                  style={[styles.input, { marginBottom: 10 }]}
+                  value={phone}
+                  onChangeText={setPhone}
+                  editable={!disabled}
+                />
+                <TextInput
+                  placeholder="Bank Account / Payment Details *"
+                  placeholderTextColor="#475569"
+                  multiline
+                  style={[styles.input, { height: 60, marginBottom: 10 }]}
+                  value={bankAccount}
+                  onChangeText={setBankAccount}
+                  editable={!disabled}
+                />
+              </>
+            )}
+          </>
+        )}
+
         {!disabled && <ImageUploadComponent onImagesSelected={setImages} maxImages={5} />}
         {!disabled && (
           <VideoUploadComponent onVideoSelected={setVideo} selectedVideo={video} disabled={disabled} />
         )}
         {!disabled && (
           <TouchableOpacity
-            onPress={() => onSubmit({ name, category, price: `${currencySymbol}${price}`, currency, description, color, sizes: selectedSizes, quantity, images, video })}
+            onPress={() => onSubmit({
+              name, category,
+              price: `${currencySymbol}${price}`,
+              currency, description, color,
+              sizes: selectedSizes, quantity, images, video,
+              productType,
+              ...(productType === 'physical' ? {
+                deliveryType, deliveryAddress,
+                phone: phone || undefined,
+                bankAccount: bankAccount || undefined,
+              } : {}),
+            })}
             style={[styles.primaryBtn, { marginTop: 12 }]}
-            disabled={!name.trim()}
+            disabled={!name.trim() || (productType === 'physical' && deliveryType === 'pay_before_delivery' && (!phone.trim() || !bankAccount.trim()))}
           >
             <Text style={styles.primaryBtnText}>Save Product</Text>
           </TouchableOpacity>
@@ -953,32 +1051,44 @@ const TypingIndicator = () => {
 const TypewriterText = ({
   text,
   style,
-  speedMs = 14,
+  speedMs = 7,
+  startDelay = 0,
   onTick,
+  onDone,
   enabled = true,
 }: {
   text: string;
   style: any;
   speedMs?: number;
+  startDelay?: number;
   onTick?: () => void;
+  onDone?: () => void;
   enabled?: boolean;
 }) => {
   const [displayed, setDisplayed] = useState<string>(enabled ? '' : text);
   const indexRef = useRef<number>(enabled ? 0 : text.length);
   const doneRef = useRef<boolean>(!enabled);
+  const onDoneRef = useRef(onDone);
+  onDoneRef.current = onDone;
 
   useEffect(() => {
     if (!enabled || doneRef.current) {
       setDisplayed(text);
       indexRef.current = text.length;
-      doneRef.current = true;
+      if (!doneRef.current) {
+        doneRef.current = true;
+        onDoneRef.current?.();
+      }
       return;
     }
     let cancelled = false;
     const tick = () => {
       if (cancelled) return;
       if (indexRef.current >= text.length) {
-        doneRef.current = true;
+        if (!doneRef.current) {
+          doneRef.current = true;
+          onDoneRef.current?.();
+        }
         return;
       }
       indexRef.current += 1;
@@ -986,7 +1096,8 @@ const TypewriterText = ({
       onTick?.();
       setTimeout(tick, speedMs);
     };
-    const t = setTimeout(tick, speedMs);
+    // startDelay lets sequential messages wait for previous ones to finish.
+    const t = setTimeout(tick, startDelay > 0 ? startDelay : speedMs);
     return () => {
       cancelled = true;
       clearTimeout(t);
@@ -999,6 +1110,18 @@ const TypewriterText = ({
   }, []);
 
   return <Text style={style}>{displayed || (enabled ? ' ' : text)}</Text>;
+};
+
+// Card fade-in wrapper — animates opacity 0→1 when mounted.
+// Used to reveal cards/forms smoothly after the text finishes streaming.
+const CardReveal = ({ children }: { children: React.ReactNode }) => {
+  const opacity = useSharedValue(0);
+  const animatedStyle = useAnimatedStyle(() => ({ opacity: opacity.value }));
+  useEffect(() => {
+    opacity.value = withTiming(1, { duration: 350 });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  return <Animated.View style={animatedStyle}>{children}</Animated.View>;
 };
 
 // ─── Thinking Indicator (rotating, generic phrases) ──────────────────────
@@ -1115,6 +1238,17 @@ export default function AgentChatScreen({ navigation, route }: Props) {
     goBackToMenu, goBackOneStep, dismissStrategyFlow, loadConnectedPlatforms,
     fetchRecentSessions, applySession, restoreLastSession, deleteSession,
   } = useAgentStore();
+
+  // Tracks which agent message IDs have finished streaming their text.
+  // Cards/forms inside a bubble are hidden until the text is done.
+  const [doneTextIds, setDoneTextIds] = useState<Set<string>>(new Set());
+  const markTextDone = useCallback((id: string) => {
+    setDoneTextIds(prev => {
+      const next = new Set(prev);
+      next.add(id);
+      return next;
+    });
+  }, []);
 
   const [restoringHistory, setRestoringHistory] = useState(false);
   const [historyModalVisible, setHistoryModalVisible] = useState(false);
@@ -1398,6 +1532,114 @@ export default function AgentChatScreen({ navigation, route }: Props) {
     const isDisabled = item.uiType && !isLast;
     const stepBackProp = hasPreviousStep(index) ? goBackOneStep : undefined;
 
+    // Sequential streaming: count chars from preceding new agent messages so
+    // each message waits for the previous one to finish before it starts.
+    const isNewAgentMsg = item.sender === 'agent' && item.timestamp > mountedAtRef.current;
+    const charsBeforeMe = isNewAgentMsg
+      ? messages
+          .filter(m => m.sender === 'agent' && m.timestamp > mountedAtRef.current && m.text && m.id !== item.id && m.timestamp <= item.timestamp)
+          .reduce((sum, m) => sum + (m.text?.length || 0), 0)
+      : 0;
+    const streamDelay = charsBeforeMe * 7;
+
+    // Cards and forms only appear after the text in this bubble finishes
+    // streaming. History messages (not new) are always immediately visible.
+    const cardReady = !item.uiType || !isNewAgentMsg || doneTextIds.has(item.id);
+
+    const cardContent = (
+      <>
+        {item.uiType === 'product_intake_form' && (
+          <ProductIntakeCard
+            onUpload={handleImageUpload}
+            onManual={handleManualEntry}
+            onWebsite={handleWebsiteEntry}
+            isWebsiteRestricted={!isProOrAboveUser || (activeWebsiteInfo !== null && !activeWebsiteInfo.canConnect)}
+            onWebsiteUpgrade={() => navigation.navigate('Subscription', { scrollToPlan: 'pro' })}
+            onBack={goBackToMenu}
+            onStepBack={stepBackProp}
+            disabled={isDisabled}
+          />
+        )}
+        {item.uiType === 'website_intake_form' && (
+          <WebsiteIntakeCard onSubmit={handleWebsiteIntake} onBack={goBackToMenu} onStepBack={stepBackProp} disabled={isDisabled} />
+        )}
+        {item.uiType === 'attribute_editor' && item.uiData?.product && (
+          <AttributeEditorCard product={item.uiData.product} onSave={(data) => handleProductIntake(data)} onBack={goBackToMenu} onStepBack={stepBackProp} disabled={isDisabled} />
+        )}
+        {item.uiType === 'product_manual_form' && (
+          <ProductManualIntakeCard onSubmit={handleManualProductSubmit} onBack={goBackToMenu} onStepBack={stepBackProp} disabled={isDisabled} />
+        )}
+        {item.uiType === 'service_intake_form' && (
+          <ServiceIntakeCard onSubmit={handleServiceIntake} onBack={goBackToMenu} onStepBack={stepBackProp} disabled={isDisabled} />
+        )}
+        {item.uiType === 'brand_intake_form' && (
+          <BrandIntakeCard onSubmit={handleBrandIntake} onBack={goBackToMenu} onStepBack={stepBackProp} disabled={isDisabled} />
+        )}
+        {item.uiType === 'strategy_type_selection' && (
+          <StrategyTypeSelectionCard onSelect={handleStrategyTypeSelection} onCancel={isDisabled ? undefined : dismissStrategyFlow} onStepBack={stepBackProp} disabled={isDisabled} />
+        )}
+        {item.uiType === 'goal_selection' && (
+          <GoalSelectionCard onSelect={handleGoalSelection} onBack={goBackToMenu} onStepBack={stepBackProp} disabled={isDisabled} navigation={navigation} />
+        )}
+        {item.uiType === 'duration_selection' && (
+          <DurationSelectionCard
+            onSelect={handleDurationSelection}
+            recommended={item.uiData?.recommended}
+            onBack={goBackToMenu}
+            onStepBack={stepBackProp}
+            disabled={isDisabled}
+            productName={item.uiData?.productName}
+            price={item.uiData?.price}
+            currencySymbol={item.uiData?.currencySymbol}
+            currencyCode={item.uiData?.currencyCode}
+          />
+        )}
+        {item.uiType === 'strategy_preview' && item.uiData?.strategy && (
+          <StrategyPreviewCard strategy={item.uiData.strategy} onLaunch={handleStrategySelection} onBack={goBackToMenu} onStepBack={stepBackProp} disabled={isDisabled} />
+        )}
+        {item.uiType === 'retry_action' && (
+          <RetryActionCard
+            actionName={item.uiData?.action}
+            onRetry={() => handleRetry(item.uiData?.action, item.uiData?.data)}
+            onCancel={() => addMessage("I'll help you with something else. What would you like to do?", 'agent')}
+            onBack={goBackToMenu}
+            onStepBack={stepBackProp}
+            disabled={isDisabled}
+          />
+        )}
+        {item.uiType === 'facebook_connect' && (
+          <FacebookConnectButton
+            onPress={() => handleLogin(item.uiData?.platform || 'facebook')}
+            isConnected={!!tokens[item.uiData?.platform || 'facebook']}
+            onDisconnect={() => disconnectPlatform(item.uiData?.platform || 'facebook')}
+            platform={item.uiData?.platform || 'facebook'}
+            onBack={goBackToMenu}
+            onStepBack={stepBackProp}
+            disabled={isDisabled}
+          />
+        )}
+        {item.uiType === 'page_selection' && item.uiData?.pages && (
+          <SelectionList items={item.uiData.pages} type="page" onSelect={(account) => handleAccountSelection(item.uiData?.platform || 'facebook', account)} onBack={goBackToMenu} onStepBack={stepBackProp} disabled={isDisabled} />
+        )}
+        {item.uiType === 'completion_card' && (
+          <CompletionCard onDashboard={() => navigation.navigate('Main', { screen: 'Dashboard' })} disabled={isDisabled} />
+        )}
+        {item.uiType === 'create_strategy_prompt' && (
+          <CreateStrategyPromptCard onStartStrategy={startStrategyFlow} disabled={isDisabled} />
+        )}
+        {item.uiType === 'session_restore_prompt' && (
+          <SessionRestorePromptCard
+            lastMessageAt={item.uiData?.lastMessageAt}
+            windowDays={item.uiData?.windowDays}
+            onRestore={handleSessionPromptRestore}
+            onStartNew={handleSessionPromptStartNew}
+            disabled={isDisabled}
+            busy={restoringHistory}
+          />
+        )}
+      </>
+    );
+
     return (
       <Animated.View
         entering={item.sender === 'user' ? FadeInRight.duration(300) : FadeInLeft.duration(300)}
@@ -1420,10 +1662,10 @@ export default function AgentChatScreen({ navigation, route }: Props) {
             <TypewriterText
               text={item.text}
               style={styles.agentBubbleText}
-              enabled={item.timestamp > mountedAtRef.current}
+              enabled={isNewAgentMsg}
+              startDelay={streamDelay}
+              onDone={() => markTextDone(item.id)}
               onTick={() => {
-                // Keep the list pinned to the bottom while the bubble grows
-                // so long replies don't push themselves off-screen mid-reveal.
                 flatListRef.current?.scrollToEnd({ animated: false });
               }}
             />
@@ -1431,94 +1673,13 @@ export default function AgentChatScreen({ navigation, route }: Props) {
             <Text style={styles.userBubbleText}>{item.text}</Text>
           )}
 
-          {item.uiType === 'product_intake_form' && (
-            <ProductIntakeCard
-              onUpload={handleImageUpload}
-              onManual={handleManualEntry}
-              onWebsite={handleWebsiteEntry}
-              isWebsiteRestricted={!isProOrAboveUser || (activeWebsiteInfo !== null && !activeWebsiteInfo.canConnect)}
-              onWebsiteUpgrade={() => navigation.navigate('Subscription', { scrollToPlan: 'pro' })}
-              onBack={goBackToMenu}
-              onStepBack={stepBackProp}
-              disabled={isDisabled}
-            />
-          )}
-          {item.uiType === 'website_intake_form' && (
-            <WebsiteIntakeCard onSubmit={handleWebsiteIntake} onBack={goBackToMenu} onStepBack={stepBackProp} disabled={isDisabled} />
-          )}
-          {item.uiType === 'attribute_editor' && item.uiData?.product && (
-            <AttributeEditorCard product={item.uiData.product} onSave={(data) => handleProductIntake(data)} onBack={goBackToMenu} onStepBack={stepBackProp} disabled={isDisabled} />
-          )}
-          {item.uiType === 'product_manual_form' && (
-            <ProductManualIntakeCard onSubmit={handleManualProductSubmit} onBack={goBackToMenu} onStepBack={stepBackProp} disabled={isDisabled} />
-          )}
-          {item.uiType === 'service_intake_form' && (
-            <ServiceIntakeCard onSubmit={handleServiceIntake} onBack={goBackToMenu} onStepBack={stepBackProp} disabled={isDisabled} />
-          )}
-          {item.uiType === 'brand_intake_form' && (
-            <BrandIntakeCard onSubmit={handleBrandIntake} onBack={goBackToMenu} onStepBack={stepBackProp} disabled={isDisabled} />
-          )}
-          {item.uiType === 'strategy_type_selection' && (
-            <StrategyTypeSelectionCard onSelect={handleStrategyTypeSelection} onCancel={isDisabled ? undefined : dismissStrategyFlow} onStepBack={stepBackProp} disabled={isDisabled} />
-          )}
-          {item.uiType === 'goal_selection' && (
-            <GoalSelectionCard onSelect={handleGoalSelection} onBack={goBackToMenu} onStepBack={stepBackProp} disabled={isDisabled} navigation={navigation} />
-          )}
-          {item.uiType === 'duration_selection' && (
-            <DurationSelectionCard
-              onSelect={handleDurationSelection}
-              recommended={item.uiData?.recommended}
-              onBack={goBackToMenu}
-              onStepBack={stepBackProp}
-              disabled={isDisabled}
-              productName={item.uiData?.productName}
-              price={item.uiData?.price}
-              currencySymbol={item.uiData?.currencySymbol}
-              currencyCode={item.uiData?.currencyCode}
-            />
-          )}
-          {item.uiType === 'strategy_preview' && item.uiData?.strategy && (
-            <StrategyPreviewCard strategy={item.uiData.strategy} onLaunch={handleStrategySelection} onBack={goBackToMenu} onStepBack={stepBackProp} disabled={isDisabled} />
-          )}
-          {item.uiType === 'retry_action' && (
-            <RetryActionCard
-              actionName={item.uiData?.action}
-              onRetry={() => handleRetry(item.uiData?.action, item.uiData?.data)}
-              onCancel={() => addMessage("I'll help you with something else. What would you like to do?", 'agent')}
-              onBack={goBackToMenu}
-              onStepBack={stepBackProp}
-              disabled={isDisabled}
-            />
-          )}
-          {item.uiType === 'facebook_connect' && (
-            <FacebookConnectButton
-              onPress={() => handleLogin(item.uiData?.platform || 'facebook')}
-              isConnected={!!tokens[item.uiData?.platform || 'facebook']}
-              onDisconnect={() => disconnectPlatform(item.uiData?.platform || 'facebook')}
-              platform={item.uiData?.platform || 'facebook'}
-              onBack={goBackToMenu}
-              onStepBack={stepBackProp}
-              disabled={isDisabled}
-            />
-          )}
-          {item.uiType === 'page_selection' && item.uiData?.pages && (
-            <SelectionList items={item.uiData.pages} type="page" onSelect={(account) => handleAccountSelection(item.uiData?.platform || 'facebook', account)} onBack={goBackToMenu} onStepBack={stepBackProp} disabled={isDisabled} />
-          )}
-          {item.uiType === 'completion_card' && (
-            <CompletionCard onDashboard={() => navigation.navigate('Main', { screen: 'Dashboard' })} disabled={isDisabled} />
-          )}
-          {item.uiType === 'create_strategy_prompt' && (
-            <CreateStrategyPromptCard onStartStrategy={startStrategyFlow} disabled={isDisabled} />
-          )}
-          {item.uiType === 'session_restore_prompt' && (
-            <SessionRestorePromptCard
-              lastMessageAt={item.uiData?.lastMessageAt}
-              windowDays={item.uiData?.windowDays}
-              onRestore={handleSessionPromptRestore}
-              onStartNew={handleSessionPromptStartNew}
-              disabled={isDisabled}
-              busy={restoringHistory}
-            />
+          {/* Cards/forms — only shown after text finishes streaming */}
+          {item.uiType && (
+            cardReady
+              ? isNewAgentMsg
+                ? <CardReveal key={`card-${item.id}`}>{cardContent}</CardReveal>
+                : cardContent
+              : null
           )}
         </View>
       </Animated.View>
@@ -1599,7 +1760,7 @@ export default function AgentChatScreen({ navigation, route }: Props) {
           showsVerticalScrollIndicator={false}
           contentContainerStyle={[styles.flatListContent, { paddingBottom: insets.bottom + 24 }]}
           ListFooterComponent={
-            flowState === 'STRATEGY_GENERATION'
+            flowState === 'STRATEGY_GENERATION' && isTyping
               ? <ThinkingIndicator />
               : (isTyping || uploading)
                 ? <TypingIndicator />

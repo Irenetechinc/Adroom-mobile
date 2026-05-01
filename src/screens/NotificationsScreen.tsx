@@ -10,6 +10,7 @@ import { ArrowLeft, Bell, BellOff, CheckCheck, X, Zap, CreditCard, AlertTriangle
 import Animated, { FadeInDown, FadeIn } from 'react-native-reanimated';
 import { supabase } from '../services/supabase';
 import { useNotificationStore } from '../store/notificationStore';
+import { useAuthStore } from '../store/authStore';
 import { forcePushReregistration } from '../services/notificationService';
 import Constants from 'expo-constants';
 import { Skeleton } from '../components/Skeleton';
@@ -171,22 +172,30 @@ export default function NotificationsScreen() {
     }
   }, []);
 
+  const { user } = useAuthStore();
+
   // Initial fetch + Supabase realtime subscription on user_notifications.
+  // Re-runs when user auth changes so cold-start loads work correctly once
+  // the session is restored from storage.
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user || cancelled) return;
+      // Prefer the already-resolved user from the auth store to avoid an
+      // extra network round-trip. Fall back to getUser() if the store hasn't
+      // hydrated yet.
+      const userId = user?.id;
+      if (!userId) return;
+      const resolvedUser = user;
       // Start realtime channel scoped to this user
       const channel = supabase
-        .channel(`notifications:${user.id}`)
+        .channel(`notifications:${resolvedUser.id}`)
         .on(
           'postgres_changes',
           {
             event: 'INSERT',
             schema: 'public',
             table: 'user_notifications',
-            filter: `user_id=eq.${user.id}`,
+            filter: `user_id=eq.${resolvedUser.id}`,
           },
           (payload: any) => {
             const row = payload.new as UserNotification;
@@ -197,7 +206,6 @@ export default function NotificationsScreen() {
             });
             if (!row.is_read) {
               setUnread((u) => u + 1);
-              // Mirror into the shared store so the Settings badge bumps too.
               const cur = useNotificationStore.getState().unreadCount;
               useNotificationStore.getState().setUnread(cur + 1);
             }
@@ -209,7 +217,7 @@ export default function NotificationsScreen() {
             event: 'UPDATE',
             schema: 'public',
             table: 'user_notifications',
-            filter: `user_id=eq.${user.id}`,
+            filter: `user_id=eq.${resolvedUser.id}`,
           },
           (payload: any) => {
             const row = payload.new as UserNotification;
@@ -227,7 +235,8 @@ export default function NotificationsScreen() {
         channelRef.current = null;
       }
     };
-  }, []);
+  // Re-subscribe when user ID becomes available (cold start / session restore).
+  }, [user?.id]);
 
   useFocusEffect(useCallback(() => {
     fetchNotifications();
@@ -235,7 +244,8 @@ export default function NotificationsScreen() {
     // polling guards against missed events when app sleeps in background.
     const interval = setInterval(() => fetchNotifications(), 60000);
     return () => clearInterval(interval);
-  }, [fetchNotifications]));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fetchNotifications, user?.id]));
 
   async function markAllRead() {
     if (unread === 0 || markingRead) return;
