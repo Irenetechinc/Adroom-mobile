@@ -37,6 +37,15 @@ export default function PrivacySecurityScreen() {
 
   const [activeSection, setActiveSection] = useState<string | null>(null);
 
+  // Inline notice for display-name section (replaces Alert for cooldown / success)
+  const [nameNotice, setNameNotice] = useState<{ msg: string; type: 'warn' | 'success' | 'error' } | null>(null);
+  const noticeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const showNameNotice = (msg: string, type: 'warn' | 'success' | 'error') => {
+    if (noticeTimerRef.current) clearTimeout(noticeTimerRef.current);
+    setNameNotice({ msg, type });
+    noticeTimerRef.current = setTimeout(() => setNameNotice(null), 5000);
+  };
+
   useEffect(() => {
     supabase.auth.getUser().then(({ data }: any) => {
       const user = data?.user;
@@ -78,18 +87,14 @@ export default function PrivacySecurityScreen() {
 
   async function handleUpdateName() {
     if (!displayName.trim() || displayName.trim().length < 2) {
-      Alert.alert('Invalid Name', 'Display name must be at least 2 characters.');
+      showNameNotice('Display name must be at least 2 characters.', 'error');
       return;
     }
     if (cooldownSecs > 0) {
       const mins = Math.floor(cooldownSecs / 60);
       const secs = cooldownSecs % 60;
       const timeStr = mins > 0 ? `${mins}m ${secs}s` : `${secs}s`;
-      Alert.alert(
-        'Username Cooldown',
-        `You can change your username again in ${timeStr}.\n\nThis limit protects your account.`,
-        [{ text: 'OK' }],
-      );
+      showNameNotice(`You can change your username again in ${timeStr}. This limit protects your account.`, 'warn');
       return;
     }
     setNameLoading(true);
@@ -105,7 +110,10 @@ export default function PrivacySecurityScreen() {
       if (res.status === 429) {
         const remaining = data.remaining_seconds || 180;
         startCooldownUI(remaining * 1000);
-        Alert.alert('Username Cooldown', data.error || `Please wait before changing your username again.`);
+        const mins = Math.floor(remaining / 60);
+        const secs = remaining % 60;
+        const timeStr = mins > 0 ? `${mins}m ${secs}s` : `${secs}s`;
+        showNameNotice(`Username cooldown active — try again in ${timeStr}.`, 'warn');
         return;
       }
       if (!res.ok) throw new Error(data.error || 'Failed to update');
@@ -127,10 +135,10 @@ export default function PrivacySecurityScreen() {
       //    been persisted server-side and pushed into local state.
       supabase.auth.refreshSession().catch(() => { /* non-fatal */ });
 
-      Alert.alert('Success', 'Your display name has been updated.');
+      showNameNotice('Display name updated successfully!', 'success');
       setActiveSection(null);
     } catch (err: any) {
-      Alert.alert('Error', err.message);
+      showNameNotice(err.message || 'Failed to update name.', 'error');
     } finally {
       setNameLoading(false);
     }
@@ -293,12 +301,51 @@ export default function PrivacySecurityScreen() {
                     <TextInput
                       style={styles.input}
                       value={displayName}
-                      onChangeText={setDisplayName}
+                      onChangeText={(v) => { setDisplayName(v); setNameNotice(null); }}
                       placeholder="Enter your display name"
                       placeholderTextColor="#475569"
                       maxLength={50}
                       autoFocus
                     />
+
+                    {nameNotice && (
+                      <View style={{
+                        marginTop: 8, marginBottom: 4,
+                        paddingHorizontal: 12, paddingVertical: 10,
+                        borderRadius: 10,
+                        borderWidth: 1,
+                        backgroundColor: nameNotice.type === 'success'
+                          ? 'rgba(34,197,94,0.1)'
+                          : nameNotice.type === 'warn'
+                            ? 'rgba(251,191,36,0.1)'
+                            : 'rgba(239,68,68,0.1)',
+                        borderColor: nameNotice.type === 'success'
+                          ? 'rgba(34,197,94,0.3)'
+                          : nameNotice.type === 'warn'
+                            ? 'rgba(251,191,36,0.3)'
+                            : 'rgba(239,68,68,0.3)',
+                      }}>
+                        <Text style={{
+                          fontSize: 13,
+                          lineHeight: 18,
+                          color: nameNotice.type === 'success'
+                            ? '#86EFAC'
+                            : nameNotice.type === 'warn'
+                              ? '#FDE68A'
+                              : '#FCA5A5',
+                        }}>
+                          {nameNotice.msg}
+                        </Text>
+                        {cooldownSecs > 0 && nameNotice.type === 'warn' && (
+                          <Text style={{ fontSize: 12, color: '#94A3B8', marginTop: 4 }}>
+                            Next change available in{' '}
+                            {Math.floor(cooldownSecs / 60) > 0 ? `${Math.floor(cooldownSecs / 60)}m ` : ''}
+                            {cooldownSecs % 60}s
+                          </Text>
+                        )}
+                      </View>
+                    )}
+
                     <TouchableOpacity
                       style={[styles.actionBtn, { backgroundColor: cooldownSecs > 0 ? 'rgba(100,116,139,0.1)' : 'rgba(0,240,255,0.1)', borderColor: cooldownSecs > 0 ? '#334155' : 'rgba(0,240,255,0.3)' }]}
                       onPress={handleUpdateName}

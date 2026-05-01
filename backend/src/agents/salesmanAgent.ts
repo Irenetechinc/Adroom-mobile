@@ -172,6 +172,19 @@ Return JSON:
                 result = await this.publishToTwitter(tokens.twitter, publishBody.slice(0, 280));
             } else if (task.platform === 'linkedin' && tokens.linkedin) {
                 result = await this.publishToLinkedIn(tokens.linkedin, publishBody);
+            } else if (task.platform === 'tiktok' && tokens.tiktok) {
+                const videoUrl: string | undefined = task.content?.video_url;
+                if (!videoUrl) {
+                    // TikTok requires video — skip text-only and reschedule as video task
+                    this.log(`TikTok task ${taskId} skipped: no video_url in content. Mark for video generation.`);
+                    await this.supabase.from('agent_tasks').update({
+                        status: 'pending',
+                        scheduled_at: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
+                        notes: 'Awaiting video asset — will retry in 1 hour',
+                    }).eq('id', taskId);
+                    return;
+                }
+                result = await this.publishToTikTok(tokens.tiktok, publishBody, videoUrl);
             } else {
                 throw new Error(`No token available for platform: ${task.platform}`);
             }
@@ -204,41 +217,71 @@ Return JSON:
         postId: string;
         tokens: AgentTokens;
     }): Promise<void> {
-        if (params.platform !== 'facebook' || !params.tokens.facebook) return;
+        if (params.platform === 'facebook' && params.tokens.facebook) {
+            this.log(`Scanning Facebook post ${params.postId} for sales leads`);
+            try {
+                const resp = await fetch(
+                    `https://graph.facebook.com/v19.0/${params.postId}/comments?fields=id,message,from&access_token=${params.tokens.facebook.access_token}`
+                );
+                if (!resp.ok) return;
 
-        this.log(`Scanning post ${params.postId} for sales leads`);
+                const data: any = await resp.json();
+                const comments = data?.data || [];
 
-        try {
-            const resp = await fetch(
-                `https://graph.facebook.com/v19.0/${params.postId}/comments?fields=id,message,from&access_token=${params.tokens.facebook.access_token}`
-            );
-            if (!resp.ok) return;
+                for (const comment of comments) {
+                    const intentScore = await this.scoreIntent(comment.message);
+                    if (intentScore >= 0.6) {
+                        await this.supabase.from('agent_leads').upsert({
+                            strategy_id: params.strategyId,
+                            user_id: params.userId,
+                            platform: params.platform,
+                            platform_user_id: comment.from?.id,
+                            platform_username: comment.from?.name,
+                            first_interaction: comment.message,
+                            intent_score: intentScore,
+                            intent_signals: [{ source: 'comment', text: comment.message, score: intentScore }],
+                            stage: 'identified',
+                            next_followup_at: new Date(Date.now() + 30 * 60 * 1000).toISOString()
+                        }, { onConflict: 'user_id,platform,platform_user_id' });
 
-            const data: any = await resp.json();
-            const comments = data?.data || [];
+                        this.log(`High-intent lead identified: ${comment.from?.name} (score: ${intentScore})`);
+                    }
+                }
+            } catch (err: any) {
+                this.log(`Facebook lead scan failed: ${err.message}`);
+            }
+            return;
+        }
 
-            for (const comment of comments) {
-                const intentScore = await this.scoreIntent(comment.message);
-                if (intentScore >= 0.6) {
+        if (params.platform === 'tiktok' && params.tokens.tiktok) {
+            this.log(`Scanning TikTok video ${params.postId} for leads`);
+            try {
+                const leads = await this.scanTikTokLeads(params.tokens.tiktok, params.postId);
+                for (const lead of leads) {
+                    const bioScore = await this.scoreIntent(lead.bio_description || '');
+                    const intentScore = Math.max(0.4, bioScore); // commenters are warm by default
                     await this.supabase.from('agent_leads').upsert({
                         strategy_id: params.strategyId,
                         user_id: params.userId,
-                        platform: params.platform,
-                        platform_user_id: comment.from?.id,
-                        platform_username: comment.from?.name,
-                        first_interaction: comment.message,
+                        platform: 'tiktok',
+                        platform_user_id: lead.open_id,
+                        platform_username: lead.display_name,
+                        first_interaction: lead.bio_description || 'Commented on TikTok video',
                         intent_score: intentScore,
-                        intent_signals: [{ source: 'comment', text: comment.message, score: intentScore }],
+                        intent_signals: [{ source: 'tiktok_comment', display_name: lead.display_name, score: intentScore }],
                         stage: 'identified',
                         next_followup_at: new Date(Date.now() + 30 * 60 * 1000).toISOString()
                     }, { onConflict: 'user_id,platform,platform_user_id' });
 
-                    this.log(`High-intent lead identified: ${comment.from?.name} (score: ${intentScore})`);
+                    this.log(`TikTok lead identified: ${lead.display_name}`);
                 }
+            } catch (err: any) {
+                this.log(`TikTok lead scan failed: ${err.message}`);
             }
-        } catch (err: any) {
-            this.log(`Lead scan failed: ${err.message}`);
+            return;
         }
+
+        this.log(`Lead scan skipped — unsupported platform: ${params.platform}`);
     }
 
     private async scoreIntent(text: string): Promise<number> {
