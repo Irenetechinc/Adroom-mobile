@@ -1,8 +1,9 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View, Text, TouchableOpacity, TextInput, Alert, StyleSheet,
   ScrollView, ActivityIndicator, KeyboardAvoidingView, Platform,
 } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import { ArrowLeft, Shield, User, Lock, Trash2, ChevronRight, CheckCircle } from 'lucide-react-native';
@@ -44,9 +45,51 @@ export default function PrivacySecurityScreen() {
     });
   }, []);
 
+  const NAME_CHANGE_KEY = 'LAST_NAME_CHANGE_TS';
+  const NAME_COOLDOWN_MS = 3 * 60 * 1000; // 3 minutes
+  const [cooldownSecs, setCooldownSecs] = useState(0);
+  const cooldownTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const startCooldownUI = (remainingMs: number) => {
+    let secs = Math.ceil(remainingMs / 1000);
+    setCooldownSecs(secs);
+    if (cooldownTimerRef.current) clearInterval(cooldownTimerRef.current);
+    cooldownTimerRef.current = setInterval(() => {
+      secs -= 1;
+      if (secs <= 0) {
+        setCooldownSecs(0);
+        clearInterval(cooldownTimerRef.current!);
+        cooldownTimerRef.current = null;
+      } else {
+        setCooldownSecs(secs);
+      }
+    }, 1000);
+  };
+
+  useEffect(() => {
+    AsyncStorage.getItem(NAME_CHANGE_KEY).then(ts => {
+      if (!ts) return;
+      const elapsed = Date.now() - parseInt(ts, 10);
+      if (elapsed < NAME_COOLDOWN_MS) startCooldownUI(NAME_COOLDOWN_MS - elapsed);
+    });
+    return () => { if (cooldownTimerRef.current) clearInterval(cooldownTimerRef.current); };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   async function handleUpdateName() {
     if (!displayName.trim() || displayName.trim().length < 2) {
       Alert.alert('Invalid Name', 'Display name must be at least 2 characters.');
+      return;
+    }
+    if (cooldownSecs > 0) {
+      const mins = Math.floor(cooldownSecs / 60);
+      const secs = cooldownSecs % 60;
+      const timeStr = mins > 0 ? `${mins}m ${secs}s` : `${secs}s`;
+      Alert.alert(
+        'Username Cooldown',
+        `You can change your username again in ${timeStr}.\n\nThis limit protects your account.`,
+        [{ text: 'OK' }],
+      );
       return;
     }
     setNameLoading(true);
@@ -59,7 +102,16 @@ export default function PrivacySecurityScreen() {
         body: JSON.stringify({ display_name: displayName.trim() }),
       });
       const data = await res.json();
+      if (res.status === 429) {
+        const remaining = data.remaining_seconds || 180;
+        startCooldownUI(remaining * 1000);
+        Alert.alert('Username Cooldown', data.error || `Please wait before changing your username again.`);
+        return;
+      }
       if (!res.ok) throw new Error(data.error || 'Failed to update');
+
+      await AsyncStorage.setItem(NAME_CHANGE_KEY, String(Date.now()));
+      startCooldownUI(NAME_COOLDOWN_MS);
 
       // 1) Optimistically push the new name into the shared profile store so
       //    the side menu, settings header, and chat avatar all flip
@@ -248,13 +300,17 @@ export default function PrivacySecurityScreen() {
                       autoFocus
                     />
                     <TouchableOpacity
-                      style={[styles.actionBtn, { backgroundColor: 'rgba(0,240,255,0.1)', borderColor: 'rgba(0,240,255,0.3)' }]}
+                      style={[styles.actionBtn, { backgroundColor: cooldownSecs > 0 ? 'rgba(100,116,139,0.1)' : 'rgba(0,240,255,0.1)', borderColor: cooldownSecs > 0 ? '#334155' : 'rgba(0,240,255,0.3)' }]}
                       onPress={handleUpdateName}
-                      disabled={nameLoading}
+                      disabled={nameLoading || cooldownSecs > 0}
                       activeOpacity={0.8}
                     >
                       {nameLoading ? (
                         <ActivityIndicator size="small" color="#00F0FF" />
+                      ) : cooldownSecs > 0 ? (
+                        <Text style={[styles.actionBtnText, { color: '#64748B' }]}>
+                          Wait {Math.floor(cooldownSecs / 60) > 0 ? `${Math.floor(cooldownSecs / 60)}m ` : ''}{cooldownSecs % 60}s
+                        </Text>
                       ) : (
                         <Text style={[styles.actionBtnText, { color: '#00F0FF' }]}>Save Name</Text>
                       )}

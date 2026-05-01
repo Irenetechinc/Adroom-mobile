@@ -83,7 +83,7 @@ export default function SignupScreen({ navigation }: Props) {
           );
           return;
         }
-        await supabase.auth.resend({ type: 'signup', email: email.trim() }).catch(() => {});
+        // Backend already sends the verification email via Resend — no duplicate send needed.
       } else {
         const { error } = await supabase.auth.signUp({ email: email.trim(), password });
         setLoading(false);

@@ -1861,9 +1861,31 @@ app.put('/api/user/profile', async (req, res) => {
       return res.status(400).json({ error: 'display_name must be 2–50 characters' });
     }
 
+    // Enforce 3-minute cooldown between username changes.
+    const lastChangedAt = user.user_metadata?.display_name_changed_at;
+    if (lastChangedAt) {
+      const elapsed = Date.now() - new Date(lastChangedAt).getTime();
+      const cooldownMs = 3 * 60 * 1000;
+      if (elapsed < cooldownMs) {
+        const remainingSecs = Math.ceil((cooldownMs - elapsed) / 1000);
+        const mins = Math.floor(remainingSecs / 60);
+        const secs = remainingSecs % 60;
+        const timeStr = mins > 0 ? `${mins}m ${secs}s` : `${secs}s`;
+        return res.status(429).json({
+          error: `Please wait ${timeStr} before changing your username again.`,
+          remaining_seconds: remainingSecs,
+        });
+      }
+    }
+
     const svc = getServiceSupabaseClient();
     const { data, error } = await svc.auth.admin.updateUserById(user.id, {
-      user_metadata: { ...user.user_metadata, full_name: trimmed, display_name: trimmed },
+      user_metadata: {
+        ...user.user_metadata,
+        full_name: trimmed,
+        display_name: trimmed,
+        display_name_changed_at: new Date().toISOString(),
+      },
     });
     if (error) throw error;
     res.json({ success: true, display_name: trimmed });
