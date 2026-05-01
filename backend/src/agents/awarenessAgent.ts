@@ -176,6 +176,18 @@ Return JSON:
                 result = await this.publishToTwitter(tokens.twitter, body.slice(0, 280));
             } else if (task.platform === 'linkedin' && tokens.linkedin) {
                 result = await this.publishToLinkedIn(tokens.linkedin, body);
+            } else if (task.platform === 'tiktok' && tokens.tiktok) {
+                const videoUrl: string | undefined = task.content?.video_url;
+                if (!videoUrl) {
+                    this.log(`TikTok awareness task ${taskId} skipped: no video_url. Rescheduling.`);
+                    await this.supabase.from('agent_tasks').update({
+                        status: 'pending',
+                        scheduled_at: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
+                        notes: 'Awaiting video asset — will retry in 1 hour',
+                    }).eq('id', taskId);
+                    return;
+                }
+                result = await this.publishToTikTok(tokens.tiktok, body, videoUrl);
             } else {
                 throw new Error(`No token for: ${task.platform}`);
             }
@@ -226,6 +238,9 @@ Return JSON:
                     await this.publishToTwitter(tokens.twitter, body.slice(0, 280));
                 } else if (platform === 'linkedin' && tokens.linkedin) {
                     await this.publishToLinkedIn(tokens.linkedin, body);
+                } else if (platform === 'tiktok' && tokens.tiktok) {
+                    // TikTok requires video — blitz text posts are skipped, log for awareness
+                    this.log(`TikTok blitz skipped: no video asset available for blitz post`);
                 }
                 this.log(`Blitz published to ${platform}`);
             } catch (err: any) {

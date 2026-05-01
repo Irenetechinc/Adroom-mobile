@@ -222,3 +222,28 @@ npx expo start
 # On your device: open Expo Go → scan QR code
 # Make sure EXPO_PUBLIC_API_URL points to your Replit backend URL
 ```
+
+## Bug Fixes & Feature Completions (May 2026)
+
+### Stream Typing Speed
+- `src/screens/AgentChatScreen.tsx`: `speedMs` default reduced `7ms → 4ms`; `streamDelay` multiplier reduced `7 → 4` — responses appear ~43% faster.
+
+### ThinkingIndicator Sync Fix
+- Added `hasStreamingInProgress` computed var (checks if any new agent message is still mid-typewriter).
+- `ListFooterComponent` now returns `null` while streaming is active — ThinkingIndicator and TypingIndicator no longer overlap live stream text.
+
+### Strategy Generation Error Recovery
+- `agentStore.ts` `handleDurationSelection` catch block now resets `flowState: 'IDLE', isInputDisabled: false` so the chat input is re-enabled after a failed strategy generation (previously left in stuck `STRATEGY_GENERATION` state).
+
+### SettingsScreen Cold Start Fix
+- `src/screens/SettingsScreen.tsx`: `fetchEnergy` useEffect changed from `[]` to `[user?.id]` dependency + `setReady(false)` on re-run — data now loads correctly after auth resolves on cold start.
+
+### Duplicate Verification Emails Fixed
+- `src/screens/SignupScreen.tsx`: `supabase.auth.resend()` is now only called as a fallback when no `BACKEND_URL` is set. Previously both backend Resend and Supabase's built-in email fired simultaneously on every resend tap.
+
+### Username Cooldown — Inline UI
+- `src/screens/PrivacySecurityScreen.tsx`: All cooldown/validation/success `Alert.alert()` calls in the display-name flow replaced with an inline `nameNotice` banner (green/amber/red) that renders inside the form, includes a live countdown when in cooldown, and auto-dismisses after 5 seconds.
+
+### TikTok Agent Wiring
+- `backend/src/agents/salesmanAgent.ts`: TikTok added to `executeTask` publish block (requires `content.video_url`; reschedules +1h when absent) and `scanForLeads` (uses `scanTikTokLeads` from agentBase, writes to `agent_leads`).
+- `backend/src/agents/awarenessAgent.ts`: TikTok added to `executeTask` publish block and `crossPostBlitz` (logs skip when no video asset available).

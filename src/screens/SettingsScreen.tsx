@@ -69,8 +69,9 @@ export default function SettingsScreen() {
   const profileInitial = useProfileStore((s) => s.initial);
 
   useEffect(() => {
+    setReady(false);
     fetchEnergy().finally(() => setReady(true));
-  }, []);
+  }, [user?.id]);
 
   // Belt-and-braces refresh whenever the Settings screen mounts so the
   // counter is correct even if the realtime channel is reconnecting.

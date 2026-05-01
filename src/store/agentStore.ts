@@ -801,7 +801,7 @@ export const useAgentStore = create<AgentState>()(
           );
 
       } catch (error: any) {
-          set({ isTyping: false });
+          set({ isTyping: false, flowState: 'IDLE', isInputDisabled: false });
           addMessage(`Sorry — I couldn't put together a strategy just now. ${error.message}`, 'agent');
       }
   },

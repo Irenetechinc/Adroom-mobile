@@ -1051,7 +1051,7 @@ const TypingIndicator = () => {
 const TypewriterText = ({
   text,
   style,
-  speedMs = 7,
+  speedMs = 4,
   startDelay = 0,
   onTick,
   onDone,
@@ -1260,6 +1260,15 @@ export default function AgentChatScreen({ navigation, route }: Props) {
   // was already on screen at mount) and renders instantly. Anything newer
   // is a freshly-arrived agent reply and animates in character-by-character.
   const mountedAtRef = useRef<number>(Date.now());
+
+  // True while any newly-arrived agent message is still mid-stream.
+  // Used to prevent the ThinkingIndicator / TypingIndicator from overlapping
+  // with live typewriter text — they should only appear once all bubbles are
+  // done animating.
+  const hasStreamingInProgress = messages.some(
+    (m) => m.sender === 'agent' && m.timestamp > mountedAtRef.current && !doneTextIds.has(m.id)
+  );
+
   // Count of restorable sessions in the last 7 days. Surfaced as a small
   // numeric badge on the History icon so users can see at a glance whether
   // there's anything to come back to. Refreshed on mount, on screen focus,
@@ -1540,7 +1549,7 @@ export default function AgentChatScreen({ navigation, route }: Props) {
           .filter(m => m.sender === 'agent' && m.timestamp > mountedAtRef.current && m.text && m.id !== item.id && m.timestamp <= item.timestamp)
           .reduce((sum, m) => sum + (m.text?.length || 0), 0)
       : 0;
-    const streamDelay = charsBeforeMe * 7;
+    const streamDelay = charsBeforeMe * 4;
 
     // Cards and forms only appear after the text in this bubble finishes
     // streaming. History messages (not new) are always immediately visible.
@@ -1760,11 +1769,13 @@ export default function AgentChatScreen({ navigation, route }: Props) {
           showsVerticalScrollIndicator={false}
           contentContainerStyle={[styles.flatListContent, { paddingBottom: insets.bottom + 24 }]}
           ListFooterComponent={
-            flowState === 'STRATEGY_GENERATION' && isTyping
-              ? <ThinkingIndicator />
-              : (isTyping || uploading)
-                ? <TypingIndicator />
-                : null
+            hasStreamingInProgress
+              ? null
+              : flowState === 'STRATEGY_GENERATION' && isTyping
+                ? <ThinkingIndicator />
+                : (isTyping || uploading)
+                  ? <TypingIndicator />
+                  : null
           }
           keyboardShouldPersistTaps="handled"
         />

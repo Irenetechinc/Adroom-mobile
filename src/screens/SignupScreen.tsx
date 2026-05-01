@@ -127,8 +127,10 @@ export default function SignupScreen({ navigation }: Props) {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ email: registeredEmail }),
         }).catch(() => {});
+      } else {
+        // Fallback: only use Supabase's built-in resend when there is no backend
+        await supabase.auth.resend({ type: 'signup', email: registeredEmail }).catch(() => {});
       }
-      await supabase.auth.resend({ type: 'signup', email: registeredEmail }).catch(() => {});
       setResendSent(true);
       setResendCooldown(60);
       cooldownRef.current = setInterval(() => {
