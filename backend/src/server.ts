@@ -1,5 +1,6 @@
 import express, { type Request } from 'express';
 import bodyParser from 'body-parser';
+import multer from 'multer';
 import dotenv from 'dotenv';
 import { EngagementService } from './services/engagement';
 import { CreativeService } from './services/creativeService';
@@ -841,7 +842,7 @@ app.post('/api/ai/generate-strategy', async (req, res) => {
  * Activate Goal Agents — full autonomous campaign execution begins after user approves strategy
  */
 app.post('/api/ai/activate-agents', async (req, res) => {
-    const { strategyId, goal, platforms } = req.body;
+    const { strategyId, goal, platforms, videoUrl } = req.body;
     const ts = () => new Date().toISOString();
     console.log(`\n[AgentActivation] ═══════════════════════════════════════`);
     console.log(`[AgentActivation] [${ts()}] ACTIVATING AUTONOMOUS AGENT`);
@@ -923,6 +924,17 @@ app.post('/api/ai/activate-agents', async (req, res) => {
 
         const activeStrategy = strategy || { id: strategyId, goal, platforms, user_id: user.id, duration: 30 };
         const activePlatforms = (platforms || strategy?.platforms || ['facebook']).slice(0, planLimits.platforms);
+
+        // Store user-supplied video URL in strategy so agents can retrieve it at execution time
+        if (videoUrl) {
+            await supabase.from('strategies').update({
+                current_execution_plan: {
+                    ...(strategy?.current_execution_plan || {}),
+                    user_video_url: videoUrl,
+                }
+            }).eq('id', strategyId);
+            console.log(`[AgentActivation] User video URL stored for strategy ${strategyId}`);
+        }
 
         console.log(`[AgentActivation] [${ts()}] Launching orchestrator...`);
 
@@ -2857,6 +2869,49 @@ app.post('/api/strategy/:id/daily-summary', async (req, res) => {
 
     return res.status(200).json({ success: true });
   } catch (e: any) {
+    return res.status(500).json({ error: e.message });
+  }
+});
+
+// ─── Video Upload (User-Supplied Videos for TikTok) ──────────────────────────
+
+const videoUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 200 * 1024 * 1024 }, // 200 MB
+  fileFilter: (_req, file, cb) => {
+    if (file.mimetype.startsWith('video/')) {
+      cb(null, true);
+    } else {
+      cb(new Error('Only video files are accepted.'));
+    }
+  },
+});
+
+app.post('/api/video/upload', videoUpload.single('video'), async (req: any, res) => {
+  try {
+    const supabase = getSupabaseClient(req);
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return res.status(401).json({ error: 'Unauthorized.' });
+
+    const file = req.file;
+    if (!file) return res.status(400).json({ error: 'No video file provided.' });
+
+    const ext = file.originalname.split('.').pop() || 'mp4';
+    const fileName = `user_videos/${user.id}/${Date.now()}_${Math.random().toString(36).substr(2, 6)}.${ext}`;
+
+    const svc = getServiceSupabaseClient();
+    const { error: uploadError } = await svc.storage
+      .from('creative-assets')
+      .upload(fileName, file.buffer, { contentType: file.mimetype, upsert: true });
+
+    if (uploadError) throw new Error(uploadError.message);
+
+    const { data: { publicUrl } } = svc.storage.from('creative-assets').getPublicUrl(fileName);
+
+    console.log(`[VideoUpload] User ${user.id} uploaded video: ${publicUrl}`);
+    return res.status(200).json({ url: publicUrl });
+  } catch (e: any) {
+    console.error('[VideoUpload] Error:', e.message);
     return res.status(500).json({ error: e.message });
   }
 });

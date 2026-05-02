@@ -9,6 +9,7 @@ import { TikTokService } from '../services/tiktok';
 import { LinkedInService } from '../services/linkedin';
 import { TwitterService } from '../services/twitter';
 import { ProductService } from '../services/product';
+import { VideoAssetService } from '../services/videoAsset';
 import { StrategyService, GeneratedStrategy } from '../services/strategy';
 import { VisionService } from '../services/vision';
 import { IntegrityService } from '../services/integrity';
@@ -70,6 +71,7 @@ type ExtendedProductDetails = ProductDetails & {
   id?: string;
   selectedGoal?: string;
   selectedDuration?: number;
+  videoUrl?: string;
 };
 
 // Number of days of history that are eligible for restore. After this window
@@ -444,6 +446,43 @@ export const useAgentStore = create<AgentState>()(
           price: String((validatedData as any).price || ''),
           category: (validatedData as any).category || '',
         });
+
+        // Upload video file to storage if user provided one
+        const videoAsset = (data as any).video;
+        if (videoAsset?.uri) {
+          try {
+            const videoUrl = await VideoAssetService.uploadVideoFile(
+              videoAsset.uri,
+              videoAsset.mimeType || 'video/mp4',
+              videoAsset.fileName || `product_video_${Date.now()}.mp4`
+            );
+            updateProductDetails({ videoUrl });
+
+            // Fire-and-forget: generate video edit plan in sync with SmartVideoEditor
+            const BACKEND_URL = process.env.EXPO_PUBLIC_API_URL;
+            if (BACKEND_URL) {
+              const { data: { session } } = await supabase.auth.getSession();
+              if (session?.access_token) {
+                fetch(`${BACKEND_URL}/api/video/edit-plan`, {
+                  method: 'POST',
+                  headers: {
+                    'Content-Type': 'application/json',
+                    Authorization: `Bearer ${session.access_token}`,
+                  },
+                  body: JSON.stringify({
+                    videoUri: videoUrl,
+                    productName: validatedData.name,
+                    goal: 'Campaign video optimization',
+                    platform: 'tiktok',
+                  }),
+                }).catch(() => {});
+              }
+            }
+          } catch (uploadErr: any) {
+            console.warn('[AgentStore] Video upload failed (non-fatal):', uploadErr.message);
+          }
+        }
+
         set({ flowState: 'GOAL_SELECTION', isInputDisabled: true });
         
         setTimeout(() => {
@@ -833,6 +872,7 @@ export const useAgentStore = create<AgentState>()(
                       strategyId,
                       goal: strategy.goal || strategy.title,
                       platforms: strategy.platforms,
+                      videoUrl: get().productDetails.videoUrl,
                   }),
               });
 
