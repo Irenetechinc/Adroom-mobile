@@ -173,18 +173,46 @@ Return JSON:
             } else if (task.platform === 'linkedin' && tokens.linkedin) {
                 result = await this.publishToLinkedIn(tokens.linkedin, publishBody);
             } else if (task.platform === 'tiktok' && tokens.tiktok) {
-                const videoUrl: string | undefined = task.content?.video_url;
-                if (!videoUrl) {
-                    // TikTok requires video — skip text-only and reschedule as video task
-                    this.log(`TikTok task ${taskId} skipped: no video_url in content. Mark for video generation.`);
+                let tiktokVideoUrl: string | undefined = task.content?.video_url;
+
+                if (!tiktokVideoUrl) {
+                    // Step 1: check if strategy has a user-supplied video URL
+                    const { data: strategyData } = await this.supabase
+                        .from('strategies')
+                        .select('current_execution_plan, product_id')
+                        .eq('id', task.strategy_id)
+                        .single();
+
+                    tiktokVideoUrl = strategyData?.current_execution_plan?.user_video_url;
+
+                    if (!tiktokVideoUrl) {
+                        // Step 2: auto-generate a TikTok video from product details
+                        this.log(`TikTok task ${taskId}: no video found — auto-generating from product details...`);
+                        const creative = new (await import('../services/creativeService')).CreativeService();
+                        const product = await this.getProductDetails(strategyData?.product_id || task.content?.product_id);
+                        tiktokVideoUrl = await creative.generateTikTokVideo(product || { name: 'Product', description: '' }) || undefined;
+                    }
+
+                    if (!tiktokVideoUrl) {
+                        // Fallback: reschedule if generation also failed
+                        this.log(`TikTok task ${taskId}: video generation failed — rescheduling in 30 min.`);
+                        await this.supabase.from('agent_tasks').update({
+                            status: 'pending',
+                            scheduled_at: new Date(Date.now() + 30 * 60 * 1000).toISOString(),
+                            notes: 'Video generation failed — will retry in 30 minutes',
+                        }).eq('id', taskId);
+                        return;
+                    }
+
+                    // Cache the generated URL back into the task so next runs reuse it
                     await this.supabase.from('agent_tasks').update({
-                        status: 'pending',
-                        scheduled_at: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
-                        notes: 'Awaiting video asset — will retry in 1 hour',
+                        content: { ...task.content, video_url: tiktokVideoUrl },
                     }).eq('id', taskId);
-                    return;
+
+                    this.log(`TikTok task ${taskId}: video ready — ${tiktokVideoUrl}`);
                 }
-                result = await this.publishToTikTok(tokens.tiktok, publishBody, videoUrl);
+
+                result = await this.publishToTikTok(tokens.tiktok, publishBody, tiktokVideoUrl);
             } else {
                 throw new Error(`No token available for platform: ${task.platform}`);
             }

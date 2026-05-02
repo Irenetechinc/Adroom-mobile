@@ -202,7 +202,8 @@ export default function ConnectedAccountsScreen() {
           const connected = isConnected(platform.id);
           const comingSoon = !!platform.comingSoon;
           const disc = disconnecting === platform.id;
-          const locked = !connected && !comingSoon && isStarterLimited;
+          const isProOnlyPlatform = platform.id === 'twitter';
+          const locked = !connected && !comingSoon && (isStarterLimited || (!isPro && isProOnlyPlatform));
 
           return (
             <Animated.View
