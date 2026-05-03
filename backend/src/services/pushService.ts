@@ -261,6 +261,27 @@ export const pushService = {
     ]);
   },
 
+  async notifyDealClosed(userId: string, params: {
+    buyerName: string;
+    productName: string;
+    dealValue: number;
+    currency: string;
+    platform: string;
+    deliveryType?: string;
+    deliveryAddress?: string;
+  }): Promise<void> {
+    const tokens = await getUserTokens(userId);
+    const currencySymbol = params.currency === 'USD' ? '$' : params.currency + ' ';
+    const title = `Deal Closed — ${currencySymbol}${params.dealValue.toLocaleString()}`;
+    const body = `${params.buyerName} just agreed to purchase "${params.productName}" via ${params.platform}. ${params.deliveryType === 'payment_on_delivery' ? 'Cash on delivery.' : 'Payment required before delivery.'}${params.deliveryAddress ? ` Deliver to: ${params.deliveryAddress}.` : ''}`;
+    const data = { type: 'deal_closed', ...params };
+    await Promise.all([
+      sendExpoPush(tokens, { title, body, data, channelId: 'alerts', sound: 'default' }),
+      insertNotification(userId, title, body, data),
+    ]);
+    console.log(`[PushService] Deal closed notification sent to user ${userId} — buyer: ${params.buyerName}`);
+  },
+
   /**
    * Diagnostic helper used by /api/push/test. Sends a real push to all of
    * the user's active devices and returns the full Expo response so the

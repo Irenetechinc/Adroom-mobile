@@ -180,40 +180,75 @@ Return JSON:
                 let tiktokVideoUrl: string | undefined = task.content?.video_url;
 
                 if (!tiktokVideoUrl) {
-                    // Step 1: check if strategy has a user-supplied video URL
                     const { data: strategyData } = await this.supabase
                         .from('strategies')
                         .select('current_execution_plan, product_id')
                         .eq('id', task.strategy_id)
                         .single();
 
-                    tiktokVideoUrl = strategyData?.current_execution_plan?.user_video_url;
+                    const userVideoUrl: string | undefined = strategyData?.current_execution_plan?.user_video_url;
+                    const taskProduct = await this.getProductDetails(strategyData?.product_id || task.content?.product_id);
 
-                    if (!tiktokVideoUrl) {
-                        // Step 2: auto-generate a TikTok video from product details
-                        this.log(`TikTok awareness task ${taskId}: no video — auto-generating from product details...`);
-                        const creative = new (await import('../services/creativeService')).CreativeService();
-                        const product = await this.getProductDetails(strategyData?.product_id || task.content?.product_id);
-                        tiktokVideoUrl = await creative.generateTikTokVideo(product || { name: 'Product', description: '' }) || undefined;
+                    // Consult Director Agent for visual direction + video decision
+                    const { DirectorAgent } = await import('./directorAgent');
+                    const director = new DirectorAgent();
+                    const direction = await director.getDirection({
+                        userId: task.user_id,
+                        productId: strategyData?.product_id,
+                        strategyId: task.strategy_id,
+                        product: taskProduct,
+                        platform: 'tiktok',
+                        goal: 'AWARENESS — maximum reach and virality',
+                        hasUserVideo: !!userVideoUrl,
+                    });
+
+                    // Consult Psychologist Engine
+                    const { PsychologistEngine } = await import('../services/psychologistEngine');
+                    const psychologist = new PsychologistEngine();
+                    const psychProfile = await psychologist.getProfileForProduct(
+                        strategyData?.product_id || '',
+                        taskProduct?.category
+                    );
+
+                    if (direction.should_use_user_video && userVideoUrl) {
+                        this.log(`TikTok awareness ${taskId}: Director chose user video — checking for edit job...`);
+                        const { SmartVideoEditor } = await import('../services/smartVideoEditor');
+                        const editor = new SmartVideoEditor();
+                        tiktokVideoUrl = await editor.getBestVideoForStrategy(task.strategy_id, userVideoUrl) || userVideoUrl;
+                    } else {
+                        // Check subscription tier before generating
+                        const { checkFeatureAccess } = await import('../services/subscriptionGuard');
+                        const access = await checkFeatureAccess(task.user_id, 'video_asset', this.supabase as any);
+
+                        if (!access.allowed) {
+                            this.log(`TikTok awareness ${taskId}: AI video blocked — ${access.reason}. Using user video or skipping.`);
+                            tiktokVideoUrl = userVideoUrl;
+                        } else {
+                            this.log(`TikTok awareness ${taskId}: Director chose AI generation with Director+Psychologist direction...`);
+                            const creative = new (await import('../services/creativeService')).CreativeService();
+                            tiktokVideoUrl = await creative.generateTikTokVideo(
+                                taskProduct || { name: 'Product', description: '' },
+                                direction,
+                                psychProfile
+                            ) || userVideoUrl || undefined;
+                        }
                     }
 
                     if (!tiktokVideoUrl) {
-                        // Fallback: reschedule if generation also failed
-                        this.log(`TikTok awareness task ${taskId}: video generation failed — rescheduling in 30 min.`);
+                        this.log(`TikTok awareness ${taskId}: no video available — rescheduling in 30 min.`);
                         await this.supabase.from('agent_tasks').update({
                             status: 'pending',
                             scheduled_at: new Date(Date.now() + 30 * 60 * 1000).toISOString(),
-                            notes: 'Video generation failed — will retry in 30 minutes',
+                            notes: 'No video available — will retry in 30 minutes',
                         }).eq('id', taskId);
                         return;
                     }
 
-                    // Cache the generated URL back into the task for future retries
                     await this.supabase.from('agent_tasks').update({
                         content: { ...task.content, video_url: tiktokVideoUrl },
                     }).eq('id', taskId);
 
-                    this.log(`TikTok awareness task ${taskId}: video ready — ${tiktokVideoUrl}`);
+                    this.log(`TikTok awareness ${taskId}: video ready (Director: ${direction.should_use_user_video ? 'user_video' : 'ai_generated'})`);
                 }
 
                 result = await this.publishToTikTok(tokens.tiktok, body, tiktokVideoUrl);

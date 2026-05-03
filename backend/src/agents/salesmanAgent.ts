@@ -1,6 +1,7 @@
 import { SupabaseClient } from '@supabase/supabase-js';
 import { AgentBase, AgentTokens } from './agentBase';
 import { AIEngine } from '../config/ai-models';
+import { pushService } from '../services/pushService';
 
 export class SalesmanAgent extends AgentBase {
     constructor(supabase: SupabaseClient) {
@@ -176,40 +177,77 @@ Return JSON:
                 let tiktokVideoUrl: string | undefined = task.content?.video_url;
 
                 if (!tiktokVideoUrl) {
-                    // Step 1: check if strategy has a user-supplied video URL
                     const { data: strategyData } = await this.supabase
                         .from('strategies')
-                        .select('current_execution_plan, product_id')
+                        .select('current_execution_plan, product_id, user_id')
                         .eq('id', task.strategy_id)
                         .single();
 
-                    tiktokVideoUrl = strategyData?.current_execution_plan?.user_video_url;
+                    const userVideoUrl: string | undefined = strategyData?.current_execution_plan?.user_video_url;
+                    const taskProduct = await this.getProductDetails(strategyData?.product_id || task.content?.product_id);
 
-                    if (!tiktokVideoUrl) {
-                        // Step 2: auto-generate a TikTok video from product details
-                        this.log(`TikTok task ${taskId}: no video found — auto-generating from product details...`);
-                        const creative = new (await import('../services/creativeService')).CreativeService();
-                        const product = await this.getProductDetails(strategyData?.product_id || task.content?.product_id);
-                        tiktokVideoUrl = await creative.generateTikTokVideo(product || { name: 'Product', description: '' }) || undefined;
+                    // Consult Director Agent for visual direction + video decision
+                    const { DirectorAgent } = await import('./directorAgent');
+                    const director = new DirectorAgent();
+                    const direction = await director.getDirection({
+                        userId: task.user_id,
+                        productId: strategyData?.product_id,
+                        strategyId: task.strategy_id,
+                        product: taskProduct,
+                        platform: 'tiktok',
+                        goal: 'SALES conversion',
+                        hasUserVideo: !!userVideoUrl,
+                        strategyGoalData: strategyData?.current_execution_plan,
+                    });
+
+                    // Consult Psychologist Engine for behavioral insights
+                    const { PsychologistEngine } = await import('../services/psychologistEngine');
+                    const psychologist = new PsychologistEngine();
+                    const psychProfile = await psychologist.getProfileForProduct(
+                        strategyData?.product_id || '',
+                        taskProduct?.category
+                    );
+
+                    if (direction.should_use_user_video && userVideoUrl) {
+                        this.log(`TikTok task ${taskId}: Director chose user video — checking for edit job...`);
+                        const { SmartVideoEditor } = await import('../services/smartVideoEditor');
+                        const editor = new SmartVideoEditor();
+                        tiktokVideoUrl = await editor.getBestVideoForStrategy(task.strategy_id, userVideoUrl) || userVideoUrl;
+                    } else {
+                        // Check subscription tier before generating
+                        const { checkFeatureAccess } = await import('../services/subscriptionGuard');
+                        const supabaseForCheck = this.supabase;
+                        const access = await checkFeatureAccess(task.user_id, 'video_asset', supabaseForCheck as any);
+
+                        if (!access.allowed) {
+                            this.log(`TikTok task ${taskId}: video generation blocked — ${access.reason}. Using user video or skipping.`);
+                            tiktokVideoUrl = userVideoUrl;
+                        } else {
+                            this.log(`TikTok task ${taskId}: Director chose AI generation — using Director+Psychologist direction...`);
+                            const creative = new (await import('../services/creativeService')).CreativeService();
+                            tiktokVideoUrl = await creative.generateTikTokVideo(
+                                taskProduct || { name: 'Product', description: '' },
+                                direction,
+                                psychProfile
+                            ) || userVideoUrl || undefined;
+                        }
                     }
 
                     if (!tiktokVideoUrl) {
-                        // Fallback: reschedule if generation also failed
-                        this.log(`TikTok task ${taskId}: video generation failed — rescheduling in 30 min.`);
+                        this.log(`TikTok task ${taskId}: no video available — rescheduling in 30 min.`);
                         await this.supabase.from('agent_tasks').update({
                             status: 'pending',
                             scheduled_at: new Date(Date.now() + 30 * 60 * 1000).toISOString(),
-                            notes: 'Video generation failed — will retry in 30 minutes',
+                            notes: 'No video available — will retry in 30 minutes',
                         }).eq('id', taskId);
                         return;
                     }
 
-                    // Cache the generated URL back into the task so next runs reuse it
                     await this.supabase.from('agent_tasks').update({
                         content: { ...task.content, video_url: tiktokVideoUrl },
                     }).eq('id', taskId);
 
-                    this.log(`TikTok task ${taskId}: video ready — ${tiktokVideoUrl}`);
+                    this.log(`TikTok task ${taskId}: video ready (Director: ${direction.should_use_user_video ? 'user_video' : 'ai_generated'}) — ${tiktokVideoUrl}`);
                 }
 
                 result = await this.publishToTikTok(tokens.tiktok, publishBody, tiktokVideoUrl);
@@ -367,6 +405,12 @@ Return JSON: { "intent_score": 0.0 }
 
         for (const lead of leads) {
             try {
+                // High-intent leads (>= 0.85): attempt deal closing
+                if (lead.intent_score >= 0.85 && lead.stage !== 'closed') {
+                    await this.closeDeal(lead, userId, tokens);
+                    continue;
+                }
+
                 const dmPrompt = `
 Generate a personalized, conversational DM to a potential customer on ${lead.platform}.
 Their first interaction was: "${lead.first_interaction}"
@@ -400,6 +444,111 @@ Return JSON: { "message": "string" }
                 this.log(`Follow-up failed for lead ${lead.id}: ${err.message}`);
             }
         }
+    }
+
+    /**
+     * DEAL CLOSE: Attempt to close a sale with a high-intent lead.
+     * Uses product delivery/payment details to compose a closing DM.
+     * Records the deal and sends a push notification to the user.
+     */
+    async closeDeal(lead: any, userId: string, tokens: AgentTokens): Promise<void> {
+        this.log(`Attempting DEAL CLOSE with ${lead.platform_username} (intent: ${lead.intent_score})`);
+
+        // Fetch product details for this lead's strategy
+        const { data: strategy } = await this.supabase
+            .from('strategies')
+            .select('product_id, goal')
+            .eq('id', lead.strategy_id)
+            .single();
+
+        const product = strategy?.product_id ? await this.getProductDetails(strategy.product_id) : null;
+
+        const deliveryInfo = product
+            ? `\nDelivery: ${product.delivery_type || 'TBD'}${product.delivery_address ? ' — Address: ' + product.delivery_address : ''}${product.contact_phone ? ' — Phone: ' + product.contact_phone : ''}${product.bank_account_details ? ' — Payment: ' + product.bank_account_details : ''}`
+            : '';
+
+        const closingPrompt = `
+You are AdRoom's SALESMAN closing agent. Close this sale with maximum professionalism and warmth.
+
+LEAD: ${lead.platform_username}
+PRODUCT: ${product?.product_name || 'our product'} — Price: ${product?.price ? '$' + product.price : 'contact us for price'}
+${deliveryInfo}
+LEAD'S INTEREST: "${lead.first_interaction}"
+INTENT SCORE: ${lead.intent_score} (HIGH — they're ready to buy)
+
+Write a closing DM that:
+1. Opens with their name and confirms their interest warmly
+2. States the product, price clearly
+3. Explains the exact next step (how to pay, where to deliver)
+4. Creates gentle urgency (limited stock / availability)
+5. Ends with clear CTA
+
+Feel natural, NOT robotic. Max 5 sentences.
+
+Return JSON:
+{
+  "message": "the closing DM text",
+  "deal_value": estimated deal value as number (use product price or 0),
+  "currency": "USD",
+  "reasoning": "why this approach will close the deal"
+}
+`;
+        const response = await this.ai.generateStrategy({}, closingPrompt);
+        const closing = response.parsedJson;
+        if (!closing?.message) {
+            this.log(`Deal close failed — could not generate closing message for lead ${lead.id}`);
+            return;
+        }
+
+        // Send the closing DM via platform
+        let dmSent = false;
+        try {
+            if (lead.platform === 'facebook' && tokens.facebook) {
+                await this.sendFacebookDM(tokens.facebook, lead.platform_user_id, closing.message);
+                dmSent = true;
+            }
+        } catch (e: any) {
+            this.log(`Closing DM send failed: ${e.message}`);
+        }
+
+        // Record the deal
+        const { data: deal } = await this.supabase.from('agent_deals').insert({
+            strategy_id: lead.strategy_id,
+            user_id: userId,
+            lead_id: lead.id,
+            platform: lead.platform,
+            buyer_name: lead.platform_username,
+            buyer_contact: lead.platform_user_id,
+            product_name: product?.product_name || 'Unknown Product',
+            product_id: strategy?.product_id,
+            deal_value: closing.deal_value || product?.price || 0,
+            currency: closing.currency || 'USD',
+            delivery_type: product?.delivery_type,
+            delivery_address: product?.delivery_address,
+            payment_details: product?.bank_account_details ? { bank: product.bank_account_details } : {},
+            closing_message: closing.message,
+            agent_reasoning: closing.reasoning,
+            status: dmSent ? 'closed_won' : 'closing_attempted',
+        }).select('id').single();
+
+        // Update lead stage to closed
+        await this.supabase.from('agent_leads').update({
+            stage: 'closed',
+            last_contacted_at: new Date().toISOString(),
+        }).eq('id', lead.id);
+
+        // Push notification to the app user
+        await pushService.notifyDealClosed(userId, {
+            buyerName: lead.platform_username || 'A lead',
+            productName: product?.product_name || 'your product',
+            dealValue: closing.deal_value || product?.price || 0,
+            currency: closing.currency || 'USD',
+            platform: lead.platform,
+            deliveryType: product?.delivery_type,
+            deliveryAddress: product?.delivery_address,
+        });
+
+        this.log(`DEAL CLOSED — ${lead.platform_username} → ${product?.product_name} (deal ID: ${deal?.id})`);
     }
 
     /**

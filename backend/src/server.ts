@@ -829,8 +829,59 @@ app.post('/api/ai/generate-strategy', async (req, res) => {
 
         // Deduct energy after successful generation (CMA-routed — uses economy cost if applicable)
         await deductEnergyForUser(user.id, 'generate_strategy', { economy_mode: economyMode });
+
+        // Generate 7-day content preview asynchronously (lightweight — text only, no images)
+        let weekPreview: any[] = [];
+        try {
+            const previewPrompt = `
+You are AdRoom AI. Based on this marketing strategy, generate a concrete 7-day content preview.
+Show EXACTLY what will be posted on each of the first 7 days.
+
+STRATEGY:
+Title: ${strategy.title}
+Goal: ${goal}
+Platforms: ${JSON.stringify(strategy.platforms)}
+Content Pillars: ${JSON.stringify(strategy.content_pillars)}
+Rationale: ${strategy.rationale}
+Campaign Duration: ${duration} days
+
+Generate 7 days of preview content. Assign 1 post per day, rotating through platforms.
+For TikTok days, include a video script preview.
+Make the content feel REAL and ready-to-post.
+
+OUTPUT JSON:
+{
+  "days": [
+    {
+      "day": 1,
+      "platform": "instagram",
+      "task_type": "REEL",
+      "headline": "Attention-grabbing headline",
+      "body": "Full caption text, 2-4 sentences, ready to post. Include relevant details about the product/service.",
+      "hashtags": ["tag1", "tag2", "tag3"],
+      "hook": "First 3 seconds hook (for video/reel content)",
+      "tiktok_script": null
+    }
+  ]
+}
+For any TikTok day, set tiktok_script to:
+{
+  "hook": "Opening hook text",
+  "scene_1": "What to show in first 5 seconds",
+  "scene_2": "Middle section content",
+  "cta": "Call to action"
+}
+`;
+            const { AIEngine: AIEngineForPreview } = await import('./config/ai-models');
+            const aiForPreview = AIEngineForPreview.getInstance();
+            const previewResult = await aiForPreview.generateStrategy({}, previewPrompt);
+            weekPreview = previewResult.parsedJson?.days || [];
+        } catch (previewErr: any) {
+            console.warn(`[Strategy] Week preview generation failed (non-fatal): ${previewErr.message}`);
+        }
+
         console.log(`[Strategy] ═══════════════════════════════════════\n`);
-        res.status(200).json({ strategy, strategyId: savedStrategy?.id });
+        res.status(200).json({ strategy: { ...strategy, week_preview: weekPreview }, strategyId: savedStrategy?.id });
     } catch (error: any) {
         console.error(`[Strategy] [${ts()}] FATAL ERROR:`, error.message);
         console.log(`[Strategy] ═══════════════════════════════════════\n`);
@@ -2942,6 +2993,31 @@ app.post('/api/video/edit-plan', async (req, res) => {
     }
 
     return res.status(200).json(result);
+  } catch (e: any) {
+    return res.status(500).json({ error: e.message });
+  }
+});
+
+/**
+ * Execute Video Edit Plan — executes a saved edit job via ffmpeg and returns the edited video URL.
+ */
+app.post('/api/ai/execute-edit-plan', async (req, res) => {
+  try {
+    const supabase = getSupabaseClient(req as any);
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return res.status(401).json({ error: 'Unauthorized.' });
+
+    const { jobId } = req.body;
+    if (!jobId) return res.status(400).json({ error: 'jobId is required.' });
+
+    const { data: job } = await supabase.from('video_edit_jobs').select('user_id').eq('id', jobId).single();
+    if (!job || job.user_id !== user.id) return res.status(403).json({ error: 'Job not found or access denied.' });
+
+    const { SmartVideoEditor } = await import('./services/smartVideoEditor');
+    const editor = new SmartVideoEditor();
+    const videoUrl = await editor.executeEditPlan(jobId);
+
+    return res.status(200).json({ success: true, videoUrl });
   } catch (e: any) {
     return res.status(500).json({ error: e.message });
   }
