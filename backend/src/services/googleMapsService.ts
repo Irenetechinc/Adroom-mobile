@@ -244,8 +244,7 @@ export async function discoverBusinesses(
 }
 
 /**
- * Build an outreach message for a business based on their reviews & profile.
- * Returns a personalised pitch paragraph.
+ * Build a synchronous fallback outreach message (no AI — used as a last resort).
  */
 export function buildOutreachMessage(biz: PlaceBusiness, senderName: string, productOrService: string): string {
   const firstName = biz.name.split(' ')[0];
@@ -265,4 +264,72 @@ export function buildOutreachMessage(biz: PlaceBusiness, senderName: string, pro
     `I'd love to show you how ${productOrService} could bring in more customers this month. ` +
     `Would you be open to a quick chat?`
   ).replace(/\s+/g, ' ').trim();
+}
+
+/**
+ * Build an AI-driven, psychologically-crafted outreach message using the
+ * business's real review data, rating, and category combined with the
+ * user's actual campaign goal / product / brand context.
+ *
+ * Falls back to the synchronous buildOutreachMessage() if the AI call fails.
+ */
+export async function buildOutreachMessageAI(
+  biz: PlaceBusiness,
+  senderName: string,
+  productOrService: string,
+  campaignContext?: {
+    goal?: string;
+    product?: string;
+    brand?: string;
+    targetAudience?: string;
+    uniqueValue?: string;
+  },
+): Promise<string> {
+  try {
+    const { AIEngine } = await import('../config/ai-models');
+    const ai = AIEngine.getInstance();
+
+    const reviewSamples = (biz.reviews || []).slice(0, 3).map(r => ({
+      rating: r.rating,
+      text: r.text.slice(0, 200),
+    }));
+
+    const painSignals = [];
+    if (biz.rating && biz.rating < 3.5) painSignals.push('below-average rating — likely needs more customers');
+    if ((biz.total_ratings ?? 0) < 20) painSignals.push('very few reviews — hungry for visibility');
+    if (reviewSamples.some(r => r.rating <= 2)) painSignals.push('has recent negative reviews — may need marketing help');
+
+    const prompt = `You are an expert B2B sales copywriter crafting a WhatsApp/email outreach message for a local business.
+
+SENDER: ${senderName}
+PRODUCT / SERVICE BEING OFFERED: ${productOrService}
+${campaignContext?.goal ? `CAMPAIGN GOAL: ${campaignContext.goal}` : ''}
+${campaignContext?.uniqueValue ? `UNIQUE VALUE PROPOSITION: ${campaignContext.uniqueValue}` : ''}
+${campaignContext?.targetAudience ? `TARGET AUDIENCE: ${campaignContext.targetAudience}` : ''}
+
+PROSPECT BUSINESS:
+- Name: ${biz.name}
+- Category: ${(biz.types || []).slice(0, 3).join(', ') || 'local business'}
+- Rating: ${biz.rating ?? 'N/A'} / 5 (${biz.total_ratings ?? 0} reviews)
+- Pain signals: ${painSignals.length ? painSignals.join('; ') : 'standard prospect'}
+- Recent reviews: ${JSON.stringify(reviewSamples)}
+
+REQUIREMENTS:
+1. Open with a personalised hook referencing something specific about their business (review, rating trend, or category)
+2. Identify ONE specific pain point this business likely has based on the data
+3. Connect that pain point directly to how ${productOrService} solves it
+4. Use natural, conversational language — NOT a formal sales pitch
+5. End with a single, low-friction CTA (e.g. "Want me to show you a quick example?")
+6. Maximum 3 short paragraphs, under 100 words total
+7. Do NOT use emojis. Do NOT mention "AI-powered". Sound like a human.
+
+Return ONLY the plain text message — no quotes, no JSON, no explanation.`;
+
+    const response = await ai.generateStrategy({}, prompt);
+    const text = (response.text || '').trim();
+    if (text && text.length > 30) return text;
+  } catch (e: any) {
+    console.warn('[GoogleMaps] AI outreach message failed, using fallback:', e.message);
+  }
+  return buildOutreachMessage(biz, senderName, productOrService);
 }

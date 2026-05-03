@@ -14,6 +14,7 @@ export type RootStackParamList = {
     connectTikTok?: boolean;
     connectLinkedIn?: boolean;
     connectTwitter?: boolean;
+    connectWhatsApp?: boolean;
   };
   ConnectedAccounts: undefined;
   Subscription: { scrollToPlan?: string; tab?: string } | undefined;
