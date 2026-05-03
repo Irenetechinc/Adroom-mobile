@@ -6,12 +6,11 @@ import {
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import { useFocusEffect } from '@react-navigation/native';
-import { ArrowLeft, Bell, BellOff, CheckCheck, X, Zap, CreditCard, AlertTriangle, Sparkles, Rocket, Send } from 'lucide-react-native';
+import { ArrowLeft, Bell, BellOff, CheckCheck, X, Zap, CreditCard, AlertTriangle, Sparkles, Rocket } from 'lucide-react-native';
 import Animated, { FadeInDown, FadeIn } from 'react-native-reanimated';
 import { supabase } from '../services/supabase';
 import { useNotificationStore } from '../store/notificationStore';
 import { useAuthStore } from '../store/authStore';
-import { forcePushReregistration } from '../services/notificationService';
 import Constants from 'expo-constants';
 import { Skeleton } from '../components/Skeleton';
 
@@ -104,53 +103,6 @@ export default function NotificationsScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [markingRead, setMarkingRead] = useState(false);
   const [selected, setSelected] = useState<UserNotification | null>(null);
-  const [testingPush, setTestingPush] = useState(false);
-
-  // Diagnostic: triggers a real test push to all of this user's active devices
-  // and shows a clear, actionable message about what's working / what's broken.
-  const runPushTest = useCallback(async () => {
-    if (testingPush) return;
-    setTestingPush(true);
-    try {
-      const headers = await getAuthHeaders();
-      if (!headers) {
-        Alert.alert('Sign in required', 'Please sign in before running the push test.');
-        return;
-      }
-      let res = await fetch(`${BACKEND_URL}/api/push/test`, { method: 'POST', headers });
-      let json: any = await res.json().catch(() => ({} as any));
-
-      // Self-heal: if the backend reports no registered tokens for this
-      // user, the device's local "we already registered" cache is stale.
-      // Wipe it, force a fresh Expo push token registration, then re-test
-      // automatically so the user doesn't have to do anything else.
-      if (json && json.tokensFound === 0) {
-        try {
-          const freshToken = await forcePushReregistration();
-          if (freshToken) {
-            res = await fetch(`${BACKEND_URL}/api/push/test`, { method: 'POST', headers });
-            json = await res.json().catch(() => ({} as any));
-          }
-        } catch { /* fall through and report whatever the second test returned */ }
-      }
-
-      const lines: string[] = [];
-      lines.push(json.diagnosis || 'No diagnosis returned.');
-      if (typeof json.tokensFound === 'number') lines.push(`\nDevices registered: ${json.tokensFound}`);
-      if (json.expo?.errorSummary) lines.push(`\nExpo response: ${json.expo.errorSummary}`);
-      if (json.actionable) lines.push(`\nWhat to do:\n${json.actionable}`);
-
-      Alert.alert(
-        json.success ? 'Test push sent ✓' : 'Push not delivered',
-        lines.join('\n'),
-        [{ text: 'OK' }],
-      );
-    } catch (e: any) {
-      Alert.alert('Test failed', e?.message || 'Could not reach the backend. Check your connection.');
-    } finally {
-      setTestingPush(false);
-    }
-  }, [testingPush]);
   const channelRef = useRef<any>(null);
 
   const fetchNotifications = useCallback(async (showRefresh = false) => {
@@ -332,19 +284,6 @@ export default function NotificationsScreen() {
             )}
           </View>
         </View>
-        <TouchableOpacity
-          onPress={runPushTest}
-          disabled={testingPush}
-          style={styles.markReadBtn}
-          activeOpacity={0.7}
-          accessibilityLabel="Send a test push notification to this device"
-        >
-          {testingPush ? (
-            <ActivityIndicator size="small" color="#00F0FF" />
-          ) : (
-            <Send size={18} color="#00F0FF" />
-          )}
-        </TouchableOpacity>
         {unread > 0 && (
           <TouchableOpacity onPress={markAllRead} disabled={markingRead} style={styles.markReadBtn} activeOpacity={0.7}>
             {markingRead ? (

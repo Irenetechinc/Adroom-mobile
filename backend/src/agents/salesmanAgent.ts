@@ -2,7 +2,7 @@ import { SupabaseClient } from '@supabase/supabase-js';
 import { AgentBase, AgentTokens } from './agentBase';
 import { AIEngine } from '../config/ai-models';
 import { pushService } from '../services/pushService';
-import { discoverBusinesses, buildOutreachMessage, type PlaceBusiness } from '../services/googleMapsService';
+import { discoverBusinesses, buildOutreachMessage, buildOutreachMessageAI, type PlaceBusiness } from '../services/googleMapsService';
 import { sendEmailViaResend } from '../services/resendEmailService';
 
 export class SalesmanAgent extends AgentBase {
@@ -653,15 +653,56 @@ Return JSON:
 
         for (const biz of hotProspects) {
             try {
-                const message = buildOutreachMessage(biz, params.senderName, params.productOrService);
+                const message = await buildOutreachMessageAI(biz, params.senderName, params.productOrService, {
+                goal: params.targetCategory,
+                product: params.productOrService,
+            });
 
                 let outreachSent = false;
 
                 if (params.outreachChannel === 'whatsapp' && biz.phone) {
                     const phone = biz.phone.replace(/\D/g, '');
-                    const waUrl = `https://wa.me/${phone}?text=${encodeURIComponent(message)}`;
-                    this.log(`WhatsApp outreach queued for ${biz.name} → ${waUrl}`);
-                    outreachSent = true;
+                    // Try WhatsApp Cloud API if user has connected their Business account
+                    const { data: waCfg } = await this.supabase
+                        .from('ad_configs')
+                        .select('page_id, access_token')
+                        .eq('user_id', params.userId)
+                        .eq('platform', 'whatsapp')
+                        .single();
+
+                    if (waCfg?.page_id && waCfg?.access_token) {
+                        try {
+                            const sendRes = await fetch(`https://graph.facebook.com/v19.0/${waCfg.page_id}/messages`, {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${waCfg.access_token}` },
+                                body: JSON.stringify({
+                                    messaging_product: 'whatsapp',
+                                    to: phone,
+                                    type: 'text',
+                                    text: { body: message },
+                                }),
+                            });
+                            const sendData: any = await sendRes.json();
+                            if (sendRes.ok) {
+                                this.log(`WhatsApp message SENT to ${biz.name} (${phone}) via Cloud API`);
+                                outreachSent = true;
+                            } else {
+                                this.log(`WhatsApp Cloud API failed for ${biz.name}: ${sendData?.error?.message || 'Unknown'} — falling back to wa.me link`);
+                                const waUrl = `https://wa.me/${phone}?text=${encodeURIComponent(message)}`;
+                                this.log(`WhatsApp outreach link queued for ${biz.name} → ${waUrl}`);
+                                outreachSent = true;
+                            }
+                        } catch (waErr: any) {
+                            this.log(`WhatsApp API error for ${biz.name}: ${waErr.message} — falling back to wa.me`);
+                            const waUrl = `https://wa.me/${phone}?text=${encodeURIComponent(message)}`;
+                            this.log(`WhatsApp outreach link queued for ${biz.name} → ${waUrl}`);
+                            outreachSent = true;
+                        }
+                    } else {
+                        const waUrl = `https://wa.me/${phone}?text=${encodeURIComponent(message)}`;
+                        this.log(`WhatsApp outreach link queued for ${biz.name} → ${waUrl}`);
+                        outreachSent = true;
+                    }
                 } else if (params.outreachChannel === 'email' && biz.website) {
                     const domain = new URL(biz.website).hostname;
                     const toEmail = `contact@${domain}`;

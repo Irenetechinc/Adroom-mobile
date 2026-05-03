@@ -519,6 +519,113 @@ app.post('/api/platform-configs/notify', async (req, res) => {
 });
 
 /**
+ * POST /api/oauth/whatsapp/connect
+ * Connects a WhatsApp Business Cloud API account.
+ * Body: { phone_number_id, access_token, business_name? }
+ * Stores in ad_configs table as platform = 'whatsapp'.
+ */
+app.post('/api/oauth/whatsapp/connect', async (req, res) => {
+  try {
+    const supabase = getSupabaseClient(req as any);
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return res.status(401).json({ error: 'Unauthorized.' });
+
+    const { phone_number_id, access_token, business_name } = req.body;
+    if (!phone_number_id || !access_token) {
+      return res.status(400).json({ error: 'phone_number_id and access_token are required.' });
+    }
+
+    // Verify the credentials work by fetching the phone number profile
+    let displayName = business_name || 'WhatsApp Business';
+    try {
+      const verifyRes = await fetch(
+        `https://graph.facebook.com/v19.0/${phone_number_id}?fields=display_phone_number,verified_name&access_token=${access_token}`
+      );
+      if (verifyRes.ok) {
+        const data: any = await verifyRes.json();
+        if (data.verified_name) displayName = data.verified_name;
+      }
+    } catch { /* verification optional — still store if verify fails */ }
+
+    // Upsert into ad_configs
+    const { error } = await supabase.from('ad_configs').upsert({
+      user_id: user.id,
+      platform: 'whatsapp',
+      access_token,
+      page_id: phone_number_id,
+      page_name: displayName,
+      updated_at: new Date().toISOString(),
+    }, { onConflict: 'user_id,platform' });
+
+    if (error) return res.status(500).json({ error: error.message });
+
+    // Notify admin dashboard
+    try {
+      const { adminBroadcast } = await import('./admin/adminRouter');
+      adminBroadcast('platform_connected', {
+        userId: user.id,
+        email: user.email,
+        platform: 'whatsapp',
+        accountName: displayName,
+        accountId: phone_number_id,
+        at: new Date().toISOString(),
+      });
+    } catch { /* SSE optional */ }
+
+    console.log(`[WhatsApp] Connected for user ${user.id}: ${displayName} (${phone_number_id})`);
+    return res.status(200).json({ ok: true, display_name: displayName, phone_number_id });
+  } catch (e: any) {
+    console.error('[WhatsApp] Connect error:', e.message);
+    return res.status(500).json({ error: e.message });
+  }
+});
+
+/**
+ * POST /api/oauth/whatsapp/send
+ * Sends a WhatsApp message using the Cloud API (requires connected account).
+ * Body: { to, message }
+ */
+app.post('/api/oauth/whatsapp/send', async (req, res) => {
+  try {
+    const supabase = getSupabaseClient(req as any);
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return res.status(401).json({ error: 'Unauthorized.' });
+
+    const { to, message } = req.body;
+    if (!to || !message) return res.status(400).json({ error: 'to and message are required.' });
+
+    const { data: cfg } = await supabase
+      .from('ad_configs')
+      .select('page_id, access_token')
+      .eq('user_id', user.id)
+      .eq('platform', 'whatsapp')
+      .single();
+
+    if (!cfg) return res.status(400).json({ error: 'WhatsApp Business account not connected.' });
+
+    const phone = to.replace(/\D/g, '');
+    const sendRes = await fetch(`https://graph.facebook.com/v19.0/${cfg.page_id}/messages`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${cfg.access_token}` },
+      body: JSON.stringify({
+        messaging_product: 'whatsapp',
+        to: phone,
+        type: 'text',
+        text: { body: message },
+      }),
+    });
+
+    const data: any = await sendRes.json();
+    if (!sendRes.ok) return res.status(500).json({ error: data.error?.message || 'WhatsApp send failed.' });
+
+    return res.status(200).json({ ok: true, message_id: data.messages?.[0]?.id });
+  } catch (e: any) {
+    console.error('[WhatsApp] Send error:', e.message);
+    return res.status(500).json({ error: e.message });
+  }
+});
+
+/**
  * Scrape Website for Products — Pro/Pro+ only
  */
 app.post('/api/scrape', async (req, res) => {

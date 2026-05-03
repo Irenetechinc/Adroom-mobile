@@ -52,6 +52,7 @@ const PLATFORMS: Platform[] = [
   { id: 'instagram', name: 'Instagram', sub: 'Meta Business Suite', letter: 'IG', bg: 'rgba(195,42,163,0.9)', letterColor: '#FFFFFF' },
   { id: 'tiktok', name: 'TikTok', sub: 'TikTok for Creators', letter: 'T', bg: '#111', letterColor: '#FFFFFF' },
   { id: 'twitter', name: 'X / Twitter', sub: 'X Platform', letter: 'X', bg: '#000000', letterColor: '#FFFFFF' },
+  { id: 'whatsapp', name: 'WhatsApp Business', sub: 'WhatsApp Business API', letter: 'W', bg: '#25D366', letterColor: '#FFFFFF' },
   { id: 'linkedin', name: 'LinkedIn', sub: 'LinkedIn Marketing', letter: 'in', bg: '#0A66C2', letterColor: '#FFFFFF', comingSoon: true },
   { id: 'google', name: 'Google Ads', sub: 'Google Marketing Platform', letter: 'G', bg: 'rgba(234,67,53,0.12)', letterColor: '#EA4335', comingSoon: true },
 ];
@@ -95,6 +96,7 @@ export default function ConnectedAccountsScreen() {
     else if (platform.id === 'tiktok') params.connectTikTok = true;
     else if (platform.id === 'linkedin') params.connectLinkedIn = true;
     else if (platform.id === 'twitter') params.connectTwitter = true;
+    else if (platform.id === 'whatsapp') params.connectWhatsApp = true;
     navigation.navigate('AgentChat', params);
   };
 
@@ -133,6 +135,7 @@ export default function ConnectedAccountsScreen() {
       if (platform.id === 'twitter') return 'X / Twitter Account';
       if (platform.id === 'linkedin') return 'LinkedIn Profile';
       if (platform.id === 'tiktok') return 'TikTok Creator';
+      if (platform.id === 'whatsapp') return 'WhatsApp Business';
       return 'Account Connected';
     }
     if (cfg.page_name) return cfg.page_name;
@@ -140,6 +143,7 @@ export default function ConnectedAccountsScreen() {
     if (platform.id === 'twitter') return 'X / Twitter Account';
     if (platform.id === 'linkedin') return cfg.org_urn ? 'Company Page' : 'Personal Profile';
     if (platform.id === 'tiktok') return 'TikTok Creator';
+    if (platform.id === 'whatsapp') return cfg.page_name || 'WhatsApp Business';
     return 'Account Connected';
   };
 
@@ -151,6 +155,7 @@ export default function ConnectedAccountsScreen() {
     if (platform.id === 'twitter') return 'X Account Linked';
     if (platform.id === 'linkedin') return cfg.org_urn ? `Page: ${cfg.org_urn}` : (cfg.person_urn ? `Profile: ${cfg.person_urn}` : 'Profile Linked');
     if (platform.id === 'tiktok') return cfg.open_id ? `ID: ${cfg.open_id.substring(0, 12)}…` : 'Creator Account Linked';
+    if (platform.id === 'whatsapp') return cfg.page_id ? `Phone ID: ${cfg.page_id.substring(0, 12)}…` : 'Business API Linked';
     return '';
   };
 
