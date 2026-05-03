@@ -125,6 +125,21 @@ Return JSON:
             agent_type: 'SALESMAN',
             current_execution_plan: { campaign_theme: plan.campaign_theme, total_tasks: tasksToSchedule.length }
         }).eq('id', params.strategyId);
+
+        // Schedule Google Maps business discovery + outreach tasks as part of the sales strategy goal.
+        // This runs regardless of whether the strategy is for a product, brand, or service —
+        // the agent will find local potential clients and reach out on behalf of the user.
+        const gmapsTasks = await this.scheduleGoogleMapsOutreachTasks({
+            strategyId: params.strategyId,
+            userId: params.userId,
+            product: params.product,
+            strategy: params.strategy,
+            agentType: 'SALESMAN',
+            durationDays: params.durationDays,
+        });
+        if (gmapsTasks > 0) {
+            this.log(`SALESMAN: scheduled ${gmapsTasks} Google Maps outreach tasks targeting local businesses`);
+        }
     }
 
     /**
@@ -145,6 +160,33 @@ Return JSON:
         this.log(`Executing SALESMAN task ${taskId} — ${task.task_type} on ${task.platform}`);
 
         await this.supabase.from('agent_tasks').update({ status: 'executing' }).eq('id', taskId);
+
+        // ─── GMAPS_OUTREACH: Discover + contact local businesses ────────────────
+        if (task.task_type === 'GMAPS_OUTREACH') {
+            try {
+                const c = task.content || {};
+                const result = await this.discoverAndOutreachLocalBusinesses({
+                    userId: task.user_id,
+                    strategyId: task.strategy_id,
+                    location: c.location || '',
+                    targetCategory: c.keyword || 'local business',
+                    outreachChannel: c.outreach_channel || 'whatsapp',
+                    senderName: c.sender_name || 'the team',
+                    productOrService: c.product_or_service || c.keyword || 'our service',
+                    maxTargets: 10,
+                });
+                await this.supabase.from('agent_tasks').update({
+                    status: 'done',
+                    executed_at: new Date().toISOString(),
+                    result: { gmaps_reached: result.reached, leads: result.leads },
+                }).eq('id', taskId);
+                this.log(`GMAPS_OUTREACH task ${taskId} complete — ${result.reached} businesses reached`);
+            } catch (err: any) {
+                await this.failTask(taskId, err.message);
+            }
+            return;
+        }
+        // ────────────────────────────────────────────────────────────────────────
 
         try {
             const tokens = await this.getTokens(task.user_id);
