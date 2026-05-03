@@ -1,0 +1,20 @@
+uploads = []
+outputs = []
+
+[[generated]]
+id = "COCAeLMRBjD3J0aTNdvaM"
+uri = "file://landing/assets/hero-bg.png"
+type = "image"
+title = "generated_image"
+
+[[generated]]
+id = "Os1IvASHslm07ZuXis7T6"
+uri = "file://landing/assets/logo.png"
+type = "image"
+title = "generated_image"
+
+[[generated]]
+id = "ch_HRHjEYN9h_mCwj-UVR"
+uri = "file://landing/assets/founder.png"
+type = "image"
+title = "generated_image"

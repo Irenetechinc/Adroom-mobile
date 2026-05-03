@@ -1,0 +1,349 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<meta name="description" content="AdRoom AI is now live — the world's first fully autonomous AI marketing workforce. Download now." />
+<meta name="theme-color" content="#0B0F19" />
+<meta property="og:title" content="AdRoom AI — Now Live" />
+<meta property="og:description" content="Your autonomous marketing team is here. Download AdRoom AI today." />
+<title>AdRoom AI — Now Live</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" referrerpolicy="no-referrer" />
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.5.1/css/all.min.css" referrerpolicy="no-referrer" />
+<link rel="icon" type="image/png" href="assets/logo.png" />
+<link rel="shortcut icon" type="image/png" href="assets/logo.png" />
+<link rel="apple-touch-icon" href="assets/logo.png" />
+<link rel="apple-touch-icon" sizes="180x180" href="assets/logo.png" />
+<meta name="msapplication-TileImage" content="assets/logo.png" />
+<meta name="msapplication-TileColor" content="#0B0F19" />
+<style>
+  :root{
+    --bg:#0B0F19; --bg-2:#0D1526; --card:#151B2B; --line:#1E293B;
+    --txt:#FFFFFF; --txt-2:#CBD5E1; --txt-3:#94A3B8; --txt-4:#64748B;
+    --cyan:#00F0FF; --cyan-soft:rgba(0,240,255,.08); --cyan-line:rgba(0,240,255,.18);
+    --amber:#F59E0B; --green:#10B981; --purple:#7C3AED; --red:#EF4444;
+    --maxw:1200px;
+  }
+  *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;min-width:0}
+  html{scroll-behavior:smooth;-webkit-text-size-adjust:100%;overflow-x:hidden;width:100%;max-width:100vw}
+  body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--txt);line-height:1.6;overflow-x:hidden;-webkit-font-smoothing:antialiased;width:100%;max-width:100vw;word-wrap:break-word;overflow-wrap:break-word}
+  img,svg,video,iframe,table,canvas{max-width:100%;height:auto}
+  input,textarea,select,button{max-width:100%;font-family:inherit}
+  h1,h2,h3,h4{font-family:'Space Grotesk',sans-serif;line-height:1.15;font-weight:700}
+  a{color:inherit;text-decoration:none}
+  img{max-width:100%;display:block}
+
+  body::before{
+    content:'';position:fixed;inset:0;pointer-events:none;z-index:0;
+    background:
+      radial-gradient(ellipse 80% 50% at 20% 0%, rgba(0,240,255,.1), transparent 60%),
+      radial-gradient(ellipse 60% 40% at 80% 50%, rgba(124,58,237,.06), transparent 60%);
+  }
+
+  nav{position:fixed;top:0;left:0;right:0;z-index:50;backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);background:rgba(11,15,25,.7);border-bottom:1px solid rgba(0,240,255,.08);padding:14px 24px}
+  .nav-inner{max-width:var(--maxw);margin:0 auto;display:flex;align-items:center;justify-content:space-between;gap:20px}
+  .logo{display:flex;align-items:center;gap:10px;font-weight:800;font-size:18px;letter-spacing:-.5px}
+  .logo-img{width:36px;height:36px;border-radius:9px;object-fit:cover;box-shadow:0 0 24px rgba(0,240,255,.4);border:1px solid rgba(0,240,255,.25)}
+  .nav-cta{background:var(--cyan);color:#001518;font-weight:700;font-size:13px;padding:9px 18px;border-radius:50px;transition:transform .2s, box-shadow .3s}
+  .nav-cta:hover{transform:translateY(-1px);box-shadow:0 8px 24px rgba(0,240,255,.35)}
+
+  section{position:relative;z-index:1;padding:80px 24px}
+  .container{max-width:var(--maxw);margin:0 auto}
+
+  /* Hero */
+  .hero{min-height:100vh;display:flex;flex-direction:column;justify-content:center;align-items:center;text-align:center;padding-top:120px;padding-bottom:60px;position:relative;overflow:hidden}
+  .hero-bg{position:absolute;inset:0;z-index:0;overflow:hidden;background:radial-gradient(ellipse 60% 40% at 15% 20%,rgba(0,240,255,.32),transparent 55%),radial-gradient(ellipse 55% 45% at 85% 25%,rgba(16,185,129,.25),transparent 55%),radial-gradient(ellipse 70% 50% at 50% 100%,rgba(124,58,237,.20),transparent 55%),linear-gradient(135deg,#0D1526 0%,#151B2B 50%,#0B0F19 100%);animation:heroPan 30s ease-in-out infinite alternate}
+  .hero-bg::before{content:'';position:absolute;inset:0;background-image:url('assets/hero-bg.png');background-size:cover;background-position:center;opacity:.45;mix-blend-mode:screen}
+  .hero-bg::after{content:'';position:absolute;inset:0;z-index:1;background:linear-gradient(180deg,rgba(11,15,25,.35) 0%,rgba(11,15,25,.7) 70%,var(--bg) 100%),repeating-linear-gradient(0deg,rgba(0,240,255,.04) 0,rgba(0,240,255,.04) 1px,transparent 1px,transparent 60px),repeating-linear-gradient(90deg,rgba(0,240,255,.04) 0,rgba(0,240,255,.04) 1px,transparent 1px,transparent 60px)}
+  @keyframes heroPan{0%{transform:scale(1.05) translateX(0)}100%{transform:scale(1.15) translateX(-3%)}}
+  .hero > *{position:relative;z-index:1}
+  .badge{display:inline-flex;align-items:center;gap:8px;background:rgba(16,185,129,.1);border:1px solid rgba(16,185,129,.3);color:var(--green);padding:7px 14px;border-radius:50px;font-size:12px;font-weight:600;letter-spacing:.4px;margin-bottom:30px}
+  .live-dot{width:7px;height:7px;border-radius:4px;background:var(--green);box-shadow:0 0 10px var(--green);animation:pulse 2s ease-in-out infinite}
+  @keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.5;transform:scale(1.3)}}
+
+  .hero h1{font-size:clamp(36px,7vw,82px);font-weight:800;letter-spacing:-2px;background:linear-gradient(135deg,#fff 0%,var(--cyan) 50%,#fff 100%);-webkit-background-clip:text;background-clip:text;color:transparent;margin-bottom:24px;max-width:1000px}
+  .hero p.lead{font-size:clamp(16px,2vw,20px);color:var(--txt-3);max-width:720px;margin-bottom:48px;line-height:1.7}
+
+  .hero-ctas{display:flex;gap:14px;flex-wrap:wrap;justify-content:center;margin-bottom:32px}
+  .btn{display:inline-flex;align-items:center;gap:10px;padding:14px 28px;border-radius:50px;font-weight:700;font-size:14px;transition:all .25s ease;cursor:pointer;border:none}
+  .btn-primary{background:var(--cyan);color:#001518}
+  .btn-primary:hover{transform:translateY(-2px);box-shadow:0 12px 30px rgba(0,240,255,.4)}
+  .btn-ghost{background:transparent;color:var(--txt);border:1px solid var(--line)}
+  .btn-ghost:hover{border-color:var(--cyan);color:var(--cyan)}
+  .btn-store{background:#fff;color:#000;font-size:13px}
+  .btn-store:hover{transform:translateY(-2px);box-shadow:0 12px 30px rgba(255,255,255,.2)}
+
+  .hero-trust{font-size:12px;color:var(--txt-4);letter-spacing:.5px}
+  .hero-trust strong{color:var(--cyan)}
+
+  /* Eyebrow */
+  .eyebrow{display:inline-block;color:var(--cyan);font-size:12px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;margin-bottom:12px}
+  .sec-head{font-size:clamp(28px,4.5vw,46px);font-weight:800;letter-spacing:-1px;margin-bottom:18px}
+  .sec-sub{font-size:clamp(15px,1.5vw,17px);color:var(--txt-3);max-width:680px;line-height:1.7}
+  .sec-head-wrap{text-align:center;max-width:780px;margin:0 auto 60px}
+  .sec-head-wrap .sec-sub{margin:0 auto}
+
+  /* Stats */
+  .stats{display:grid;grid-template-columns:repeat(4,1fr);background:var(--card);border:1px solid var(--line);border-radius:24px;overflow:hidden}
+  .stat{padding:32px 16px;text-align:center;border-right:1px solid var(--line)}
+  .stat:last-child{border-right:none}
+  .stat-v{font-family:'Space Grotesk',sans-serif;font-size:clamp(28px,4vw,42px);font-weight:700;color:var(--cyan);margin-bottom:8px}
+  .stat-l{color:var(--txt-2);font-size:13px;font-weight:600;margin-bottom:4px}
+  .stat-s{color:var(--txt-4);font-size:11px}
+
+  /* How it works */
+  .steps{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:20px}
+  .step{background:var(--card);border:1px solid var(--line);border-radius:20px;padding:32px;position:relative;transition:transform .3s, border-color .3s}
+  .step:hover{transform:translateY(-4px);border-color:var(--cyan-line)}
+  .step-num{font-family:'Space Grotesk',sans-serif;font-size:42px;font-weight:700;color:var(--cyan);opacity:.3;line-height:1;margin-bottom:14px}
+  .step h3{font-size:18px;margin-bottom:10px}
+  .step p{color:var(--txt-3);font-size:14px;line-height:1.65}
+
+  /* Cards */
+  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:20px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:20px;padding:32px;transition:transform .3s, border-color .3s, box-shadow .3s;position:relative;overflow:hidden}
+  .card::before{content:'';position:absolute;top:-1px;left:-1px;right:-1px;height:2px;background:linear-gradient(90deg,transparent,var(--cyan),transparent);opacity:0;transition:opacity .3s}
+  .card:hover{transform:translateY(-4px);border-color:var(--cyan-line);box-shadow:0 20px 40px rgba(0,240,255,.06)}
+  .card:hover::before{opacity:1}
+  .card-icon{width:48px;height:48px;border-radius:12px;display:flex;align-items:center;justify-content:center;margin-bottom:18px;font-size:22px}
+  .card h3{font-size:19px;margin-bottom:10px}
+  .card p{color:var(--txt-3);font-size:14px;line-height:1.65}
+
+  /* Testimonial */
+  .quote-card{background:linear-gradient(135deg,rgba(0,240,255,.05),rgba(124,58,237,.03));border:1px solid var(--cyan-line);border-radius:24px;padding:48px;text-align:center;max-width:760px;margin:0 auto}
+  .quote-mark{font-size:60px;line-height:1;color:var(--cyan);opacity:.4;font-family:'Space Grotesk',sans-serif}
+  .quote-text{font-size:clamp(18px,2.4vw,24px);font-weight:500;color:var(--txt);line-height:1.5;margin:14px 0 24px;font-style:italic}
+  .quote-attrib{color:var(--txt-3);font-size:13px}
+  .quote-attrib strong{color:var(--cyan)}
+
+  /* Final CTA */
+  .final-cta{background:linear-gradient(135deg,rgba(0,240,255,.08),rgba(0,240,255,.02));border:1px solid var(--cyan-line);border-radius:28px;padding:60px 40px;text-align:center;position:relative;overflow:hidden}
+  .final-cta::before{content:'';position:absolute;inset:0;background:radial-gradient(ellipse 50% 50% at 50% 0%,rgba(0,240,255,.15),transparent 70%)}
+  .final-cta > *{position:relative;z-index:1}
+  .final-cta h2{font-size:clamp(28px,4vw,44px);margin-bottom:16px;background:linear-gradient(135deg,#fff,var(--cyan));-webkit-background-clip:text;background-clip:text;color:transparent}
+  .final-cta p{color:var(--txt-2);max-width:560px;margin:0 auto 28px;font-size:15px;line-height:1.7}
+
+  /* Footer */
+  footer{border-top:1px solid var(--line);padding:40px 24px;text-align:center;color:var(--txt-4);font-size:13px;position:relative;z-index:1}
+  footer .ftr-links{display:flex;gap:24px;justify-content:center;margin-bottom:14px;flex-wrap:wrap}
+  footer .ftr-links a:hover{color:var(--cyan)}
+
+  /* Founder / About */
+  .founder{display:grid;grid-template-columns:300px 1fr;gap:48px;align-items:center;background:linear-gradient(135deg,rgba(0,240,255,.05),rgba(124,58,237,.04));border:1px solid var(--cyan-line);border-radius:28px;padding:44px;position:relative;overflow:hidden}
+  .founder::before{content:'';position:absolute;top:-100px;right:-100px;width:300px;height:300px;border-radius:50%;background:radial-gradient(circle,rgba(0,240,255,.1),transparent 70%);pointer-events:none}
+  .founder-photo-wrap{position:relative;border-radius:24px;overflow:hidden;aspect-ratio:3/4;background:var(--card);border:1px solid var(--cyan-line);box-shadow:0 24px 60px rgba(0,240,255,.18)}
+  .founder-photo-wrap img{width:100%;height:100%;object-fit:cover;display:block}
+  .founder-content{position:relative;z-index:1}
+  .founder-content .eyebrow{margin-bottom:8px}
+  .founder-content h2{font-size:clamp(28px,3.4vw,40px);margin-bottom:8px;letter-spacing:-1px}
+  .founder-role{color:var(--cyan);font-size:13px;font-weight:600;letter-spacing:.6px;margin-bottom:18px;text-transform:uppercase}
+  .founder-content p{color:var(--txt-2);font-size:15px;line-height:1.75;margin-bottom:14px}
+  .founder-quote{margin-top:22px;padding:16px 18px;border-left:3px solid var(--cyan);background:rgba(0,240,255,.04);border-radius:0 12px 12px 0;font-style:italic;color:var(--txt);font-size:15px;line-height:1.6}
+  .founder-socials{display:flex;gap:10px;margin-top:24px;flex-wrap:wrap}
+  .founder-socials a{width:42px;height:42px;border-radius:12px;background:rgba(255,255,255,.04);border:1px solid var(--line);display:inline-flex;align-items:center;justify-content:center;color:var(--txt-3);transition:all .25s ease;font-size:16px}
+  .founder-socials a:hover{color:var(--cyan);border-color:var(--cyan-line);transform:translateY(-2px);background:rgba(0,240,255,.06)}
+  @media (max-width:820px){.founder{grid-template-columns:1fr;padding:32px;text-align:center}.founder-photo-wrap{max-width:240px;margin:0 auto}.founder-quote{text-align:left}.founder-socials{justify-content:center}}
+  @media (max-width:480px){.founder{padding:26px 20px;border-radius:22px}.founder-content p{font-size:14px}}
+
+  /* Animations */
+  .anim{opacity:0;transform:translateY(40px);transition:opacity .8s ease, transform .8s ease}
+  .anim.in{opacity:1;transform:translateY(0)}
+  .anim-l{opacity:0;transform:translateX(-40px);transition:opacity .8s ease, transform .8s ease}
+  .anim-l.in{opacity:1;transform:translateX(0)}
+  .anim-r{opacity:0;transform:translateX(40px);transition:opacity .8s ease, transform .8s ease}
+  .anim-r.in{opacity:1;transform:translateX(0)}
+  .anim-scale{opacity:0;transform:scale(.92);transition:opacity .8s ease, transform .8s ease}
+  .anim-scale.in{opacity:1;transform:scale(1)}
+  .delay-1{transition-delay:.08s}
+  .delay-2{transition-delay:.16s}
+  .delay-3{transition-delay:.24s}
+  .delay-4{transition-delay:.32s}
+  .delay-5{transition-delay:.4s}
+
+  @media (max-width:768px){
+    section{padding:60px 18px}
+    nav{padding:12px 18px}
+    .stats{grid-template-columns:repeat(2,1fr)}
+    .stat:nth-child(2){border-right:none}
+    .stat:nth-child(1),.stat:nth-child(2){border-bottom:1px solid var(--line)}
+    .card,.step{padding:26px}
+    .quote-card,.final-cta{padding:36px 22px}
+    .nav-cta{display:none}
+    .hero h1{letter-spacing:-1px}
+    .hero{padding-left:16px;padding-right:16px}
+  }
+  @media (max-width:480px){
+    section{padding:50px 14px}
+    nav{padding:12px 14px}
+    .hero{padding:110px 14px 50px}
+    .hero h1{font-size:32px;letter-spacing:-.5px}
+    .hero p.lead{font-size:14.5px}
+    .badge{font-size:11px;padding:6px 12px}
+    .btn{padding:12px 20px;font-size:13px}
+    .card,.step{padding:22px}
+    .quote-card,.final-cta{padding:28px 18px;border-radius:20px}
+    .quote-text{font-size:17px}
+    .hero-ctas{flex-direction:column;width:100%}
+    .hero-ctas .btn{width:100%;justify-content:center}
+    .logo{font-size:16px}
+    .logo-img{width:32px;height:32px}
+  }
+</style>
+</head>
+<body>
+
+<nav>
+  <div class="nav-inner">
+    <a href="#" class="logo"><img src="assets/logo.png" alt="AdRoom AI" class="logo-img" /> AdRoom AI</a>
+    <div style="display:flex;align-items:center;gap:22px">
+      <a href="#about" class="nav-link" style="font-size:13px;color:var(--txt-2);font-weight:500">About</a>
+      <a href="#download" class="nav-cta"><i class="fa-solid fa-download"></i> Download Now</a>
+    </div>
+  </div>
+</nav>
+
+<!-- HERO -->
+<section class="hero">
+  <div class="hero-bg"></div>
+  <span class="badge anim"><span class="live-dot"></span> <i class="fa-solid fa-circle-check"></i> NOW LIVE</span>
+  <h1 class="anim delay-1">Your Autonomous Marketing<br/>Workforce Is Here.</h1>
+  <p class="lead anim delay-2">AdRoom AI is officially live. Five intelligent agents are ready to take over your sales, awareness, leads, launches, and promotions — 24/7, 100% organically, with zero ad spend.</p>
+
+  <div class="hero-ctas anim delay-3">
+    <a href="#download" class="btn btn-store"><i class="fa-brands fa-apple"></i> Download for iOS</a>
+    <a href="#download" class="btn btn-store"><i class="fa-brands fa-android"></i> Download for Android</a>
+  </div>
+  <div class="hero-trust anim delay-4"><strong>Trusted by businesses</strong> in 30+ countries · <strong>Featured in</strong> TechCrunch, Forbes, Wired</div>
+</section>
+
+<!-- STATS -->
+<section>
+  <div class="container">
+    <div class="stats">
+      <div class="stat anim"><div class="stat-v">100%</div><div class="stat-l">Autonomous</div><div class="stat-s">Zero human input after setup</div></div>
+      <div class="stat anim delay-1"><div class="stat-v">$0</div><div class="stat-l">Ad Spend</div><div class="stat-s">Pure organic growth</div></div>
+      <div class="stat anim delay-2"><div class="stat-v">24/7</div><div class="stat-l">Always Working</div><div class="stat-s">Marketing that never sleeps</div></div>
+      <div class="stat anim delay-3"><div class="stat-v">5×</div><div class="stat-l">More Reach</div><div class="stat-s">Vs. paid campaigns</div></div>
+    </div>
+  </div>
+</section>
+
+<!-- HOW IT WORKS -->
+<section>
+  <div class="container">
+    <div class="sec-head-wrap">
+      <span class="eyebrow anim">Get Started in 3 Minutes</span>
+      <h2 class="sec-head anim delay-1">Set It Once. Watch It Grow Forever.</h2>
+      <p class="sec-sub anim delay-2">No onboarding calls. No agency contracts. Just three simple steps and your autonomous marketing team takes over.</p>
+    </div>
+    <div class="steps">
+      <div class="step anim"><div class="step-num">01</div><h3>Connect Your Brand</h3><p>Add your website, product, or service. AdRoom learns everything about your business in seconds.</p></div>
+      <div class="step anim delay-1"><div class="step-num">02</div><h3>Pick Your Goal</h3><p>Sales, leads, awareness, launches, or promotions. Choose what matters most to you right now.</p></div>
+      <div class="step anim delay-2"><div class="step-num">03</div><h3>Approve & Walk Away</h3><p>AdRoom builds your full strategy, executes across every platform, and delivers results — automatically.</p></div>
+    </div>
+  </div>
+</section>
+
+<!-- FEATURES -->
+<section>
+  <div class="container">
+    <div class="sec-head-wrap">
+      <span class="eyebrow anim">Built for Real Results</span>
+      <h2 class="sec-head anim delay-1">Five AI Agents. One Mission. Your Growth.</h2>
+      <p class="sec-sub anim delay-2">Each agent is a specialist — together they form the most powerful marketing workforce ever built.</p>
+    </div>
+
+    <div class="grid">
+      <div class="card anim"><div class="card-icon" style="background:rgba(0,240,255,.1);color:var(--cyan)"><i class="fa-solid fa-chart-line"></i></div><h3>Salesman Agent</h3><p>Identifies buying signals, crafts persuasive content, and converts cold audiences into paying customers — relentlessly, around the clock.</p></div>
+      <div class="card anim delay-1"><div class="card-icon" style="background:rgba(16,185,129,.1);color:var(--green)"><i class="fa-solid fa-globe"></i></div><h3>Awareness Agent</h3><p>Builds your brand presence across every major platform with culturally-aware, platform-native content at scale.</p></div>
+      <div class="card anim delay-2"><div class="card-icon" style="background:rgba(245,158,11,.1);color:var(--amber)"><i class="fa-solid fa-bullseye"></i></div><h3>Lead Agent</h3><p>Pinpoints your ideal audience using real-time trend intelligence and warms them into ready-to-buy prospects.</p></div>
+      <div class="card anim delay-3"><div class="card-icon" style="background:rgba(124,58,237,.1);color:var(--purple)"><i class="fa-solid fa-bolt"></i></div><h3>Launch Agent</h3><p>Builds your full launch strategy, sequencing, and execution — in minutes. Perfect for new products and brand drops.</p></div>
+      <div class="card anim delay-4"><div class="card-icon" style="background:rgba(239,68,68,.1);color:var(--red)"><i class="fa-solid fa-gift"></i></div><h3>Promotion Agent</h3><p>Time-sensitive, high-urgency campaigns proven to drive immediate action and revenue. No generic discount posts.</p></div>
+      <div class="card anim delay-5"><div class="card-icon" style="background:rgba(249,115,22,.1);color:#F97316"><i class="fa-solid fa-trophy"></i></div><h3>$15K Paid Ads — Free</h3><p>What an agency would charge $10K–$15K/month in paid ads to deliver, AdRoom achieves 100% organically.</p></div>
+    </div>
+  </div>
+</section>
+
+<!-- ABOUT FOUNDER -->
+<section id="about">
+  <div class="container">
+    <div class="sec-head-wrap">
+      <span class="eyebrow anim">Meet The Founder</span>
+      <h2 class="sec-head anim delay-1">The Mind Behind AdRoom AI</h2>
+      <p class="sec-sub anim delay-2">Built from a simple obsession: marketing should run itself — and small businesses should never need to choose between an agency and survival.</p>
+    </div>
+
+    <div class="founder anim-scale">
+      <div class="founder-photo-wrap">
+        <img src="assets/founder.png" alt="Divine David — Founder & CEO of AdRoom AI" loading="lazy" />
+      </div>
+      <div class="founder-content">
+        <span class="eyebrow">Founder &amp; CEO</span>
+        <h2>Divine David</h2>
+        <div class="founder-role">Engineer · Marketer · Product Architect</div>
+        <p>Divine David is the founder and architect of AdRoom AI — a self-taught engineer and marketer who spent years watching brilliant founders bleed cash to ad platforms and agencies that didn't care whether they grew or not.</p>
+        <p>He built AdRoom AI to end that. A single autonomous workforce of intelligent agents that does the work of an entire marketing team — strategy, content, distribution, optimization — at a fraction of the cost, with none of the babysitting.</p>
+        <div class="founder-quote">"Every founder deserves a marketing team that wakes up before they do, works harder than they can, and never asks for a raise. That's AdRoom."</div>
+        <div class="founder-socials" aria-label="Founder contact links">
+          <a href="mailto:divine@adroomai.com" aria-label="Email Divine David"><i class="fa-solid fa-envelope"></i></a>
+          <a href="https://wa.me/2348147970957?text=Hello%20Divine,%20I%20just%20visited%20AdRoom%20AI..." target="_blank" rel="noopener" aria-label="WhatsApp Divine David"><i class="fa-brands fa-whatsapp"></i></a>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- TESTIMONIAL -->
+<section>
+  <div class="container">
+    <div class="quote-card anim-scale">
+      <div class="quote-mark">"</div>
+      <div class="quote-text">AdRoom replaced our entire marketing team and 5-figure ad budget overnight. We hit our quarterly targets in three weeks — completely organically. This is the future.</div>
+      <div class="quote-attrib"><strong>— Founders, CEOs, and Marketing Leaders</strong> already growing with AdRoom</div>
+    </div>
+  </div>
+</section>
+
+<!-- DOWNLOAD CTA -->
+<section id="download">
+  <div class="container">
+    <div class="final-cta">
+      <span class="eyebrow anim">Available Now</span>
+      <h2 class="anim delay-1">Your Marketing Team. Ready in 3 Minutes.</h2>
+      <p class="anim delay-2">Download AdRoom AI today and see what fully autonomous marketing can do for your business.</p>
+      <div class="hero-ctas anim delay-3" style="justify-content:center">
+        <a href="#" class="btn btn-store"><i class="fa-brands fa-apple"></i> Download for iOS</a>
+        <a href="#" class="btn btn-store"><i class="fa-brands fa-android"></i> Download for Android</a>
+      </div>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="ftr-links">
+    <a href="#download">Download</a>
+    <a href="#about">About</a>
+    <a href="investors.html">Investors</a>
+    <a href="mailto:hello@adroomai.com">Contact</a>
+    <a href="#">Privacy</a>
+    <a href="#">Terms</a>
+  </div>
+  <div>© <span id="yr"></span> AdRoom AI · The future of marketing is autonomous.</div>
+</footer>
+
+<script>
+  document.getElementById('yr').textContent = new Date().getFullYear();
+  const animEls = document.querySelectorAll('.anim, .anim-l, .anim-r, .anim-scale');
+  const observer = new IntersectionObserver((entries) => {
+    entries.forEach(entry => {
+      if (entry.isIntersecting) entry.target.classList.add('in');
+      else entry.target.classList.remove('in');
+    });
+  }, { threshold: 0.12, rootMargin: '0px 0px -50px 0px' });
+  animEls.forEach(el => observer.observe(el));
+</script>
+</body>
+</html>

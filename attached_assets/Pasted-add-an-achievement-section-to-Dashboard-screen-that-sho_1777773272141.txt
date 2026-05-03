@@ -1,0 +1,27 @@
+add an "achievement section" to Dashboard screen that shows all closed deals with buyer names, deal values, delivery addresses, and status — so users can track  Salesman Agent's real-time revenue and close deals  but not only show closed deals but aslo when any AdRoom AI achieves a goal for its strategy these achievements should be displayed there so user can see what agent has achieved so far from its strategy. so it applies to all agents not just salesman but do not reveal AdRoom AI backend process or secrets.
+
+also AdRoom AI when closing deals should not be static and feel or look too fixed remember that every conversation should be humanized dynamic and realtime so AdRoom AI doesn't have a hard coded way of replying or engaging with client its all done from realtime data user behavior, goal, AdRoom AI must nurture client into a closed deal it should look sound and feel human and natural to the user while ensuring that user closes deal and AdRoom AI should confirm payment received before marking deal as closed so there should be deal pending this is when the user has accepted to make payments or purchase, engage depending on the user selected or preferred goal product, goods, service or brand and hasn't actually fulfilled the user own side that marks deal as complete example user hasn't made payment yet. when user fulfills own side of the deal then it can be marked as complete and user should be notified of this as well as visible in achievement section in dashboard screen
+
+enhancing the already existing Sales Agent within AdRoom AI. The Sales Agent currently works, but you need to add two new autonomous capabilities:
+
+Find new clients for user product, brand or service using Google Maps (discover businesses)
+
+Analyze customer reviews on Google Maps (extract pain points, emotion, urgency) and use this info to get and close clients
+
+These capabilities must integrate seamlessly with the existing Sales Agent flow. The agent remains fully autonomous. No human intervention at any point. so as salesman works on user social media to sell and get clients it also explore this option as well to achieve same goal all as well remember must work in sync with what already on ground and how they are implemented, for reach out outside user social AdRoom AI use whatsapp, email for email use resend create and assign user a custom email that AdRoom AI will use solely for communication with client it got outside user social accounts as well whatsapp as means of communication too, so you are going to add whatsapp account connection option to the connected account screen where user can connect their whatsapp account in realtime and AdRoom AI can use this to communicate with clients autonomously, whatsapp connection will only available to pro + pro plus users do not forget to make conversations from whatsapp and custom email visible in interactions screen.
+
+During AI streaming responses, the chat bubble width grows dynamically as text streams in, causing:
+
+Jumpy/jittery UI
+
+Bubble expanding and contracting
+
+Poor user experience
+
+The Solution
+Pre-calculate the width before streaming starts so the bubble container has its final dimensions from the beginning.
+
+Note:
+Do not disrupt any already made progress, no dummy or demo implementations, no hard coded data look what been done and update, create and implement where required avoid any form of double implementation make sure all fix and implementations are for realtime and production. All implementation must align with what already done and work in sync.
+
+This is a mobile app not web application. And must run 100% off replit, railway for backend and supabase for database

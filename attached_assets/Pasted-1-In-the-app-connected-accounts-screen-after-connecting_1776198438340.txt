@@ -1,0 +1,38 @@
+1. In the app connected accounts screen after connecting an account it remains connected even if user leaves account several time several days basically it remain connected for ever until user disconnects by them selves which is how it suppose to be, the problem is when I login same account on a different device have to and navigate to my connected account screen on this new divxe I find that the same account that is saying connected on the other divice is saying not connected on the new divice fix this
+
+2.Impliment the about screen and make the about adroom ai option in the setting screen navigate to it when clicked 
+
+3. Make the help center option in the seetings screen navigate to the community screen when clicked 
+
+4. The scrapping service needs to be fixed, it only need to begin daily Autonomus scrapping when user has approved a stratgy and the strategy campaign is running, so after initial scrapping of products during connection process no more scrapping untill strategy is approved and strategy is actively running this two conditions has to be met and scrapping shouldn't be daily  it should be when adroom ai needs a new product for its on going and running strategy what ever the strategy requires, but the goal should be market as much product as possible from the website according to user selected goal so no random  daily scrapping without resoan, adroom ai only scrapped when it need new product and it requires it. Also notice that the scraping feature doest deduct the user credits when used each scraping service performed should deduct user credits acordilly for each service scrapping service it should be around 8.5 credits and also all credit usage history should be shown In the usage history section
+
+4.And if credits runs out in the process of autonomy or scrapping or even product upload user should get realtime notification in notification screen and push notification. and also in agent chat screen. 
+
+5. Also all pro users cant connects more than one web site(eg. If a user has already created and running an active stragey campaign in-which website is connected, the user shouldnt be able to creat connect another website to any new  strategy campaign while the privouse is still   running , here the connect website option 6. should be in un hilighted so user can't click it. But when stragey campaign circle is finished and and user want to creat another campaign and decides to connect website here if the user is a pro user they can connect. 
+
+7. Pro+ user can connects 2 website to two different stregy campaigns acitoy running after connecting two u till the twostragy capims are finsiehd, they should not be able to connects any website again. 
+
+8. Every Connected Website linked to a running campaign strategy should disconnect and all scraping activity ended when strategy campaign website is linked to finishes.  if user didn't approve strategy and strategy is not actively running connected websites shouldn't be connected or saved. 
+
+9. Remove the fire crawl fallback from scraper service.
+
+10. Implement a back to prevoise button on all selection modal, forms etc this modal take the use back to the peovious section modal or form not text chat of the user or agent. Also if no previous modal or form do not show to previous button.
+
+11. Also thoer should be a agent chat history section where use can restore thier lriose chat and history is only stored for 7days after which history is ment to be deleted. So when user login inthe app it should load all hat history it should start a new session only load history if user decide to go back to chat history. 
+
+12. All ai engins(ipe, geo motoring, social listing etc) and automation loops should only be activate and runing if user has a runing and approved strategy, during strategy creation flow where required.  ipe, geo motoring, social listing) should be accesabel when required stregy creation flow where required and during building the strategy it self. All atomation loops and engins being run for a user are being deducted from user credits and all engine and automations should stop once user credits is exusted. All loops and engins should whore per User as this is a multiple user applocation that will be used by millions of user  
+
+13. Add proper Skelton loader the dashboard screen take note of the sharp of mdals buttons etc on the dashboard screen and ensure the the Skelton loader actually feet's the actual shape of the 
+14. modal and buttons in the dashboard screen, do same for cummunity screen, interactions screen, settings screen. Adroom energy screen, stragey history screen, connected accounts screen, notifications screen. 
+
+15. The skellton loader should alow the user data load in background before dislaying the user data to avoid showing user the wrong ui /data
+
+16. Before adroom start to run a campaign stregy after user has approved and all required account are connected adroom ai should check user avaible credits, check how much adroom energy credits  it will cost to run that strategy campaign and require user to top up or Continue  presenting user with a skip button and  a button That redirects the user to exactly to the topup section In the subscription and usage screen 
+Of User topup up the riquired amounts of credits when the comeback to the agent chat screen they should be able to proceed with approving stratgy. So this take place once user approves strategy. 
+
+17. Ensure that user can recive realtime push notifications when the a user  credits is running low, and exusted, and when stregy has been stopped and activated. In the case where crdicts are low the notification should include realtime required amount of credit required  topup so adroom should depending on the duration of the campaign. Calculate and show the user required crsoct to run for remebr this must all be realtime and dynamic implimentatio a not hard coded data or demo data or implementations or uses implimentations .
+fix this error am getting in my supabase data base console column product_memory.id does not exist
+
+Note:
+Do not disrupt any already. Made progress, no dummy or demo implementations, no hard coded data look what been don and update, creat and Impliment where required avoid any form of double implimentation make sure all fix and Implemtations are for realtime and production. All implimentation must align with what already done and work in syc. 
+This is a mobile app not web application. And must run 100% off replit, railway for backend and supabase for database

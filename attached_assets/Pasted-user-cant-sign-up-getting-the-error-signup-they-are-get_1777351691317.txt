@@ -1,0 +1,31 @@
+user cant sign up getting the error signup they are getting the error "sign up faild, we created your account but couldnt 
+send the verification email. please tap resend verification in a moment or contact support if this pesist" but user was 
+never registered despit the email investigate and fix this error from root couse i dont want fall backs i want this 
+error fixed so user can create accounts, and recive confirmation emails successfully no short cuts, no simplified 
+implimentations.please note am using resend emailing service which is connected to supabase auth provider
+ 
+when user attempt to reset password it shows reset pasword email sent in front end but user never recived the 
+reset pasword email fix from root couse, please note am using resend emailing service which is connected to 
+supabase auth provider.
+
+i also noticed that when user sign out all the connected social accounts already connected and showing connected in 
+connected accounts screen return back to showing not connected or not linked in the connected account screen after 
+user signs out of app and sign back in and i dont mean leave the app, if user just leave app even after one month 
+and returns connected social accounts in connected account screen still show connected but if user signs out of app
+by clicking the sign out button and signs back in thats when all the connected social accounts in connected accounts 
+screen return back to showing not linked/ not connected even tho they where connected pre sign out in investigate and 
+fix this from root couse, if user sign in or sing out social accounts should remain connected and indicate so in connected
+account screen until user disconnects by them sleves from the connected accounts screen. 
+
+user notifaction sytem is working but no push notifaction is recived even tho notifcations are coming and shoing in notifaction 
+screen user is suppose to recive push notification as in recive the notification outside the app even tho user is on app or not 
+and notifcation should have a reatime notification counter barge that shows if thier are new notification and how many in the 
+nofication option in settings screen.
+
+i also noticed that when user is awarded credicts from backend the user dosnt get any notifaction at all fix this user 
+should get notification when credicts are being award or credicted to user and also make sure gets notification when they
+top up and balance has been incremented 
+
+remove the extra details in the notication pop it should only carry the content of the notification, extra details should be removed.
+all implimentations and fix must be for reatrime and production, i use railway for backend and supabse for dtabse also this is a mibile app not web app 
+

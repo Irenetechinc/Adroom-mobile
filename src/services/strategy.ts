@@ -6,6 +6,7 @@ const BACKEND_URL = process.env.EXPO_PUBLIC_API_URL;
 
 export interface GeneratedStrategy {
   strategy: any;
+  strategyId?: string;
 }
 
 export const StrategyService = {

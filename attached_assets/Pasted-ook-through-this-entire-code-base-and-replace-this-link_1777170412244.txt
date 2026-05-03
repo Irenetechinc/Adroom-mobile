@@ -1,0 +1,16 @@
+ook through this entire code base and replace this link "https://adroom-mobile-production-c7fb.up.railway.app with" this https://backend.adroomai.com 
+also fix the registration faild issue user gets eachtime they try to register an account.
+after login user is stock in a loading screen that says verifying your reset link remove loading screen entirely so it should be after splashscreen the next screen should be agent chat screen add skeltton loader to agent chat screen where required and make sure the skeltton loader fit the shap of the actual content in the screen 
+also if user has an active strategy each time user login in theuy should the first screen the should see is the dashabord screen not the agent chatscreen, 
+also thier are multiple spashcreen runing remove evry ohter splashcreen and leave one only which is the custom ui desinged one
+splascreen display time is too short before loading another screen,
+onboarding screen ui dosnt list all capabilites of adroom ai improve that add more feture but do not disclose adroom process or engins, take inpiration from about screen content,
+i notice right before the main spash screen load thier is anothe loader screen that shows in a split second before the next screen investigate and fix this that loader screen or second spashcreen shouldnt be thier 
+when user click the get started button in the fetured screen thier are redirtected to the login screen insted of the signup screen and remove the Adroom ai text at the top to from bothe screens itshould just say and change the text color in the registration sceen from white to a sotthing oclor that will compliment the current button background color 
+also user never recived reset pasword email after requesting reset pasword 
+also ensire that users cant creat two account whit same email.
+fix this error am getting in my supabase logs "column strategies.status does not exist".
+update app version code to 2.2.3
+check entire code base where adroom ai is refered to as an os or agent and replace with Intelligence or framework as required and also so the goal is to brand adroom ai as a framwork, intelligence and workforce without revelling the actual adroom process but jsut what it can do for the user it amazing and distince capabilities and fetures where required.
+find any implimentations that where made but never appliy and apply them accordinly but ake sure they are follwing what on ground already and add to the enire system capaboilties and not decress or roll back 
+rember this is not a web app is a mobile application, no dummy implementation or demo implimentations, all fix and implimentation must be don for realtime and production, do not disrupt any alreay made progress or rewure code or feture that has already been written 
