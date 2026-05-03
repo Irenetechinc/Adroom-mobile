@@ -12,6 +12,7 @@ import { DrawerActions } from '@react-navigation/native';
 import {
   Zap, AlertTriangle, TrendingUp, Plus, Activity,
   Target, Eye, MousePointer, Menu, RefreshCw, Crown, Bot, Wifi,
+  Trophy, Star, CheckCircle, DollarSign,
 } from 'lucide-react-native';
 import { useEnergyStore, PLAN_DETAILS } from '../store/energyStore';
 
@@ -25,6 +26,24 @@ interface AgentTask {
   strategy_name?: string;
 }
 
+interface ClosedDeal {
+  id: string;
+  buyer_name: string;
+  product_name: string;
+  deal_value: number;
+  currency: string;
+  platform: string;
+  created_at: string;
+}
+
+interface GoalCompletion {
+  id: string;
+  agent_type: string;
+  strategy_name: string;
+  completed_at: string;
+  goal: string;
+}
+
 export default function DashboardScreen() {
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const { session } = useAuthStore();
@@ -34,15 +53,18 @@ export default function DashboardScreen() {
   const [activeStrategies, setActiveStrategies] = useState<any[]>([]);
   const [alerts, setAlerts] = useState<any[]>([]);
   const [activeAgentTasks, setActiveAgentTasks] = useState<AgentTask[]>([]);
+  const [closedDeals, setClosedDeals] = useState<ClosedDeal[]>([]);
+  const [goalCompletions, setGoalCompletions] = useState<GoalCompletion[]>([]);
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const agentSubRef = useRef<any>(null);
+  const dealsSubRef = useRef<any>(null);
 
   const fetchData = async () => {
     if (!session?.user) return;
     setLoading(true);
     try {
-      const [strategiesRes, logsRes, tasksRes] = await Promise.all([
+      const [strategiesRes, logsRes, tasksRes, dealsRes, completedStratsRes] = await Promise.all([
         supabase
           .from('strategy_memory')
           .select('*')
@@ -62,10 +84,35 @@ export default function DashboardScreen() {
           .in('status', ['running', 'pending'])
           .order('started_at', { ascending: false })
           .limit(8),
+        supabase
+          .from('agent_deals')
+          .select('id, buyer_name, product_name, deal_value, currency, platform, created_at')
+          .eq('user_id', session.user.id)
+          .eq('status', 'closed_won')
+          .order('created_at', { ascending: false })
+          .limit(5),
+        supabase
+          .from('strategies')
+          .select('id, agent_type, goal, current_execution_plan, updated_at')
+          .eq('user_id', session.user.id)
+          .eq('is_active', false)
+          .not('agent_type', 'is', null)
+          .order('updated_at', { ascending: false })
+          .limit(5),
       ]);
 
       setActiveStrategies(strategiesRes.data || []);
       setAlerts(logsRes.data || []);
+      setClosedDeals((dealsRes.data as ClosedDeal[]) || []);
+
+      const completions: GoalCompletion[] = (completedStratsRes.data || []).map((s: any) => ({
+        id: s.id,
+        agent_type: s.agent_type,
+        strategy_name: s.current_execution_plan?.campaign_theme || 'Campaign',
+        completed_at: s.updated_at,
+        goal: s.goal,
+      }));
+      setGoalCompletions(completions);
 
       const tasks: AgentTask[] = (tasksRes.data || []).map((t: any) => ({
         ...t,
@@ -98,6 +145,26 @@ export default function DashboardScreen() {
       .subscribe();
     agentSubRef.current = channel;
     return () => { supabase.removeChannel(channel); };
+  }, [session?.user?.id]);
+
+  // Realtime subscription for closed deals
+  useEffect(() => {
+    if (!session?.user) return;
+    const dealsChannel = supabase
+      .channel('agent_deals_live')
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'agent_deals',
+          filter: `user_id=eq.${session.user.id}`,
+        },
+        () => { fetchData(); },
+      )
+      .subscribe();
+    dealsSubRef.current = dealsChannel;
+    return () => { supabase.removeChannel(dealsChannel); };
   }, [session?.user?.id]);
 
   useEffect(() => { fetchData(); fetchEnergy(); }, [session]);
@@ -352,6 +419,102 @@ export default function DashboardScreen() {
           )}
         </Animated.View>
 
+        {/* Achievement Section */}
+        {(closedDeals.length > 0 || goalCompletions.length > 0) && (
+          <Animated.View entering={FadeInDown.delay(310).springify()} style={styles.section}>
+            <View style={styles.sectionHeader}>
+              <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                <Trophy size={18} color="#F59E0B" />
+                <Text style={styles.sectionTitle}>Achievements</Text>
+              </View>
+              <View style={[styles.sectionCount, { backgroundColor: 'rgba(245,158,11,0.12)', paddingHorizontal: 10, paddingVertical: 3, borderRadius: 20 }]}>
+                <Text style={{ color: '#F59E0B', fontWeight: '700', fontSize: 13 }}>
+                  {closedDeals.length + goalCompletions.length}
+                </Text>
+              </View>
+            </View>
+
+            {/* Closed Deals */}
+            {closedDeals.length > 0 && (
+              <View style={styles.achievementCard}>
+                <View style={styles.achievementHeader}>
+                  <DollarSign size={13} color="#10B981" />
+                  <Text style={styles.achievementLabel}>DEALS CLOSED BY AI</Text>
+                  <View style={styles.achievementLiveDot} />
+                </View>
+                {closedDeals.map((deal, i) => {
+                  const timeAgo = (() => {
+                    const diff = Date.now() - new Date(deal.created_at).getTime();
+                    const mins = Math.floor(diff / 60000);
+                    if (mins < 60) return `${mins}m ago`;
+                    const hrs = Math.floor(mins / 60);
+                    if (hrs < 24) return `${hrs}h ago`;
+                    return `${Math.floor(hrs / 24)}d ago`;
+                  })();
+                  return (
+                    <View
+                      key={deal.id}
+                      style={[styles.achievementRow, i < closedDeals.length - 1 && styles.achievementBorder]}
+                    >
+                      <View style={styles.dealIconWrap}>
+                        <CheckCircle size={14} color="#10B981" />
+                      </View>
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.dealBuyerName}>{deal.buyer_name}</Text>
+                        <Text style={styles.dealMeta}>
+                          {deal.product_name} · {deal.platform}
+                        </Text>
+                      </View>
+                      <View style={{ alignItems: 'flex-end' }}>
+                        <Text style={styles.dealValue}>
+                          {deal.currency} {Number(deal.deal_value).toLocaleString()}
+                        </Text>
+                        <Text style={styles.dealTime}>{timeAgo}</Text>
+                      </View>
+                    </View>
+                  );
+                })}
+              </View>
+            )}
+
+            {/* Goal Completions */}
+            {goalCompletions.length > 0 && (
+              <View style={[styles.achievementCard, { marginTop: 8 }]}>
+                <View style={styles.achievementHeader}>
+                  <Star size={13} color="#A78BFA" />
+                  <Text style={[styles.achievementLabel, { color: '#A78BFA' }]}>GOALS COMPLETED</Text>
+                </View>
+                {goalCompletions.map((comp, i) => {
+                  const agentColors: Record<string, string> = {
+                    SALESMAN: '#10B981', AWARENESS: '#00F0FF',
+                    PROMOTION: '#F59E0B', LAUNCH: '#A78BFA',
+                  };
+                  const color = agentColors[comp.agent_type] || '#64748B';
+                  return (
+                    <View
+                      key={comp.id}
+                      style={[styles.achievementRow, i < goalCompletions.length - 1 && styles.achievementBorder]}
+                    >
+                      <View style={[styles.dealIconWrap, { backgroundColor: `${color}18` }]}>
+                        <CheckCircle size={14} color={color} />
+                      </View>
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.dealBuyerName}>{comp.strategy_name}</Text>
+                        <Text style={styles.dealMeta}>
+                          {comp.agent_type} Agent · {comp.goal}
+                        </Text>
+                      </View>
+                      <View style={[styles.agentStatusBadge, { backgroundColor: `${color}18` }]}>
+                        <Text style={{ color, fontSize: 10, fontWeight: '700' }}>Done</Text>
+                      </View>
+                    </View>
+                  );
+                })}
+              </View>
+            )}
+          </Animated.View>
+        )}
+
         {/* Intelligence Feed */}
         <Animated.View entering={FadeInDown.delay(340).springify()} style={styles.section}>
           <View style={styles.sectionHeader}>
@@ -523,4 +686,33 @@ const styles = StyleSheet.create({
   alertMeta: { color: '#64748B', fontSize: 11 },
   noAlerts: { alignItems: 'center', paddingVertical: 32 },
   noAlertsText: { color: '#334155', fontSize: 13, marginTop: 8 },
+
+  achievementCard: {
+    backgroundColor: '#151B2B', borderRadius: 16,
+    borderWidth: 1, borderColor: '#1E293B', overflow: 'hidden',
+  },
+  achievementHeader: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    paddingHorizontal: 14, paddingTop: 12, paddingBottom: 8,
+    borderBottomWidth: 1, borderBottomColor: 'rgba(16,185,129,0.1)',
+  },
+  achievementLabel: {
+    flex: 1, color: '#10B981', fontWeight: '700', fontSize: 11,
+    textTransform: 'uppercase', letterSpacing: 0.8,
+  },
+  achievementLiveDot: { width: 7, height: 7, borderRadius: 4, backgroundColor: '#10B981' },
+  achievementRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 10,
+    paddingHorizontal: 14, paddingVertical: 12,
+  },
+  achievementBorder: { borderBottomWidth: 1, borderBottomColor: '#1E293B' },
+  dealIconWrap: {
+    width: 30, height: 30, borderRadius: 8,
+    backgroundColor: 'rgba(16,185,129,0.1)',
+    alignItems: 'center', justifyContent: 'center',
+  },
+  dealBuyerName: { color: '#E2E8F0', fontWeight: '700', fontSize: 13 },
+  dealMeta: { color: '#64748B', fontSize: 11, marginTop: 1, textTransform: 'capitalize' },
+  dealValue: { color: '#10B981', fontWeight: '800', fontSize: 13 },
+  dealTime: { color: '#475569', fontSize: 10, marginTop: 1 },
 });

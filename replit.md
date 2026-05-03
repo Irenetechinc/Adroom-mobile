@@ -34,12 +34,39 @@ AdRoom is a **React Native (Expo) mobile app** with a Node.js/Express backend. I
 - Live status: `GET /api/cma/live-status`
 - DB migration: `backend/cma_migration.sql`
 
+## New Features (May 2026)
+
+### Achievement Section (Dashboard)
+- Real-time `Achievements` panel on DashboardScreen shows closed deals from `agent_deals` table and completed agent goals from `strategies`
+- Live Supabase realtime subscription on `agent_deals` (INSERT) updates the panel instantly when the Sales Agent closes a deal
+- Displays: buyer name, product, platform, deal value, currency, time-ago
+- Goal completions show agent type, campaign theme, and completion status
+
+### Chat Bubble Width Jitter Fix (AgentChatScreen)
+- Added `agentBubbleStreaming` style with `minWidth: '62%'` applied while a message is actively streaming
+- Prevents the bubble from starting tiny and growing char-by-char during TypewriterText animation
+- Style is removed once the message finishes streaming (`doneTextIds` tracks completion)
+
+### Google Maps Business Discovery (Sales Agent)
+- New service: `backend/src/services/googleMapsService.ts`
+- Uses Google Places API (Nearby Search + Place Details) to find local businesses in any category/location
+- Heuristic outreach scoring based on rating, review count, and negative sentiment
+- `SalesmanAgent.discoverAndOutreachLocalBusinesses()` sends WhatsApp or email outreach to hot prospects
+- Backend endpoints: `POST /api/sales/discover-businesses` and `POST /api/sales/outreach`
+- Requires `GOOGLE_MAPS_API_KEY` in `backend/.env` (Places API + Geocoding API enabled)
+
+### Humanized Sales Conversations
+- Sales Agent DM follow-up now uses rotating personas (Alex, Sam, Jordan) with distinct tones
+- Step-aware context: different instructions for 1st, 2nd, 3rd touchpoint — no longer generic
+- Closing prompts rewrote to sound like trusted local sellers, not automated scripts
+- Hard rules: no "I noticed you commented", no bot disclosure, human contractions/rhythm
+
 ## Autonomous Agent System
 
 ### 4 Specialized Agents
 | Agent | Purpose |
 |-------|---------|
-| SALESMAN | Conversion, lead capture, direct sales DMs |
+| SALESMAN | Conversion, lead capture, direct sales DMs, Google Maps business outreach |
 | AWARENESS | Viral reach, trending topics, shareability |
 | PROMOTION | FOMO, scarcity, countdown urgency |
 | LAUNCH | Product hype, announcements, narrative dominance |
