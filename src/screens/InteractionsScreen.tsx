@@ -76,6 +76,7 @@ function platformColor(platform: string): string {
     case 'twitter':
     case 'x': return '#1DA1F2';
     case 'linkedin': return '#0A66C2';
+    case 'whatsapp': return '#25D366';
     default: return '#475569';
   }
 }
@@ -88,6 +89,7 @@ function platformInitial(platform: string): string {
     case 'twitter':
     case 'x': return 'X';
     case 'linkedin': return 'in';
+    case 'whatsapp': return 'WA';
     default: return platform?.[0]?.toUpperCase() || '?';
   }
 }
@@ -185,7 +187,7 @@ export default function InteractionsScreen() {
     platform: row.platform || 'facebook',
     clientName: row.sender_name || 'User',
     content: row.content || '',
-    adroomReply: row.is_replied ? '(replied via AdRoom)' : undefined,
+    adroomReply: row.reply_content || (row.is_replied ? '(replied via AdRoom AI)' : undefined),
     isReplied: !!row.is_replied,
     isLiked: !!row.is_liked,
     createdAt: row.created_at,

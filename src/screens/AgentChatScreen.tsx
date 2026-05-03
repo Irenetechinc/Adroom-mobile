@@ -927,65 +927,6 @@ const BrandIntakeCard = ({ onSubmit, onBack, onStepBack, disabled }: { onSubmit:
   );
 };
 
-const WhatsAppConnectCard = ({ onSubmit, onBack, onStepBack, disabled }: { onSubmit: (phoneId: string, token: string) => void; onBack?: () => void; onStepBack?: () => void; disabled?: boolean }) => {
-  const [phoneId, setPhoneId] = React.useState('');
-  const [token, setToken] = React.useState('');
-  const [busy, setBusy] = React.useState(false);
-  const handleSubmit = async () => {
-    const pid = phoneId.trim();
-    const tok = token.trim();
-    if (!pid || !tok) return;
-    setBusy(true);
-    await onSubmit(pid, tok);
-    setBusy(false);
-  };
-  return (
-    <View style={[styles.card, disabled && styles.cardDisabled]}>
-      <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 14, gap: 10 }}>
-        <View style={{ width: 36, height: 36, borderRadius: 10, backgroundColor: '#25D366', alignItems: 'center', justifyContent: 'center' }}>
-          <Text style={{ color: '#fff', fontWeight: '900', fontSize: 18 }}>W</Text>
-        </View>
-        <View>
-          <Text style={styles.cardTitle}>Connect WhatsApp Business</Text>
-          <Text style={styles.cardSub}>Enter your Cloud API credentials</Text>
-        </View>
-      </View>
-      <TextInput
-        value={phoneId}
-        onChangeText={setPhoneId}
-        placeholder="Phone Number ID"
-        placeholderTextColor="#475569"
-        editable={!disabled && !busy}
-        style={[styles.inputField, { marginBottom: 10 }]}
-        autoCapitalize="none"
-        autoCorrect={false}
-        keyboardType="numeric"
-      />
-      <TextInput
-        value={token}
-        onChangeText={setToken}
-        placeholder="Access Token (EAABcdef...)"
-        placeholderTextColor="#475569"
-        editable={!disabled && !busy}
-        style={[styles.inputField, { marginBottom: 14 }]}
-        autoCapitalize="none"
-        autoCorrect={false}
-        secureTextEntry={false}
-        multiline={false}
-      />
-      {!disabled && (
-        <TouchableOpacity
-          onPress={handleSubmit}
-          disabled={busy || !phoneId.trim() || !token.trim()}
-          style={[styles.primaryBtn, { opacity: (!phoneId.trim() || !token.trim() || busy) ? 0.5 : 1 }]}
-        >
-          {busy ? <ActivityIndicator size="small" color="#000" /> : <Text style={styles.primaryBtnText}>Connect WhatsApp</Text>}
-        </TouchableOpacity>
-      )}
-      <FormNavRow onBack={onBack} onStepBack={onStepBack} disabled={disabled} />
-    </View>
-  );
-};
 
 const FacebookConnectButton = ({ onPress, isConnected, onDisconnect, platform, onBack, onStepBack, disabled }: { onPress: () => void; isConnected: boolean; onDisconnect: () => void; platform: string; onBack?: () => void; onStepBack?: () => void; disabled?: boolean }) => (
   <View>
@@ -1656,7 +1597,6 @@ export default function AgentChatScreen({ navigation, route }: Props) {
     'strategy_type_selection', 'goal_selection', 'duration_selection',
     'strategy_preview', 'facebook_connect', 'page_selection',
     'retry_action', 'session_restore', 'session_restore_prompt', 'create_strategy_prompt',
-    'whatsapp_connect_form',
   ];
 
   const isLastInteractiveMessage = (index: number, uiType: string) => {
@@ -1751,36 +1691,6 @@ export default function AgentChatScreen({ navigation, route }: Props) {
             actionName={item.uiData?.action}
             onRetry={() => handleRetry(item.uiData?.action, item.uiData?.data)}
             onCancel={() => addMessage("I'll help you with something else. What would you like to do?", 'agent')}
-            onBack={goBackToMenu}
-            onStepBack={stepBackProp}
-            disabled={isDisabled}
-          />
-        )}
-        {item.uiType === 'whatsapp_connect_form' && (
-          <WhatsAppConnectCard
-            onSubmit={async (phoneId, token) => {
-              const { data: { session } } = await supabase.auth.getSession();
-              if (!session?.access_token) {
-                Alert.alert('Error', 'Please sign in first.');
-                return;
-              }
-              try {
-                const res = await fetch(`${BACKEND_URL}/api/oauth/whatsapp/connect`, {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` },
-                  body: JSON.stringify({ phone_number_id: phoneId, access_token: token }),
-                });
-                const data = await res.json();
-                if (res.ok) {
-                  await loadConnectedPlatforms?.();
-                  addMessage(`WhatsApp Business connected! Account: **${data.display_name}**\n\nAdRoom can now send autonomous outreach messages via WhatsApp on your behalf.`, 'agent');
-                } else {
-                  Alert.alert('Connection failed', data.error || 'Could not connect WhatsApp.');
-                }
-              } catch (e: any) {
-                Alert.alert('Error', e.message || 'Network error.');
-              }
-            }}
             onBack={goBackToMenu}
             onStepBack={stepBackProp}
             disabled={isDisabled}
