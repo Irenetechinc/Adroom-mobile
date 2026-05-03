@@ -69,7 +69,7 @@ if (!VERIFY_TOKEN) {
   console.warn('[Server] WARNING: FB_VERIFY_TOKEN not set — Facebook webhook verification disabled.');
 }
 
-type OAuthPlatform = 'facebook' | 'instagram' | 'twitter' | 'linkedin' | 'tiktok';
+type OAuthPlatform = 'facebook' | 'instagram' | 'twitter' | 'linkedin' | 'tiktok' | 'whatsapp';
 function buildDeepLink(platform: OAuthPlatform, query: Record<string, string | undefined>) {
   const url = new URL(`adroom://auth/${platform}/callback`);
   for (const [k, v] of Object.entries(query)) {
@@ -234,6 +234,89 @@ app.get('/auth/tiktok/callback', (req, res) => {
   const error_description = typeof req.query.error_description === 'string' ? req.query.error_description : undefined;
   // TikTok uses both 'code' and 'auth_code' depending on API version
   res.redirect(buildDeepLink('tiktok', { code: code || auth_code, state, error, error_description }));
+});
+
+app.get('/auth/whatsapp/callback', (req, res) => {
+  const code = typeof req.query.code === 'string' ? req.query.code : undefined;
+  const state = typeof req.query.state === 'string' ? req.query.state : undefined;
+  const error = typeof req.query.error === 'string' ? req.query.error : undefined;
+  const error_description = typeof req.query.error_description === 'string' ? req.query.error_description : undefined;
+  res.redirect(buildDeepLink('whatsapp', { code, state, error, error_description }));
+});
+
+/**
+ * POST /api/auth/whatsapp/exchange
+ * Exchanges an OAuth code for a WhatsApp Business access token.
+ * Uses the same Facebook OAuth infrastructure — no manual credentials needed.
+ */
+app.post('/api/auth/whatsapp/exchange', async (req, res) => {
+  const code = typeof req.body?.code === 'string' ? req.body.code : undefined;
+  const redirectUri = typeof req.body?.redirectUri === 'string' ? req.body.redirectUri : undefined;
+  if (!code || !redirectUri) return res.status(400).json({ error: 'code and redirectUri are required' });
+  if (!FB_APP_ID || !FB_APP_SECRET) return res.status(500).json({ error: 'FB_APP_ID and FB_APP_SECRET are not configured' });
+
+  try {
+    const params = new URLSearchParams({
+      client_id: FB_APP_ID,
+      redirect_uri: redirectUri,
+      client_secret: FB_APP_SECRET,
+      code,
+    });
+    const exchangeRes = await fetch(`https://graph.facebook.com/v18.0/oauth/access_token?${params.toString()}`);
+    const data: any = await exchangeRes.json();
+    if (!exchangeRes.ok) return res.status(exchangeRes.status).json(data);
+    return res.status(200).json({ access_token: data.access_token });
+  } catch (e: any) {
+    return res.status(500).json({ error: e?.message || 'WhatsApp token exchange failed' });
+  }
+});
+
+/**
+ * POST /api/auth/whatsapp/phone-numbers
+ * Given a user access token, fetches all WhatsApp Business phone number IDs
+ * associated with the authenticated user's Meta Business accounts.
+ * This eliminates any manual credential entry for the user.
+ */
+app.post('/api/auth/whatsapp/phone-numbers', async (req, res) => {
+  const { access_token } = req.body;
+  if (!access_token) return res.status(400).json({ error: 'access_token is required' });
+
+  try {
+    // Fetch WhatsApp Business Accounts linked to this user
+    const wabaRes = await fetch(
+      `https://graph.facebook.com/v18.0/me/whatsapp_business_accounts?fields=id,name&access_token=${access_token}`
+    );
+    const wabaData: any = await wabaRes.json();
+
+    if (!wabaRes.ok || !wabaData.data?.length) {
+      // User may not have a WABA yet — return empty so the UI can show a helpful message
+      return res.status(200).json({ phone_numbers: [] });
+    }
+
+    const phoneNumbers: any[] = [];
+    for (const waba of (wabaData.data as any[]).slice(0, 5)) {
+      try {
+        const phonesRes = await fetch(
+          `https://graph.facebook.com/v18.0/${waba.id}/phone_numbers?fields=id,display_phone_number,verified_name&access_token=${access_token}`
+        );
+        const phonesData: any = await phonesRes.json();
+        if (phonesData.data) {
+          for (const phone of phonesData.data as any[]) {
+            phoneNumbers.push({
+              id: phone.id,
+              name: phone.verified_name || waba.name || 'WhatsApp Business',
+              phone: phone.display_phone_number,
+              waba_id: waba.id,
+            });
+          }
+        }
+      } catch { /* skip this WABA on error */ }
+    }
+
+    return res.status(200).json({ phone_numbers: phoneNumbers });
+  } catch (e: any) {
+    return res.status(500).json({ error: e?.message || 'Failed to fetch phone numbers' });
+  }
 });
 
 app.post('/api/auth/facebook/exchange', async (req, res) => {
@@ -515,6 +598,182 @@ app.post('/api/platform-configs/notify', async (req, res) => {
     return res.status(200).json({ ok: true });
   } catch (e: any) {
     return res.status(500).json({ error: e?.message });
+  }
+});
+
+/**
+ * GET /webhooks/whatsapp
+ * Meta webhook verification handshake. Meta calls this once when you register
+ * the webhook URL in the Meta App Dashboard.
+ */
+app.get('/webhooks/whatsapp', (req, res) => {
+  const mode = req.query['hub.mode'];
+  const token = req.query['hub.verify_token'];
+  const challenge = req.query['hub.challenge'];
+  if (mode === 'subscribe' && token === VERIFY_TOKEN) {
+    console.log('[WhatsApp Webhook] Verified successfully');
+    return res.status(200).send(challenge as string);
+  }
+  return res.status(403).send('Forbidden');
+});
+
+/**
+ * POST /webhooks/whatsapp
+ * Receives incoming WhatsApp messages from leads who reply to outreach.
+ * Stores the message, generates a natural AI reply, and sends it back —
+ * all within seconds, building a genuine professional conversation thread.
+ */
+app.post('/webhooks/whatsapp', async (req, res) => {
+  // Always acknowledge immediately to prevent Meta retries
+  res.status(200).send('EVENT_RECEIVED');
+
+  try {
+    const body = req.body;
+    if (body.object !== 'whatsapp_business_account') return;
+
+    for (const entry of (body.entry as any[]) || []) {
+      for (const change of (entry.changes as any[]) || []) {
+        if (change.field !== 'messages') continue;
+        const value = change.value;
+
+        for (const message of (value.messages as any[]) || []) {
+          if (message.type !== 'text') continue;
+
+          const fromPhone: string = message.from;
+          const text: string = message.text?.body || '';
+          const phoneNumberId: string = value.metadata?.phone_number_id;
+          const senderName: string = value.contacts?.[0]?.profile?.name || `+${fromPhone}`;
+
+          const serviceSupabase = getServiceSupabaseClient();
+
+          // Find which AdRoom user owns this phone number
+          const { data: cfg } = await serviceSupabase
+            .from('ad_configs')
+            .select('user_id, access_token, page_id, page_name')
+            .eq('platform', 'whatsapp')
+            .eq('page_id', phoneNumberId)
+            .maybeSingle();
+
+          if (!cfg) {
+            console.log(`[WhatsApp Webhook] No user owns phone ID ${phoneNumberId} — ignoring`);
+            continue;
+          }
+
+          // Look up the outreach lead this reply belongs to
+          const { data: lead } = await serviceSupabase
+            .from('agent_leads')
+            .select('*')
+            .eq('user_id', cfg.user_id)
+            .eq('platform', 'whatsapp')
+            .eq('platform_user_id', fromPhone)
+            .maybeSingle();
+
+          // Record the incoming message in the interactions feed
+          await serviceSupabase.from('messages').insert({
+            user_id: cfg.user_id,
+            platform: 'whatsapp',
+            sender_name: senderName,
+            content: text,
+            is_replied: false,
+            created_at: new Date().toISOString(),
+          });
+
+          console.log(`[WhatsApp Webhook] Message from ${senderName} (${fromPhone}): "${text.slice(0, 60)}"`);
+
+          // Build conversation context for the AI
+          const conversationHistory: any[] = lead?.conversation_history || [];
+          const stage: string = lead?.conversation_stage || 'intro';
+          const productContext = lead?.intent_signals?.[0]?.product || '';
+
+          const stageGuidance: Record<string, string> = {
+            intro:    'This person is replying to your first message. Build genuine rapport. Ask a relevant follow-up question about their business. No pitching yet.',
+            rapport:  'You have exchanged a couple of messages. You know something about their business. Show real interest. You can start to gently hint at how you might help — still no hard sell.',
+            value:    'The relationship is warming up. Share one genuinely useful insight or observation about their situation. Make it feel like advice from a knowledgeable friend.',
+            soft_ask: 'The rapport is established. You can naturally mention your product or service as a solution to their specific situation. Keep it conversational and low-pressure.',
+          };
+
+          const systemPrompt = `You are a professional consultant named ${cfg.page_name || 'Alex'} having a genuine business conversation on WhatsApp. You reached out to this person because you saw an opportunity to help their business. You are warm, smart, and helpful.
+
+CRITICAL RULES:
+- You are a human professional. NEVER reference AI, bots, automation, or algorithms under any circumstances.
+- Keep messages short: 2-3 sentences maximum. WhatsApp is casual.
+- Be direct and natural. Sound like a real person texting.
+- Address their exact message specifically — do not give generic responses.
+- Never use bullet points or numbered lists. This is a text conversation.
+- Do not use emojis unless they use them first.
+${productContext ? `- Context: You can help with ${productContext}` : ''}
+
+CURRENT STAGE: ${stageGuidance[stage] || stageGuidance.intro}`;
+
+          const historyText = conversationHistory.slice(-8)
+            .map((m: any) => `${m.role === 'user' ? senderName : 'You'}: ${m.content}`)
+            .join('\n');
+
+          const fullPrompt = historyText
+            ? `${historyText}\n${senderName}: ${text}\n\nWrite only your reply:`
+            : `${senderName}: ${text}\n\nWrite only your reply:`;
+
+          const { AIEngine: AIEng } = await import('./config/ai-models');
+          const ai = AIEng.getInstance();
+          const reply = (await ai.generateText(systemPrompt + '\n\n' + fullPrompt)).trim();
+
+          if (!reply) continue;
+
+          // Send the reply via WhatsApp Cloud API
+          const sendRes = await fetch(`https://graph.facebook.com/v19.0/${phoneNumberId}/messages`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${cfg.access_token}` },
+            body: JSON.stringify({
+              messaging_product: 'whatsapp',
+              to: fromPhone,
+              type: 'text',
+              text: { body: reply },
+            }),
+          });
+
+          if (sendRes.ok) {
+            console.log(`[WhatsApp Webhook] Replied to ${senderName}: "${reply.slice(0, 60)}"`);
+
+            // Update the message record with the reply
+            await serviceSupabase
+              .from('messages')
+              .update({ is_replied: true, reply_content: reply })
+              .eq('user_id', cfg.user_id)
+              .eq('platform', 'whatsapp')
+              .eq('sender_name', senderName)
+              .eq('content', text);
+
+            // Advance conversation stage
+            const stageProgression: Record<string, string> = {
+              intro: 'rapport', rapport: 'value', value: 'soft_ask', soft_ask: 'soft_ask',
+            };
+            const nextStage = stageProgression[stage] || 'soft_ask';
+
+            const updatedHistory = [
+              ...conversationHistory,
+              { role: 'user', content: text, at: new Date().toISOString() },
+              { role: 'assistant', content: reply, at: new Date().toISOString() },
+            ];
+
+            if (lead) {
+              await serviceSupabase
+                .from('agent_leads')
+                .update({
+                  conversation_history: updatedHistory,
+                  conversation_stage: nextStage,
+                  last_contacted_at: new Date().toISOString(),
+                })
+                .eq('id', lead.id);
+            }
+          } else {
+            const errData: any = await sendRes.json().catch(() => ({}));
+            console.error(`[WhatsApp Webhook] Send failed for ${fromPhone}:`, errData?.error?.message);
+          }
+        }
+      }
+    }
+  } catch (e: any) {
+    console.error('[WhatsApp Webhook] Error:', e.message);
   }
 });
 

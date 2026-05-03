@@ -8,6 +8,7 @@ import { InstagramService } from '../services/instagram';
 import { TikTokService } from '../services/tiktok';
 import { LinkedInService } from '../services/linkedin';
 import { TwitterService } from '../services/twitter';
+import { WhatsAppService } from '../services/whatsapp';
 import { ProductService } from '../services/product';
 import { VideoAssetService } from '../services/videoAsset';
 import { StrategyService, GeneratedStrategy } from '../services/strategy';
@@ -1432,23 +1433,8 @@ export const useAgentStore = create<AgentState>()(
               token = await TwitterService.login();
               if (token) accounts = await TwitterService.getAdAccounts(token);
           } else if (platform === 'whatsapp') {
-              // WhatsApp Business API: prompt user to enter their Phone Number ID
-              // and API token from Meta Business Manager / Cloud API.
-              // We store these as an ad_config entry (platform = 'whatsapp').
-              set({ isTyping: false, connectionState: 'IDLE', isInputDisabled: false });
-              addMessage(
-                  `To connect WhatsApp Business, you'll need:\n\n` +
-                  `1. Your **Phone Number ID** from Meta Business Manager\n` +
-                  `2. A **WhatsApp Cloud API access token**\n\n` +
-                  `You can find these at business.facebook.com → WhatsApp → API Setup.\n\n` +
-                  `Reply with your Phone Number ID and access token separated by a space, e.g.:\n` +
-                  `\`123456789012345 EAABcdef...\``,
-                  'agent',
-                  undefined,
-                  'whatsapp_connect_form',
-                  { platform: 'whatsapp' }
-              );
-              return;
+              token = await WhatsAppService.login();
+              if (token) accounts = await WhatsAppService.getPhoneAccounts(token);
           }
 
           if (token) {
@@ -1531,6 +1517,7 @@ export const useAgentStore = create<AgentState>()(
           else if (platform === 'tiktok') await TikTokService.saveConfig(account.id, accessToken, account.name);
           else if (platform === 'linkedin') await LinkedInService.saveConfig(account.id, accessToken, account.name);
           else if (platform === 'twitter') await TwitterService.saveConfig(account.id, accessToken, account.name);
+          else if (platform === 'whatsapp') await WhatsAppService.saveConfig(account.id, accessToken, account.name);
 
           set((state) => ({
               selectedAccounts: { ...state.selectedAccounts, [platform]: account },

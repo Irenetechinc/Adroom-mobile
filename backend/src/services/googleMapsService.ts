@@ -299,31 +299,31 @@ export async function buildOutreachMessageAI(
     if ((biz.total_ratings ?? 0) < 20) painSignals.push('very few reviews — hungry for visibility');
     if (reviewSamples.some(r => r.rating <= 2)) painSignals.push('has recent negative reviews — may need marketing help');
 
-    const prompt = `You are an expert B2B sales copywriter crafting a WhatsApp/email outreach message for a local business.
+    const prompt = `You are a professional consultant named ${senderName} reaching out to a local business owner for the first time via WhatsApp or email. Your goal is NOT to sell — it is to start a genuine, human conversation that builds trust.
 
-SENDER: ${senderName}
-PRODUCT / SERVICE BEING OFFERED: ${productOrService}
-${campaignContext?.goal ? `CAMPAIGN GOAL: ${campaignContext.goal}` : ''}
-${campaignContext?.uniqueValue ? `UNIQUE VALUE PROPOSITION: ${campaignContext.uniqueValue}` : ''}
-${campaignContext?.targetAudience ? `TARGET AUDIENCE: ${campaignContext.targetAudience}` : ''}
+ABOUT YOU:
+- Name: ${senderName}
+- You offer: ${productOrService}
+${campaignContext?.goal ? `- Your goal: ${campaignContext.goal}` : ''}
 
-PROSPECT BUSINESS:
+ABOUT THIS BUSINESS:
 - Name: ${biz.name}
-- Category: ${(biz.types || []).slice(0, 3).join(', ') || 'local business'}
+- Type: ${(biz.types || []).slice(0, 3).join(', ') || 'local business'}
 - Rating: ${biz.rating ?? 'N/A'} / 5 (${biz.total_ratings ?? 0} reviews)
-- Pain signals: ${painSignals.length ? painSignals.join('; ') : 'standard prospect'}
+- Signals: ${painSignals.length ? painSignals.join('; ') : 'growing business'}
 - Recent reviews: ${JSON.stringify(reviewSamples)}
 
-REQUIREMENTS:
-1. Open with a personalised hook referencing something specific about their business (review, rating trend, or category)
-2. Identify ONE specific pain point this business likely has based on the data
-3. Connect that pain point directly to how ${productOrService} solves it
-4. Use natural, conversational language — NOT a formal sales pitch
-5. End with a single, low-friction CTA (e.g. "Want me to show you a quick example?")
-6. Maximum 3 short paragraphs, under 100 words total
-7. Do NOT use emojis. Do NOT mention "AI-powered". Sound like a human.
+RULES FOR THIS FIRST MESSAGE:
+1. Start with something genuine and specific about THEIR business — a real observation, not a generic compliment.
+2. Show you understand a real challenge they may be facing (based on the data above).
+3. Ask ONE low-pressure, open-ended question — something any business owner would actually want to answer.
+4. Do NOT mention your product or service in this first message. Do NOT pitch.
+5. Sound like a real person — casual, direct, and warm. 2-3 short sentences maximum.
+6. No bullet points. No emojis. No "I hope this message finds you well." Nothing corporate.
+7. This is a WhatsApp message, not an email. Write like a human texting another human.
+8. NEVER reference AI, automation, or software tools. You are a human consultant.
 
-Return ONLY the plain text message — no quotes, no JSON, no explanation.`;
+Return ONLY the message text — no quotes, no labels, no explanation.`;
 
     const response = await ai.generateStrategy({}, prompt);
     const text = (response.text || '').trim();
