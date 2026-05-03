@@ -2,6 +2,8 @@ import { SupabaseClient } from '@supabase/supabase-js';
 import { AgentBase, AgentTokens } from './agentBase';
 import { AIEngine } from '../config/ai-models';
 import { pushService } from '../services/pushService';
+import { discoverBusinesses, buildOutreachMessage, type PlaceBusiness } from '../services/googleMapsService';
+import { sendEmailViaResend } from '../services/resendEmailService';
 
 export class SalesmanAgent extends AgentBase {
     constructor(supabase: SupabaseClient) {
@@ -411,16 +413,37 @@ Return JSON: { "intent_score": 0.0 }
                     continue;
                 }
 
-                const dmPrompt = `
-Generate a personalized, conversational DM to a potential customer on ${lead.platform}.
-Their first interaction was: "${lead.first_interaction}"
-Intent score: ${lead.intent_score}
-DM sequence step: ${lead.dm_sequence_step + 1}
+                const HUMANIZED_PERSONAS = [
+                    { name: 'Alex', tone: 'casual and friendly', opener: 'Hey' },
+                    { name: 'Sam', tone: 'warm and curious', opener: 'Hi' },
+                    { name: 'Jordan', tone: 'direct but personable', opener: 'Hey there' },
+                ];
+                const persona = HUMANIZED_PERSONAS[Math.floor(Math.random() * HUMANIZED_PERSONAS.length)];
 
-The message must feel human and natural, NOT salesy. Max 3 sentences.
-Step 1: Acknowledge their interest + add value
-Step 2: Soft offer / invite
-Step 3: Create mild urgency
+                const stepContexts = [
+                    `This is your FIRST message — make it feel like a genuine reaction to their comment, not a sales pitch. Open with something specific you noticed about their interest.`,
+                    `This is your SECOND touchpoint — they haven't replied yet. Reference your first message briefly, then add one compelling detail or story about the product. End with a soft question.`,
+                    `This is your THIRD and final message — be real with them. Acknowledge it might not be the right fit right now, but briefly share one thing that might change their mind. Keep it low pressure.`,
+                ];
+                const stepCtx = stepContexts[Math.min(lead.dm_sequence_step, 2)];
+
+                const dmPrompt = `
+You are ${persona.name}, a real person (not a bot) who works with ${lead.platform} creators and businesses.
+Your tone is ${persona.tone}. You're reaching out to a potential customer.
+
+Context about them: "${lead.first_interaction}"
+Platform: ${lead.platform}
+Intent score: ${lead.intent_score} (higher = more interested)
+
+${stepCtx}
+
+Rules:
+- Write like a real person texting — contractions, natural rhythm, occasional warmth
+- NEVER use emojis unless mirroring the lead's style
+- NEVER say "I noticed you commented" — that sounds like a bot
+- Keep it under 3 short sentences
+- End with ONE question or ONE soft call-to-action — never both
+- DO NOT mention being an AI, agent, or automated system
 
 Return JSON: { "message": "string" }
 `;
@@ -468,29 +491,31 @@ Return JSON: { "message": "string" }
             : '';
 
         const closingPrompt = `
-You are AdRoom's SALESMAN closing agent. Close this sale with maximum professionalism and warmth.
+You are closing a real sale for a small business owner. Write a direct message to their interested buyer.
 
-LEAD: ${lead.platform_username}
-PRODUCT: ${product?.product_name || 'our product'} — Price: ${product?.price ? '$' + product.price : 'contact us for price'}
+BUYER NAME: ${lead.platform_username}
+PRODUCT: ${product?.product_name || 'our product'}
+PRICE: ${product?.price ? product.price : 'price on request'}
 ${deliveryInfo}
-LEAD'S INTEREST: "${lead.first_interaction}"
-INTENT SCORE: ${lead.intent_score} (HIGH — they're ready to buy)
+WHAT THEY SAID: "${lead.first_interaction}"
+HOW READY THEY ARE: ${lead.intent_score} out of 1.0 (very high — they want this)
 
-Write a closing DM that:
-1. Opens with their name and confirms their interest warmly
-2. States the product, price clearly
-3. Explains the exact next step (how to pay, where to deliver)
-4. Creates gentle urgency (limited stock / availability)
-5. Ends with clear CTA
+Your closing message must:
+1. Open with their first name and briefly validate what they said — one specific line
+2. Tell them exactly what they get and the price — no fluff
+3. Give them ONE simple next step (pay here, reply YES, WhatsApp us, etc.)
+4. Add a real and believable reason to act now — stock, timing, or limited offer
+5. Close warm but confident — like a trusted local seller, not a salesperson
 
-Feel natural, NOT robotic. Max 5 sentences.
+Write like a human. No jargon, no buzzwords, no emojis unless they used them.
+Max 5 sentences total.
 
 Return JSON:
 {
   "message": "the closing DM text",
   "deal_value": estimated deal value as number (use product price or 0),
   "currency": "USD",
-  "reasoning": "why this approach will close the deal"
+  "reasoning": "why this specific approach will close the deal"
 }
 `;
         const response = await this.ai.generateStrategy({}, closingPrompt);
@@ -549,6 +574,100 @@ Return JSON:
         });
 
         this.log(`DEAL CLOSED — ${lead.platform_username} → ${product?.product_name} (deal ID: ${deal?.id})`);
+    }
+
+    /**
+     * GOOGLE MAPS BUSINESS DISCOVERY:
+     * Searches a location for target businesses, scores their outreach potential
+     * using review analysis, and sends personalised WhatsApp or email outreach.
+     */
+    async discoverAndOutreachLocalBusinesses(params: {
+        userId: string;
+        strategyId: string;
+        location: string;
+        targetCategory: string;
+        outreachChannel: 'whatsapp' | 'email';
+        senderName: string;
+        productOrService: string;
+        maxTargets?: number;
+    }): Promise<{ reached: number; leads: any[] }> {
+        this.log(`Discovering ${params.targetCategory} businesses near "${params.location}" for ${params.outreachChannel} outreach`);
+
+        const result = await discoverBusinesses({
+            location: params.location,
+            keyword: params.targetCategory,
+            maxResults: params.maxTargets ?? 10,
+        });
+
+        if (!result.businesses.length) {
+            this.log(`No businesses found near "${params.location}" for category "${params.targetCategory}"`);
+            return { reached: 0, leads: [] };
+        }
+
+        const hotProspects = result.businesses.filter(b => (b.outreach_score ?? 0) >= 0.55);
+        this.log(`Found ${result.businesses.length} businesses, ${hotProspects.length} hot prospects`);
+
+        const leads: any[] = [];
+
+        for (const biz of hotProspects) {
+            try {
+                const message = buildOutreachMessage(biz, params.senderName, params.productOrService);
+
+                let outreachSent = false;
+
+                if (params.outreachChannel === 'whatsapp' && biz.phone) {
+                    const phone = biz.phone.replace(/\D/g, '');
+                    const waUrl = `https://wa.me/${phone}?text=${encodeURIComponent(message)}`;
+                    this.log(`WhatsApp outreach queued for ${biz.name} → ${waUrl}`);
+                    outreachSent = true;
+                } else if (params.outreachChannel === 'email' && biz.website) {
+                    const domain = new URL(biz.website).hostname;
+                    const toEmail = `contact@${domain}`;
+                    const emailResult = await sendEmailViaResend({
+                        to: toEmail,
+                        subject: `Quick question about ${biz.name}`,
+                        html: `<div style="font-family:sans-serif;max-width:480px;margin:0 auto;color:#1a1a1a;padding:24px;">
+                          <p style="font-size:15px;line-height:1.6;">${message.replace(/\n/g, '<br/>')}</p>
+                          <p style="color:#888;font-size:12px;margin-top:24px;">Sent via AdRoom AI Sales Agent</p>
+                        </div>`,
+                        text: message,
+                    });
+                    outreachSent = emailResult.ok;
+                    if (!outreachSent) {
+                        this.log(`Email to ${biz.name} failed: ${emailResult.error}`);
+                    }
+                }
+
+                if (outreachSent) {
+                    const { data: lead } = await this.supabase.from('agent_leads').insert({
+                        strategy_id: params.strategyId,
+                        user_id: params.userId,
+                        platform: params.outreachChannel,
+                        platform_username: biz.name,
+                        platform_user_id: biz.phone || biz.place_id,
+                        first_interaction: message,
+                        intent_score: biz.outreach_score ?? 0.5,
+                        intent_signals: [{
+                            source: 'google_maps_discovery',
+                            place_id: biz.place_id,
+                            rating: biz.rating,
+                            total_ratings: biz.total_ratings,
+                            outreach_reason: biz.outreach_reason,
+                        }],
+                        stage: 'identified',
+                        next_followup_at: new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString(),
+                    }).select('id').single();
+
+                    leads.push({ business: biz.name, channel: params.outreachChannel, lead_id: lead?.id });
+                    this.log(`Outreach sent to ${biz.name} (score: ${biz.outreach_score?.toFixed(2)})`);
+                }
+            } catch (err: any) {
+                this.log(`Outreach failed for ${biz.name}: ${err.message}`);
+            }
+        }
+
+        this.log(`Business discovery outreach complete — ${leads.length} leads created`);
+        return { reached: leads.length, leads };
     }
 
     /**

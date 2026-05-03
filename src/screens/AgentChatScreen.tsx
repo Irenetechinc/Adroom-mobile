@@ -1726,6 +1726,8 @@ export default function AgentChatScreen({ navigation, route }: Props) {
       </>
     );
 
+    const isStreaming = isNewAgentMsg && !doneTextIds.has(item.id);
+
     return (
       <Animated.View
         entering={item.sender === 'user' ? FadeInRight.duration(300) : FadeInLeft.duration(300)}
@@ -1740,6 +1742,7 @@ export default function AgentChatScreen({ navigation, route }: Props) {
         <View style={[
           styles.messageBubble,
           item.sender === 'user' ? styles.userBubble : styles.agentBubble,
+          isStreaming && styles.agentBubbleStreaming,
         ]}>
           {item.imageUri ? (
             <Image source={{ uri: item.imageUri }} style={styles.messageImage} resizeMode="cover" />
@@ -2141,6 +2144,9 @@ const styles = StyleSheet.create({
   agentBubble: {
     backgroundColor: '#151B2B', borderWidth: 1, borderColor: '#1E293B',
     borderTopLeftRadius: 4,
+  },
+  agentBubbleStreaming: {
+    minWidth: '62%',
   },
   userBubbleText: { color: '#00F0FF', fontSize: 14, lineHeight: 20 },
   agentBubbleText: { color: '#E2E8F0', fontSize: 14, lineHeight: 20 },

@@ -3023,6 +3023,111 @@ app.post('/api/ai/execute-edit-plan', async (req, res) => {
   }
 });
 
+// ─── Google Maps Business Discovery ─────────────────────────────────────────
+
+/**
+ * POST /api/sales/discover-businesses
+ * Searches nearby businesses via Google Maps Places API, scores outreach
+ * potential from reviews, and returns structured prospects.
+ * Body: { location, keyword?, category?, radius?, maxResults? }
+ */
+app.post('/api/sales/discover-businesses', async (req, res) => {
+  try {
+    const supabase = getSupabaseClient(req as any);
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return res.status(401).json({ error: 'Unauthorized.' });
+
+    const { location, keyword, category, radius, maxResults } = req.body;
+    if (!location) return res.status(400).json({ error: 'location is required.' });
+
+    const { discoverBusinesses } = await import('./services/googleMapsService');
+    const result = await discoverBusinesses({ location, keyword, category, radius, maxResults });
+
+    return res.status(200).json(result);
+  } catch (e: any) {
+    console.error('[BusinessDiscovery] Error:', e.message);
+    return res.status(500).json({ error: e.message });
+  }
+});
+
+/**
+ * POST /api/sales/outreach
+ * Sends personalised outreach to a discovered business via email (Resend)
+ * or records a WhatsApp outreach task for manual/automation follow-up.
+ * Body: { business, channel, senderName, productOrService, userId?, customMessage? }
+ */
+app.post('/api/sales/outreach', async (req, res) => {
+  try {
+    const supabase = getSupabaseClient(req as any);
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return res.status(401).json({ error: 'Unauthorized.' });
+
+    const { business, channel, senderName, productOrService, customMessage } = req.body;
+    if (!business || !channel || !senderName || !productOrService) {
+      return res.status(400).json({ error: 'business, channel, senderName, and productOrService are required.' });
+    }
+
+    const { buildOutreachMessage } = await import('./services/googleMapsService');
+    const message = customMessage || buildOutreachMessage(business, senderName, productOrService);
+
+    if (channel === 'email') {
+      if (!business.website && !business.email) {
+        return res.status(400).json({ error: 'Business has no email or website on record.' });
+      }
+      const toEmail = business.email || `contact@${new URL(business.website!).hostname}`;
+      const result = await (await import('./services/resendEmailService')).sendEmailViaResend({
+        to: toEmail,
+        subject: `Quick question about ${business.name}`,
+        html: `<div style="font-family:sans-serif;max-width:480px;margin:0 auto;color:#1a1a1a;padding:24px;">
+          <p style="font-size:15px;line-height:1.6;">${message.replace(/\n/g, '<br/>')}</p>
+          <p style="color:#888;font-size:12px;margin-top:24px;">Sent via AdRoom AI Sales Agent</p>
+        </div>`,
+        text: message,
+      });
+      if (!result.ok) {
+        return res.status(500).json({ error: result.error || 'Email send failed.' });
+      }
+      await supabase.from('agent_leads').insert({
+        user_id: user.id,
+        platform: 'email',
+        platform_username: business.name,
+        platform_user_id: toEmail,
+        first_interaction: message,
+        intent_score: business.outreach_score || 0.5,
+        intent_signals: [{ source: 'google_maps_discovery', place_id: business.place_id, rating: business.rating }],
+        stage: 'identified',
+        next_followup_at: new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString(),
+      });
+      return res.status(200).json({ success: true, channel: 'email', messageId: result.id });
+    }
+
+    if (channel === 'whatsapp') {
+      const phone = business.phone?.replace(/\D/g, '');
+      if (!phone) {
+        return res.status(400).json({ error: 'Business has no phone number on record for WhatsApp.' });
+      }
+      const waUrl = `https://wa.me/${phone}?text=${encodeURIComponent(message)}`;
+      await supabase.from('agent_leads').insert({
+        user_id: user.id,
+        platform: 'whatsapp',
+        platform_username: business.name,
+        platform_user_id: phone,
+        first_interaction: message,
+        intent_score: business.outreach_score || 0.5,
+        intent_signals: [{ source: 'google_maps_discovery', place_id: business.place_id, rating: business.rating }],
+        stage: 'identified',
+        next_followup_at: new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString(),
+      });
+      return res.status(200).json({ success: true, channel: 'whatsapp', waUrl, message });
+    }
+
+    return res.status(400).json({ error: `Unsupported channel: ${channel}. Use 'email' or 'whatsapp'.` });
+  } catch (e: any) {
+    console.error('[SalesOutreach] Error:', e.message);
+    return res.status(500).json({ error: e.message });
+  }
+});
+
 app.listen(PORT, async () => {
   console.log(`[AdRoom Server] Running on port ${PORT} — ${new Date().toISOString()}`);
   console.log(`[AdRoom Server] AI Engines: GPT-4o (strategy) | Gemini 2.0 Flash (text) | Imagen 3 (creative)`);
