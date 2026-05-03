@@ -12,7 +12,7 @@ import { DrawerActions } from '@react-navigation/native';
 import {
   Zap, AlertTriangle, TrendingUp, Plus, Activity,
   Target, Eye, MousePointer, Menu, RefreshCw, Crown, Bot, Wifi,
-  Trophy, Star, CheckCircle, DollarSign,
+  Trophy, Star, CheckCircle, DollarSign, MapPin, Phone, Mail, Building2,
 } from 'lucide-react-native';
 import { useEnergyStore, PLAN_DETAILS } from '../store/energyStore';
 
@@ -44,6 +44,22 @@ interface GoalCompletion {
   goal: string;
 }
 
+interface GmapsLead {
+  id: string;
+  platform_username: string;
+  platform: 'whatsapp' | 'email';
+  intent_score: number;
+  stage: string;
+  created_at: string;
+  intent_signals: Array<{
+    source: string;
+    place_id?: string;
+    rating?: number;
+    total_ratings?: number;
+    outreach_reason?: string;
+  }>;
+}
+
 export default function DashboardScreen() {
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const { session } = useAuthStore();
@@ -55,16 +71,18 @@ export default function DashboardScreen() {
   const [activeAgentTasks, setActiveAgentTasks] = useState<AgentTask[]>([]);
   const [closedDeals, setClosedDeals] = useState<ClosedDeal[]>([]);
   const [goalCompletions, setGoalCompletions] = useState<GoalCompletion[]>([]);
+  const [gmapsLeads, setGmapsLeads] = useState<GmapsLead[]>([]);
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const agentSubRef = useRef<any>(null);
   const dealsSubRef = useRef<any>(null);
+  const gmapsSubRef = useRef<any>(null);
 
   const fetchData = async () => {
     if (!session?.user) return;
     setLoading(true);
     try {
-      const [strategiesRes, logsRes, tasksRes, dealsRes, completedStratsRes] = await Promise.all([
+      const [strategiesRes, logsRes, tasksRes, dealsRes, completedStratsRes, gmapsRes] = await Promise.all([
         supabase
           .from('strategy_memory')
           .select('*')
@@ -99,11 +117,19 @@ export default function DashboardScreen() {
           .not('agent_type', 'is', null)
           .order('updated_at', { ascending: false })
           .limit(5),
+        supabase
+          .from('agent_leads')
+          .select('id, platform_username, platform, intent_score, stage, created_at, intent_signals')
+          .eq('user_id', session.user.id)
+          .in('platform', ['whatsapp', 'email'])
+          .order('created_at', { ascending: false })
+          .limit(8),
       ]);
 
       setActiveStrategies(strategiesRes.data || []);
       setAlerts(logsRes.data || []);
       setClosedDeals((dealsRes.data as ClosedDeal[]) || []);
+      setGmapsLeads((gmapsRes.data as GmapsLead[]) || []);
 
       const completions: GoalCompletion[] = (completedStratsRes.data || []).map((s: any) => ({
         id: s.id,
@@ -165,6 +191,26 @@ export default function DashboardScreen() {
       .subscribe();
     dealsSubRef.current = dealsChannel;
     return () => { supabase.removeChannel(dealsChannel); };
+  }, [session?.user?.id]);
+
+  // Realtime subscription for Google Maps leads (new business contacts discovered)
+  useEffect(() => {
+    if (!session?.user) return;
+    const gmapsChannel = supabase
+      .channel('gmaps_leads_live')
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'agent_leads',
+          filter: `user_id=eq.${session.user.id}`,
+        },
+        () => { fetchData(); },
+      )
+      .subscribe();
+    gmapsSubRef.current = gmapsChannel;
+    return () => { supabase.removeChannel(gmapsChannel); };
   }, [session?.user?.id]);
 
   useEffect(() => { fetchData(); fetchEnergy(); }, [session]);
@@ -515,6 +561,93 @@ export default function DashboardScreen() {
           </Animated.View>
         )}
 
+        {/* GMaps Leads Section */}
+        {gmapsLeads.length > 0 && (
+          <Animated.View entering={FadeInDown.delay(325).springify()} style={styles.section}>
+            <View style={styles.sectionHeader}>
+              <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                <MapPin size={18} color="#00D9A5" />
+                <Text style={styles.sectionTitle}>Local Business Leads</Text>
+              </View>
+              <View style={styles.gmapsBadge}>
+                <Text style={styles.gmapsBadgeText}>{gmapsLeads.length}</Text>
+              </View>
+            </View>
+
+            <View style={styles.gmapsCard}>
+              <View style={styles.gmapsHeader}>
+                <Building2 size={12} color="#00D9A5" />
+                <Text style={styles.gmapsHeaderLabel}>DISCOVERED VIA GOOGLE MAPS</Text>
+                <View style={styles.gmapsLiveDot} />
+                <Text style={styles.gmapsLiveText}>AUTO</Text>
+              </View>
+
+              {gmapsLeads.map((lead, i) => {
+                const sig = (lead.intent_signals || []).find(s => s.source === 'google_maps_discovery') || {};
+                const score = Math.round((lead.intent_score ?? 0) * 100);
+                const scoreColor = score >= 75 ? '#10B981' : score >= 55 ? '#F59E0B' : '#64748B';
+                const stageColors: Record<string, string> = {
+                  identified: '#64748B', contacted: '#00F0FF',
+                  warm: '#F59E0B', closed: '#10B981',
+                };
+                const stageColor = stageColors[lead.stage] || '#64748B';
+                const timeAgo = (() => {
+                  const diff = Date.now() - new Date(lead.created_at).getTime();
+                  const mins = Math.floor(diff / 60000);
+                  if (mins < 60) return `${mins}m ago`;
+                  const hrs = Math.floor(mins / 60);
+                  if (hrs < 24) return `${hrs}h ago`;
+                  return `${Math.floor(hrs / 24)}d ago`;
+                })();
+
+                return (
+                  <View
+                    key={lead.id}
+                    style={[styles.gmapsRow, i < gmapsLeads.length - 1 && styles.gmapsRowBorder]}
+                  >
+                    <View style={styles.gmapsIconWrap}>
+                      {lead.platform === 'whatsapp'
+                        ? <Phone size={13} color="#25D366" />
+                        : <Mail size={13} color="#00F0FF" />
+                      }
+                    </View>
+
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.gmapsBizName} numberOfLines={1}>{lead.platform_username}</Text>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 2 }}>
+                        {sig.rating != null && (
+                          <Text style={styles.gmapsMeta}>★ {sig.rating}</Text>
+                        )}
+                        {sig.total_ratings != null && (
+                          <Text style={styles.gmapsMeta}>· {sig.total_ratings} reviews</Text>
+                        )}
+                      </View>
+                      {sig.outreach_reason ? (
+                        <Text style={styles.gmapsReason} numberOfLines={1}>{sig.outreach_reason}</Text>
+                      ) : null}
+                    </View>
+
+                    <View style={{ alignItems: 'flex-end', gap: 4 }}>
+                      {/* Score bar */}
+                      <View style={styles.gmapsScoreWrap}>
+                        <View style={[styles.gmapsScoreBar, { width: `${score}%` as any, backgroundColor: scoreColor }]} />
+                        <Text style={[styles.gmapsScoreText, { color: scoreColor }]}>{score}%</Text>
+                      </View>
+                      {/* Stage badge */}
+                      <View style={[styles.gmapsStageBadge, { backgroundColor: `${stageColor}18` }]}>
+                        <Text style={[styles.gmapsStageText, { color: stageColor }]}>
+                          {lead.stage?.toUpperCase()}
+                        </Text>
+                      </View>
+                      <Text style={styles.gmapsTime}>{timeAgo}</Text>
+                    </View>
+                  </View>
+                );
+              })}
+            </View>
+          </Animated.View>
+        )}
+
         {/* Intelligence Feed */}
         <Animated.View entering={FadeInDown.delay(340).springify()} style={styles.section}>
           <View style={styles.sectionHeader}>
@@ -715,4 +848,53 @@ const styles = StyleSheet.create({
   dealMeta: { color: '#64748B', fontSize: 11, marginTop: 1, textTransform: 'capitalize' },
   dealValue: { color: '#10B981', fontWeight: '800', fontSize: 13 },
   dealTime: { color: '#475569', fontSize: 10, marginTop: 1 },
+
+  // ─── GMaps Leads ─────────────────────────────────────────────────────────────
+  gmapsBadge: {
+    backgroundColor: 'rgba(0,217,165,0.12)',
+    paddingHorizontal: 10, paddingVertical: 3, borderRadius: 20,
+  },
+  gmapsBadgeText: { color: '#00D9A5', fontWeight: '700', fontSize: 13 },
+  gmapsCard: {
+    backgroundColor: '#151B2B', borderRadius: 16,
+    borderWidth: 1, borderColor: 'rgba(0,217,165,0.2)', overflow: 'hidden',
+  },
+  gmapsHeader: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    paddingHorizontal: 14, paddingTop: 12, paddingBottom: 8,
+    borderBottomWidth: 1, borderBottomColor: 'rgba(0,217,165,0.1)',
+  },
+  gmapsHeaderLabel: {
+    flex: 1, color: '#00D9A5', fontWeight: '700', fontSize: 11,
+    textTransform: 'uppercase', letterSpacing: 0.8,
+  },
+  gmapsLiveDot: { width: 7, height: 7, borderRadius: 4, backgroundColor: '#00D9A5' },
+  gmapsLiveText: { color: '#00D9A5', fontSize: 10, fontWeight: '800', letterSpacing: 1 },
+  gmapsRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 10,
+    paddingHorizontal: 14, paddingVertical: 12,
+  },
+  gmapsRowBorder: { borderBottomWidth: 1, borderBottomColor: '#1E293B' },
+  gmapsIconWrap: {
+    width: 32, height: 32, borderRadius: 9,
+    backgroundColor: 'rgba(0,217,165,0.1)',
+    alignItems: 'center', justifyContent: 'center',
+  },
+  gmapsBizName: { color: '#E2E8F0', fontWeight: '700', fontSize: 13 },
+  gmapsMeta: { color: '#64748B', fontSize: 11 },
+  gmapsReason: { color: '#475569', fontSize: 10, marginTop: 2, fontStyle: 'italic' },
+  gmapsScoreWrap: {
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    width: 72, height: 16,
+    backgroundColor: '#1E293B', borderRadius: 4, overflow: 'hidden',
+    position: 'relative',
+  },
+  gmapsScoreBar: {
+    position: 'absolute', left: 0, top: 0, bottom: 0,
+    borderRadius: 4, opacity: 0.35,
+  },
+  gmapsScoreText: { fontSize: 10, fontWeight: '700', width: '100%', textAlign: 'center', zIndex: 1 },
+  gmapsStageBadge: { paddingHorizontal: 7, paddingVertical: 2, borderRadius: 20 },
+  gmapsStageText: { fontSize: 9, fontWeight: '800', letterSpacing: 0.5 },
+  gmapsTime: { color: '#334155', fontSize: 10 },
 });
