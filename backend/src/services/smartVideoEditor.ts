@@ -121,7 +121,7 @@ Rules:
       estimatedDuration: plan.estimatedDuration || 30,
       platformOptimizations: plan.platformOptimizations || [],
       status: 'plan_ready',
-      message: `Edit plan ready for ${request.platform}. Your AI agent will apply this plan when executing the campaign.`,
+      message: `Edit plan ready for ${request.platform}. AdRoom AI will apply this plan when executing the campaign.`,
     };
   }
 
