@@ -2377,12 +2377,38 @@ app.post('/api/push/register', async (req, res) => {
     const now = new Date().toISOString();
 
     // Per-device dedupe: replace whatever this user previously had on this
-    // physical device. Other users on the same device keep their own rows
-    // because the unique key is (user_id, device_id).
-    const { error: upsertErr } = await svc
+    // physical device. We use a manual select-then-update/insert instead of
+    // upsert({onConflict}) because the unique index on (user_id, device_id)
+    // is a PARTIAL index (WHERE device_id IS NOT NULL) and PostgreSQL requires
+    // the WHERE clause to be echoed in ON CONFLICT inference — which the
+    // Supabase JS SDK does not support. The select-first approach is
+    // functionally identical and avoids the constraint-matching error.
+    const { data: existingRow } = await svc
       .from('device_push_tokens')
-      .upsert(
-        {
+      .select('id')
+      .eq('user_id', user.id)
+      .eq('device_id', device_id)
+      .maybeSingle();
+
+    let upsertErr: any = null;
+    if (existingRow) {
+      const { error } = await svc
+        .from('device_push_tokens')
+        .update({
+          token,
+          platform: platform || 'unknown',
+          app_version: app_version || null,
+          is_active: true,
+          last_seen_at: now,
+          updated_at: now,
+        })
+        .eq('user_id', user.id)
+        .eq('device_id', device_id);
+      upsertErr = error;
+    } else {
+      const { error } = await svc
+        .from('device_push_tokens')
+        .insert({
           user_id: user.id,
           device_id,
           token,
@@ -2391,12 +2417,12 @@ app.post('/api/push/register', async (req, res) => {
           is_active: true,
           last_seen_at: now,
           updated_at: now,
-        },
-        { onConflict: 'user_id,device_id' },
-      );
+        });
+      upsertErr = error;
+    }
 
     if (upsertErr) {
-      console.error('[PushRegister] Upsert failed:', upsertErr.message);
+      console.error('[PushRegister] Token save failed:', upsertErr.message);
       return res.status(500).json({ error: upsertErr.message });
     }
 
@@ -3128,11 +3154,65 @@ app.post('/api/sales/outreach', async (req, res) => {
   }
 });
 
+/**
+ * Ensures required Supabase Storage buckets exist at server startup.
+ * Runs once on boot — safe to call multiple times (idempotent).
+ *
+ * Root cause for [VideoUpload] / [Creative:Imagen] "Bucket not found":
+ * The `creative-assets` bucket was never created via migration or dashboard.
+ * This function auto-creates it so uploads work without manual Supabase
+ * dashboard intervention on every new deployment / environment.
+ */
+async function ensureStorageBuckets(): Promise<void> {
+  const REQUIRED_BUCKETS = [
+    { name: 'creative-assets', public: true },
+  ];
+
+  try {
+    const svc = getServiceSupabaseClient();
+    const { data: existing, error: listErr } = await svc.storage.listBuckets();
+    if (listErr) {
+      console.warn('[Storage] Could not list buckets (non-fatal):', listErr.message);
+      return;
+    }
+
+    const existingNames = new Set((existing || []).map((b: any) => b.name));
+
+    for (const bucket of REQUIRED_BUCKETS) {
+      if (existingNames.has(bucket.name)) {
+        console.log(`[Storage] Bucket "${bucket.name}" already exists ✓`);
+        continue;
+      }
+      const { error: createErr } = await svc.storage.createBucket(bucket.name, {
+        public: bucket.public,
+        allowedMimeTypes: undefined, // allow all types
+        fileSizeLimit: undefined,    // no server-side limit (rely on multer)
+      });
+      if (createErr) {
+        // "already exists" is not a real error — race condition on first boot
+        if (createErr.message?.toLowerCase().includes('already exists')) {
+          console.log(`[Storage] Bucket "${bucket.name}" already exists (race) ✓`);
+        } else {
+          console.error(`[Storage] Failed to create bucket "${bucket.name}":`, createErr.message);
+        }
+      } else {
+        console.log(`[Storage] Created bucket "${bucket.name}" (public=${bucket.public}) ✓`);
+      }
+    }
+  } catch (e: any) {
+    console.warn('[Storage] Bucket ensure failed (non-fatal):', e.message);
+  }
+}
+
 app.listen(PORT, async () => {
   console.log(`[AdRoom Server] Running on port ${PORT} — ${new Date().toISOString()}`);
   console.log(`[AdRoom Server] AI Engines: GPT-4o (strategy) | Gemini 2.0 Flash (text) | Imagen 3 (creative)`);
   console.log(`[AdRoom Server] Agents: SALESMAN | AWARENESS | PROMOTION | LAUNCH`);
   console.log(`[AdRoom Server] Features: Autonomous Execution | Lead Capture | Performance Monitoring | Self-Optimization`);
+
+  // Ensure required Supabase Storage buckets exist (fixes "Bucket not found" on
+  // fresh deployments where the bucket was never manually created).
+  await ensureStorageBuckets();
 
   // Restore CMA persisted state (economy override etc) before starting loops
   try {
