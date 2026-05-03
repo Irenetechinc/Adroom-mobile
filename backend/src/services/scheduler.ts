@@ -35,6 +35,7 @@ const SCHED_AGENT_SPECIAL_CRON= process.env.SCHED_AGENT_SPECIAL_CRON|| '*/10 * *
 const SCHED_AGENT_MONITOR_CRON= process.env.SCHED_AGENT_MONITOR_CRON|| '0 * * * *';     // Fetch platform metrics hourly
 const SCHED_AGENT_OPTIM_CRON  = process.env.SCHED_AGENT_OPTIM_CRON  || '0 */2 * * *';   // Self-optimize every 2 hours
 const SCHED_LEAD_FOLLOWUP_CRON= process.env.SCHED_LEAD_FOLLOWUP_CRON|| '*/30 * * * *';  // SALESMAN lead follow-ups every 30 min
+const SCHED_GMAPS_CRON        = process.env.SCHED_GMAPS_CRON        || '0 */6 * * *';   // Google Maps business outreach every 6 hours
 
 const SCHED_RADAR_CRON        = process.env.SCHED_RADAR_CRON        || '0 */4 * * *';   // Radar scan every 4 hours
 const SCHED_DAILY_SUMMARY_CRON= process.env.SCHED_DAILY_SUMMARY_CRON|| '0 8 * * *';     // Daily summary at 8am UTC
@@ -182,6 +183,17 @@ export class SchedulerService {
             }
         });
 
+        // Google Maps business discovery + outreach — every 6 hours for all active strategies.
+        // Runs for ALL agent types (SALESMAN / AWARENESS / PROMOTION / LAUNCH) because
+        // every strategy goal — product, brand, or service — benefits from local client discovery.
+        cron.schedule(SCHED_GMAPS_CRON, async () => {
+            try {
+                await this.runGoogleMapsOutreach();
+            } catch (e: any) {
+                console.error('[Scheduler] Google Maps outreach error:', e.message);
+            }
+        });
+
         // CMA self-monitor — every 10 minutes: analyses real-time burn rate
         // and dynamically adjusts economy routing thresholds
         cron.schedule('*/10 * * * *', async () => {
@@ -241,10 +253,11 @@ export class SchedulerService {
         console.log('[Scheduler] ✓ All loops started:');
         console.log('[Scheduler]   Intelligence: IPE, Social, Emotional, GEO — every 15 min');
         console.log('[Scheduler]   Agent Execution: Content posts — every 5 min');
-        console.log('[Scheduler]   Special Tasks: Lead scans, DMs — every 10 min');
+        console.log('[Scheduler]   Special Tasks: Lead scans, DMs, GMAPS outreach — every 10 min');
         console.log('[Scheduler]   Performance: Platform metrics — hourly');
         console.log('[Scheduler]   Optimization: Self-adjustment — every 2 hours');
         console.log('[Scheduler]   Lead Follow-up: Salesman DMs — every 30 min');
+        console.log('[Scheduler]   Google Maps Outreach: All strategy types — every 6 hours');
     }
 
     private async runEmotionalCycle() {
@@ -312,6 +325,86 @@ export class SchedulerService {
             } catch (e: any) {
                 console.error(`[Scheduler] Lead follow-up error for ${strategy.id}:`, e.message);
             }
+        }
+    }
+
+    /**
+     * GOOGLE MAPS OUTREACH:
+     * Runs every 6 hours for ALL active strategies regardless of agent type.
+     * Every strategy goal — product, brand, or service — benefits from local
+     * business discovery. Finds pending GMAPS_OUTREACH tasks that are due and
+     * also triggers on-demand outreach for strategies that may have missed a cycle.
+     */
+    private async runGoogleMapsOutreach() {
+        const supabase = getServiceSupabaseClient();
+
+        // Get all active strategies across all agent types
+        const { data: strategies } = await supabase
+            .from('strategies')
+            .select('id, user_id, agent_type, current_execution_plan')
+            .eq('is_active', true);
+
+        if (!strategies?.length) {
+            console.log('[Scheduler] GMaps outreach: no active strategies');
+            return;
+        }
+
+        const { SalesmanAgent } = await import('../agents/salesmanAgent');
+        let totalReached = 0;
+
+        for (const strategy of strategies) {
+            try {
+                // Check if there are overdue GMAPS_OUTREACH tasks for this strategy
+                const now = new Date().toISOString();
+                const { data: overdueTasks } = await supabase
+                    .from('agent_tasks')
+                    .select('*')
+                    .eq('strategy_id', strategy.id)
+                    .eq('task_type', 'GMAPS_OUTREACH')
+                    .eq('status', 'pending')
+                    .lte('scheduled_at', now)
+                    .limit(3);
+
+                if (!overdueTasks?.length) continue;
+
+                const agent = new SalesmanAgent(supabase);
+
+                for (const task of overdueTasks) {
+                    try {
+                        await supabase.from('agent_tasks').update({ status: 'executing' }).eq('id', task.id);
+                        const c = task.content || {};
+                        const result = await agent.discoverAndOutreachLocalBusinesses({
+                            userId: task.user_id,
+                            strategyId: task.strategy_id,
+                            location: c.location || '',
+                            targetCategory: c.keyword || 'local business',
+                            outreachChannel: c.outreach_channel || 'whatsapp',
+                            senderName: c.sender_name || 'the team',
+                            productOrService: c.product_or_service || c.keyword || 'our service',
+                            maxTargets: 10,
+                        });
+                        await supabase.from('agent_tasks').update({
+                            status: 'done',
+                            executed_at: now,
+                            result: { gmaps_reached: result.reached, leads: result.leads },
+                        }).eq('id', task.id);
+                        totalReached += result.reached;
+                        console.log(`[Scheduler] GMaps outreach task ${task.id} (${strategy.agent_type}) — ${result.reached} businesses reached`);
+                    } catch (taskErr: any) {
+                        await supabase.from('agent_tasks').update({
+                            status: 'failed',
+                            error_message: taskErr.message,
+                        }).eq('id', task.id);
+                        console.error(`[Scheduler] GMaps task ${task.id} failed:`, taskErr.message);
+                    }
+                }
+            } catch (e: any) {
+                console.error(`[Scheduler] GMaps outreach error for strategy ${strategy.id}:`, e.message);
+            }
+        }
+
+        if (totalReached > 0) {
+            console.log(`[Scheduler] GMaps outreach cycle complete — ${totalReached} total businesses reached across all strategies`);
         }
     }
 }

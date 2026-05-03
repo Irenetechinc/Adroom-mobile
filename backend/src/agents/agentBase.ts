@@ -942,4 +942,96 @@ Return JSON:
         const { data } = await this.supabase.from('product_memory').select('*').eq('product_id', productId).single();
         return data;
     }
+
+    /**
+     * GOOGLE MAPS OUTREACH SCHEDULING:
+     * Called by every agent's plan() after scheduling social content tasks.
+     * Schedules GMAPS_OUTREACH tasks at Day 1, 7, 14, 21... so the agent
+     * automatically discovers and contacts local businesses throughout the
+     * campaign — regardless of strategy type (product / brand / service).
+     *
+     * Location priority: product.delivery_address → product.location →
+     * product.address → product.city → strategy.target_location → (skip)
+     */
+    async scheduleGoogleMapsOutreachTasks(params: {
+        strategyId: string;
+        userId: string;
+        product: any;
+        strategy: any;
+        agentType: 'SALESMAN' | 'AWARENESS' | 'PROMOTION' | 'LAUNCH';
+        durationDays: number;
+    }): Promise<number> {
+        const p = params.product || {};
+        const s = params.strategy || {};
+
+        // Resolve best available location
+        const location: string =
+            p.delivery_address ||
+            p.location ||
+            p.address ||
+            p.city ||
+            s.target_location ||
+            s.location ||
+            (s.estimated_outcomes?.target_market) ||
+            '';
+
+        if (!location || location.trim().length < 3) {
+            this.log(`scheduleGoogleMapsOutreachTasks: no location found — skipping for strategy ${params.strategyId}`);
+            return 0;
+        }
+
+        // Resolve search keyword from product category / goal type
+        const keyword: string =
+            p.category ||
+            p.product_type ||
+            p.service_type ||
+            p.niche ||
+            s.goal ||
+            'local business';
+
+        // Sender identity
+        const senderName: string = p.contact_name || p.brand_name || p.product_name || 'the team';
+        const productOrService: string = p.product_name || p.service_name || p.brand_name || keyword;
+
+        // Outreach channel — prefer whatsapp; fall back to email
+        const outreachChannel: 'whatsapp' | 'email' = 'whatsapp';
+
+        // Schedule at Day 1 then every 7 days throughout campaign
+        const intervals: number[] = [1];
+        for (let d = 7; d <= params.durationDays; d += 7) intervals.push(d);
+
+        const now = new Date();
+        const tasks = intervals.map(day => {
+            const scheduledAt = new Date(now);
+            scheduledAt.setDate(scheduledAt.getDate() + (day - 1));
+            scheduledAt.setHours(8, 30, 0, 0); // 08:30 — before business hours start
+
+            return {
+                strategy_id: params.strategyId,
+                user_id: params.userId,
+                agent_type: params.agentType,
+                task_type: 'GMAPS_OUTREACH',
+                platform: 'gmaps',
+                scheduled_at: scheduledAt.toISOString(),
+                status: 'pending',
+                content: {
+                    location,
+                    keyword,
+                    sender_name: senderName,
+                    product_or_service: productOrService,
+                    outreach_channel: outreachChannel,
+                    campaign_day: day,
+                }
+            };
+        });
+
+        const { error } = await this.supabase.from('agent_tasks').insert(tasks);
+        if (error) {
+            this.log(`GMAPS task scheduling error: ${error.message}`);
+            return 0;
+        }
+
+        this.log(`Scheduled ${tasks.length} GMAPS_OUTREACH tasks for location "${location}" (${keyword}) across ${params.durationDays}-day campaign`);
+        return tasks.length;
+    }
 }

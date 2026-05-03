@@ -150,6 +150,21 @@ Return JSON:
                 total_tasks: tasks.length
             }
         }).eq('id', params.strategyId);
+
+        // Schedule Google Maps business discovery as part of the launch goal —
+        // outreaches to local businesses to spread the launch narrative and find early adopters,
+        // regardless of whether the strategy is for a product, brand, or service.
+        const gmapsTasks = await this.scheduleGoogleMapsOutreachTasks({
+            strategyId: params.strategyId,
+            userId: params.userId,
+            product: params.product,
+            strategy: params.strategy,
+            agentType: 'LAUNCH',
+            durationDays: params.durationDays,
+        });
+        if (gmapsTasks > 0) {
+            this.log(`LAUNCH: scheduled ${gmapsTasks} Google Maps outreach tasks to amplify launch hype locally`);
+        }
     }
 
     /**

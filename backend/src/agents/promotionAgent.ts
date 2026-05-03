@@ -124,6 +124,21 @@ Return JSON:
                 total_tasks: tasks.length
             }
         }).eq('id', params.strategyId);
+
+        // Schedule Google Maps business discovery as part of the promotion goal —
+        // finds local businesses that could be reached with the offer / promo,
+        // regardless of whether the strategy is for a product, brand, or service.
+        const gmapsTasks = await this.scheduleGoogleMapsOutreachTasks({
+            strategyId: params.strategyId,
+            userId: params.userId,
+            product: params.product,
+            strategy: params.strategy,
+            agentType: 'PROMOTION',
+            durationDays: params.durationDays,
+        });
+        if (gmapsTasks > 0) {
+            this.log(`PROMOTION: scheduled ${gmapsTasks} Google Maps outreach tasks to amplify offer reach`);
+        }
     }
 
     /**

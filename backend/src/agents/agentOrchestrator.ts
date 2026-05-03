@@ -139,8 +139,9 @@ export class AgentOrchestrator {
             .select('id, agent_type, strategy_id, user_id, task_type, platform')
             .eq('status', 'pending')
             .lte('scheduled_at', now)
-            .neq('task_type', 'LEAD_SCAN')  // Lead scans handled separately
+            .neq('task_type', 'LEAD_SCAN')       // Lead scans handled separately
             .neq('task_type', 'PERFORMANCE_CHECK')
+            .neq('task_type', 'GMAPS_OUTREACH')  // Google Maps outreach handled by executeSpecialTasks
             .order('scheduled_at', { ascending: true })
             .limit(20); // Process max 20 tasks per cycle
 
@@ -205,7 +206,7 @@ export class AgentOrchestrator {
             .from('agent_tasks')
             .select('*')
             .eq('status', 'pending')
-            .in('task_type', ['LEAD_SCAN', 'PERFORMANCE_CHECK'])
+            .in('task_type', ['LEAD_SCAN', 'PERFORMANCE_CHECK', 'GMAPS_OUTREACH'])
             .lte('scheduled_at', now)
             .limit(10);
 
@@ -224,6 +225,24 @@ export class AgentOrchestrator {
                         tokens
                     });
                     await agent.followUpLeads(task.user_id);
+                }
+
+                // GMAPS_OUTREACH is owned by SalesmanAgent regardless of which agent
+                // scheduled it (AWARENESS, PROMOTION, LAUNCH all use the same outreach engine).
+                if (task.task_type === 'GMAPS_OUTREACH') {
+                    const salesAgent = new SalesmanAgent(this.supabase);
+                    const c = task.content || {};
+                    const result = await salesAgent.discoverAndOutreachLocalBusinesses({
+                        userId: task.user_id,
+                        strategyId: task.strategy_id,
+                        location: c.location || '',
+                        targetCategory: c.keyword || 'local business',
+                        outreachChannel: c.outreach_channel || 'whatsapp',
+                        senderName: c.sender_name || 'the team',
+                        productOrService: c.product_or_service || c.keyword || 'our service',
+                        maxTargets: 10,
+                    });
+                    console.log(`[Orchestrator] GMAPS_OUTREACH task ${task.id} — ${result.reached} businesses reached (strategy: ${task.strategy_id})`);
                 }
 
                 await this.supabase.from('agent_tasks').update({
