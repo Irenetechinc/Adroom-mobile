@@ -7,6 +7,7 @@ import * as path from 'path';
 import * as os from 'os';
 import * as https from 'https';
 import * as http from 'http';
+import type { VisualDirection } from '../agents/directorAgent';
 
 const execAsync = promisify(exec);
 
@@ -20,30 +21,40 @@ export class CreativeService {
     }
 
     /**
-     * Generates a professional product image using Google Imagen 3 (Nano Banana).
-     * Falls back to returning the original base image URI if generation fails.
+     * Generates a professional product image using Google Imagen 3.
+     * Director's visual direction shapes the image generation prompt.
      */
-    async generateProfessionalImage(baseImageUri: string, productDetails: any): Promise<string> {
+    async generateProfessionalImage(baseImageUri: string, productDetails: any, direction?: VisualDirection): Promise<string> {
         console.log(`[Creative:Imagen] Generating professional image for: ${productDetails.name}`);
 
         try {
-            // 1. Build an optimal image generation prompt via GPT-4o
+            const directorPrefix = direction?.image_generation_prefix
+                ? `${direction.image_generation_prefix}, `
+                : '';
+            const moodHint = direction?.visual_mood ? `, ${direction.visual_mood} aesthetic` : '';
+            const colorHint = direction?.color_palette
+                ? `, color palette: ${direction.color_palette.primary} and ${direction.color_palette.secondary}`
+                : '';
+
             const promptResult = await this.ai.generateStrategy({}, `
-                Create a short, vivid image generation prompt (max 200 characters) for Google Imagen.
-                The image should be a professional commercial photograph for this product:
-                NAME: ${productDetails.name}
-                DESCRIPTION: ${productDetails.description || ''}
-                CATEGORY: ${productDetails.category || ''}
+                Create a short, vivid image generation prompt (max 220 characters) for Google Imagen.
+                The image must follow this DIRECTOR's visual direction: ${directorPrefix}
+                Product: ${productDetails.name}
+                Description: ${productDetails.description || ''}
+                Category: ${productDetails.category || ''}
+                Visual mood: ${direction?.visual_mood || 'professional commercial'}
+                Lighting: ${direction?.lighting || 'studio'}
+                Composition: ${direction?.composition_style || 'product-hero'}
+                Trust elements to include: ${JSON.stringify(direction?.trust_elements || [])}
+                Elements to AVOID: ${JSON.stringify(direction?.avoid_elements || [])}
                 
-                Include: lighting style, background, composition.
                 Output JSON: { "prompt": "..." }
             `);
             const imagePrompt = promptResult.parsedJson?.prompt ||
-                `Professional studio photography of ${productDetails.name}, clean background, commercial lighting, high resolution`;
+                `${directorPrefix}Professional studio photography of ${productDetails.name}, clean background, commercial lighting${moodHint}${colorHint}`;
 
-            // 2. Generate image with Google Imagen 3 (Nano Banana)
             const imageResult = await this.ai.generateImage(
-                `Professional commercial advertisement image: ${imagePrompt}. Photorealistic, high-fidelity, 8K.`
+                `Professional commercial advertisement: ${imagePrompt}. Photorealistic, high-fidelity, 8K.`
             );
 
             if (!imageResult) {
@@ -51,7 +62,6 @@ export class CreativeService {
                 return baseImageUri;
             }
 
-            // 3. Upload to Supabase Storage and return public URL
             const fileName = `creative_${Date.now()}.${imageResult.mimeType.split('/')[1] || 'png'}`;
             const buffer = Buffer.from(imageResult.base64, 'base64');
             const { error: uploadError } = await this.supabase.storage
@@ -77,22 +87,38 @@ export class CreativeService {
 
     /**
      * Generates a video storyboard using AI-generated scene images (Google Imagen 3).
+     * Director's visual direction shapes every scene image prompt.
+     * Psychologist insights shape the script's emotional arc.
      */
-    async generateVideoAsset(productDetails: any, platform: string): Promise<any> {
+    async generateVideoAsset(productDetails: any, platform: string, direction?: VisualDirection, psychProfile?: any): Promise<any> {
         console.log(`[Creative:Video] Generating video asset for: ${platform}`);
 
         try {
+            const directorScriptNote = direction?.video_style_guide
+                ? `\nDIRECTOR'S VIDEO STYLE: ${direction.video_style_guide}`
+                : '';
+            const psychNote = psychProfile?.emotional_triggers?.primary
+                ? `\nPSYCHOLOGIST INSIGHT — Primary emotional driver for this audience: "${psychProfile.emotional_triggers.primary}". Emotional arc: ${psychProfile.emotional_triggers.emotional_arc || ''}. Trust signals to include: ${JSON.stringify(psychProfile.trust_signals || []).slice(0, 150)}. Rejection signals to avoid: ${JSON.stringify(psychProfile.rejection_signals || []).slice(0, 150)}.`
+                : '';
+            const platformAdaptation = direction?.platform_adaptations?.[platform.toLowerCase()]
+                ? `\nPLATFORM-SPECIFIC DIRECTION for ${platform}: ${direction.platform_adaptations[platform.toLowerCase()]}`
+                : '';
+
             const scriptResult = await this.ai.generateStrategy({}, `
                 Create a high-performing organic video ad script for ${platform}.
                 PRODUCT: ${productDetails.name}
                 DESCRIPTION: ${productDetails.description}
-                GOAL: Hook in first 3 seconds, explain value, strong CTA.
+                GOAL: Hook in first 3 seconds, build trust, strong CTA.
+                EMOTIONAL TONE: ${direction?.emotional_tone || 'confident'}
+                ${directorScriptNote}
+                ${psychNote}
+                ${platformAdaptation}
                 
                 OUTPUT JSON:
                 {
-                    "hook": "string",
+                    "hook": "string (first 3 seconds — must exploit primary emotional trigger)",
                     "scenes": [
-                        { "visual_description": "string (≤100 chars for image gen)", "text_overlay": "string", "duration": number }
+                        { "visual_description": "string (≤120 chars for image gen, use Director's style)", "text_overlay": "string", "duration": number }
                     ],
                     "music_vibe": "string",
                     "cta": "string"
@@ -101,11 +127,16 @@ export class CreativeService {
             const script = scriptResult.parsedJson;
             if (!script || !script.scenes) throw new Error('Failed to generate video script.');
 
-            // Generate images for each scene via Google Imagen 3
-            const sceneAssets = await Promise.all(script.scenes.map(async (scene: any) => {
-                const imgResult = await this.ai.generateImage(
-                    `Commercial video frame for ${platform}: ${scene.visual_description}. Cinematic, 4K.`
-                );
+            const directorPrefix = direction?.image_generation_prefix || '';
+            const moodSuffix = direction?.visual_mood ? `, ${direction.visual_mood}` : '';
+            const lightingSuffix = direction?.lighting ? `, ${direction.lighting}` : '';
+
+            const sceneAssets = await Promise.all(script.scenes.map(async (scene: any, i: number) => {
+                const scenePrompt = directorPrefix
+                    ? `${directorPrefix}, ${scene.visual_description}${moodSuffix}${lightingSuffix}. Commercial quality, 4K.`
+                    : `Commercial video frame for ${platform}: ${scene.visual_description}. Cinematic, 4K.`;
+
+                const imgResult = await this.ai.generateImage(scenePrompt);
                 let imageUrl: string | null = null;
                 if (imgResult) {
                     const fileName = `scene_${Date.now()}_${Math.random().toString(36).substr(2, 5)}.${imgResult.mimeType.split('/')[1] || 'png'}`;
@@ -120,7 +151,7 @@ export class CreativeService {
                         imageUrl = `data:${imgResult.mimeType};base64,${imgResult.base64}`;
                     }
                 }
-                return { ...scene, image_url: imageUrl };
+                return { ...scene, image_url: imageUrl, scene_index: i };
             }));
 
             return {
@@ -129,6 +160,7 @@ export class CreativeService {
                 music_vibe: script.music_vibe,
                 cta: script.cta,
                 scenes: sceneAssets,
+                direction_used: direction ? { mood: direction.visual_mood, tone: direction.emotional_tone, fingerprint: direction.unique_fingerprint } : null,
                 generated_at: new Date().toISOString(),
             };
         } catch (e: any) {
@@ -140,7 +172,6 @@ export class CreativeService {
     /**
      * Composes an actual MP4 video file from a storyboard's scene images using ffmpeg.
      * Creates a vertical (9:16 / 1080x1920) slideshow — ideal for TikTok.
-     * Returns a public Supabase Storage URL for the composed video, or null on failure.
      */
     async composeVideoFromStoryboard(storyboard: any, platform: string): Promise<string | null> {
         console.log(`[Creative:Compose] Composing MP4 from storyboard for ${platform}`);
@@ -174,10 +205,8 @@ export class CreativeService {
 
             const outputPath = path.join(tmpDir, 'output.mp4');
 
-            // Build ffmpeg input flags: each image looped for its scene duration
             const inputArgs = scenes.map(s => `-loop 1 -t ${s.duration} -i "${s.file}"`).join(' ');
 
-            // Scale each scene to 1080x1920 (vertical 9:16) with letterbox/pillarbox padding
             const scaleFilters = scenes
                 .map((_, i) =>
                     `[${i}:v]scale=1080:1920:force_original_aspect_ratio=decrease,` +
@@ -199,7 +228,6 @@ export class CreativeService {
             console.log(`[Creative:Compose] Running ffmpeg for ${scenes.length} scenes...`);
             await execAsync(ffmpegCmd, { maxBuffer: 100 * 1024 * 1024 });
 
-            // Upload composed MP4 to Supabase Storage
             const fileName = `tiktok_auto_${Date.now()}_${Math.random().toString(36).substr(2, 6)}.mp4`;
             const videoBuffer = await fs.promises.readFile(outputPath);
 
@@ -225,13 +253,21 @@ export class CreativeService {
     }
 
     /**
-     * Full pipeline: generate storyboard from product details → compose MP4 → return URL.
-     * Used by agents when no user-supplied video is available for a TikTok task.
+     * Full pipeline: generate Director+Psychologist-informed storyboard → compose MP4 → return URL.
+     * Director's visual direction shapes EVERY image in the video for a unique per-user look.
+     * Checks subscription tier before generation.
      */
-    async generateTikTokVideo(productDetails: any): Promise<string | null> {
+    async generateTikTokVideo(
+        productDetails: any,
+        direction?: VisualDirection,
+        psychProfile?: any
+    ): Promise<string | null> {
         try {
-            console.log(`[Creative:TikTok] Starting full video generation for: ${productDetails.name}`);
-            const storyboard = await this.generateVideoAsset(productDetails, 'tiktok');
+            console.log(`[Creative:TikTok] Starting Director-informed video generation for: ${productDetails.name}`);
+            if (direction) {
+                console.log(`[Creative:TikTok] Director direction: mood="${direction.visual_mood}" | tone="${direction.emotional_tone}" | fingerprint=${direction.unique_fingerprint}`);
+            }
+            const storyboard = await this.generateVideoAsset(productDetails, 'tiktok', direction, psychProfile);
             if (!storyboard) {
                 console.warn('[Creative:TikTok] Storyboard generation returned null');
                 return null;

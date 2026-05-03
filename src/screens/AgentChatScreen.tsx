@@ -564,7 +564,64 @@ const PaidEquivalentValue = ({ strategy }: { strategy: any }) => {
   );
 };
 
-const StrategyPreviewCard = ({ strategy, onLaunch, onBack, onStepBack, disabled }: { strategy: any; onLaunch: () => void; onBack?: () => void; onStepBack?: () => void; disabled?: boolean }) => (
+const PLATFORM_COLORS: Record<string, string> = {
+  instagram: '#E1306C',
+  tiktok: '#010101',
+  facebook: '#1877F2',
+  twitter: '#1DA1F2',
+  linkedin: '#0A66C2',
+  youtube: '#FF0000',
+};
+
+const WeekDayCard = ({ day }: { day: any }) => {
+  const [scriptExpanded, setScriptExpanded] = useState(false);
+  const platformColor = PLATFORM_COLORS[day.platform?.toLowerCase()] || '#6366F1';
+  return (
+    <View style={{ backgroundColor: '#0F172A', borderRadius: 10, padding: 12, marginBottom: 8, borderLeftWidth: 3, borderLeftColor: platformColor }}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 6 }}>
+        <View style={{ backgroundColor: platformColor + '22', borderRadius: 6, paddingHorizontal: 8, paddingVertical: 2, marginRight: 8 }}>
+          <Text style={{ color: platformColor, fontSize: 10, fontWeight: '700', textTransform: 'uppercase' }}>Day {day.day}</Text>
+        </View>
+        <View style={{ backgroundColor: '#1E293B', borderRadius: 6, paddingHorizontal: 8, paddingVertical: 2, marginRight: 8 }}>
+          <Text style={{ color: '#94A3B8', fontSize: 10, fontWeight: '600', textTransform: 'uppercase' }}>{day.platform}</Text>
+        </View>
+        <View style={{ backgroundColor: '#1E293B', borderRadius: 6, paddingHorizontal: 8, paddingVertical: 2 }}>
+          <Text style={{ color: '#64748B', fontSize: 10, textTransform: 'uppercase' }}>{day.task_type}</Text>
+        </View>
+      </View>
+      {day.headline ? (
+        <Text style={{ color: '#F1F5F9', fontSize: 13, fontWeight: '700', marginBottom: 4 }}>{day.headline}</Text>
+      ) : null}
+      {day.body ? (
+        <Text style={{ color: '#94A3B8', fontSize: 12, lineHeight: 18, marginBottom: 6 }}>{day.body}</Text>
+      ) : null}
+      {day.hashtags?.length > 0 ? (
+        <Text style={{ color: '#6366F1', fontSize: 11, marginBottom: 4 }}>{day.hashtags.map((h: string) => `#${h}`).join(' ')}</Text>
+      ) : null}
+      {day.tiktok_script ? (
+        <TouchableOpacity onPress={() => setScriptExpanded(p => !p)} style={{ flexDirection: 'row', alignItems: 'center', marginTop: 4 }}>
+          <Text style={{ color: '#F43F5E', fontSize: 11, fontWeight: '700', marginRight: 4 }}>VIDEO SCRIPT</Text>
+          <ChevronDown size={12} color="#F43F5E" style={scriptExpanded ? { transform: [{ rotate: '180deg' }] } : {}} />
+        </TouchableOpacity>
+      ) : null}
+      {day.tiktok_script && scriptExpanded ? (
+        <View style={{ backgroundColor: '#1E293B', borderRadius: 8, padding: 10, marginTop: 6 }}>
+          <Text style={{ color: '#F43F5E', fontSize: 10, fontWeight: '700', marginBottom: 4 }}>HOOK</Text>
+          <Text style={{ color: '#E2E8F0', fontSize: 12, marginBottom: 8 }}>{day.tiktok_script.hook}</Text>
+          {day.tiktok_script.scene_1 ? <><Text style={{ color: '#94A3B8', fontSize: 10, fontWeight: '700', marginBottom: 2 }}>SCENE 1</Text><Text style={{ color: '#CBD5E1', fontSize: 12, marginBottom: 6 }}>{day.tiktok_script.scene_1}</Text></> : null}
+          {day.tiktok_script.scene_2 ? <><Text style={{ color: '#94A3B8', fontSize: 10, fontWeight: '700', marginBottom: 2 }}>SCENE 2</Text><Text style={{ color: '#CBD5E1', fontSize: 12, marginBottom: 6 }}>{day.tiktok_script.scene_2}</Text></> : null}
+          {day.tiktok_script.cta ? <><Text style={{ color: '#10B981', fontSize: 10, fontWeight: '700', marginBottom: 2 }}>CTA</Text><Text style={{ color: '#6EE7B7', fontSize: 12 }}>{day.tiktok_script.cta}</Text></> : null}
+        </View>
+      ) : null}
+    </View>
+  );
+};
+
+const StrategyPreviewCard = ({ strategy, onLaunch, onBack, onStepBack, disabled }: { strategy: any; onLaunch: () => void; onBack?: () => void; onStepBack?: () => void; disabled?: boolean }) => {
+  const [weekExpanded, setWeekExpanded] = useState(false);
+  const weekPreview: any[] = strategy.week_preview || [];
+
+  return (
   <View style={[styles.card, { padding: 14 }, disabled && styles.cardDisabled]}>
     <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 12 }}>
       <View>
@@ -588,6 +645,25 @@ const StrategyPreviewCard = ({ strategy, onLaunch, onBack, onStepBack, disabled 
         </View>
       ))}
     </View>
+
+    {weekPreview.length > 0 && (
+      <View style={{ marginBottom: 14 }}>
+        <TouchableOpacity
+          onPress={() => setWeekExpanded(p => !p)}
+          style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: '#1E293B', borderRadius: 10, padding: 12, marginBottom: weekExpanded ? 10 : 0 }}
+        >
+          <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+            <Calendar size={14} color="#6366F1" style={{ marginRight: 8 }} />
+            <Text style={{ color: '#E2E8F0', fontSize: 13, fontWeight: '700' }}>7-DAY CONTENT PREVIEW</Text>
+          </View>
+          <ChevronDown size={16} color="#6366F1" style={weekExpanded ? { transform: [{ rotate: '180deg' }] } : {}} />
+        </TouchableOpacity>
+        {weekExpanded && weekPreview.map((day, i) => (
+          <WeekDayCard key={i} day={day} />
+        ))}
+      </View>
+    )}
+
     {!disabled && (
       <TouchableOpacity onPress={onLaunch} style={styles.primaryBtn}>
         <Text style={styles.primaryBtnText}>APPROVE & LAUNCH STRATEGY</Text>
@@ -600,7 +676,8 @@ const StrategyPreviewCard = ({ strategy, onLaunch, onBack, onStepBack, disabled 
     )}
     <FormNavRow onBack={onBack} onStepBack={onStepBack} disabled={disabled} />
   </View>
-);
+  );
+};
 
 const DELIVERY_TYPES = [
   { key: 'payment_on_delivery', label: 'Cash on Delivery' },

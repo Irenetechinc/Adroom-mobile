@@ -4,6 +4,7 @@ import { PlatformIntelligenceEngine } from './ipeEngine';
 import { SocialListeningEngine } from './socialListening';
 import { EmotionalIntelligenceEngine } from './emotionalIntelligence';
 import { GeoMonitoringEngine } from './geoMonitoring';
+import { PsychologistEngine } from './psychologistEngine';
 import { DecisionEngine } from './decisionEngine';
 import { ScraperService } from './scraperService';
 import { AgentOrchestrator } from '../agents/agentOrchestrator';
@@ -37,6 +38,8 @@ const SCHED_LEAD_FOLLOWUP_CRON= process.env.SCHED_LEAD_FOLLOWUP_CRON|| '*/30 * *
 
 const SCHED_RADAR_CRON        = process.env.SCHED_RADAR_CRON        || '0 */4 * * *';   // Radar scan every 4 hours
 const SCHED_DAILY_SUMMARY_CRON= process.env.SCHED_DAILY_SUMMARY_CRON|| '0 8 * * *';     // Daily summary at 8am UTC
+const SCHED_PSYCHOLOGIST_CRON = process.env.SCHED_PSYCHOLOGIST_CRON  || '*/15 * * * *';  // Psychologist Engine every 15 min
+const SCHED_VIDEO_EDIT_CRON   = process.env.SCHED_VIDEO_EDIT_CRON    || '*/30 * * * *';  // Execute pending video edit jobs every 30 min
 
 export class SchedulerService {
     private ipe: PlatformIntelligenceEngine;
@@ -48,12 +51,14 @@ export class SchedulerService {
     private orchestrator: AgentOrchestrator;
     private dailySummary: DailySummaryService;
     private radar: RadarAgent;
+    private psychologist: PsychologistEngine;
 
     constructor() {
         this.ipe = new PlatformIntelligenceEngine();
         this.social = new SocialListeningEngine();
         this.emotional = new EmotionalIntelligenceEngine();
         this.geo = new GeoMonitoringEngine();
+        this.psychologist = new PsychologistEngine();
         this.scraper = new ScraperService();
         this.decisionEngine = new DecisionEngine();
         this.orchestrator = new AgentOrchestrator();
@@ -212,6 +217,27 @@ export class SchedulerService {
             }
         });
 
+        // Psychologist Engine — real-time behavioral analysis every 15 minutes
+        cron.schedule(SCHED_PSYCHOLOGIST_CRON, async () => {
+            try {
+                if (!(await hasActiveStrategies())) return;
+                const cma = await creditManagementAgent.evaluate(null, 'psychologist_cycle');
+                if (cma.decision === 'deny_cooldown') return;
+                await this.psychologist.runCycle();
+            } catch (e: any) {
+                console.error('[Scheduler] Psychologist Engine error:', e.message);
+            }
+        });
+
+        // Video Edit Job Execution — execute pending edit plans every 30 minutes
+        cron.schedule(SCHED_VIDEO_EDIT_CRON, async () => {
+            try {
+                await this.executeVideoEditJobs();
+            } catch (e: any) {
+                console.error('[Scheduler] Video edit execution error:', e.message);
+            }
+        });
+
         console.log('[Scheduler] ✓ All loops started:');
         console.log('[Scheduler]   Intelligence: IPE, Social, Emotional, GEO — every 15 min');
         console.log('[Scheduler]   Agent Execution: Content posts — every 5 min');
@@ -237,6 +263,31 @@ export class SchedulerService {
             await this.decisionEngine.handleAlert(source, alerts);
         } catch (e: any) {
             console.error(`[Scheduler] Brain notify error (${source}):`, e.message);
+        }
+    }
+
+    private async executeVideoEditJobs() {
+        const supabase = getServiceSupabaseClient();
+        const { data: jobs } = await supabase
+            .from('video_edit_jobs')
+            .select('id, source_video_uri, execution_status')
+            .eq('execution_status', 'plan_ready')
+            .not('source_video_uri', 'is', null)
+            .limit(5);
+
+        if (!jobs || jobs.length === 0) return;
+
+        const { SmartVideoEditor } = await import('../services/smartVideoEditor');
+        const editor = new SmartVideoEditor();
+
+        for (const job of jobs) {
+            try {
+                console.log(`[Scheduler] Executing video edit job ${job.id}...`);
+                const url = await editor.executeEditPlan(job.id);
+                console.log(`[Scheduler] Edit job ${job.id} complete: ${url}`);
+            } catch (e: any) {
+                console.error(`[Scheduler] Edit job ${job.id} failed:`, e.message);
+            }
         }
     }
 
