@@ -366,10 +366,12 @@ export class EnergyService {
 
     // Also save card to payment_methods table for on-demand top-ups
     if (cardToken) {
-      await this.supabase.from('payment_methods').upsert(
-        { user_id: userId, flw_token: cardToken, last4: cardLast4, brand: cardBrand, email: billingEmail, is_default: true },
-        { onConflict: 'user_id' },
-      ).catch(() => {});
+      try {
+        await this.supabase.from('payment_methods').upsert(
+          { user_id: userId, flw_token: cardToken, last4: cardLast4, brand: cardBrand, email: billingEmail, is_default: true },
+          { onConflict: 'user_id' },
+        );
+      } catch (_) {}
     }
 
     await this.creditEnergy(userId, trialCredits, 'trial_grant', `14-day free trial — ${trialCredits} energy credits (${plan.name} plan)`);
