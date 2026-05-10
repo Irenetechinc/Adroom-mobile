@@ -1703,7 +1703,70 @@ app.get('/api/billing/plan-limits', async (req, res) => {
 });
 
 /**
- * POST /api/billing/start-trial — grant 14-day trial (requires card on file)
+ * GET /api/billing/trial-eligibility — check if the current user can start a free trial
+ */
+app.get('/api/billing/trial-eligibility', async (req, res) => {
+  try {
+    const supabase = getSupabaseClient(req as any);
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return res.status(401).json({ error: 'Unauthorized.' });
+
+    const eligible = await energyService.isTrialEligible(user.id);
+    res.json({ eligible });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * POST /api/billing/verify-trial — verify the $2 card-hold payment, refund it, and activate trial
+ */
+app.post('/api/billing/verify-trial', async (req, res) => {
+  try {
+    const supabase = getSupabaseClient(req as any);
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return res.status(401).json({ error: 'Unauthorized.' });
+
+    const { tx_ref, transaction_id, plan_id = 'starter' } = req.body;
+    if (!tx_ref) return res.status(400).json({ error: 'tx_ref required.' });
+
+    // Verify the $2 payment with Flutterwave
+    const verification = transaction_id
+      ? await flutterwaveService.verifyTransaction(transaction_id)
+      : await flutterwaveService.verifyByTxRef(tx_ref);
+
+    if (!verification || verification.status !== 'success' || verification.data?.status !== 'successful') {
+      return res.status(400).json({ success: false, message: 'Payment could not be verified. Please try again.' });
+    }
+
+    // Issue immediate refund for the $2 card hold
+    const FLW_SECRET_KEY = process.env.FLW_SECRET_KEY || process.env.FLUTTERWAVE_SECRET_KEY || '';
+    const txId = verification.data?.id;
+    const txAmount = verification.data?.amount;
+    if (FLW_SECRET_KEY && txId) {
+      fetch(`https://api.flutterwave.com/v3/transactions/${txId}/refund`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${FLW_SECRET_KEY}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ amount: txAmount }),
+      }).catch(() => {}); // fire-and-forget; don't block trial activation
+    }
+
+    // Activate the trial for the chosen plan
+    const result = await energyService.grantTrial(user.id, plan_id);
+    if (result.success) {
+      try {
+        const { adminBroadcast } = await import('./admin/adminRouter');
+        adminBroadcast('trial_started', { user_id: user.id, plan_id, credits: result.credits ?? 50 });
+      } catch { /* ignore */ }
+    }
+    res.status(result.success ? 200 : 400).json(result);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * POST /api/billing/start-trial — grant 14-day trial (direct, no payment verification needed)
  */
 app.post('/api/billing/start-trial', async (req, res) => {
   try {
@@ -1711,13 +1774,12 @@ app.post('/api/billing/start-trial', async (req, res) => {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return res.status(401).json({ error: 'Unauthorized.' });
 
-    const result = await energyService.grantTrial(user.id);
+    const { plan_id = 'starter' } = req.body;
+    const result = await energyService.grantTrial(user.id, plan_id);
     if (result.success) {
-      // Fire-and-forget push + admin broadcast
-      pushService.notifyTrialStarted(user.id, (result as any).credits ?? 50, 14).catch(() => {});
       try {
         const { adminBroadcast } = await import('./admin/adminRouter');
-        adminBroadcast('trial_started', { user_id: user.id, credits: (result as any).credits ?? 50 });
+        adminBroadcast('trial_started', { user_id: user.id, plan_id, credits: result.credits ?? 50 });
       } catch { /* ignore */ }
     }
     res.status(result.success ? 200 : 400).json(result);

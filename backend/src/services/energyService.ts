@@ -320,16 +320,16 @@ export class EnergyService {
     return newBalance;
   }
 
-  /** Grant the 14-day trial (50 energy credits = $10 value) */
-  async grantTrial(userId: string): Promise<{ success: boolean; message: string }> {
+  /** Grant the 14-day trial for the chosen plan */
+  async grantTrial(userId: string, planId: string = 'starter'): Promise<{ success: boolean; message: string; credits?: number }> {
     const sub = await this.getSubscription(userId);
 
     if (sub?.trial_start) {
       return { success: false, message: 'Trial already used.' };
     }
-    if (!sub?.flw_card_token) {
-      return { success: false, message: 'Please add a payment method before starting your trial.' };
-    }
+
+    const plan = PLANS[planId as keyof typeof PLANS] ?? PLANS.starter;
+    const trialCredits = plan.energy_credits;
 
     const now = new Date();
     const trialEnd = new Date(now.getTime() + 14 * 24 * 60 * 60 * 1000);
@@ -337,6 +337,7 @@ export class EnergyService {
     await this.supabase
       .from('subscriptions')
       .update({
+        plan: planId,
         status: 'trialing',
         trial_start: now.toISOString(),
         trial_end: trialEnd.toISOString(),
@@ -344,12 +345,29 @@ export class EnergyService {
       })
       .eq('user_id', userId);
 
-    await this.creditEnergy(userId, TRIAL_CREDITS, 'trial_grant', '14-day free trial — 50 energy credits');
+    await this.creditEnergy(userId, trialCredits, 'trial_grant', `14-day free trial — ${trialCredits} energy credits (${plan.name} plan)`);
 
     // Push-notify the trial start so the user sees confirmation on their device.
-    pushService.notifyTrialStarted(userId, TRIAL_CREDITS, 14).catch(() => {});
+    pushService.notifyTrialStarted(userId, trialCredits, 14).catch(() => {});
 
-    return { success: true, message: `Trial started! You have ${TRIAL_CREDITS} energy credits for 14 days.` };
+    return { success: true, message: `Trial started! You have ${trialCredits} energy credits for 14 days on the ${plan.name} plan.`, credits: trialCredits };
+  }
+
+  /** Check if a user is eligible for the 14-day trial.
+   *  Eligible = account created < 48 h ago AND never started a trial/subscription.
+   */
+  async isTrialEligible(userId: string): Promise<boolean> {
+    const sub = await this.getSubscription(userId);
+    if (sub?.trial_start) return false;
+    if (sub?.status && sub.status !== 'none' && sub.status !== 'cancelled') return false;
+
+    // Check account creation time via auth.users
+    const { data } = await this.supabase.auth.admin.getUserById(userId).catch(() => ({ data: null })) as any;
+    const createdAt = data?.user?.created_at;
+    if (!createdAt) return false;
+
+    const ageMs = Date.now() - new Date(createdAt).getTime();
+    return ageMs < 48 * 60 * 60 * 1000;
   }
 
   /** Apply subscription credits after successful payment */

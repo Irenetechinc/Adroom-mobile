@@ -1,6 +1,6 @@
 import './global.css';
 import React, { useEffect, useRef, useState } from 'react';
-import { Platform, AppState, AppStateStatus } from 'react-native';
+import { Platform, AppState, AppStateStatus, Text, TextInput } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import AppNavigator from './src/navigation/AppNavigator';
 import {
@@ -24,6 +24,13 @@ import {
 } from './src/services/appVersionService';
 import WhatsNewModal from './src/components/WhatsNewModal';
 import ForceUpdateModal from './src/components/ForceUpdateModal';
+
+// Disable system font-size scaling globally so the UI renders consistently
+// across all device sizes and accessibility font-scale settings.
+if ((Text as any).defaultProps == null) (Text as any).defaultProps = {};
+(Text as any).defaultProps.allowFontScaling = false;
+if ((TextInput as any).defaultProps == null) (TextInput as any).defaultProps = {};
+(TextInput as any).defaultProps.allowFontScaling = false;
 
 export default function App() {
   const notifCleanupRef = useRef<(() => void) | null>(null);
