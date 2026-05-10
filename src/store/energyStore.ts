@@ -173,6 +173,7 @@ interface EnergyState {
   refreshBalance: () => Promise<void>;
   fetchPlanLimits: () => Promise<void>;
   startTrial: () => Promise<{ success: boolean; message: string }>;
+  skipTrial: (planId?: string) => Promise<{ success: boolean; message: string; credits?: number }>;
   cancelSubscription: (reason?: string) => Promise<{ success: boolean }>;
   toggleOnDemand: (enabled: boolean) => Promise<void>;
   verifyAndApplyPayment: (
@@ -251,6 +252,23 @@ export const useEnergyStore = create<EnergyState>((set, get) => ({
       const data = await res.json();
       if (data.success) await get().fetchEnergy();
       return { success: data.success ?? false, message: data.message ?? 'An error occurred.' };
+    } catch (err: any) {
+      return { success: false, message: err.message };
+    }
+  },
+
+  skipTrial: async (planId?: string) => {
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) return { success: false, message: 'Not authenticated.' };
+      const res = await fetch(`${API_URL}/api/billing/skip-trial`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${session.access_token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ plan_id: planId }),
+      });
+      const data = await res.json();
+      if (data.success) await get().fetchEnergy();
+      return { success: data.success ?? false, message: data.message ?? 'An error occurred.', credits: data.credits };
     } catch (err: any) {
       return { success: false, message: err.message };
     }

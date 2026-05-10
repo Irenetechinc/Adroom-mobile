@@ -49,7 +49,7 @@ export default function SubscriptionScreen() {
   const insets = useSafeAreaInsets();
   const {
     account, subscription, transactions, planLimitsUsage, isLoading,
-    fetchEnergy, fetchPlanLimits, startTrial, cancelSubscription, toggleOnDemand, verifyAndApplyPayment,
+    fetchEnergy, fetchPlanLimits, startTrial, skipTrial, cancelSubscription, toggleOnDemand, verifyAndApplyPayment,
   } = useEnergyStore();
   const [refreshing, setRefreshing] = useState(false);
   const [paymentLoading, setPaymentLoading] = useState(false);
@@ -310,6 +310,35 @@ export default function SubscriptionScreen() {
     } finally {
       setPinLoading(false);
     }
+  };
+
+  const handleSkipTrial = async (planId: string) => {
+    const p = PLAN_DETAILS[planId as keyof typeof PLAN_DETAILS];
+    Alert.alert(
+      `Upgrade to ${p?.name ?? planId}`,
+      `Skip your remaining trial days and activate ${p?.name ?? planId} right now.\n\nYour saved card will be charged $${p?.price}/month immediately and you'll receive ${p?.credits} energy credits.`,
+      [
+        {
+          text: `Upgrade Now — $${p?.price}`,
+          onPress: async () => {
+            setPaymentLoading(true);
+            try {
+              const result = await skipTrial(planId);
+              if (result.success) {
+                setTrialEligible(false);
+                await fetchEnergy();
+                Alert.alert('Upgraded!', result.message);
+              } else {
+                Alert.alert('Upgrade Failed', result.message || 'Could not process payment. Please check your payment method.');
+              }
+            } finally {
+              setPaymentLoading(false);
+            }
+          },
+        },
+        { text: 'Keep Trial', style: 'cancel' },
+      ],
+    );
   };
 
   const handleStartTrial = async (planId: string) => {
@@ -648,8 +677,23 @@ export default function SubscriptionScreen() {
                 <View style={{ flex: 1 }}>
                   <Text style={styles.trialTitle}>14-Day Free Trial</Text>
                   <Text style={styles.trialDesc}>
-                    Try any plan free for 14 days — <Text style={{ color: COLORS.neon, fontWeight: '700' }}>no charge until day 15</Text>.{'\n'}
-                    Pick a plan below and tap "Start Free Trial" to begin.
+                    Try AdRoom free for 14 days — <Text style={{ color: COLORS.neon, fontWeight: '700' }}>50 energy credits included, no charge until day 15</Text>.{'\n'}
+                    A $2 card hold confirms your payment method (refunded instantly). Pick a plan below to begin.
+                  </Text>
+                </View>
+              </View>
+            )}
+
+            {/* Skip Trial Banner — shown to currently trialing users */}
+            {isTrialing && (
+              <View style={[styles.trialBanner, { backgroundColor: '#F59E0B10', borderColor: '#F59E0B30' }]}>
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.trialTitle, { color: COLORS.amber }]}>You're on a 14-Day Trial</Text>
+                  <Text style={styles.trialDesc}>
+                    {trialDaysLeft != null && trialDaysLeft > 0
+                      ? `${trialDaysLeft} day${trialDaysLeft !== 1 ? 's' : ''} remaining — your saved card will be charged on day 15.`
+                      : 'Your trial has ended. Your card will be charged shortly.'}{'\n'}
+                    Want full access now? Tap <Text style={{ color: COLORS.amber, fontWeight: '700' }}>Skip Trial</Text> on any plan below.
                   </Text>
                 </View>
               </View>
@@ -658,20 +702,28 @@ export default function SubscriptionScreen() {
             {/* Plan Cards */}
             {(['starter', 'pro', 'pro_plus'] as const).map((planId, idx) => {
               const p = PLAN_DETAILS[planId];
+              // isCurrent: user is actively on this plan (active paid OR trialing on this plan)
               const isCurrent = plan === planId && isActive;
               const isPopular = planId === 'pro';
               const isHighlighted = scrollToPlan === planId;
+              // Can skip trial to this plan (trialing user, not already on this plan as active paid)
+              const canSkipTrial = isTrialing && !isCurrent;
+
+              const handleCardPress = () => {
+                if (isCurrent) return;
+                if (canSkipTrial) {
+                  handleSkipTrial(planId);
+                } else if (trialEligible && !isActive) {
+                  handleStartTrial(planId);
+                } else {
+                  handleSubscribe(planId);
+                }
+              };
+
               return (
                 <Animated.View key={planId} entering={FadeInDown.delay(idx * 80).duration(400)}>
                   <TouchableOpacity
-                    onPress={() => {
-                      if (isCurrent) return;
-                      if (trialEligible && !isActive) {
-                        handleStartTrial(planId);
-                      } else {
-                        handleSubscribe(planId);
-                      }
-                    }}
+                    onPress={handleCardPress}
                     style={[
                       styles.planCard,
                       isCurrent && { borderColor: p.color },
@@ -702,6 +754,15 @@ export default function SubscriptionScreen() {
                       </View>
                     </View>
 
+                    {/* During trial: clarify what credits they'll get on day 15 vs now */}
+                    {isTrialing && !isCurrent && (
+                      <View style={{ backgroundColor: '#F59E0B10', borderRadius: 8, paddingHorizontal: 10, paddingVertical: 6, marginTop: 8, borderWidth: 1, borderColor: '#F59E0B30' }}>
+                        <Text style={{ color: COLORS.amber, fontSize: 11 }}>
+                          Skip trial → charge ${p.price} now · get {p.credits} full credits immediately
+                        </Text>
+                      </View>
+                    )}
+
                     <View style={styles.planFeatures}>
                       {p.features.map((feat, fi) => (
                         <FeatureRow key={fi} color={p.color} text={feat} />
@@ -719,7 +780,15 @@ export default function SubscriptionScreen() {
                     {isCurrent ? (
                       <View style={[styles.planBtn, { backgroundColor: p.color + '20', borderColor: p.color }]}>
                         <CheckCircle size={14} color={p.color} />
-                        <Text style={[styles.planBtnText, { color: p.color }]}>Current Plan</Text>
+                        <Text style={[styles.planBtnText, { color: p.color }]}>
+                          {isTrialing ? 'Trial Plan' : 'Current Plan'}
+                        </Text>
+                      </View>
+                    ) : canSkipTrial ? (
+                      <View style={[styles.planBtn, { backgroundColor: COLORS.amber }]}>
+                        <Text style={[styles.planBtnText, { color: '#000' }]}>
+                          {paymentLoading ? 'Processing...' : `Skip Trial → Upgrade to ${p.name}`}
+                        </Text>
                       </View>
                     ) : (
                       <View style={[styles.planBtn, { backgroundColor: p.color }]}>

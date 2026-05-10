@@ -41,6 +41,7 @@ const SCHED_RADAR_CRON        = process.env.SCHED_RADAR_CRON        || '0 */4 * 
 const SCHED_DAILY_SUMMARY_CRON= process.env.SCHED_DAILY_SUMMARY_CRON|| '0 8 * * *';     // Daily summary at 8am UTC
 const SCHED_PSYCHOLOGIST_CRON = process.env.SCHED_PSYCHOLOGIST_CRON  || '*/15 * * * *';  // Psychologist Engine every 15 min
 const SCHED_VIDEO_EDIT_CRON   = process.env.SCHED_VIDEO_EDIT_CRON    || '*/30 * * * *';  // Execute pending video edit jobs every 30 min
+const SCHED_TRIAL_BILLING_CRON= process.env.SCHED_TRIAL_BILLING_CRON || '0 * * * *';     // Trial auto-charge sweep every hour
 
 export class SchedulerService {
     private ipe: PlatformIntelligenceEngine;
@@ -70,7 +71,50 @@ export class SchedulerService {
     start() {
         console.log('[Scheduler] Starting AdRoom Intelligence + Agent Execution Scheduler...');
 
-        // ─── INTELLIGENCE LOOPS ─────────────────────────────────────────────────
+        // ─── TRIAL AUTO-BILLING ──────────────────────────────────────────────────
+        // Every hour: find all trialing subs whose trial_end has passed and
+        // auto-charge the saved Flutterwave card to convert them to paid subscribers.
+        cron.schedule(SCHED_TRIAL_BILLING_CRON, async () => {
+            console.log('[Scheduler] Running trial billing sweep...');
+            try {
+                const supabase = getServiceSupabaseClient();
+                const nowIso = new Date().toISOString();
+
+                // Find all subscriptions that are still 'trialing' but trial_end has passed
+                // and have not been charged yet (trial_charged IS NULL or false)
+                const { data: expiredTrials, error } = await supabase
+                    .from('subscriptions')
+                    .select('user_id, plan, flw_card_token, trial_end')
+                    .eq('status', 'trialing')
+                    .lte('trial_end', nowIso)
+                    .or('trial_charged.is.null,trial_charged.eq.false');
+
+                if (error) {
+                    console.error('[Scheduler] Trial billing sweep DB error:', error.message);
+                    return;
+                }
+                if (!expiredTrials?.length) {
+                    console.log('[Scheduler] Trial billing: no expired trials to process');
+                    return;
+                }
+
+                console.log(`[Scheduler] Trial billing: processing ${expiredTrials.length} expired trial(s)`);
+                const { energyService } = await import('./energyService');
+
+                for (const row of expiredTrials) {
+                    try {
+                        const result = await energyService.chargeTrialConversion(row.user_id);
+                        console.log(`[Scheduler] Trial conversion user ${row.user_id}: ${result.success ? '✓' : '✗'} ${result.message}`);
+                    } catch (e: any) {
+                        console.error(`[Scheduler] Trial conversion error for user ${row.user_id}:`, e.message);
+                    }
+                }
+            } catch (e: any) {
+                console.error('[Scheduler] Trial billing sweep error:', e.message);
+            }
+        });
+
+        // ─── INTELLIGENCE LOOPS ──────────────────────────────────────────────────
 
         cron.schedule(SCHED_IPE_CRON, async () => {
             console.log('[Scheduler] Running Platform Intelligence Engine...');

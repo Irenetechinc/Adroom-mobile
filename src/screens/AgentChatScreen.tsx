@@ -1870,6 +1870,9 @@ export default function AgentChatScreen({ navigation, route }: Props) {
           if (bal > 0) return null;
           const hasPlan = userSubscription?.plan && userSubscription.plan !== 'none';
           const hasEverSubscribed = hasPlan || !!userSubscription?.trial_start;
+          const isCurrentlyTrialing = userSubscription?.status === 'trialing';
+
+          // New user — never subscribed or started a trial
           if (!hasEverSubscribed) {
             return (
               <View style={{ backgroundColor: 'rgba(0,240,255,0.06)', borderTopWidth: 1, borderTopColor: 'rgba(0,240,255,0.15)', paddingHorizontal: 16, paddingTop: 12, paddingBottom: Math.max(12, insets.bottom + 8), flexDirection: 'row', alignItems: 'center', gap: 10 }}>
@@ -1889,6 +1892,29 @@ export default function AgentChatScreen({ navigation, route }: Props) {
               </View>
             );
           }
+
+          // Trialing user who used up all 50 trial credits
+          if (isCurrentlyTrialing) {
+            return (
+              <View style={{ backgroundColor: 'rgba(245,158,11,0.08)', borderTopWidth: 1, borderTopColor: 'rgba(245,158,11,0.2)', paddingHorizontal: 16, paddingTop: 12, paddingBottom: Math.max(12, insets.bottom + 8), flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                <View style={{ width: 32, height: 32, borderRadius: 10, backgroundColor: 'rgba(245,158,11,0.12)', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                  <Text style={{ fontSize: 16 }}>⚡</Text>
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={{ color: '#FCD34D', fontWeight: '700', fontSize: 13, marginBottom: 2 }}>Trial Credits Used Up</Text>
+                  <Text style={{ color: '#94A3B8', fontSize: 12, lineHeight: 17 }}>You've used all 50 trial credits. Upgrade to keep your agents running.</Text>
+                </View>
+                <TouchableOpacity
+                  onPress={() => (navigation as any).navigate('Subscription', { tab: 'plans' })}
+                  style={{ backgroundColor: '#F59E0B', borderRadius: 8, paddingHorizontal: 10, paddingVertical: 6 }}
+                >
+                  <Text style={{ color: '#000000', fontWeight: '700', fontSize: 12 }}>Upgrade</Text>
+                </TouchableOpacity>
+              </View>
+            );
+          }
+
+          // Subscribed user who exhausted their credits
           return (
             <View style={{ backgroundColor: 'rgba(239,68,68,0.08)', borderTopWidth: 1, borderTopColor: 'rgba(239,68,68,0.2)', paddingHorizontal: 16, paddingTop: 12, paddingBottom: Math.max(12, insets.bottom + 8), flexDirection: 'row', alignItems: 'center', gap: 10 }}>
               <View style={{ width: 32, height: 32, borderRadius: 10, backgroundColor: 'rgba(239,68,68,0.12)', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
