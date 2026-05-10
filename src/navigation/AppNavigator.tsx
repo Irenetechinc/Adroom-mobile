@@ -1,9 +1,15 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { NavigationContainer, DarkTheme, LinkingOptions } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
+import { Text, TextInput } from 'react-native';
 import * as Linking from 'expo-linking';
 import { RootStackParamList } from '../types';
 import { useAuthStore } from '../store/authStore';
+
+// Disable system-level font scaling globally so the app looks identical on
+// all devices regardless of the user's accessibility font-size setting.
+(Text as any).defaultProps = { ...((Text as any).defaultProps ?? {}), allowFontScaling: false };
+(TextInput as any).defaultProps = { ...((TextInput as any).defaultProps ?? {}), allowFontScaling: false };
 // Push registration + notification listeners are owned by App.tsx (single
 // source of truth) so we don't double-register or attach listeners twice.
 

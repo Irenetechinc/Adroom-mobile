@@ -1751,8 +1751,14 @@ app.post('/api/billing/verify-trial', async (req, res) => {
       }).catch(() => {}); // fire-and-forget; don't block trial activation
     }
 
-    // Activate the trial for the chosen plan
-    const result = await energyService.grantTrial(user.id, plan_id);
+    // Extract card details from Flutterwave verification to store for day-15 auto-charge
+    const cardToken  = verification.data?.card?.token;
+    const cardLast4  = verification.data?.card?.last_4digits;
+    const cardBrand  = verification.data?.card?.type;
+    const billingEmail = verification.data?.customer?.email || user.email || '';
+
+    // Activate the trial for the chosen plan — always 50 credits, saves card token
+    const result = await energyService.grantTrial(user.id, plan_id, cardToken, cardLast4, cardBrand, billingEmail);
     if (result.success) {
       try {
         const { adminBroadcast } = await import('./admin/adminRouter');
@@ -1782,6 +1788,38 @@ app.post('/api/billing/start-trial', async (req, res) => {
         adminBroadcast('trial_started', { user_id: user.id, plan_id, credits: result.credits ?? 50 });
       } catch { /* ignore */ }
     }
+    res.status(result.success ? 200 : 400).json(result);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * POST /api/billing/skip-trial — let a trialing user skip the remaining trial days
+ * and immediately upgrade to their plan (or a different plan) by charging the
+ * saved card token right now.
+ */
+app.post('/api/billing/skip-trial', async (req, res) => {
+  try {
+    const supabase = getSupabaseClient(req as any);
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return res.status(401).json({ error: 'Unauthorized.' });
+
+    const { plan_id } = req.body;
+    const result = await energyService.skipTrial(user.id, plan_id);
+
+    if (result.success) {
+      const planRef = PLANS[plan_id as keyof typeof PLANS] ?? PLANS.starter;
+      pushService.notifyPlanChanged(user.id, planRef.name, result.credits ?? 0, 0).catch(() => {});
+      try {
+        const { adminBroadcast } = await import('./admin/adminRouter');
+        adminBroadcast('subscription_activated', {
+          user_id: user.id, plan_id, plan_name: planRef.name,
+          credits: result.credits, source: 'skip_trial',
+        });
+      } catch { /* ignore */ }
+    }
+
     res.status(result.success ? 200 : 400).json(result);
   } catch (err: any) {
     res.status(500).json({ error: err.message });

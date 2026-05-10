@@ -320,8 +320,19 @@ export class EnergyService {
     return newBalance;
   }
 
-  /** Grant the 14-day trial for the chosen plan */
-  async grantTrial(userId: string, planId: string = 'starter'): Promise<{ success: boolean; message: string; credits?: number }> {
+  /**
+   * Grant the 14-day trial for the chosen plan.
+   * ALWAYS grants exactly TRIAL_CREDITS (50) regardless of plan chosen.
+   * Stores the card token from the $2 verification so day-15 auto-charge works.
+   */
+  async grantTrial(
+    userId: string,
+    planId: string = 'starter',
+    cardToken?: string,
+    cardLast4?: string,
+    cardBrand?: string,
+    billingEmail?: string,
+  ): Promise<{ success: boolean; message: string; credits?: number }> {
     const sub = await this.getSubscription(userId);
 
     if (sub?.trial_start) {
@@ -329,21 +340,37 @@ export class EnergyService {
     }
 
     const plan = PLANS[planId as keyof typeof PLANS] ?? PLANS.starter;
-    const trialCredits = plan.energy_credits;
+    // Trial always grants exactly 50 credits — never the plan's full credits
+    const trialCredits = TRIAL_CREDITS;
 
     const now = new Date();
     const trialEnd = new Date(now.getTime() + 14 * 24 * 60 * 60 * 1000);
 
+    const subUpdate: Record<string, any> = {
+      plan: planId,
+      status: 'trialing',
+      trial_start: now.toISOString(),
+      trial_end: trialEnd.toISOString(),
+      updated_at: now.toISOString(),
+    };
+    // Save card token so we can auto-charge on day 15
+    if (cardToken)    subUpdate.flw_card_token = cardToken;
+    if (cardLast4)    subUpdate.flw_card_last4 = cardLast4;
+    if (cardBrand)    subUpdate.flw_card_brand = cardBrand;
+    if (billingEmail) subUpdate.billing_email  = billingEmail;
+
     await this.supabase
       .from('subscriptions')
-      .update({
-        plan: planId,
-        status: 'trialing',
-        trial_start: now.toISOString(),
-        trial_end: trialEnd.toISOString(),
-        updated_at: now.toISOString(),
-      })
+      .update(subUpdate)
       .eq('user_id', userId);
+
+    // Also save card to payment_methods table for on-demand top-ups
+    if (cardToken) {
+      await this.supabase.from('payment_methods').upsert(
+        { user_id: userId, flw_token: cardToken, last4: cardLast4, brand: cardBrand, email: billingEmail, is_default: true },
+        { onConflict: 'user_id' },
+      ).catch(() => {});
+    }
 
     await this.creditEnergy(userId, trialCredits, 'trial_grant', `14-day free trial — ${trialCredits} energy credits (${plan.name} plan)`);
 
@@ -351,6 +378,146 @@ export class EnergyService {
     pushService.notifyTrialStarted(userId, trialCredits, 14).catch(() => {});
 
     return { success: true, message: `Trial started! You have ${trialCredits} energy credits for 14 days on the ${plan.name} plan.`, credits: trialCredits };
+  }
+
+  /**
+   * Charge the card saved during trial verification and convert the user to an
+   * active paid subscription. Called by the scheduler on day 15 (after trial_end).
+   * Safe to call multiple times — idempotent via `trial_charged` flag.
+   */
+  async chargeTrialConversion(userId: string): Promise<{ success: boolean; message: string }> {
+    const sub = await this.getSubscription(userId);
+    if (!sub) return { success: false, message: 'No subscription found.' };
+    if (sub.status !== 'trialing') return { success: false, message: 'Not in trial.' };
+    if (sub.trial_charged) return { success: false, message: 'Trial already charged.' };
+    if (!sub.trial_end || new Date(sub.trial_end) > new Date()) return { success: false, message: 'Trial not yet ended.' };
+
+    const plan = PLANS[sub.plan as keyof typeof PLANS];
+    if (!plan) return { success: false, message: `Unknown plan: ${sub.plan}` };
+
+    if (!sub.flw_card_token) {
+      // No card saved — mark trial expired so it doesn't retry forever
+      await this.supabase.from('subscriptions').update({
+        status: 'trial_expired',
+        updated_at: new Date().toISOString(),
+      }).eq('user_id', userId);
+      pushService.send(userId, {
+        title: 'Trial ended — no payment method',
+        body: `Your free trial has ended. Subscribe to ${plan.name} to keep your AI campaigns running.`,
+        data: { type: 'trial_expired' },
+        channelId: 'alerts',
+      }).catch(() => {});
+      return { success: false, message: 'No saved card — trial marked expired.' };
+    }
+
+    const email = sub.billing_email || '';
+    const txRef = flutterwaveService.generateTxRef('ADROOM-TRIAL-CONV');
+
+    console.log(`[Energy] Trial conversion: charging ${plan.name} ($${plan.price_usd}) for user ${userId}`);
+
+    try {
+      const charge = await flutterwaveService.chargeToken({
+        token: sub.flw_card_token,
+        email,
+        amount: plan.price_usd,
+        currency: 'USD',
+        tx_ref: txRef,
+        narration: `AdRoom ${plan.name} — Monthly Subscription (Trial Conversion)`,
+      });
+
+      const ok = charge?.status === 'success' && (charge as any)?.data?.status === 'successful';
+      if (!ok) {
+        // Mark as failed but don't block retry — scheduler will retry next cycle
+        await this.supabase.from('energy_transactions').insert({
+          user_id: userId,
+          type: 'trial_conversion_failed',
+          credits: 0,
+          balance_after: 0,
+          description: `Trial conversion charge failed: ${charge?.message ?? 'Card declined'}`,
+          metadata: { plan_id: sub.plan, tx_ref: txRef, flw_message: charge?.message },
+        });
+        pushService.send(userId, {
+          title: 'Subscription renewal failed',
+          body: `We couldn't charge your card for ${plan.name}. Update your payment method to keep AI features running.`,
+          data: { type: 'trial_conversion_failed', plan_id: sub.plan },
+          channelId: 'alerts',
+        }).catch(() => {});
+        return { success: false, message: `Charge failed: ${charge?.message}` };
+      }
+
+      const flwId = String((charge as any).data?.id ?? '');
+      // Mark trial_charged before applying subscription to prevent double-charge
+      await this.supabase.from('subscriptions').update({
+        trial_charged: true,
+        updated_at: new Date().toISOString(),
+      }).eq('user_id', userId);
+
+      const result = await this.applySubscription(
+        userId, sub.plan, flwId, txRef,
+        sub.flw_card_token, sub.flw_card_last4, sub.flw_card_brand, email,
+      );
+
+      pushService.notifyPlanChanged(userId, plan.name, result.credits, 0).catch(() => {});
+      console.log(`[Energy] Trial converted to ${plan.name} for user ${userId} — +${result.credits} credits`);
+      return { success: true, message: `Charged $${plan.price_usd} and activated ${plan.name}.` };
+    } catch (err: any) {
+      console.error(`[Energy] Trial conversion exception for user ${userId}:`, err.message);
+      return { success: false, message: err.message };
+    }
+  }
+
+  /**
+   * Let a trialing user skip the rest of their trial and immediately upgrade to
+   * their chosen plan. Charges the saved card token right now.
+   */
+  async skipTrial(
+    userId: string,
+    targetPlanId?: string,
+  ): Promise<{ success: boolean; message: string; credits?: number }> {
+    const sub = await this.getSubscription(userId);
+    if (!sub) return { success: false, message: 'No subscription found.' };
+    if (sub.status !== 'trialing') return { success: false, message: 'You are not currently in a trial.' };
+
+    const planId = targetPlanId ?? sub.plan ?? 'starter';
+    const plan = PLANS[planId as keyof typeof PLANS];
+    if (!plan) return { success: false, message: `Unknown plan: ${planId}` };
+
+    if (!sub.flw_card_token) {
+      return { success: false, message: 'No payment method saved. Please subscribe using the payment form.' };
+    }
+
+    const email = sub.billing_email || '';
+    const txRef = flutterwaveService.generateTxRef('ADROOM-SKIP-TRIAL');
+
+    console.log(`[Energy] Skip trial: charging ${plan.name} ($${plan.price_usd}) for user ${userId}`);
+
+    const charge = await flutterwaveService.chargeToken({
+      token: sub.flw_card_token,
+      email,
+      amount: plan.price_usd,
+      currency: 'USD',
+      tx_ref: txRef,
+      narration: `AdRoom ${plan.name} — Monthly Subscription`,
+    });
+
+    const ok = charge?.status === 'success' && (charge as any)?.data?.status === 'successful';
+    if (!ok) {
+      return { success: false, message: charge?.message ?? 'Card was declined. Please update your payment method.' };
+    }
+
+    const flwId = String((charge as any).data?.id ?? '');
+    await this.supabase.from('subscriptions').update({
+      trial_charged: true,
+      updated_at: new Date().toISOString(),
+    }).eq('user_id', userId);
+
+    const result = await this.applySubscription(
+      userId, planId, flwId, txRef,
+      sub.flw_card_token, sub.flw_card_last4, sub.flw_card_brand, email,
+    );
+
+    pushService.notifyPlanChanged(userId, plan.name, result.credits, 0).catch(() => {});
+    return { success: true, message: `Upgraded to ${plan.name}! ${result.credits} energy credits added.`, credits: result.credits };
   }
 
   /** Check if a user is eligible for the 14-day trial.
