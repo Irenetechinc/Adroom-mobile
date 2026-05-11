@@ -906,16 +906,21 @@ router.get('/api/trials', auth, async (_req, res) => {
 // ─── SSE REAL-TIME STREAM ─────────────────────────────────────────────────────
 router.get('/api/stream', auth, (req, res) => {
   res.setHeader('Content-Type', 'text/event-stream');
-  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Cache-Control', 'no-cache, no-transform');
   res.setHeader('Connection', 'keep-alive');
   res.setHeader('X-Accel-Buffering', 'no');
+  res.setHeader('Access-Control-Allow-Origin', '*');
   res.flushHeaders();
+
+  // Send an immediate comment so the browser fires onopen right away
+  // (without this, onopen waits until the first real data which could be 20s away)
+  try { res.write(': connected\n\n'); } catch {}
 
   sseClients.add(res);
 
   const ping = setInterval(() => {
     try { res.write(': ping\n\n'); } catch { clearInterval(ping); sseClients.delete(res); }
-  }, 20000);
+  }, 15000);
 
   const pollActivity = setInterval(async () => {
     try {
