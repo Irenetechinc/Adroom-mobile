@@ -912,9 +912,11 @@ router.get('/api/stream', auth, (req, res) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.flushHeaders();
 
-  // Send an immediate comment so the browser fires onopen right away
-  // (without this, onopen waits until the first real data which could be 20s away)
-  try { res.write(': connected\n\n'); } catch {}
+  // Send a real named event (not just a comment) immediately so the browser
+  // fires onopen and EventSource transitions from CONNECTING → OPEN right away.
+  // Comments (": ...") are valid SSE but some browsers/proxies don't trigger
+  // onopen until an actual event arrives.
+  try { res.write('event: connected\ndata: {}\n\n'); } catch {}
 
   sseClients.add(res);
 
@@ -1675,6 +1677,9 @@ let TOKEN = localStorage.getItem('admin_token') || '';
 let allUsers = [];
 let currentUserId = null;
 let evtSource = null;
+let sseRetryCount = 0;
+let sseRetryTimer = null;
+let agentNetPoller = null;
 const activityLog = [];
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -1781,7 +1786,8 @@ function showSection(name) {
   document.getElementById('page-title').textContent = TITLES[name] || name;
   if (name === 'cma') { loadCMAStats(); loadModelCredits(); }
   if (name === 'trials') { loadTrials(); }
-  if (name === 'agentnet') { loadAgentNetwork(); }
+  // Start polling when entering the agent network section, stop when leaving
+  if (name === 'agentnet') { startAgentNetPolling(); } else { stopAgentNetPolling(); }
 }
 
 // ── Trials & Billing ─────────────────────────────────────────────────────────
@@ -2589,21 +2595,60 @@ async function loadModelCredits() {
 }
 
 // ── SSE ───────────────────────────────────────────────────────────────────────
+function setSseStatus(color, text) {
+  ['sse-dot', 'sse-dot-2'].forEach(id => { const el = document.getElementById(id); if (el) el.style.background = color; });
+  ['sse-status', 'sse-status-2'].forEach(id => { const el = document.getElementById(id); if (el) el.textContent = text; });
+}
+
 function connectSSE() {
-  if (evtSource) evtSource.close();
+  if (sseRetryTimer) { clearTimeout(sseRetryTimer); sseRetryTimer = null; }
+  if (evtSource) { evtSource.close(); evtSource = null; }
+
+  // If no valid token, don't even try
+  if (!TOKEN) return;
+
   const url = '/admin/api/stream?token=' + encodeURIComponent(TOKEN);
-  evtSource = new EventSource(url);
+  try { evtSource = new EventSource(url); } catch (e) { scheduleSSERetry(); return; }
+
+  setSseStatus('#F59E0B', 'Connecting…');
 
   evtSource.onopen = () => {
-    ['sse-dot', 'sse-dot-2'].forEach(id => { const el = document.getElementById(id); if (el) el.style.background = '#10B981'; });
-    ['sse-status', 'sse-status-2'].forEach(id => { const el = document.getElementById(id); if (el) el.textContent = 'Live'; });
+    sseRetryCount = 0;
+    setSseStatus('#10B981', 'Live');
   };
 
+  // Named "connected" event — server sends this immediately on open so onopen fires
+  // even when the proxy buffers the initial response headers
+  evtSource.addEventListener('connected', () => {
+    sseRetryCount = 0;
+    setSseStatus('#10B981', 'Live');
+  });
+
   evtSource.onerror = () => {
-    ['sse-dot', 'sse-dot-2'].forEach(id => { const el = document.getElementById(id); if (el) el.style.background = '#EF4444'; });
-    ['sse-status', 'sse-status-2'].forEach(id => { const el = document.getElementById(id); if (el) el.textContent = 'Reconnecting…'; });
-    setTimeout(connectSSE, 5000);
+    if (evtSource) { evtSource.close(); evtSource = null; }
+    scheduleSSERetry();
   };
+
+  attachSSEListeners();
+}
+
+function scheduleSSERetry() {
+  sseRetryCount++;
+  const MAX_RETRIES = 20;
+  if (sseRetryCount > MAX_RETRIES) {
+    // Give up on SSE — agent network map uses polling fallback, show Polling status
+    setSseStatus('#F59E0B', 'Polling');
+    return;
+  }
+  // Exponential backoff: 2s, 4s, 8s … capped at 30s
+  const delay = Math.min(2000 * Math.pow(1.5, sseRetryCount - 1), 30000);
+  const label = sseRetryCount <= 3 ? 'Reconnecting…' : \`Retry \${sseRetryCount}/\${MAX_RETRIES}\`;
+  setSseStatus('#EF4444', label);
+  sseRetryTimer = setTimeout(connectSSE, delay);
+}
+
+function attachSSEListeners() {
+  if (!evtSource) return;
 
   evtSource.addEventListener('activity', e => {
     const events = JSON.parse(e.data);
@@ -2645,7 +2690,6 @@ function connectSSE() {
     const d = JSON.parse(e.data);
     addActivityEvent({ type: 'deletion_request', payload: d });
     loadDeletionRequests();
-    // Flash badge
     const badge = document.getElementById('deletion-badge');
     if (badge) {
       badge.style.display = 'inline';
@@ -2948,26 +2992,47 @@ function addAgentNetEvent(type, data) {
   while (feed.children.length > 30) feed.removeChild(feed.lastChild);
 }
 
+// ── Agent Network Polling ─────────────────────────────────────────────────────
+// The map always works via REST polling regardless of whether SSE is connected.
+// Polling runs every 5s while the agentnet section is visible; SSE events are
+// applied on top for real-time overlays when the connection is healthy.
+function startAgentNetPolling() {
+  stopAgentNetPolling();
+  loadAgentNetwork();
+  agentNetPoller = setInterval(loadAgentNetwork, 5000);
+}
+
+function stopAgentNetPolling() {
+  if (agentNetPoller) { clearInterval(agentNetPoller); agentNetPoller = null; }
+}
+
 async function loadAgentNetwork() {
   try {
-    const d = await api('GET', '/api/stats');
-    // Reset agent task counts from stats
+    const tasks = await api('GET', '/api/agent-network');
+    if (tasks && tasks.agents) {
+      tasks.agents.forEach(a => {
+        if (agentNetState.agents[a.agent_type]) {
+          agentNetState.agents[a.agent_type].tasks = a.total || 0;
+          // Mark as active if any running/pending in the last hour
+          agentNetState.agents[a.agent_type].status = a.running > 0 ? 'active' : (a.done > 0 || a.total > 0 ? 'done' : 'idle');
+          // Wire up active platform edges from the last active platform
+          if (a.running > 0 && a.platforms && a.platforms.length > 0) {
+            const plat = a.platforms[a.platforms.length - 1];
+            if (agentNetState.platforms[plat]) {
+              agentNetState.activeEdges = agentNetState.activeEdges.filter(e => e.agent !== a.agent_type);
+              agentNetState.activeEdges.push({ agent: a.agent_type, platform: plat });
+            }
+          }
+        }
+      });
+    }
     renderAgentNetGraph();
     updateAgentNetStatusPanel();
-    // Also try to fetch recent agent tasks for initial state
-    try {
-      const tasks = await api('GET', '/api/agent-network');
-      if (tasks && tasks.agents) {
-        tasks.agents.forEach(a => {
-          if (agentNetState.agents[a.agent_type]) {
-            agentNetState.agents[a.agent_type].tasks = a.total || 0;
-            agentNetState.agents[a.agent_type].status = a.running > 0 ? 'active' : 'idle';
-          }
-        });
-        renderAgentNetGraph();
-        updateAgentNetStatusPanel();
-      }
-    } catch {}
+    // If SSE has given up (Polling mode), update status indicator to confirm data is live
+    const ssEl = document.getElementById('sse-status-2');
+    if (ssEl && ssEl.textContent === 'Polling') {
+      setSseStatus('#F59E0B', 'Polling ✓');
+    }
   } catch (e) {
     renderAgentNetGraph();
     updateAgentNetStatusPanel();
