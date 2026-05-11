@@ -1460,4 +1460,128 @@ Only include comments that should be replied to. Keep replies natural and authen
         this.log(`Scheduled ${tasks.length} GMAPS_OUTREACH tasks for location "${location}" (${keyword}) across ${params.durationDays}-day campaign`);
         return tasks.length;
     }
+
+    // ─── SELF-LEARNING ENGINE ────────────────────────────────────────────────────
+    /**
+     * Runs after every task execution. Fetches fresh performance data, uses AI to
+     * analyse what content/tactics worked best, and updates agent_skills so future
+     * tasks automatically use the learned optimisations. Results are broadcast to
+     * the admin network graph in real-time.
+     */
+    async selfLearnFromPerformance(strategyId: string, userId: string): Promise<void> {
+        try {
+            // Fetch recent completed tasks (last 20) + performance for this strategy
+            const [tasksRes, perfRes, stratRes] = await Promise.all([
+                this.supabase
+                    .from('agent_tasks')
+                    .select('id, task_type, platform, content, result, executed_at')
+                    .eq('strategy_id', strategyId)
+                    .eq('user_id', userId)
+                    .eq('agent_type', this.agentType)
+                    .eq('status', 'done')
+                    .order('executed_at', { ascending: false })
+                    .limit(20),
+                this.supabase
+                    .from('agent_performance')
+                    .select('platform, reach, likes, comments, shares, conversions, fetched_at')
+                    .eq('strategy_id', strategyId)
+                    .eq('user_id', userId)
+                    .order('fetched_at', { ascending: false })
+                    .limit(10),
+                this.supabase
+                    .from('strategies')
+                    .select('goal, current_execution_plan, product_memory')
+                    .eq('id', strategyId)
+                    .single(),
+            ]);
+
+            const recentTasks = tasksRes.data || [];
+            const recentPerf = perfRes.data || [];
+            const strategy = stratRes.data;
+
+            if (recentTasks.length < 3 && recentPerf.length === 0) return; // Not enough data yet
+
+            const totalReach = recentPerf.reduce((s: number, p: any) => s + (p.reach || 0), 0);
+            const totalEngagement = recentPerf.reduce((s: number, p: any) => s + (p.likes || 0) + (p.comments || 0) + (p.shares || 0), 0);
+            const platformBreakdown = recentPerf.reduce((acc: Record<string, any>, p: any) => {
+                acc[p.platform] = { reach: (acc[p.platform]?.reach || 0) + (p.reach || 0), engagement: (acc[p.platform]?.engagement || 0) + (p.likes || 0) + (p.comments || 0) };
+                return acc;
+            }, {});
+            const bestPlatform = Object.entries(platformBreakdown).sort((a: any, b: any) => b[1].reach - a[1].reach)[0]?.[0] || null;
+
+            const prompt = `
+You are the AdRoom ${this.agentType} Agent performing SELF-LEARNING after recent campaign execution.
+
+STRATEGY GOAL: ${strategy?.goal || 'Unknown'}
+RECENT TASKS: ${JSON.stringify(recentTasks.slice(0, 5))}
+PERFORMANCE DATA: ${JSON.stringify(recentPerf)}
+TOTAL REACH: ${totalReach}
+TOTAL ENGAGEMENT: ${totalEngagement}
+BEST PLATFORM: ${bestPlatform || 'unknown'}
+PLATFORM BREAKDOWN: ${JSON.stringify(platformBreakdown)}
+
+Analyse what worked, what didn't, and derive 1–2 concrete learnable tactics.
+Return JSON ONLY:
+{
+  "key_insight": "One sentence: what's working or failing",
+  "best_tactic": "The specific content/timing/platform tactic that drove the most results",
+  "avoid_tactic": "What to stop doing based on low performance",
+  "skill_name": "snake_case_skill_name (max 40 chars)",
+  "skill_description": "Short description of the learned skill",
+  "execution_prompt": "GPT-4o prompt template using {{product}}, {{platform}}, {{goal}} for future use",
+  "confidence": 0.0
+}
+`;
+            const response = await this.ai.generateStrategy({}, prompt);
+            const learning = response.parsedJson;
+
+            if (!learning?.skill_name || (learning.confidence || 0) < 0.4) {
+                this.log(`Self-learning: low confidence (${learning?.confidence ?? 0}) — skipping skill update`);
+                return;
+            }
+
+            // Upsert the learned skill into agent_skills
+            await this.supabase.from('agent_skills').upsert({
+                agent_type: this.agentType,
+                skill_name: `${this.agentType.toLowerCase()}_${learning.skill_name}`.slice(0, 80),
+                skill_description: learning.skill_description,
+                trigger_condition: `Use when: ${learning.key_insight}`,
+                execution_prompt: learning.execution_prompt,
+                parameters: { best_platform: bestPlatform, confidence: learning.confidence },
+                success_metric: `Reach >${totalReach}, Engagement >${totalEngagement}`,
+                created_by_agent_run: strategyId,
+            }, { onConflict: 'skill_name' });
+
+            // Store the learning as an intervention log entry
+            await this.supabase.from('agent_interventions').insert({
+                strategy_id: strategyId,
+                user_id: userId,
+                agent_type: this.agentType,
+                problem: `Self-learning cycle — reach: ${totalReach}, engagement: ${totalEngagement}`,
+                action: `Learned: ${learning.best_tactic}`,
+                thinking: `Insight: ${learning.key_insight} | Avoid: ${learning.avoid_tactic}`,
+                impact_score: learning.confidence,
+                intelligence: { perf: recentPerf.slice(0, 3), tasks: recentTasks.length },
+                created_at: new Date().toISOString(),
+            });
+
+            this.log(`Self-learning complete: skill "${learning.skill_name}" (confidence ${learning.confidence?.toFixed(2)})`);
+
+            // Broadcast to admin network graph
+            try {
+                const { adminBroadcast } = await import('../admin/adminRouter');
+                adminBroadcast('agent_learning', {
+                    agent_type: this.agentType,
+                    skill_name: learning.skill_name,
+                    insight: learning.key_insight,
+                    best_platform: bestPlatform,
+                    reach: totalReach,
+                    engagement: totalEngagement,
+                    confidence: learning.confidence,
+                });
+            } catch {}
+        } catch (e: any) {
+            this.log(`Self-learning error: ${e.message}`);
+        }
+    }
 }
