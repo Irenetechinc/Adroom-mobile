@@ -867,6 +867,401 @@ Return JSON:
         } catch { return {}; }
     }
 
+    // ─── INSTAGRAM EXTENDED ACTIVITIES ───────────────────────────────────────────
+
+    async likeInstagramComment(tokens: AgentTokens['instagram'], commentId: string): Promise<void> {
+        if (!tokens) return;
+        try {
+            await fetch(`${FB_GRAPH}/${commentId}/likes`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ access_token: tokens.access_token }),
+            });
+            this.log(`Instagram comment ${commentId} liked`);
+        } catch (e: any) { this.log(`Instagram like comment failed: ${e.message}`); }
+    }
+
+    async fetchInstagramPostMetrics(tokens: AgentTokens['instagram'], mediaId: string): Promise<Record<string, number>> {
+        if (!tokens) return {};
+        try {
+            const fields = 'impressions,reach,likes_count,comments_count,shares,saved,total_interactions,plays';
+            const resp = await fetch(
+                `${FB_GRAPH}/${mediaId}/insights?metric=${fields}&access_token=${tokens.access_token}`
+            );
+            if (!resp.ok) return {};
+            const data: any = await resp.json();
+            const metrics: Record<string, number> = {};
+            for (const item of data?.data || []) {
+                metrics[item.name] = item.values?.[item.values.length - 1]?.value ?? item.value ?? 0;
+            }
+            return metrics;
+        } catch { return {}; }
+    }
+
+    async fetchInstagramComments(tokens: AgentTokens['instagram'], mediaId: string): Promise<Array<{ id: string; text: string; username: string; timestamp: string }>> {
+        if (!tokens) return [];
+        try {
+            const resp = await fetch(
+                `${FB_GRAPH}/${mediaId}/comments?fields=id,text,username,timestamp&access_token=${tokens.access_token}`
+            );
+            if (!resp.ok) return [];
+            const data: any = await resp.json();
+            return (data?.data || []).map((c: any) => ({
+                id: c.id,
+                text: c.text || '',
+                username: c.username || '',
+                timestamp: c.timestamp || '',
+            }));
+        } catch { return []; }
+    }
+
+    // ─── TWITTER/X EXTENDED ACTIVITIES ───────────────────────────────────────────
+
+    async likeTweet(tokens: AgentTokens['twitter'], tweetId: string, twitterUserId: string): Promise<void> {
+        if (!tokens) return;
+        try {
+            const resp = await fetch(`${TWITTER_API}/users/${twitterUserId}/likes`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${tokens.access_token}`,
+                },
+                body: JSON.stringify({ tweet_id: tweetId }),
+            });
+            if (resp.ok) this.log(`Tweet ${tweetId} liked`);
+        } catch (e: any) { this.log(`Twitter like failed: ${e.message}`); }
+    }
+
+    async retweetPost(tokens: AgentTokens['twitter'], tweetId: string, twitterUserId: string): Promise<void> {
+        if (!tokens) return;
+        try {
+            const resp = await fetch(`${TWITTER_API}/users/${twitterUserId}/retweets`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${tokens.access_token}`,
+                },
+                body: JSON.stringify({ tweet_id: tweetId }),
+            });
+            if (resp.ok) this.log(`Tweet ${tweetId} retweeted`);
+        } catch (e: any) { this.log(`Twitter retweet failed: ${e.message}`); }
+    }
+
+    async quoteTweet(tokens: AgentTokens['twitter'], quotedTweetId: string, comment: string): Promise<string | null> {
+        if (!tokens) return null;
+        try {
+            const resp = await fetch(`${TWITTER_API}/tweets`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${tokens.access_token}`,
+                },
+                body: JSON.stringify({ text: comment.slice(0, 250), quote_tweet_id: quotedTweetId }),
+            });
+            if (!resp.ok) return null;
+            const data: any = await resp.json();
+            const newTweetId = data.data?.id || null;
+            if (newTweetId) this.log(`Quote tweet posted: ${newTweetId}`);
+            return newTweetId;
+        } catch (e: any) { this.log(`Quote tweet failed: ${e.message}`); return null; }
+    }
+
+    async fetchTwitterMentions(tokens: AgentTokens['twitter'], twitterUserId: string, sinceId?: string): Promise<Array<{ id: string; text: string; authorId: string; createdAt: string }>> {
+        if (!tokens) return [];
+        try {
+            const params = new URLSearchParams({
+                'tweet.fields': 'author_id,created_at,public_metrics',
+                max_results: '25',
+            });
+            if (sinceId) params.set('since_id', sinceId);
+            const resp = await fetch(`${TWITTER_API}/users/${twitterUserId}/mentions?${params}`, {
+                headers: { 'Authorization': `Bearer ${tokens.access_token}` },
+            });
+            if (!resp.ok) return [];
+            const data: any = await resp.json();
+            return (data?.data || []).map((t: any) => ({
+                id: t.id,
+                text: t.text,
+                authorId: t.author_id,
+                createdAt: t.created_at,
+            }));
+        } catch { return []; }
+    }
+
+    async fetchTwitterReplies(tokens: AgentTokens['twitter'], tweetId: string): Promise<Array<{ id: string; text: string; authorId: string }>> {
+        if (!tokens) return [];
+        try {
+            const resp = await fetch(
+                `${TWITTER_API}/tweets/search/recent?query=conversation_id:${tweetId}&tweet.fields=author_id,public_metrics&max_results=25`,
+                { headers: { 'Authorization': `Bearer ${tokens.access_token}` } }
+            );
+            if (!resp.ok) return [];
+            const data: any = await resp.json();
+            return (data?.data || []).map((t: any) => ({ id: t.id, text: t.text, authorId: t.author_id }));
+        } catch { return []; }
+    }
+
+    // ─── LINKEDIN EXTENDED ACTIVITIES ────────────────────────────────────────────
+
+    async likeLinkedInPost(tokens: AgentTokens['linkedin'], postUrn: string): Promise<void> {
+        if (!tokens) return;
+        try {
+            const authorUrn = tokens.org_urn || tokens.person_urn;
+            const resp = await fetch(`${LINKEDIN_API}/reactions`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${tokens.access_token}`,
+                    'X-Restli-Protocol-Version': '2.0.0',
+                },
+                body: JSON.stringify({
+                    actor: authorUrn,
+                    object: postUrn,
+                    reactionType: 'LIKE',
+                }),
+            });
+            if (resp.ok) this.log(`LinkedIn post ${postUrn} liked`);
+        } catch (e: any) { this.log(`LinkedIn like failed: ${e.message}`); }
+    }
+
+    async fetchLinkedInPostMetrics(tokens: AgentTokens['linkedin'], postUrn: string): Promise<Record<string, number>> {
+        if (!tokens) return {};
+        try {
+            const encodedUrn = encodeURIComponent(postUrn);
+            const resp = await fetch(
+                `${LINKEDIN_API}/organizationalEntityShareStatistics?q=organizationalEntity&organizationalEntity=${encodedUrn}&shareUrns[0]=${encodedUrn}`,
+                {
+                    headers: {
+                        'Authorization': `Bearer ${tokens.access_token}`,
+                        'X-Restli-Protocol-Version': '2.0.0',
+                    },
+                }
+            );
+            if (!resp.ok) return {};
+            const data: any = await resp.json();
+            const stats = data?.elements?.[0]?.totalShareStatistics || {};
+            return {
+                impressions: stats.impressionCount || 0,
+                clicks: stats.clickCount || 0,
+                likes: stats.likeCount || 0,
+                comments: stats.commentCount || 0,
+                shares: stats.shareCount || 0,
+                engagement: stats.engagement || 0,
+                reach: stats.uniqueImpressionsCount || 0,
+            };
+        } catch { return {}; }
+    }
+
+    async fetchLinkedInComments(tokens: AgentTokens['linkedin'], postUrn: string): Promise<Array<{ id: string; text: string; authorUrn: string; createdAt: number }>> {
+        if (!tokens) return [];
+        try {
+            const encodedUrn = encodeURIComponent(postUrn);
+            const resp = await fetch(
+                `${LINKEDIN_API}/comments?q=object&object=${encodedUrn}&count=25`,
+                {
+                    headers: {
+                        'Authorization': `Bearer ${tokens.access_token}`,
+                        'X-Restli-Protocol-Version': '2.0.0',
+                    },
+                }
+            );
+            if (!resp.ok) return [];
+            const data: any = await resp.json();
+            return (data?.elements || []).map((c: any) => ({
+                id: c.id || c.$URN || '',
+                text: c.message?.text || '',
+                authorUrn: c.actor || '',
+                createdAt: c.created?.time || 0,
+            }));
+        } catch { return []; }
+    }
+
+    // ─── QUICK REPLY GENERATOR ───────────────────────────────────────────────────
+
+    /**
+     * Generate a quick, contextual reply to a comment or mention.
+     * Natural, human-sounding, goal-aligned.
+     */
+    async generateQuickReply(commentText: string, goal: string, product: any): Promise<string | null> {
+        try {
+            const result = await this.ai.generateStrategy({}, `
+You are the AdRoom ${this.agentType} Agent replying to a social media comment.
+
+COMMENT: "${commentText}"
+PRODUCT: ${JSON.stringify(product)}
+GOAL: ${goal}
+
+Write a genuine, human reply (max 120 chars). No marketing jargon. No "I noticed you commented". Feels like a real person replied.
+For SALESMAN goal: warm, helpful, nudge toward purchase without being pushy.
+For AWARENESS goal: enthusiastic, invite to share, build community.
+For PROMOTION goal: create mild urgency, mention offer if relevant.
+For LAUNCH goal: build excitement, exclusive energy.
+
+Return ONLY the reply text, nothing else.
+`);
+            return result.text?.trim().replace(/^"|"$/g, '').substring(0, 120) || null;
+        } catch { return null; }
+    }
+
+    // ─── UNIFIED COMMENT SCANNER ──────────────────────────────────────────────────
+
+    /**
+     * COMMENT SCAN & SMART REPLY: Fetch comments on a published post, use AI to
+     * identify high-intent or engaged commenters, and reply to them intelligently.
+     * Self-aware: learns from what type of comments drive conversions for this goal.
+     */
+    async scanAndReplyComments(params: {
+        platform: string;
+        tokens: AgentTokens;
+        postId: string;
+        goal: string;
+        product: any;
+        strategyId: string;
+        userId: string;
+    }): Promise<{ replied: number; leads: number }> {
+        this.log(`Scanning comments on ${params.platform} post ${params.postId}`);
+        let comments: Array<{ id: string; text: string; username?: string; authorId?: string }> = [];
+
+        try {
+            switch (params.platform.toLowerCase()) {
+                case 'facebook':
+                    {
+                        const resp = await fetch(
+                            `${FB_GRAPH}/${params.postId}/comments?fields=id,message,from&access_token=${params.tokens.facebook?.access_token}`
+                        );
+                        if (resp.ok) {
+                            const data: any = await resp.json();
+                            comments = (data?.data || []).map((c: any) => ({ id: c.id, text: c.message || '', username: c.from?.name, authorId: c.from?.id }));
+                        }
+                    }
+                    break;
+                case 'instagram':
+                    if (params.tokens.instagram) {
+                        const igComments = await this.fetchInstagramComments(params.tokens.instagram, params.postId);
+                        comments = igComments.map(c => ({ id: c.id, text: c.text, username: c.username }));
+                    }
+                    break;
+                case 'twitter':
+                case 'x':
+                    if (params.tokens.twitter) {
+                        const replies = await this.fetchTwitterReplies(params.tokens.twitter, params.postId);
+                        comments = replies.map(r => ({ id: r.id, text: r.text, authorId: r.authorId }));
+                    }
+                    break;
+                case 'linkedin':
+                    if (params.tokens.linkedin) {
+                        const liComments = await this.fetchLinkedInComments(params.tokens.linkedin, params.postId);
+                        comments = liComments.map(c => ({ id: c.id, text: c.text, authorId: c.authorUrn }));
+                    }
+                    break;
+                case 'tiktok':
+                    if (params.tokens.tiktok) {
+                        const tikLeads = await this.scanTikTokLeads(params.tokens.tiktok, params.postId);
+                        comments = tikLeads.map(l => ({ id: l.open_id, text: l.bio_description || '', username: l.display_name }));
+                    }
+                    break;
+            }
+        } catch (e: any) {
+            this.log(`Comment fetch failed on ${params.platform}: ${e.message}`);
+            return { replied: 0, leads: 0 };
+        }
+
+        if (!comments.length) return { replied: 0, leads: 0 };
+
+        // Use AI to classify each comment and generate smart replies
+        const classifyPrompt = `
+You are the AdRoom ${this.agentType} Agent analyzing comments on a ${params.platform} post.
+
+PRODUCT: ${JSON.stringify(params.product)}
+GOAL: ${params.goal}
+COMMENTS (max 20):
+${comments.slice(0, 20).map((c, i) => `${i + 1}. "${c.text}" — ${c.username || c.authorId || 'user'}`).join('\n')}
+
+For EACH comment, decide:
+1. Is this a HIGH-INTENT lead? (asking price, where to buy, "interested", want to order) → reply + mark as lead
+2. Is this a positive engagement? (compliment, share, love it) → reply warmly to amplify
+3. Is this a question? → answer helpfully to build trust
+4. Is this negative/spam? → skip
+
+Return JSON:
+{
+  "replies": [
+    { "comment_index": 0, "should_reply": true, "is_lead": true, "reply": "reply text (natural, human, max 120 chars, no bot disclosure)", "lead_intent": "buying_intent|curiosity|price_inquiry|general_interest" }
+  ]
+}
+Only include comments that should be replied to. Keep replies natural and authentic.
+`;
+        let replyPlan: any[] = [];
+        try {
+            const aiResult = await this.ai.generateStrategy({}, classifyPrompt);
+            replyPlan = aiResult.parsedJson?.replies || [];
+        } catch { return { replied: 0, leads: 0 }; }
+
+        let replied = 0;
+        let leads = 0;
+
+        for (const plan of replyPlan.slice(0, 8)) {
+            if (!plan.should_reply) continue;
+            const comment = comments[plan.comment_index];
+            if (!comment) continue;
+
+            try {
+                switch (params.platform.toLowerCase()) {
+                    case 'facebook':
+                        if (params.tokens.facebook) {
+                            await this.replyToFacebookComment(params.tokens.facebook, comment.id, plan.reply);
+                        }
+                        break;
+                    case 'instagram':
+                        if (params.tokens.instagram) {
+                            await this.replyToInstagramComment(params.tokens.instagram, comment.id, plan.reply);
+                        }
+                        break;
+                    case 'twitter':
+                    case 'x':
+                        if (params.tokens.twitter) {
+                            await this.replyToTwitterPost(params.tokens.twitter, comment.id, plan.reply);
+                        }
+                        break;
+                    case 'linkedin':
+                        if (params.tokens.linkedin) {
+                            await this.replyToLinkedInComment(params.tokens.linkedin, comment.id, plan.reply);
+                        }
+                        break;
+                    case 'tiktok':
+                        if (params.tokens.tiktok) {
+                            await this.replyToTikTokComment(params.tokens.tiktok, params.postId, comment.id, plan.reply);
+                        }
+                        break;
+                }
+                replied++;
+
+                // Register as lead if high intent
+                if (plan.is_lead && comment.authorId) {
+                    await this.supabase.from('agent_leads').upsert({
+                        user_id: params.userId,
+                        strategy_id: params.strategyId,
+                        platform: params.platform,
+                        platform_user_id: comment.authorId,
+                        platform_username: comment.username || comment.authorId,
+                        lead_type: 'COMMENT_LEAD',
+                        intent: plan.lead_intent || 'general_interest',
+                        status: 'warm',
+                        notes: `Comment: "${comment.text.substring(0, 200)}"`,
+                        dm_sequence_step: 0,
+                        created_at: new Date().toISOString(),
+                    }, { onConflict: 'platform,platform_user_id,user_id' });
+                    leads++;
+                }
+            } catch (e: any) {
+                this.log(`Reply failed on comment ${comment.id}: ${e.message}`);
+            }
+        }
+
+        this.log(`Comment scan complete on ${params.platform}: ${replied} replies sent, ${leads} new leads`);
+        return { replied, leads };
+    }
+
     async recordPerformance(params: {
         strategyId: string;
         userId: string;

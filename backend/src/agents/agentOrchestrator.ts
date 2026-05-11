@@ -142,6 +142,8 @@ export class AgentOrchestrator {
             .neq('task_type', 'LEAD_SCAN')       // Lead scans handled separately
             .neq('task_type', 'PERFORMANCE_CHECK')
             .neq('task_type', 'GMAPS_OUTREACH')  // Google Maps outreach handled by executeSpecialTasks
+            .neq('task_type', 'COMMENT_SCAN')    // Comment scanning handled by executeSpecialTasks
+            .neq('task_type', 'MENTION_SCAN')    // Mention scanning handled by executeSpecialTasks
             .order('scheduled_at', { ascending: true })
             .limit(20); // Process max 20 tasks per cycle
 
@@ -206,7 +208,7 @@ export class AgentOrchestrator {
             .from('agent_tasks')
             .select('*')
             .eq('status', 'pending')
-            .in('task_type', ['LEAD_SCAN', 'PERFORMANCE_CHECK', 'GMAPS_OUTREACH'])
+            .in('task_type', ['LEAD_SCAN', 'PERFORMANCE_CHECK', 'GMAPS_OUTREACH', 'COMMENT_SCAN', 'MENTION_SCAN'])
             .lte('scheduled_at', now)
             .limit(10);
 
@@ -214,6 +216,7 @@ export class AgentOrchestrator {
             await this.supabase.from('agent_tasks').update({ status: 'executing' }).eq('id', task.id);
 
             try {
+                // ─── LEAD SCAN ────────────────────────────────────────────────────────────
                 if (task.task_type === 'LEAD_SCAN' && task.agent_type === 'SALESMAN') {
                     const agent = new SalesmanAgent(this.supabase);
                     const tokens = await agent.getTokens(task.user_id);
@@ -227,8 +230,85 @@ export class AgentOrchestrator {
                     await agent.followUpLeads(task.user_id);
                 }
 
-                // GMAPS_OUTREACH is owned by SalesmanAgent regardless of which agent
-                // scheduled it (AWARENESS, PROMOTION, LAUNCH all use the same outreach engine).
+                // ─── COMMENT SCAN: Reply to engaged commenters on all platforms ─────────
+                if (task.task_type === 'COMMENT_SCAN' || task.task_type === 'MENTION_SCAN') {
+                    const agent = this.getAgent(task.agent_type as any);
+                    const tokens = await agent.getTokens(task.user_id);
+                    const product = await agent.getProductDetails(task.content?.product_id);
+
+                    // Determine which post IDs to scan
+                    const postIds: string[] = task.content?.post_ids || (task.content?.post_id ? [task.content.post_id] : []);
+
+                    // If no specific post IDs, find recent published tasks for this strategy
+                    if (!postIds.length) {
+                        const { data: recentPosts } = await this.supabase
+                            .from('agent_tasks')
+                            .select('id, platform, result')
+                            .eq('strategy_id', task.strategy_id)
+                            .eq('status', 'done')
+                            .not('result->platform_post_id', 'is', null)
+                            .gte('executed_at', new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString())
+                            .limit(5);
+
+                        for (const post of recentPosts || []) {
+                            if (post.result?.platform_post_id) {
+                                postIds.push(post.result.platform_post_id);
+                            }
+                        }
+                    }
+
+                    let totalReplied = 0;
+                    let totalLeads = 0;
+
+                    for (const postId of postIds.slice(0, 3)) {
+                        const result = await agent.scanAndReplyComments({
+                            platform: task.platform,
+                            tokens,
+                            postId,
+                            goal: task.content?.goal || 'AWARENESS',
+                            product,
+                            strategyId: task.strategy_id,
+                            userId: task.user_id,
+                        });
+                        totalReplied += result.replied;
+                        totalLeads += result.leads;
+                    }
+
+                    // Also scan Twitter mentions if platform is twitter
+                    if ((task.platform === 'twitter' || task.platform === 'x') && tokens.twitter && task.task_type === 'MENTION_SCAN') {
+                        const { data: twitterConfig } = await this.supabase
+                            .from('ad_configs')
+                            .select('platform_user_id, twitter_user_id')
+                            .eq('user_id', task.user_id)
+                            .in('platform', ['twitter', 'x'])
+                            .limit(1)
+                            .single();
+
+                        const twitterUserId = twitterConfig?.twitter_user_id || twitterConfig?.platform_user_id;
+                        if (twitterUserId) {
+                            const mentions = await agent.fetchTwitterMentions(tokens.twitter, twitterUserId);
+                            for (const mention of mentions.slice(0, 5)) {
+                                try {
+                                    const reply = await agent.generateQuickReply(mention.text, task.content?.goal || 'AWARENESS', product);
+                                    if (reply) {
+                                        await agent.replyToTwitterPost(tokens.twitter, mention.id, reply);
+                                        totalReplied++;
+                                    }
+                                } catch {}
+                            }
+                        }
+                    }
+
+                    console.log(`[Orchestrator] ${task.task_type} on ${task.platform} — ${totalReplied} replies, ${totalLeads} leads`);
+                    await this.supabase.from('agent_tasks').update({
+                        status: 'done',
+                        executed_at: now,
+                        result: { comment_scan: { replied: totalReplied, leads: totalLeads } },
+                    }).eq('id', task.id);
+                    continue;
+                }
+
+                // ─── GMAPS_OUTREACH ───────────────────────────────────────────────────────
                 if (task.task_type === 'GMAPS_OUTREACH') {
                     const salesAgent = new SalesmanAgent(this.supabase);
                     const c = task.content || {};
@@ -283,8 +363,34 @@ export class AgentOrchestrator {
                 const tokens = await agent.getTokens(task.user_id);
 
                 let metrics: Record<string, number> = {};
-                if (task.platform === 'facebook' && tokens.facebook) {
-                    metrics = await agent.fetchFacebookPostMetrics(platformPostId, tokens.facebook.access_token);
+
+                switch (task.platform.toLowerCase()) {
+                    case 'facebook':
+                        if (tokens.facebook) {
+                            metrics = await agent.fetchFacebookPostMetrics(platformPostId, tokens.facebook.access_token);
+                        }
+                        break;
+                    case 'instagram':
+                        if (tokens.instagram) {
+                            metrics = await agent.fetchInstagramPostMetrics(tokens.instagram, platformPostId);
+                        }
+                        break;
+                    case 'twitter':
+                    case 'x':
+                        if (tokens.twitter) {
+                            metrics = await agent.fetchTwitterPostMetrics(platformPostId, tokens.twitter.access_token);
+                        }
+                        break;
+                    case 'linkedin':
+                        if (tokens.linkedin) {
+                            metrics = await agent.fetchLinkedInPostMetrics(tokens.linkedin, platformPostId);
+                        }
+                        break;
+                    case 'tiktok':
+                        if (tokens.tiktok) {
+                            metrics = await agent.fetchTikTokVideoMetrics(tokens.tiktok, platformPostId);
+                        }
+                        break;
                 }
 
                 if (Object.keys(metrics).length > 0) {
@@ -296,6 +402,22 @@ export class AgentOrchestrator {
                         platformPostId,
                         metrics
                     });
+
+                    // After collecting metrics, schedule a COMMENT_SCAN on this post
+                    // to engage with commenters while the post is still getting traffic
+                    await this.supabase.from('agent_tasks').insert({
+                        strategy_id: task.strategy_id,
+                        user_id: task.user_id,
+                        agent_type: task.agent_type,
+                        task_type: 'COMMENT_SCAN',
+                        platform: task.platform,
+                        scheduled_at: new Date(Date.now() + 5 * 60 * 1000).toISOString(),
+                        status: 'pending',
+                        content: {
+                            post_id: platformPostId,
+                            goal: task.result?.final_content?.goal || 'AWARENESS',
+                        },
+                    }); // fire-and-forget comment scan scheduling
                 }
             } catch (err: any) {
                 console.error(`[Orchestrator] Performance monitoring error for task ${task.id}: ${err.message}`);

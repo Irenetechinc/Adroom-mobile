@@ -1292,6 +1292,79 @@ For any TikTok day, set tiktok_script to:
 });
 
 /**
+ * Generate actual visual preview assets for the first 7 days of a strategy.
+ * Called from StrategyApprovalScreen so users see REAL graphics before approving.
+ */
+app.post('/api/ai/generate-preview-assets', async (req, res) => {
+    const { strategyId, productId, goal, weekPreview } = req.body;
+    const ts = () => new Date().toISOString();
+    console.log(`\n[PreviewAssets] Generating real assets for strategy ${strategyId}`);
+
+    try {
+        const supabase = getSupabaseClient(req as any);
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) return res.status(401).json({ error: 'Unauthorized.' });
+
+        if (!weekPreview?.length) {
+            return res.status(400).json({ error: 'weekPreview is required' });
+        }
+
+        // CMA pre-flight
+        const { creditManagementAgent: cmaAgent } = await import('./services/creditManagementAgent');
+        const cmaResult = await cmaAgent.evaluate(user.id, 'generate_video_asset');
+        if (cmaResult.decision === 'deny_tier') {
+            return res.status(403).json({ error: 'PLAN_REQUIRED', message: cmaResult.reason });
+        }
+        if (cmaResult.decision === 'deny_cap') {
+            return res.status(429).json({ error: 'DAILY_CAP_REACHED', message: cmaResult.reason });
+        }
+
+        // Get product details
+        const serviceSupabase = getServiceSupabaseClient();
+        const { data: product } = productId
+            ? await serviceSupabase.from('product_memory').select('*').eq('id', productId).single()
+            : { data: null };
+
+        // Determine goal type
+        const goalMap: Record<string, any> = {
+            sales: 'SALESMAN', salesman: 'SALESMAN', conversion: 'SALESMAN',
+            awareness: 'AWARENESS', reach: 'AWARENESS', brand: 'AWARENESS',
+            promotion: 'PROMOTION', offer: 'PROMOTION', discount: 'PROMOTION',
+            launch: 'LAUNCH', product_launch: 'LAUNCH', new_product: 'LAUNCH',
+        };
+        const normalizedGoal = goalMap[(goal || '').toLowerCase()] || 'AWARENESS';
+
+        // Import GraphicsDesignerAgent
+        const { GraphicsDesignerAgent } = await import('./agents/graphicsDesignerAgent');
+        const designer = new GraphicsDesignerAgent();
+
+        console.log(`[PreviewAssets] [${ts()}] Generating ${weekPreview.length} preview assets with GraphicsDesignerAgent`);
+
+        const assets = await designer.generateStrategyPreviewAssets({
+            userId: user.id,
+            strategyId: strategyId || `preview_${user.id}`,
+            productId,
+            product: product || { name: 'Your Product', category: 'general' },
+            goal: normalizedGoal,
+            weekPreview,
+        });
+
+        // Deduct energy per generated asset
+        await deductEnergyForUser(user.id, 'generate_video_asset', {
+            assets_generated: assets.filter(a => a.imageUrl).length,
+            strategy_id: strategyId,
+        }).catch(() => {});
+
+        console.log(`[PreviewAssets] [${ts()}] Done — ${assets.filter(a => a.imageUrl).length}/${assets.length} assets generated`);
+        res.status(200).json({ assets });
+
+    } catch (error: any) {
+        console.error(`[PreviewAssets] Error: ${error.message}`);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+/**
  * Activate Goal Agents — full autonomous campaign execution begins after user approves strategy
  */
 app.post('/api/ai/activate-agents', async (req, res) => {
