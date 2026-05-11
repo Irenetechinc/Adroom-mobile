@@ -1093,6 +1093,9 @@ label{font-size:12px;color:#94A3B8;font-weight:600}
     <button class="nav-item" onclick="showSection('activity')" id="nav-activity">
       <span>📡</span> Live Activity
     </button>
+    <button class="nav-item" onclick="showSection('terminal')" id="nav-terminal">
+      <span>🖥️</span> Live Terminal
+    </button>
     <button class="nav-item" onclick="showSection('logs')" id="nav-logs">
       <span>📋</span> Admin Logs
     </button>
@@ -1329,6 +1332,49 @@ label{font-size:12px;color:#94A3B8;font-weight:600}
           <div class="activity-feed" id="activity-full" style="max-height:600px">
             <div class="empty">Waiting for events…</div>
           </div>
+        </div>
+      </div>
+
+      <!-- ───────────── LIVE TERMINAL ───────────── -->
+      <div id="section-terminal" class="section">
+        <div class="section-header">
+          <div class="section-title">Live Server Terminal</div>
+          <div style="display:flex;gap:8px;align-items:center">
+            <div class="sse-dot" id="term-sse-dot" style="background:#EF4444"></div>
+            <span style="font-size:12px;color:#64748B" id="term-sse-status">Connecting…</span>
+            <button class="btn btn-ghost btn-sm" onclick="termPaused=!termPaused;this.textContent=termPaused?'▶ Resume':'⏸ Pause'">⏸ Pause</button>
+            <button class="btn btn-ghost btn-sm" onclick="clearTerminal()">🗑 Clear</button>
+            <span style="font-size:11px;color:#475569" id="term-line-count">0 lines</span>
+          </div>
+        </div>
+        <div style="
+          background:#0A0E1A;border:1px solid #1E293B;border-radius:14px;
+          padding:0;overflow:hidden;font-family:'Courier New',monospace
+        ">
+          <div style="
+            background:#0D1117;border-bottom:1px solid #1E293B;
+            padding:8px 14px;display:flex;align-items:center;gap:8px
+          ">
+            <div style="width:10px;height:10px;border-radius:50%;background:#EF4444;opacity:.8"></div>
+            <div style="width:10px;height:10px;border-radius:50%;background:#F59E0B;opacity:.8"></div>
+            <div style="width:10px;height:10px;border-radius:50%;background:#10B981;opacity:.8"></div>
+            <span style="color:#475569;font-size:11px;margin-left:8px">adroom-backend — live output</span>
+          </div>
+          <div id="terminal-output" style="
+            height:580px;overflow-y:auto;padding:12px 16px;
+            font-size:12px;line-height:1.7;scroll-behavior:smooth
+          ">
+            <div style="color:#475569;font-style:italic">Waiting for server logs…</div>
+          </div>
+        </div>
+        <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap">
+          <button class="btn btn-ghost btn-sm" onclick="setTermFilter('')" id="term-filter-all" style="border-color:#00F0FF;color:#00F0FF">All</button>
+          <button class="btn btn-ghost btn-sm" onclick="setTermFilter('INFO')" id="term-filter-info">Info</button>
+          <button class="btn btn-ghost btn-sm" onclick="setTermFilter('WARN')" id="term-filter-warn" style="color:#F59E0B">Warnings</button>
+          <button class="btn btn-ghost btn-sm" onclick="setTermFilter('ERROR')" id="term-filter-error" style="color:#EF4444">Errors</button>
+          <button class="btn btn-ghost btn-sm" onclick="setTermFilter('Scheduler')" id="term-filter-sched">Scheduler</button>
+          <button class="btn btn-ghost btn-sm" onclick="setTermFilter('Agent')" id="term-filter-agent">Agents</button>
+          <button class="btn btn-ghost btn-sm" onclick="setTermFilter('Energy')" id="term-filter-energy">Energy</button>
         </div>
       </div>
 
@@ -1623,8 +1669,8 @@ if (TOKEN) {
 }
 
 // ── Navigation ────────────────────────────────────────────────────────────────
-const SECTIONS = ['dashboard', 'users', 'credits', 'notifications', 'deletions', 'trials', 'activity', 'logs', 'cma'];
-const TITLES = { dashboard: 'Dashboard', users: 'All Users', credits: 'Credit Management', notifications: 'Push Notifications', deletions: 'Account Deletion Requests', trials: 'Trials & Billing Monitor', activity: 'Live Activity', logs: 'Admin Logs', cma: 'CMA Savings Dashboard' };
+const SECTIONS = ['dashboard', 'users', 'credits', 'notifications', 'deletions', 'trials', 'activity', 'terminal', 'logs', 'cma'];
+const TITLES = { dashboard: 'Dashboard', users: 'All Users', credits: 'Credit Management', notifications: 'Push Notifications', deletions: 'Account Deletion Requests', trials: 'Trials & Billing Monitor', activity: 'Live Activity', terminal: 'Live Server Terminal', logs: 'Admin Logs', cma: 'CMA Savings Dashboard' };
 
 function showSection(name) {
   SECTIONS.forEach(s => {
@@ -2509,6 +2555,81 @@ function connectSSE() {
 
   evtSource.addEventListener('deletion_approved', () => { loadDeletionRequests(); });
   evtSource.addEventListener('deletion_dismissed', () => { loadDeletionRequests(); });
+
+  evtSource.addEventListener('server_log', e => {
+    const d = JSON.parse(e.data);
+    appendTermLine(d.level, d.msg, d.ts);
+    ['term-sse-dot', 'sse-dot'].forEach(id => {
+      const el = document.getElementById(id);
+      if (el) { el.style.background = '#10B981'; el.style.boxShadow = '0 0 6px #10B981'; setTimeout(() => { el.style.boxShadow = ''; }, 400); }
+    });
+    ['term-sse-status'].forEach(id => { const el = document.getElementById(id); if (el) el.textContent = 'Live'; });
+  });
+}
+
+// ── Terminal ─────────────────────────────────────────────────────────────────
+let termLines = [];
+let termPaused = false;
+let termFilter = '';
+let termLineCount = 0;
+
+function setTermFilter(f) {
+  termFilter = f;
+  ['all','info','warn','error','sched','agent','energy'].forEach(k => {
+    const el = document.getElementById('term-filter-' + k);
+    if (el) el.style.borderColor = '';
+  });
+  const key = f === '' ? 'all' : f.toLowerCase();
+  const btn = document.getElementById('term-filter-' + key);
+  if (btn) btn.style.borderColor = '#00F0FF';
+  renderTerminal();
+}
+
+function renderTerminal() {
+  const el = document.getElementById('terminal-output');
+  if (!el) return;
+  const filtered = termFilter ? termLines.filter(l => l.msg.includes(termFilter) || l.level.includes(termFilter.toUpperCase())) : termLines;
+  el.innerHTML = filtered.length === 0
+    ? '<div style="color:#475569;font-style:italic">No matching log lines.</div>'
+    : filtered.slice(-300).map(l => {
+        const color = l.level === 'ERROR' ? '#EF4444' : l.level === 'WARN' ? '#F59E0B' : l.level === 'INFO' ? '#00F0FF' : '#94A3B8';
+        const tsStr = l.ts ? new Date(l.ts).toLocaleTimeString() : '';
+        const escaped = l.msg.replace(/</g,'&lt;').replace(/>/g,'&gt;');
+        return \`<div style="color:\${color};margin-bottom:1px"><span style="color:#475569;user-select:none;margin-right:8px;\${tsStr ? '' : 'display:none'}">\${tsStr}</span><span style="color:\${l.level === 'ERROR' ? '#EF4444' : l.level === 'WARN' ? '#F59E0B' : '#3B82F6'};font-weight:700;margin-right:8px">\${l.level}</span>\${escaped}</div>\`;
+      }).join('');
+  el.scrollTop = el.scrollHeight;
+}
+
+function clearTerminal() {
+  termLines = [];
+  termLineCount = 0;
+  const el = document.getElementById('terminal-output');
+  if (el) el.innerHTML = '<div style="color:#475569;font-style:italic">Terminal cleared.</div>';
+  const cnt = document.getElementById('term-line-count');
+  if (cnt) cnt.textContent = '0 lines';
+}
+
+function appendTermLine(level, msg, ts) {
+  if (termPaused) return;
+  termLines.push({ level: (level || 'LOG').toUpperCase(), msg: msg || '', ts });
+  if (termLines.length > 1000) termLines.shift();
+  termLineCount++;
+  const cnt = document.getElementById('term-line-count');
+  if (cnt) cnt.textContent = termLineCount + ' lines';
+  const el = document.getElementById('terminal-output');
+  if (!el) return;
+  if (termFilter && !msg.includes(termFilter) && !(level || '').toUpperCase().includes(termFilter.toUpperCase())) return;
+  const wasAtBottom = el.scrollHeight - el.clientHeight - el.scrollTop < 40;
+  const color = level === 'ERROR' ? '#EF4444' : level === 'WARN' ? '#F59E0B' : level === 'INFO' ? '#00F0FF' : '#94A3B8';
+  const tsStr = ts ? new Date(ts).toLocaleTimeString() : '';
+  const escaped = (msg || '').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  const div = document.createElement('div');
+  div.style.cssText = \`color:\${color};margin-bottom:1px\`;
+  div.innerHTML = \`<span style="color:#475569;user-select:none;margin-right:8px">\${tsStr}</span><span style="color:\${level === 'ERROR' ? '#EF4444' : level === 'WARN' ? '#F59E0B' : '#3B82F6'};font-weight:700;margin-right:8px">\${(level||'LOG').toUpperCase()}</span>\${escaped}\`;
+  if (el.children.length === 1 && el.children[0].style.fontStyle === 'italic') el.innerHTML = '';
+  el.appendChild(div);
+  while (el.children.length > 300) el.removeChild(el.firstChild);
+  if (wasAtBottom) el.scrollTop = el.scrollHeight;
 }
 
 function addActivityEvent(ev) {

@@ -619,7 +619,7 @@ export class EnergyService {
   }
 
   /** Check on-demand auto top-up — actually charges the saved Flutterwave card */
-  private async checkAndTriggerOnDemand(userId: string, currentBalance: number) {
+  async checkAndTriggerOnDemand(userId: string, currentBalance: number) {
     const account = await this.getAccount(userId);
     if (!account?.on_demand_enabled) return;
     if (currentBalance > ON_DEMAND_THRESHOLD) return;
@@ -682,18 +682,25 @@ export class EnergyService {
       const ok = charge?.status === 'success' && (charge as any)?.data?.status === 'successful';
       if (!ok) {
         console.error(`[Energy] Auto-topup failed for user ${userId}:`, charge?.message);
-        await this.supabase.from('energy_transactions').insert({
-          user_id: userId,
-          type: 'on_demand_topup_failed',
-          credits: 0,
-          balance_after: currentBalance,
-          description: `Auto top-up failed: ${charge?.message ?? 'Card declined'}`,
-          metadata: { pack_id: packId, status: 'failed', tx_ref: txRef, flw: charge?.message },
-        });
+        const retryAt = new Date(Date.now() + 24 * 60 * 60_000).toISOString();
+        await Promise.all([
+          this.supabase.from('energy_transactions').insert({
+            user_id: userId,
+            type: 'on_demand_topup_failed',
+            credits: 0,
+            balance_after: currentBalance,
+            description: `Auto top-up failed: ${charge?.message ?? 'Card declined'}`,
+            metadata: { pack_id: packId, status: 'failed', tx_ref: txRef, flw: charge?.message, retry_at: retryAt },
+          }),
+          // Mark the retry timestamp so the scheduler can retry automatically after 24h
+          this.supabase.from('energy_accounts')
+            .update({ on_demand_top_up_retry_at: retryAt })
+            .eq('user_id', userId),
+        ]);
         // Push notify the user so they know their card was declined
         pushService.send(userId, {
           title: 'Auto top-up failed',
-          body: `We couldn't auto-charge your card for ${pack.label}. Update your payment method to keep services running.`,
+          body: `We couldn't charge your card for ${pack.label}. We'll retry automatically in 24 hours, or you can update your payment method.`,
           data: { type: 'auto_topup_failed', pack_id: packId },
           channelId: 'alerts',
         }).catch(() => {});
@@ -702,6 +709,10 @@ export class EnergyService {
 
       const flwId = String((charge as any).data?.id ?? '');
       const result = await this.applyTopUp(userId, packId, flwId, txRef, 'on_demand_topup');
+      // Clear any pending retry timestamp on success
+      await this.supabase.from('energy_accounts')
+        .update({ on_demand_top_up_retry_at: null })
+        .eq('user_id', userId);
       console.log(`[Energy] Auto-topup applied: +${result.credits} credits → balance ${result.newBalance}`);
 
       // Push notify success

@@ -176,6 +176,7 @@ interface EnergyState {
   skipTrial: (planId?: string) => Promise<{ success: boolean; message: string; credits?: number }>;
   cancelSubscription: (reason?: string) => Promise<{ success: boolean }>;
   toggleOnDemand: (enabled: boolean) => Promise<void>;
+  setOnDemandPack: (packId: string) => Promise<void>;
   verifyAndApplyPayment: (
     transactionId: string,
     txRef: string,
@@ -293,11 +294,37 @@ export const useEnergyStore = create<EnergyState>((set, get) => ({
   toggleOnDemand: async (enabled: boolean) => {
     const { data: { session } } = await supabase.auth.getSession();
     if (!session) return;
+    const update: Record<string, any> = { on_demand_enabled: enabled };
+    // Clearing the retry timestamp when user turns off so pending retries don't fire
+    if (!enabled) update.on_demand_top_up_retry_at = null;
     await supabase
       .from('energy_accounts')
-      .update({ on_demand_enabled: enabled })
+      .update(update)
       .eq('user_id', session.user.id);
-    set((s) => ({ account: s.account ? { ...s.account, on_demand_enabled: enabled } : null }));
+    set((s) => ({
+      account: s.account
+        ? { ...s.account, on_demand_enabled: enabled }
+        : null,
+    }));
+  },
+
+  setOnDemandPack: async (packId: string) => {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) return;
+    // Also clear any pending retry when user changes pack (fresh start)
+    await supabase
+      .from('energy_accounts')
+      .update({
+        on_demand_top_up_amount: packId,
+        on_demand_enabled: true,
+        on_demand_top_up_retry_at: null,
+      })
+      .eq('user_id', session.user.id);
+    set((s) => ({
+      account: s.account
+        ? { ...s.account, on_demand_top_up_amount: packId, on_demand_enabled: true }
+        : null,
+    }));
   },
 
   verifyAndApplyPayment: async (transactionId, txRef, type, planOrPackId) => {

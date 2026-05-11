@@ -49,7 +49,7 @@ export default function SubscriptionScreen() {
   const insets = useSafeAreaInsets();
   const {
     account, subscription, transactions, planLimitsUsage, isLoading,
-    fetchEnergy, fetchPlanLimits, startTrial, skipTrial, cancelSubscription, toggleOnDemand, verifyAndApplyPayment,
+    fetchEnergy, fetchPlanLimits, startTrial, skipTrial, cancelSubscription, toggleOnDemand, setOnDemandPack, verifyAndApplyPayment,
   } = useEnergyStore();
   const [refreshing, setRefreshing] = useState(false);
   const [paymentLoading, setPaymentLoading] = useState(false);
@@ -57,6 +57,8 @@ export default function SubscriptionScreen() {
   const [tab, setTab] = useState<'plans' | 'topup' | 'usage'>('plans');
   const [countdown, setCountdown] = useState<string | null>(null);
   const [graceActive, setGraceActive] = useState(false);
+  const [showAutoTopUpPicker, setShowAutoTopUpPicker] = useState(false);
+  const [autoTopUpSaving, setAutoTopUpSaving] = useState(false);
 
   // Trial eligibility: only shown for brand-new accounts (< 48 h) that have never subscribed or trialed
   const [trialEligible, setTrialEligible] = useState(false);
@@ -835,23 +837,198 @@ export default function SubscriptionScreen() {
               );
             })}
 
-            {/* On-Demand */}
+            {/* On-Demand Auto Top-Up */}
             <View style={styles.sectionCard}>
-              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.sectionTitle}>Auto Top-Up (On-Demand)</Text>
+              {/* Toggle row */}
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: account?.on_demand_enabled ? 16 : 0 }}>
+                <View style={{ flex: 1, marginRight: 12 }}>
+                  <Text style={styles.sectionTitle}>Auto Top-Up</Text>
                   <Text style={styles.sectionDesc}>
-                    Automatically purchase 100 energy credits when balance hits 25 credits.
-                    Requires saved payment method.
+                    Automatically recharge when energy hits 25 credits. Your saved card is charged — no manual action needed.
                   </Text>
                 </View>
                 <Switch
                   value={account?.on_demand_enabled ?? false}
-                  onValueChange={toggleOnDemand}
+                  onValueChange={async (enabled) => {
+                    if (enabled && !account?.on_demand_top_up_amount) {
+                      // No pack selected yet — show picker without enabling yet
+                      setShowAutoTopUpPicker(true);
+                    } else {
+                      await toggleOnDemand(enabled);
+                      if (enabled) setShowAutoTopUpPicker(false);
+                    }
+                  }}
                   trackColor={{ false: COLORS.border, true: COLORS.neon + '80' }}
                   thumbColor={account?.on_demand_enabled ? COLORS.neon : COLORS.muted}
                 />
               </View>
+
+              {/* Current pack selection (shown when enabled) */}
+              {account?.on_demand_enabled && (() => {
+                const PACKS = [
+                  { id: 'topup_100', credits: 100, price: 25,  label: '100 Energy Credits', per: '$0.25/cr' },
+                  { id: 'topup_300', credits: 300, price: 50,  label: '300 Energy Credits', per: '$0.17/cr', best: true },
+                  { id: 'topup_600', credits: 600, price: 120, label: '600 Energy Credits', per: '$0.20/cr' },
+                ];
+                const currentPack = PACKS.find(p => p.id === (account?.on_demand_top_up_amount || 'topup_100')) ?? PACKS[0];
+                return (
+                  <View>
+                    {/* Active pack summary */}
+                    {!showAutoTopUpPicker && (
+                      <View style={{
+                        flexDirection: 'row', alignItems: 'center',
+                        backgroundColor: 'rgba(0,240,255,0.06)', borderWidth: 1, borderColor: 'rgba(0,240,255,0.18)',
+                        borderRadius: 12, padding: 12, marginBottom: 10,
+                      }}>
+                        <Zap size={16} color={COLORS.neon} />
+                        <View style={{ flex: 1, marginLeft: 10 }}>
+                          <Text style={{ color: COLORS.text, fontWeight: '700', fontSize: 13 }}>
+                            {currentPack.credits} credits for ${currentPack.price}
+                          </Text>
+                          <Text style={{ color: COLORS.muted, fontSize: 11, marginTop: 2 }}>
+                            Triggers automatically when balance ≤ 25 credits
+                          </Text>
+                        </View>
+                        <TouchableOpacity
+                          onPress={() => setShowAutoTopUpPicker(v => !v)}
+                          style={{
+                            backgroundColor: 'rgba(0,240,255,0.1)', borderWidth: 1, borderColor: 'rgba(0,240,255,0.2)',
+                            borderRadius: 8, paddingHorizontal: 12, paddingVertical: 6,
+                          }}
+                        >
+                          <Text style={{ color: COLORS.neon, fontSize: 12, fontWeight: '700' }}>
+                            {showAutoTopUpPicker ? 'Close' : 'Change'}
+                          </Text>
+                        </TouchableOpacity>
+                      </View>
+                    )}
+
+                    {/* Pack picker */}
+                    {showAutoTopUpPicker && (
+                      <View>
+                        <Text style={{ color: COLORS.sub, fontSize: 12, marginBottom: 10, lineHeight: 18 }}>
+                          Select how many credits to add each time your balance runs low:
+                        </Text>
+                        {PACKS.map(pack => {
+                          const selected = (account?.on_demand_top_up_amount || 'topup_100') === pack.id;
+                          return (
+                            <TouchableOpacity
+                              key={pack.id}
+                              disabled={autoTopUpSaving}
+                              onPress={async () => {
+                                setAutoTopUpSaving(true);
+                                try {
+                                  await setOnDemandPack(pack.id);
+                                  setShowAutoTopUpPicker(false);
+                                } finally {
+                                  setAutoTopUpSaving(false);
+                                }
+                              }}
+                              style={{
+                                flexDirection: 'row', alignItems: 'center',
+                                backgroundColor: selected ? 'rgba(0,240,255,0.1)' : 'rgba(255,255,255,0.02)',
+                                borderWidth: 1.5,
+                                borderColor: selected ? COLORS.neon : COLORS.border,
+                                borderRadius: 12, padding: 14, marginBottom: 8,
+                              }}
+                              activeOpacity={0.8}
+                            >
+                              <View style={{ flex: 1 }}>
+                                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                                  <Text style={{ color: selected ? COLORS.neon : COLORS.text, fontWeight: '800', fontSize: 14 }}>
+                                    {pack.credits} credits
+                                  </Text>
+                                  {pack.best && (
+                                    <View style={{ backgroundColor: COLORS.amber + '20', borderRadius: 6, paddingHorizontal: 7, paddingVertical: 2 }}>
+                                      <Text style={{ color: COLORS.amber, fontSize: 9, fontWeight: '800' }}>BEST VALUE</Text>
+                                    </View>
+                                  )}
+                                </View>
+                                <Text style={{ color: COLORS.muted, fontSize: 11, marginTop: 3 }}>{pack.per}</Text>
+                              </View>
+                              <Text style={{ color: selected ? COLORS.neon : COLORS.amber, fontWeight: '800', fontSize: 17, marginRight: 10 }}>
+                                ${pack.price}
+                              </Text>
+                              <View style={{
+                                width: 20, height: 20, borderRadius: 10,
+                                borderWidth: 2, borderColor: selected ? COLORS.neon : COLORS.border,
+                                backgroundColor: selected ? COLORS.neon : 'transparent',
+                                alignItems: 'center', justifyContent: 'center',
+                              }}>
+                                {selected && <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: '#0B0F19' }} />}
+                              </View>
+                            </TouchableOpacity>
+                          );
+                        })}
+                      </View>
+                    )}
+                  </View>
+                );
+              })()}
+
+              {/* Pack picker shown inline when user first enables (no current pack) */}
+              {!account?.on_demand_enabled && showAutoTopUpPicker && (() => {
+                const PACKS = [
+                  { id: 'topup_100', credits: 100, price: 25,  label: '100 Energy Credits', per: '$0.25/cr' },
+                  { id: 'topup_300', credits: 300, price: 50,  label: '300 Energy Credits', per: '$0.17/cr', best: true },
+                  { id: 'topup_600', credits: 600, price: 120, label: '600 Energy Credits', per: '$0.20/cr' },
+                ];
+                return (
+                  <View style={{ marginTop: 14 }}>
+                    <Text style={{ color: COLORS.text, fontWeight: '700', fontSize: 13, marginBottom: 6 }}>
+                      Choose your auto top-up amount
+                    </Text>
+                    <Text style={{ color: COLORS.sub, fontSize: 12, marginBottom: 12, lineHeight: 18 }}>
+                      Your saved card will be charged automatically whenever your balance drops to 25 credits or below. You can change or cancel this at any time.
+                    </Text>
+                    {PACKS.map(pack => (
+                      <TouchableOpacity
+                        key={pack.id}
+                        disabled={autoTopUpSaving}
+                        onPress={async () => {
+                          setAutoTopUpSaving(true);
+                          try {
+                            await setOnDemandPack(pack.id);
+                            setShowAutoTopUpPicker(false);
+                          } finally {
+                            setAutoTopUpSaving(false);
+                          }
+                        }}
+                        style={{
+                          flexDirection: 'row', alignItems: 'center',
+                          backgroundColor: 'rgba(255,255,255,0.02)',
+                          borderWidth: 1.5, borderColor: COLORS.border,
+                          borderRadius: 12, padding: 14, marginBottom: 8,
+                        }}
+                        activeOpacity={0.8}
+                      >
+                        <View style={{ flex: 1 }}>
+                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                            <Text style={{ color: COLORS.text, fontWeight: '800', fontSize: 14 }}>
+                              {pack.credits} credits
+                            </Text>
+                            {pack.best && (
+                              <View style={{ backgroundColor: COLORS.amber + '20', borderRadius: 6, paddingHorizontal: 7, paddingVertical: 2 }}>
+                                <Text style={{ color: COLORS.amber, fontSize: 9, fontWeight: '800' }}>BEST VALUE</Text>
+                              </View>
+                            )}
+                          </View>
+                          <Text style={{ color: COLORS.muted, fontSize: 11, marginTop: 3 }}>{pack.per}</Text>
+                        </View>
+                        <Text style={{ color: COLORS.amber, fontWeight: '800', fontSize: 17, marginRight: 12 }}>
+                          ${pack.price}
+                        </Text>
+                        {autoTopUpSaving
+                          ? <ActivityIndicator size="small" color={COLORS.neon} />
+                          : <ChevronRight size={16} color={COLORS.muted} />}
+                      </TouchableOpacity>
+                    ))}
+                    <TouchableOpacity onPress={() => setShowAutoTopUpPicker(false)} style={{ alignItems: 'center', paddingVertical: 8 }}>
+                      <Text style={{ color: COLORS.muted, fontSize: 12 }}>Cancel</Text>
+                    </TouchableOpacity>
+                  </View>
+                );
+              })()}
             </View>
 
             {isActive && !isTrialing && (
