@@ -40,9 +40,8 @@ export const TikTokService = {
       'user.info.basic',
       'video.publish',
       'video.upload',
-      'video.list',
-      'comment.list',
-      'comment.list.manage',
+      'user.info.profile',
+      'user.info.stats',
     ].join(',');
 
     const state = Math.random().toString(36).substring(2, 15);
