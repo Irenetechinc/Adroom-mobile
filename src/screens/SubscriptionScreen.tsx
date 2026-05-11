@@ -49,7 +49,7 @@ export default function SubscriptionScreen() {
   const insets = useSafeAreaInsets();
   const {
     account, subscription, transactions, planLimitsUsage, isLoading,
-    fetchEnergy, fetchPlanLimits, startTrial, skipTrial, cancelSubscription, toggleOnDemand, setOnDemandPack, verifyAndApplyPayment,
+    fetchEnergy, fetchPlanLimits, startTrial, skipTrial, cancelSubscription, toggleOnDemand, setOnDemandPack, retryTopUp, verifyAndApplyPayment,
   } = useEnergyStore();
   const [refreshing, setRefreshing] = useState(false);
   const [paymentLoading, setPaymentLoading] = useState(false);
@@ -59,6 +59,7 @@ export default function SubscriptionScreen() {
   const [graceActive, setGraceActive] = useState(false);
   const [showAutoTopUpPicker, setShowAutoTopUpPicker] = useState(false);
   const [autoTopUpSaving, setAutoTopUpSaving] = useState(false);
+  const [retrying, setRetrying] = useState(false);
 
   // Trial eligibility: only shown for brand-new accounts (< 48 h) that have never subscribed or trialed
   const [trialEligible, setTrialEligible] = useState(false);
@@ -862,6 +863,49 @@ export default function SubscriptionScreen() {
                   thumbColor={account?.on_demand_enabled ? COLORS.neon : COLORS.muted}
                 />
               </View>
+
+              {/* Failed auto top-up retry banner */}
+              {account?.on_demand_enabled && account?.on_demand_top_up_retry_at && (
+                <View style={{
+                  flexDirection: 'row', alignItems: 'center',
+                  backgroundColor: 'rgba(239,68,68,0.1)', borderWidth: 1, borderColor: 'rgba(239,68,68,0.35)',
+                  borderRadius: 12, padding: 12, marginTop: 12, marginBottom: 4,
+                }}>
+                  <AlertCircle size={15} color={COLORS.danger} />
+                  <View style={{ flex: 1, marginLeft: 8 }}>
+                    <Text style={{ color: COLORS.danger, fontWeight: '700', fontSize: 12 }}>Auto top-up failed</Text>
+                    <Text style={{ color: '#94A3B8', fontSize: 11, marginTop: 1 }}>
+                      Card charge unsuccessful. Tap to retry immediately.
+                    </Text>
+                  </View>
+                  <TouchableOpacity
+                    disabled={retrying}
+                    onPress={async () => {
+                      setRetrying(true);
+                      try {
+                        const result = await retryTopUp();
+                        if (result.success) {
+                          Alert.alert('Retry Triggered', 'Your card will be charged shortly. Balance updates in a few seconds.');
+                        } else {
+                          Alert.alert('Retry Failed', result.message || 'Could not retry. Please update your payment method.');
+                        }
+                      } finally {
+                        setRetrying(false);
+                      }
+                    }}
+                    style={{
+                      backgroundColor: COLORS.danger, borderRadius: 8,
+                      paddingHorizontal: 12, paddingVertical: 6, marginLeft: 8,
+                      opacity: retrying ? 0.6 : 1,
+                    }}
+                  >
+                    {retrying
+                      ? <ActivityIndicator size="small" color="#fff" />
+                      : <Text style={{ color: '#fff', fontSize: 12, fontWeight: '700' }}>Retry Now</Text>
+                    }
+                  </TouchableOpacity>
+                </View>
+              )}
 
               {/* Current pack selection (shown when enabled) */}
               {account?.on_demand_enabled && (() => {

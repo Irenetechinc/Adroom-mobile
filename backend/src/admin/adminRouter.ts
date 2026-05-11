@@ -1717,7 +1717,7 @@ async function loadTrials() {
           <td style="font-size:11px;color:#94A3B8">\${t.billing_email || t.user_id?.slice(0,8)+'…'}</td>
           <td>\${planBadge(t.plan)}</td>
           <td><span style="color:#EF4444;font-weight:700">\${t.days_left ?? '?'}d</span></td>
-          <td>\${t.has_card ? '<span class="badge badge-green">✓ \${t.flw_card_last4 || ''}</span>' : '<span class="badge badge-red">✗ Missing</span>'}</td>
+          <td>\${t.has_card ? '<span class="badge badge-green">✓ \${t.flw_card_last4 || ""}</span>' : '<span class="badge badge-red">✗ Missing</span>'}</td>
           <td style="font-size:11px;color:#94A3B8">\${t.billing_email || '—'}</td>
           <td style="font-size:11px;color:#64748B">\${fmt(t.trial_end)}</td>
         </tr>\`).join('');

@@ -13,6 +13,7 @@ export interface EnergyAccount {
   on_demand_enabled: boolean;
   on_demand_threshold_credits: number;
   on_demand_top_up_amount: string;
+  on_demand_top_up_retry_at: string | null;
   updated_at: string;
 }
 
@@ -177,6 +178,7 @@ interface EnergyState {
   cancelSubscription: (reason?: string) => Promise<{ success: boolean }>;
   toggleOnDemand: (enabled: boolean) => Promise<void>;
   setOnDemandPack: (packId: string) => Promise<void>;
+  retryTopUp: () => Promise<{ success: boolean; message: string }>;
   verifyAndApplyPayment: (
     transactionId: string,
     txRef: string,
@@ -325,6 +327,24 @@ export const useEnergyStore = create<EnergyState>((set, get) => ({
         ? { ...s.account, on_demand_top_up_amount: packId, on_demand_enabled: true }
         : null,
     }));
+  },
+
+  retryTopUp: async () => {
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) return { success: false, message: 'Not authenticated.' };
+      const res = await fetch(`${API_URL}/api/billing/retry-topup`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${session.access_token}`, 'Content-Type': 'application/json' },
+      });
+      const data = await res.json();
+      if (data.success) {
+        setTimeout(() => get().fetchEnergy(), 3000);
+      }
+      return { success: data.success ?? false, message: data.message ?? data.error ?? '' };
+    } catch (err: any) {
+      return { success: false, message: err.message };
+    }
   },
 
   verifyAndApplyPayment: async (transactionId, txRef, type, planOrPackId) => {

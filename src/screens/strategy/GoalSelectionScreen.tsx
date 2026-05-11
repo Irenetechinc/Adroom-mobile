@@ -1,6 +1,6 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
-  View, Text, TouchableOpacity, ScrollView, StyleSheet,
+  View, Text, TouchableOpacity, ScrollView, StyleSheet, ActivityIndicator,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { useStrategyCreationStore } from '../../store/strategyCreationStore';
@@ -54,9 +54,15 @@ export default function GoalSelectionScreen() {
   const plan = subscription?.plan ?? 'none';
   const isProOrAbove = subscription?.status === 'active' && (plan === 'pro' || plan === 'pro_plus');
 
+  const [thinking, setThinking] = useState(false);
+
   const handleNext = () => {
-    if (!selectedGoal) return;
-    navigation.navigate('StrategyWizard_DurationSelection');
+    if (!selectedGoal || thinking) return;
+    setThinking(true);
+    setTimeout(() => {
+      setThinking(false);
+      navigation.navigate('StrategyWizard_DurationSelection');
+    }, 1400);
   };
 
   const handleGoalPress = (goal: typeof GOALS[0]) => {
@@ -127,13 +133,23 @@ export default function GoalSelectionScreen() {
       <View style={styles.footer}>
         <TouchableOpacity
           onPress={handleNext}
-          disabled={!selectedGoal}
+          disabled={!selectedGoal || thinking}
           style={[styles.nextBtn, !selectedGoal && { backgroundColor: '#1E293B' }]}
+          activeOpacity={0.85}
         >
-          <Text style={[styles.nextBtnText, !selectedGoal && { color: '#475569' }]}>
-            Continue to Duration
-          </Text>
-          <ArrowRight size={20} color={selectedGoal ? '#020617' : '#64748B'} />
+          {thinking ? (
+            <>
+              <ActivityIndicator size="small" color="#020617" style={{ marginRight: 8 }} />
+              <Text style={styles.nextBtnText}>AI is preparing recommendations…</Text>
+            </>
+          ) : (
+            <>
+              <Text style={[styles.nextBtnText, !selectedGoal && { color: '#475569' }]}>
+                Continue to Duration
+              </Text>
+              <ArrowRight size={20} color={selectedGoal ? '#020617' : '#64748B'} />
+            </>
+          )}
         </TouchableOpacity>
       </View>
     </SafeAreaView>
