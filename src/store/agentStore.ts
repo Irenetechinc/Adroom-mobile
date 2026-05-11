@@ -1578,6 +1578,8 @@ export const useAgentStore = create<AgentState>()(
   },
 
   loadConnectedPlatforms: async () => {
+    const CACHE_KEY = 'adroom-connected-platforms';
+
     // When `authoritative` is true, the response represents the *full* set of
     // connected platforms for this user (i.e. came from the backend / Supabase
     // directly). In that case we replace local state instead of merging so
@@ -1613,7 +1615,43 @@ export const useAgentStore = create<AgentState>()(
       });
     };
 
-    // Primary: fetch from backend API
+    // Layer 0: AsyncStorage cache — show immediately while network loads
+    // This ensures connected accounts appear instantly even on cold start or login.
+    try {
+      const cached = await AsyncStorage.getItem(CACHE_KEY);
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        if (parsed && typeof parsed === 'object' && Object.keys(parsed).length > 0) {
+          applyConfigs(parsed, false); // non-authoritative: don't clear new connections
+        }
+      }
+    } catch {}
+
+    // Helper to persist authoritative result to AsyncStorage
+    const persistCache = async (configs: Record<string, any>, userId: string) => {
+      try {
+        const toCache: Record<string, any> = {};
+        for (const [platform, cfg] of Object.entries(configs)) {
+          // Only cache platform metadata, never OAuth tokens
+          toCache[platform] = {
+            platform: cfg.platform || platform,
+            page_id: cfg.page_id,
+            page_name: cfg.page_name,
+            ad_account_id: cfg.ad_account_id,
+            instagram_account_id: cfg.instagram_account_id,
+            person_urn: cfg.person_urn,
+            org_urn: cfg.org_urn,
+            open_id: cfg.open_id,
+            updated_at: cfg.updated_at,
+            connected: true,
+            _user_id: userId,
+          };
+        }
+        await AsyncStorage.setItem(CACHE_KEY, JSON.stringify(toCache));
+      } catch {}
+    };
+
+    // Layer 1: fetch from backend API (authoritative)
     if (BACKEND_URL) {
       try {
         const token = await getAuthToken();
@@ -1633,12 +1671,15 @@ export const useAgentStore = create<AgentState>()(
           const data = await res.json();
           const configs: Record<string, any> = data.configs || {};
           applyConfigs(configs, true);
+          // Get user ID to tag the cache
+          const { data: { user } } = await supabase.auth.getUser();
+          if (user) persistCache(configs, user.id);
           return;
         }
       } catch {}
     }
 
-    // Fallback: query Supabase ad_configs directly (works cross-device without Railway)
+    // Layer 2: query Supabase ad_configs directly (works cross-device without Railway)
     try {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
@@ -1666,6 +1707,7 @@ export const useAgentStore = create<AgentState>()(
         };
       }
       applyConfigs(configs, true);
+      persistCache(configs, user.id);
     } catch {}
   },
 
@@ -1677,6 +1719,17 @@ export const useAgentStore = create<AgentState>()(
       delete newConnected[platform];
       return { tokens: newTokens, connectedPlatforms: newConnected };
     });
+    // Update the AsyncStorage cache immediately to reflect the disconnection
+    try {
+      const cached = await AsyncStorage.getItem('adroom-connected-platforms');
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        if (parsed && parsed[platform]) {
+          delete parsed[platform];
+          await AsyncStorage.setItem('adroom-connected-platforms', JSON.stringify(parsed));
+        }
+      }
+    } catch {}
     try {
       const token = await getAuthToken();
       if (!token || !BACKEND_URL) return;
@@ -1709,6 +1762,7 @@ export const useAgentStore = create<AgentState>()(
     });
     try {
       await AsyncStorage.removeItem('adroom-agent-store');
+      await AsyncStorage.removeItem('adroom-connected-platforms');
     } catch { /* ignore */ }
   },
 

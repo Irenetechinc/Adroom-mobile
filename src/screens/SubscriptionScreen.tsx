@@ -104,22 +104,49 @@ export default function SubscriptionScreen() {
     fetchPlanLimits();
   }, []);
 
-  // Check trial eligibility from backend once on mount
+  // Check trial eligibility — backend is primary, Supabase user metadata is fallback.
+  // New users (account < 48h old, no prior trial/subscription) should always see the offer.
   useEffect(() => {
     (async () => {
       try {
-        const { data: { session } } = await (await import('../services/supabase')).supabase.auth.getSession();
+        const { supabase: sb } = await import('../services/supabase');
+        const { data: { session } } = await sb.auth.getSession();
         if (!session) return;
-        const res = await fetch(`${API_URL}/api/billing/trial-eligibility`, {
-          headers: { Authorization: `Bearer ${session.access_token}` },
-        });
-        if (res.ok) {
-          const data = await res.json();
-          setTrialEligible(data.eligible === true);
+
+        // Already have a subscription status — if active/trialing/expired, not eligible
+        if (subscription?.trial_start || (subscription?.status && subscription.status !== 'none' && subscription.status !== 'cancelled')) {
+          setTrialEligible(false);
+          return;
         }
-      } catch { /* silently ignore — trial banner stays hidden */ }
+
+        // Try backend first (authoritative)
+        try {
+          const controller = new AbortController();
+          const timer = setTimeout(() => controller.abort(), 8000);
+          const res = await fetch(`${API_URL}/api/billing/trial-eligibility`, {
+            headers: { Authorization: `Bearer ${session.access_token}` },
+            signal: controller.signal,
+          });
+          clearTimeout(timer);
+          if (res.ok) {
+            const data = await res.json();
+            setTrialEligible(data.eligible === true);
+            return;
+          }
+        } catch {}
+
+        // Fallback: determine eligibility from Supabase user created_at directly
+        // This ensures new users still see the trial if backend is temporarily unreachable
+        try {
+          const { data: { user } } = await sb.auth.getUser();
+          if (!user) return;
+          const ageMs = Date.now() - new Date(user.created_at).getTime();
+          const isNew = ageMs < 48 * 60 * 60 * 1000;
+          setTrialEligible(isNew);
+        } catch {}
+      } catch {}
     })();
-  }, []);
+  }, [subscription?.status, subscription?.trial_start]);
 
   // 72h grace period countdown: shown when trial just ended (within 72h)
   useEffect(() => {
