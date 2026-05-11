@@ -187,6 +187,24 @@ Return JSON:
             const product = await this.getProductDetails(task.strategies?.product_id);
             const launchNarrative = task.strategies?.current_execution_plan?.launch_narrative || '';
 
+            // ── Fetch ALL 4 intelligence streams in parallel ──────────────────
+            const [{ platformIntel, socialData, emotionalData, geoData }, trends] = await Promise.all([
+                this.fetchLiveIntelligence({
+                    platform: task.platform,
+                    category: product?.category || 'general',
+                    productName: product?.product_name || product?.name || '',
+                }),
+                this.getTrendingTopics(product?.category || 'general'),
+            ]);
+
+            // Brain override from last intelligence cycle (if any)
+            const { data: strategyRow } = await this.supabase
+                .from('strategies')
+                .select('current_execution_plan')
+                .eq('id', task.strategy_id)
+                .single();
+            const brainOverride: string | undefined = strategyRow?.current_execution_plan?.brain_instruction_override;
+
             const finalContent = await this.generatePlatformContent({
                 platform: task.platform,
                 goal: 'LAUNCH',
@@ -195,11 +213,17 @@ Return JSON:
                 taskType: task.task_type,
                 dayNumber: 1,
                 totalDays: 30,
+                trends,
+                platformIntel,
+                socialData,
+                emotionalData,
                 instructionOverride: [
                     `Phase: ${task.content.launch_phase}`,
                     `Narrative: ${task.content.narrative_angle}`,
-                    `Campaign story: ${launchNarrative}`
-                ].join('. ')
+                    `Campaign story: ${launchNarrative}`,
+                    brainOverride,
+                    geoData.length ? `GEO narrative gap: ${geoData.map((g: any) => g.missing_claims?.slice(0, 1)?.join(', ')).filter(Boolean).join(' | ')}` : undefined,
+                ].filter(Boolean).join('. ') || undefined,
             });
 
             const hashtags = (finalContent.hashtags || []).slice(0, 15).map((h: string) => `#${h}`).join(' ');

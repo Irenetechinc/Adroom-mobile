@@ -192,7 +192,25 @@ Return JSON:
             const tokens = await this.getTokens(task.user_id);
             const product = await this.getProductDetails(task.strategies?.product_id);
 
-            // Generate polished final content using the stored content plan + latest intelligence
+            // ── Fetch ALL 4 intelligence streams in parallel ──────────────────
+            const [{ platformIntel, socialData, emotionalData, geoData }, trends] = await Promise.all([
+                this.fetchLiveIntelligence({
+                    platform: task.platform,
+                    category: product?.category || 'general',
+                    productName: product?.product_name || product?.name || '',
+                }),
+                this.getTrendingTopics(product?.category || 'general'),
+            ]);
+
+            // Brain override from last intelligence cycle (if any)
+            const { data: strategyRow } = await this.supabase
+                .from('strategies')
+                .select('current_execution_plan')
+                .eq('id', task.strategy_id)
+                .single();
+            const brainOverride: string | undefined = strategyRow?.current_execution_plan?.brain_instruction_override;
+
+            // Generate polished final content using the stored content plan + ALL live intelligence
             const finalContent = await this.generatePlatformContent({
                 platform: task.platform,
                 goal: 'SALES',
@@ -201,9 +219,15 @@ Return JSON:
                 taskType: task.task_type,
                 dayNumber: 1,
                 totalDays: 30,
-                instructionOverride: task.content.sales_tactic
-                    ? `Apply ${task.content.sales_tactic} sales tactic`
-                    : undefined
+                trends,
+                platformIntel,
+                socialData,
+                emotionalData,
+                instructionOverride: [
+                    task.content.sales_tactic ? `Apply ${task.content.sales_tactic} sales tactic` : undefined,
+                    brainOverride,
+                    geoData.length ? `GEO insight: ${geoData.map((g: any) => g.missing_claims?.slice(0, 2)?.join(', ')).filter(Boolean).join(' | ')}` : undefined,
+                ].filter(Boolean).join(' | ') || undefined,
             });
 
             const publishBody = `${finalContent.headline}\n\n${finalContent.body}\n\n${(finalContent.hashtags || []).map((h: string) => `#${h}`).join(' ')}`;

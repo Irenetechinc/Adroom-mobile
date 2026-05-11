@@ -232,6 +232,7 @@ export class SchedulerService {
                 try { const { adminBroadcast } = await import('../admin/adminRouter'); adminBroadcast('intelligence_cycle', { source: 'platform', status: 'running' }); } catch {}
                 const result = await this.ipe.runCycle();
                 if (result && result.alerts && result.alerts.length > 0) await this.notifyBrain('platform', result.alerts);
+                await this.decisionEngine.feedIntelligenceToActiveStrategies();
                 try { const { adminBroadcast } = await import('../admin/adminRouter'); adminBroadcast('intelligence_cycle', { source: 'platform', status: 'done', alerts: result?.alerts?.length || 0 }); } catch {}
             } catch (e: any) {
                 console.error('[Scheduler] IPE error:', e.message);
@@ -248,6 +249,7 @@ export class SchedulerService {
                 const result = await this.social.runCycle();
                 if (result && result.alerts && result.alerts.length > 0) await this.notifyBrain('social', result.alerts);
                 if (result && result.conversations && result.conversations.length > 0) await this.runEmotionalCycle();
+                await this.decisionEngine.feedIntelligenceToActiveStrategies();
                 try { const { adminBroadcast } = await import('../admin/adminRouter'); adminBroadcast('intelligence_cycle', { source: 'social', status: 'done', conversations: result?.conversations?.length || 0 }); } catch {}
             } catch (e: any) {
                 console.error('[Scheduler] Social listening error:', e.message);
@@ -261,6 +263,7 @@ export class SchedulerService {
                 if (cma.decision === 'deny_cooldown') { console.log(`[Scheduler] Emotional skipped — ${cma.reason}`); return; }
                 try { const { adminBroadcast } = await import('../admin/adminRouter'); adminBroadcast('intelligence_cycle', { source: 'emotional', status: 'running' }); } catch {}
                 await this.runEmotionalCycle();
+                await this.decisionEngine.feedIntelligenceToActiveStrategies();
                 try { const { adminBroadcast } = await import('../admin/adminRouter'); adminBroadcast('intelligence_cycle', { source: 'emotional', status: 'done' }); } catch {}
             }
             catch (e: any) { console.error('[Scheduler] Emotional cycle error:', e.message); }
@@ -275,6 +278,7 @@ export class SchedulerService {
                 try { const { adminBroadcast } = await import('../admin/adminRouter'); adminBroadcast('intelligence_cycle', { source: 'geo', status: 'running' }); } catch {}
                 const result = await this.geo.runCycle();
                 if (result?.alerts?.length > 0) await this.notifyBrain('geo', result.alerts);
+                await this.decisionEngine.feedIntelligenceToActiveStrategies();
                 try { const { adminBroadcast } = await import('../admin/adminRouter'); adminBroadcast('intelligence_cycle', { source: 'geo', status: 'done', alerts: result?.alerts?.length || 0 }); } catch {}
             } catch (e: any) {
                 console.error('[Scheduler] GEO error:', e.message);
