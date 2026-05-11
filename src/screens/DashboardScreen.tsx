@@ -16,6 +16,142 @@ import {
 } from 'lucide-react-native';
 import { useEnergyStore, PLAN_DETAILS } from '../store/energyStore';
 
+// ─── Performance Chart Component ─────────────────────────────────────────────
+interface PerfRow {
+  platform: string;
+  reach: number;
+  likes: number;
+  comments: number;
+  shares: number;
+  fetched_at: string;
+}
+interface PerformanceChartProps { strategies: any[]; userId: string; }
+
+function PerformanceChart({ strategies, userId }: PerformanceChartProps) {
+  const [perf, setPerf] = useState<PerfRow[]>([]);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (!strategies.length || !userId) return;
+    let cancelled = false;
+    (async () => {
+      setLoading(true);
+      try {
+        const rows: PerfRow[] = [];
+        for (const s of strategies.slice(0, 3)) {
+          const sid = s.strategy_id || s.id;
+          if (!sid) continue;
+          const { data } = await supabase
+            .from('agent_performance')
+            .select('platform, reach, likes, comments, shares, fetched_at')
+            .eq('strategy_id', sid)
+            .eq('user_id', userId)
+            .order('fetched_at', { ascending: false })
+            .limit(20);
+          if (data) rows.push(...(data as PerfRow[]));
+        }
+        if (!cancelled) setPerf(rows);
+      } catch {}
+      if (!cancelled) setLoading(false);
+    })();
+    return () => { cancelled = true; };
+  }, [strategies.map(s => s.strategy_id || s.id).join(','), userId]);
+
+  const PLATFORM_COLORS: Record<string, string> = {
+    facebook: '#1877F2', instagram: '#E1306C', twitter: '#1DA1F2',
+    linkedin: '#0A66C2', tiktok: '#69C9D0',
+  };
+
+  const grouped = perf.reduce((acc, row) => {
+    const p = (row.platform || 'unknown').toLowerCase();
+    if (!acc[p]) acc[p] = { reach: 0, likes: 0, comments: 0, shares: 0, count: 0 };
+    acc[p].reach += row.reach || 0;
+    acc[p].likes += row.likes || 0;
+    acc[p].comments += row.comments || 0;
+    acc[p].shares += row.shares || 0;
+    acc[p].count++;
+    return acc;
+  }, {} as Record<string, { reach: number; likes: number; comments: number; shares: number; count: number }>);
+
+  const platforms = Object.entries(grouped).sort((a, b) => b[1].reach - a[1].reach);
+  const maxReach = Math.max(1, ...platforms.map(([, v]) => v.reach));
+  const totalReach = platforms.reduce((s, [, v]) => s + v.reach, 0);
+  const totalEngagement = platforms.reduce((s, [, v]) => s + v.likes + v.comments + v.shares, 0);
+
+  if (loading) {
+    return (
+      <View style={{ backgroundColor: '#151B2B', borderRadius: 16, borderWidth: 1, borderColor: '#1E293B', padding: 14 }}>
+        <Skeleton width="100%" height={80} borderRadius={10} />
+      </View>
+    );
+  }
+
+  if (platforms.length === 0) {
+    return (
+      <View style={{ backgroundColor: '#151B2B', borderRadius: 16, borderWidth: 1, borderColor: '#1E293B', padding: 20, alignItems: 'center' }}>
+        <Activity size={24} color="#1E293B" />
+        <Text style={{ color: '#334155', fontSize: 13, marginTop: 8 }}>No performance data yet — agents are working</Text>
+      </View>
+    );
+  }
+
+  return (
+    <View style={{ backgroundColor: '#151B2B', borderRadius: 16, borderWidth: 1, borderColor: 'rgba(167,139,250,0.2)', overflow: 'hidden' }}>
+      {/* Totals header */}
+      <View style={{ flexDirection: 'row', borderBottomWidth: 1, borderBottomColor: '#1E293B' }}>
+        {[
+          { label: 'Total Reach', value: totalReach.toLocaleString(), color: '#A78BFA' },
+          { label: 'Engagement', value: totalEngagement.toLocaleString(), color: '#00F0FF' },
+          { label: 'Platforms', value: String(platforms.length), color: '#10B981' },
+        ].map((stat, i) => (
+          <View key={i} style={{ flex: 1, alignItems: 'center', paddingVertical: 12, borderRightWidth: i < 2 ? 1 : 0, borderRightColor: '#1E293B' }}>
+            <Text style={{ color: stat.color, fontWeight: '800', fontSize: 16 }}>{stat.value}</Text>
+            <Text style={{ color: '#64748B', fontSize: 10, marginTop: 2 }}>{stat.label}</Text>
+          </View>
+        ))}
+      </View>
+
+      {/* Per-platform bars */}
+      <View style={{ padding: 14, gap: 10 }}>
+        {platforms.map(([platform, data]) => {
+          const color = PLATFORM_COLORS[platform] || '#64748B';
+          const barPct = data.reach / maxReach;
+          const engagement = data.likes + data.comments + data.shares;
+          return (
+            <View key={platform}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                  <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: color }} />
+                  <Text style={{ color: '#E2E8F0', fontWeight: '600', fontSize: 12, textTransform: 'capitalize' }}>{platform}</Text>
+                </View>
+                <View style={{ flexDirection: 'row', gap: 10 }}>
+                  <Text style={{ color: color, fontWeight: '700', fontSize: 11 }}>{data.reach.toLocaleString()} reach</Text>
+                  <Text style={{ color: '#64748B', fontSize: 11 }}>{engagement.toLocaleString()} eng</Text>
+                </View>
+              </View>
+              {/* Reach bar */}
+              <View style={{ height: 6, backgroundColor: '#1E293B', borderRadius: 3, overflow: 'hidden', marginBottom: 2 }}>
+                <View style={{ width: `${barPct * 100}%` as any, height: '100%', backgroundColor: color, borderRadius: 3, opacity: 0.8 }} />
+              </View>
+              {/* Engagement breakdown mini bars */}
+              {(data.likes > 0 || data.comments > 0 || data.shares > 0) && (
+                <View style={{ flexDirection: 'row', gap: 6, marginTop: 3 }}>
+                  {[{ label: '♥', v: data.likes, c: '#EF4444' }, { label: '💬', v: data.comments, c: '#F59E0B' }, { label: '↗', v: data.shares, c: '#10B981' }].map(({ label, v, c }) => v > 0 ? (
+                    <View key={label} style={{ flexDirection: 'row', alignItems: 'center', gap: 2 }}>
+                      <Text style={{ color: c, fontSize: 9 }}>{label}</Text>
+                      <Text style={{ color: '#64748B', fontSize: 9 }}>{v.toLocaleString()}</Text>
+                    </View>
+                  ) : null)}
+                </View>
+              )}
+            </View>
+          );
+        })}
+      </View>
+    </View>
+  );
+}
+
 interface AgentTask {
   id: string;
   agent_type: string;
@@ -645,6 +781,23 @@ export default function DashboardScreen() {
                 );
               })}
             </View>
+          </Animated.View>
+        )}
+
+        {/* Campaign Performance Chart */}
+        {activeStrategies.length > 0 && (
+          <Animated.View entering={FadeInDown.delay(335).springify()} style={styles.section}>
+            <View style={styles.sectionHeader}>
+              <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                <TrendingUp size={18} color="#A78BFA" />
+                <Text style={styles.sectionTitle}>Campaign Performance</Text>
+              </View>
+              <View style={[styles.sectionCount, { backgroundColor: 'rgba(167,139,250,0.12)' }]}>
+                <Text style={{ color: '#A78BFA', fontWeight: '700', fontSize: 13 }}>LIVE</Text>
+              </View>
+            </View>
+
+            <PerformanceChart strategies={activeStrategies} userId={session?.user?.id || ''} />
           </Animated.View>
         )}
 

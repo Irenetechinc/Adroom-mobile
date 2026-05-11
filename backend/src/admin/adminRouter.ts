@@ -8,7 +8,10 @@ const router = Router();
 
 const ADMIN_EMAIL = (process.env.ADMIN_EMAIL || '').toLowerCase();
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || '';
-const JWT_SECRET = process.env.ADMIN_JWT_SECRET || crypto.randomBytes(64).toString('hex');
+const JWT_SECRET = process.env.ADMIN_JWT_SECRET ||
+  (ADMIN_EMAIL && ADMIN_PASSWORD
+    ? crypto.createHash('sha256').update(`adroom:${ADMIN_EMAIL}:${ADMIN_PASSWORD}:v1`).digest('hex')
+    : crypto.randomBytes(64).toString('hex'));
 const ADMIN_CONFIGURED = !!(ADMIN_EMAIL && ADMIN_PASSWORD);
 if (!ADMIN_CONFIGURED) {
   console.warn('[Admin] ADMIN_EMAIL and/or ADMIN_PASSWORD not set — admin login is disabled until both are configured.');
@@ -614,6 +617,33 @@ router.get('/api/action-logs', auth, async (req, res) => {
   }
 });
 
+// ─── AGENT NETWORK STATUS ────────────────────────────────────────────────────
+router.get('/api/agent-network', auth, async (_req, res) => {
+  try {
+    const sb = getServiceSupabaseClient();
+    const since = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+    const { data: tasks } = await sb
+      .from('agent_tasks')
+      .select('agent_type, status, platform')
+      .gte('updated_at', since);
+
+    const summary: Record<string, { agent_type: string; total: number; running: number; done: number; failed: number; platforms: Set<string> }> = {};
+    for (const t of tasks || []) {
+      if (!summary[t.agent_type]) summary[t.agent_type] = { agent_type: t.agent_type, total: 0, running: 0, done: 0, failed: 0, platforms: new Set() };
+      summary[t.agent_type].total++;
+      if (t.status === 'running' || t.status === 'pending') summary[t.agent_type].running++;
+      if (t.status === 'done') summary[t.agent_type].done++;
+      if (t.status === 'failed') summary[t.agent_type].failed++;
+      if (t.platform) summary[t.agent_type].platforms.add(t.platform.toLowerCase());
+    }
+
+    const agents = Object.values(summary).map(a => ({ ...a, platforms: Array.from(a.platforms) }));
+    res.json({ agents, since });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ─── CMA SAVINGS STATS ────────────────────────────────────────────────────────
 router.get('/api/cma/stats', auth, async (req, res) => {
   try {
@@ -1102,6 +1132,9 @@ label{font-size:12px;color:#94A3B8;font-weight:600}
     <button class="nav-item" onclick="showSection('cma')" id="nav-cma">
       <span>💰</span> CMA Savings
     </button>
+    <button class="nav-item" onclick="showSection('agentnet')" id="nav-agentnet">
+      <span>🕸️</span> Agent Network
+    </button>
     <div style="margin-top:auto;padding:16px 8px">
       <button class="nav-item" onclick="doLogout()" style="color:#EF4444">
         <span>🚪</span> Sign Out
@@ -1396,6 +1429,68 @@ label{font-size:12px;color:#94A3B8;font-weight:600}
         </div>
       </div>
 
+      <!-- ───────────── AGENT NETWORK ───────────── -->
+      <div id="section-agentnet" class="section">
+        <div class="section-header">
+          <div class="section-title">Agent Network — Real-Time Activity Map</div>
+          <div style="display:flex;gap:8px;align-items:center">
+            <div class="sse-dot" id="sse-dot-2" style="background:#EF4444"></div>
+            <span id="sse-status-2" style="font-size:12px;color:#64748B">Connecting…</span>
+            <button class="btn btn-ghost btn-sm" onclick="loadAgentNetwork()">↺ Refresh</button>
+          </div>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 340px;gap:16px">
+          <!-- SVG Node Graph -->
+          <div class="card" style="padding:0;overflow:hidden;min-height:480px;position:relative">
+            <div style="position:absolute;top:12px;left:16px;font-size:11px;color:#475569;z-index:10;display:flex;gap:12px">
+              <span style="display:flex;align-items:center;gap:4px"><span style="width:8px;height:8px;border-radius:50%;background:#10B981;display:inline-block"></span>Active</span>
+              <span style="display:flex;align-items:center;gap:4px"><span style="width:8px;height:8px;border-radius:50%;background:#F59E0B;display:inline-block"></span>Pending</span>
+              <span style="display:flex;align-items:center;gap:4px"><span style="width:8px;height:8px;border-radius:50%;background:#EF4444;display:inline-block"></span>Failed</span>
+              <span style="display:flex;align-items:center;gap:4px"><span style="width:8px;height:8px;border-radius:50%;background:#00F0FF;display:inline-block"></span>Intelligence</span>
+            </div>
+            <svg id="agent-network-svg" width="100%" height="480" style="display:block"></svg>
+          </div>
+          <!-- Live event feed -->
+          <div style="display:flex;flex-direction:column;gap:12px">
+            <div class="card" style="flex:1;min-height:220px">
+              <div style="font-size:13px;font-weight:700;margin-bottom:12px;color:#00F0FF">⚡ Live Agent Events</div>
+              <div id="agentnet-feed" style="display:flex;flex-direction:column;gap:6px;max-height:170px;overflow-y:auto">
+                <div class="empty">Waiting for agent activity…</div>
+              </div>
+            </div>
+            <div class="card">
+              <div style="font-size:13px;font-weight:700;margin-bottom:12px">Agent Status</div>
+              <div id="agentnet-status" style="display:flex;flex-direction:column;gap:8px"></div>
+            </div>
+            <div class="card">
+              <div style="font-size:13px;font-weight:700;margin-bottom:10px">Intelligence Engines</div>
+              <div id="agentnet-engines" style="display:flex;flex-direction:column;gap:8px">
+                <div style="display:flex;justify-content:space-between;align-items:center">
+                  <span style="color:#CBD5E1;font-size:12px">Platform Intelligence (IPE)</span>
+                  <span id="eng-ipe" class="badge badge-gray">Idle</span>
+                </div>
+                <div style="display:flex;justify-content:space-between;align-items:center">
+                  <span style="color:#CBD5E1;font-size:12px">Social Listening</span>
+                  <span id="eng-social" class="badge badge-gray">Idle</span>
+                </div>
+                <div style="display:flex;justify-content:space-between;align-items:center">
+                  <span style="color:#CBD5E1;font-size:12px">Emotional Intelligence</span>
+                  <span id="eng-emotional" class="badge badge-gray">Idle</span>
+                </div>
+                <div style="display:flex;justify-content:space-between;align-items:center">
+                  <span style="color:#CBD5E1;font-size:12px">GEO Monitoring</span>
+                  <span id="eng-geo" class="badge badge-gray">Idle</span>
+                </div>
+                <div style="display:flex;justify-content:space-between;align-items:center">
+                  <span style="color:#CBD5E1;font-size:12px">AI Brain</span>
+                  <span id="eng-brain" class="badge badge-gray">Idle</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
       <!-- ───────────── CMA SAVINGS ───────────── -->
       <div id="section-cma" class="section">
         <div class="section-header">
@@ -1669,8 +1764,8 @@ if (TOKEN) {
 }
 
 // ── Navigation ────────────────────────────────────────────────────────────────
-const SECTIONS = ['dashboard', 'users', 'credits', 'notifications', 'deletions', 'trials', 'activity', 'terminal', 'logs', 'cma'];
-const TITLES = { dashboard: 'Dashboard', users: 'All Users', credits: 'Credit Management', notifications: 'Push Notifications', deletions: 'Account Deletion Requests', trials: 'Trials & Billing Monitor', activity: 'Live Activity', terminal: 'Live Server Terminal', logs: 'Admin Logs', cma: 'CMA Savings Dashboard' };
+const SECTIONS = ['dashboard', 'users', 'credits', 'notifications', 'deletions', 'trials', 'activity', 'terminal', 'logs', 'cma', 'agentnet'];
+const TITLES = { dashboard: 'Dashboard', users: 'All Users', credits: 'Credit Management', notifications: 'Push Notifications', deletions: 'Account Deletion Requests', trials: 'Trials & Billing Monitor', activity: 'Live Activity', terminal: 'Live Server Terminal', logs: 'Admin Logs', cma: 'CMA Savings Dashboard', agentnet: 'Agent Network' };
 
 function showSection(name) {
   SECTIONS.forEach(s => {
@@ -1681,6 +1776,7 @@ function showSection(name) {
   document.getElementById('page-title').textContent = TITLES[name] || name;
   if (name === 'cma') { loadCMAStats(); loadModelCredits(); }
   if (name === 'trials') { loadTrials(); }
+  if (name === 'agentnet') { loadAgentNetwork(); }
 }
 
 // ── Trials & Billing ─────────────────────────────────────────────────────────
@@ -2556,6 +2652,43 @@ function connectSSE() {
   evtSource.addEventListener('deletion_approved', () => { loadDeletionRequests(); });
   evtSource.addEventListener('deletion_dismissed', () => { loadDeletionRequests(); });
 
+  evtSource.addEventListener('agent_task_started', e => {
+    const d = JSON.parse(e.data);
+    addAgentNetEvent('started', d);
+    updateAgentNetNode(d.agent_type, 'active', d.platform);
+  });
+
+  evtSource.addEventListener('agent_task_done', e => {
+    const d = JSON.parse(e.data);
+    addAgentNetEvent('done', d);
+    updateAgentNetNode(d.agent_type, 'done', d.platform);
+  });
+
+  evtSource.addEventListener('agent_task_failed', e => {
+    const d = JSON.parse(e.data);
+    addAgentNetEvent('failed', d);
+    updateAgentNetNode(d.agent_type, 'failed', d.platform);
+  });
+
+  evtSource.addEventListener('intelligence_cycle', e => {
+    const d = JSON.parse(e.data);
+    const engMap = { platform: 'eng-ipe', social: 'eng-social', emotional: 'eng-emotional', geo: 'eng-geo', brain: 'eng-brain' };
+    const el = document.getElementById(engMap[d.source] || '');
+    if (el) {
+      el.className = 'badge badge-green';
+      el.textContent = 'Running';
+      setTimeout(() => { el.className = 'badge badge-blue'; el.textContent = 'Done'; }, 4000);
+    }
+    addAgentNetEvent('intelligence', d);
+  });
+
+  evtSource.addEventListener('agent_learning', e => {
+    const d = JSON.parse(e.data);
+    addAgentNetEvent('learned', d);
+    const el = document.getElementById('eng-brain');
+    if (el) { el.className = 'badge badge-purple'; el.textContent = 'Learning'; setTimeout(() => { el.className = 'badge badge-blue'; el.textContent = 'Updated'; }, 3000); }
+  });
+
   evtSource.addEventListener('server_log', e => {
     const d = JSON.parse(e.data);
     appendTermLine(d.level, d.msg, d.ts);
@@ -2672,6 +2805,168 @@ function addActivityEvent(ev) {
     feed.insertBefore(item.cloneNode(true), feed.firstChild);
     while (feed.children.length > 100) feed.removeChild(feed.lastChild);
   });
+}
+
+// ── Agent Network Graph ───────────────────────────────────────────────────────
+const agentNetState = {
+  agents: {
+    SALESMAN:  { x: 200, y: 120, status: 'idle', platform: null, tasks: 0, lastSeen: null },
+    AWARENESS: { x: 480, y: 120, status: 'idle', platform: null, tasks: 0, lastSeen: null },
+    PROMOTION: { x: 200, y: 320, status: 'idle', platform: null, tasks: 0, lastSeen: null },
+    LAUNCH:    { x: 480, y: 320, status: 'idle', platform: null, tasks: 0, lastSeen: null },
+  },
+  platforms: {
+    facebook:  { x: 100, y: 220, color: '#1877F2' },
+    instagram: { x: 340, y: 50,  color: '#E1306C' },
+    twitter:   { x: 580, y: 220, color: '#1DA1F2' },
+    linkedin:  { x: 340, y: 390, color: '#0A66C2' },
+    tiktok:    { x: 680, y: 310, color: '#69C9D0' },
+  },
+  brain: { x: 340, y: 220 },
+  activeEdges: [],
+};
+
+const AGENT_COLORS = { SALESMAN: '#10B981', AWARENESS: '#00F0FF', PROMOTION: '#F59E0B', LAUNCH: '#A78BFA' };
+const STATUS_COLORS = { idle: '#475569', active: '#10B981', done: '#00F0FF', failed: '#EF4444' };
+
+function renderAgentNetGraph() {
+  const svg = document.getElementById('agent-network-svg');
+  if (!svg) return;
+  const W = svg.clientWidth || 740;
+  const H = 480;
+  const agents = agentNetState.agents;
+  const platforms = agentNetState.platforms;
+  const brain = agentNetState.brain;
+
+  let html = \`<defs>
+    <filter id="glow"><feGaussianBlur stdDeviation="3" result="blur"/><feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+    <radialGradient id="bgGrad" cx="50%" cy="50%"><stop offset="0%" stop-color="#1E293B" stop-opacity="0.4"/><stop offset="100%" stop-color="#0B0F19" stop-opacity="0"/></radialGradient>
+  </defs>
+  <rect width="\${W}" height="\${H}" fill="#0B0F19"/>
+  <circle cx="\${W/2}" cy="\${H/2}" r="200" fill="url(#bgGrad)"/>\`;
+
+  // Draw brain → agent edges
+  Object.entries(agents).forEach(([name, agent]) => {
+    const sc = STATUS_COLORS[agent.status] || '#475569';
+    const opacity = agent.status !== 'idle' ? 0.6 : 0.15;
+    html += \`<line x1="\${brain.x}" y1="\${brain.y}" x2="\${agent.x}" y2="\${agent.y}" stroke="\${sc}" stroke-width="1.5" stroke-dasharray="5 4" opacity="\${opacity}"/>\`;
+  });
+
+  // Draw agent → platform edges for active connections
+  agentNetState.activeEdges.forEach(edge => {
+    const a = agents[edge.agent];
+    const p = platforms[edge.platform];
+    if (!a || !p) return;
+    html += \`<line x1="\${a.x}" y1="\${a.y}" x2="\${p.x}" y2="\${p.y}" stroke="\${AGENT_COLORS[edge.agent]}" stroke-width="2" opacity="0.7" filter="url(#glow)"/>\`;
+  });
+
+  // Draw platform nodes
+  Object.entries(platforms).forEach(([name, p]) => {
+    html += \`<circle cx="\${p.x}" cy="\${p.y}" r="18" fill="\${p.color}" opacity="0.15" stroke="\${p.color}" stroke-width="1.5"/>
+    <text x="\${p.x}" y="\${p.y + 4}" text-anchor="middle" fill="\${p.color}" font-size="9" font-weight="700">\${name.slice(0,2).toUpperCase()}</text>
+    <text x="\${p.x}" y="\${p.y + 30}" text-anchor="middle" fill="#475569" font-size="9">\${name}</text>\`;
+  });
+
+  // Draw AI Brain node
+  html += \`<circle cx="\${brain.x}" cy="\${brain.y}" r="28" fill="rgba(0,240,255,0.08)" stroke="#00F0FF" stroke-width="2" filter="url(#glow)"/>
+  <text x="\${brain.x}" y="\${brain.y - 3}" text-anchor="middle" fill="#00F0FF" font-size="9" font-weight="700">AI</text>
+  <text x="\${brain.x}" y="\${brain.y + 9}" text-anchor="middle" fill="#00F0FF" font-size="9" font-weight="700">BRAIN</text>\`;
+
+  // Draw agent nodes
+  Object.entries(agents).forEach(([name, agent]) => {
+    const color = AGENT_COLORS[name] || '#64748B';
+    const sc = STATUS_COLORS[agent.status] || '#475569';
+    const pulse = agent.status === 'active' ? \`<circle cx="\${agent.x}" cy="\${agent.y}" r="30" fill="none" stroke="\${color}" stroke-width="1" opacity="0.3"><animate attributeName="r" from="26" to="40" dur="1.5s" repeatCount="indefinite"/><animate attributeName="opacity" from="0.4" to="0" dur="1.5s" repeatCount="indefinite"/></circle>\` : '';
+    html += \`\${pulse}
+    <circle cx="\${agent.x}" cy="\${agent.y}" r="26" fill="\${color}" opacity="0.12" stroke="\${color}" stroke-width="2" filter="url(#glow)"/>
+    <circle cx="\${agent.x + 16}" cy="\${agent.y - 16}" r="6" fill="\${sc}" stroke="#0B0F19" stroke-width="1.5"/>
+    <text x="\${agent.x}" y="\${agent.y - 4}" text-anchor="middle" fill="\${color}" font-size="8" font-weight="700">\${name.slice(0,4)}</text>
+    <text x="\${agent.x}" y="\${agent.y + 8}" text-anchor="middle" fill="#64748B" font-size="7">\${agent.tasks} tasks</text>
+    <text x="\${agent.x}" y="\${agent.y + 42}" text-anchor="middle" fill="\${color}" font-size="9" font-weight="700">\${name}</text>\`;
+  });
+
+  svg.innerHTML = html;
+}
+
+function updateAgentNetNode(agentType, status, platform) {
+  const agent = agentNetState.agents[agentType];
+  if (!agent) return;
+  agent.status = status;
+  agent.platform = platform;
+  agent.lastSeen = new Date().toISOString();
+  if (status === 'active') {
+    agent.tasks++;
+    if (platform) {
+      agentNetState.activeEdges = agentNetState.activeEdges.filter(e => e.agent !== agentType);
+      agentNetState.activeEdges.push({ agent: agentType, platform: platform.toLowerCase() });
+      setTimeout(() => {
+        agentNetState.activeEdges = agentNetState.activeEdges.filter(e => !(e.agent === agentType && e.platform === platform.toLowerCase()));
+        if (agentNetState.agents[agentType]) agentNetState.agents[agentType].status = 'idle';
+        renderAgentNetGraph();
+        updateAgentNetStatusPanel();
+      }, 8000);
+    }
+  }
+  renderAgentNetGraph();
+  updateAgentNetStatusPanel();
+}
+
+function updateAgentNetStatusPanel() {
+  const el = document.getElementById('agentnet-status');
+  if (!el) return;
+  const agents = agentNetState.agents;
+  el.innerHTML = Object.entries(agents).map(([name, a]) => {
+    const color = AGENT_COLORS[name] || '#64748B';
+    const sc = STATUS_COLORS[a.status] || '#475569';
+    const ago = a.lastSeen ? timeAgo(a.lastSeen) : 'Never';
+    return \`<div style="display:flex;justify-content:space-between;align-items:center">
+      <span style="color:\${color};font-size:12px;font-weight:700">\${name}</span>
+      <div style="display:flex;align-items:center;gap:6px">
+        <span style="font-size:11px;color:#64748B">\${a.tasks} tasks · \${ago}</span>
+        <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:\${sc}"></span>
+      </div>
+    </div>\`;
+  }).join('');
+}
+
+function addAgentNetEvent(type, data) {
+  const feed = document.getElementById('agentnet-feed');
+  if (!feed) return;
+  if (feed.children.length === 1 && feed.children[0].classList.contains('empty')) feed.innerHTML = '';
+  const icons = { started: '▶', done: '✓', failed: '✗', intelligence: '🧠', learned: '💡' };
+  const colors = { started: '#00F0FF', done: '#10B981', failed: '#EF4444', intelligence: '#A78BFA', learned: '#F59E0B' };
+  const desc = data.agent_type ? \`\${data.agent_type} → \${data.platform || 'AI Brain'}\` : (data.source ? \`\${data.source} engine fired\` : JSON.stringify(data).slice(0, 50));
+  const item = document.createElement('div');
+  item.style.cssText = \`font-size:11px;color:\${colors[type] || '#94A3B8'};display:flex;align-items:center;gap:6px;padding:4px 0;border-bottom:1px solid #1E293B\`;
+  item.innerHTML = \`<span style="font-weight:700">\${icons[type] || '·'}</span><span style="flex:1">\${desc}</span><span style="color:#475569;white-space:nowrap">now</span>\`;
+  feed.insertBefore(item, feed.firstChild);
+  while (feed.children.length > 30) feed.removeChild(feed.lastChild);
+}
+
+async function loadAgentNetwork() {
+  try {
+    const d = await api('GET', '/api/stats');
+    // Reset agent task counts from stats
+    renderAgentNetGraph();
+    updateAgentNetStatusPanel();
+    // Also try to fetch recent agent tasks for initial state
+    try {
+      const tasks = await api('GET', '/api/agent-network');
+      if (tasks && tasks.agents) {
+        tasks.agents.forEach(a => {
+          if (agentNetState.agents[a.agent_type]) {
+            agentNetState.agents[a.agent_type].tasks = a.total || 0;
+            agentNetState.agents[a.agent_type].status = a.running > 0 ? 'active' : 'idle';
+          }
+        });
+        renderAgentNetGraph();
+        updateAgentNetStatusPanel();
+      }
+    } catch {}
+  } catch (e) {
+    renderAgentNetGraph();
+    updateAgentNetStatusPanel();
+  }
 }
 </script>
 </body>

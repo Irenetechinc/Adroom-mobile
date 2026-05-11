@@ -178,6 +178,7 @@ export class AgentOrchestrator {
                 }
 
                 const agent = this.getAgent(task.agent_type as any);
+                try { const { adminBroadcast } = await import('../admin/adminRouter'); adminBroadcast('agent_task_started', { task_id: task.id, agent_type: task.agent_type, platform: task.platform, user_id: task.user_id }); } catch {}
                 await agent.executeTask(task.id);
 
                 // Deduct agent_task credit after successful execution
@@ -187,9 +188,15 @@ export class AgentOrchestrator {
                     agent_type: task.agent_type,
                 }).catch((e: any) => console.error(`[Orchestrator] Energy deduction failed for task ${task.id}:`, e.message));
 
+                try { const { adminBroadcast } = await import('../admin/adminRouter'); adminBroadcast('agent_task_done', { task_id: task.id, agent_type: task.agent_type, platform: task.platform }); } catch {}
+
+                // Self-learning: analyse what worked after execution
+                try { await agent.selfLearnFromPerformance(task.strategy_id, task.user_id); } catch {}
+
                 executed++;
             } catch (err: any) {
                 console.error(`[Orchestrator] Task ${task.id} execution error: ${err.message}`);
+                try { const { adminBroadcast } = await import('../admin/adminRouter'); adminBroadcast('agent_task_failed', { task_id: task.id, agent_type: task.agent_type, platform: task.platform, error: err.message }); } catch {}
                 failed++;
             }
         }
