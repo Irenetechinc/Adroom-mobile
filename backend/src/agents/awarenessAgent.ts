@@ -161,8 +161,24 @@ Return JSON:
         try {
             const tokens = await this.getTokens(task.user_id);
             const product = await this.getProductDetails(task.strategies?.product_id);
-            const intel = await this.getLatestPlatformIntelligence(task.platform);
-            const trends = await this.getTrendingTopics(product?.category || 'general');
+
+            // ── Fetch ALL 4 intelligence streams in parallel ──────────────────
+            const [{ platformIntel, socialData, emotionalData, geoData }, trends] = await Promise.all([
+                this.fetchLiveIntelligence({
+                    platform: task.platform,
+                    category: product?.category || 'general',
+                    productName: product?.product_name || product?.name || '',
+                }),
+                this.getTrendingTopics(product?.category || 'general'),
+            ]);
+
+            // Brain override from last intelligence cycle (if any)
+            const { data: strategyRow } = await this.supabase
+                .from('strategies')
+                .select('current_execution_plan')
+                .eq('id', task.strategy_id)
+                .single();
+            const brainOverride: string | undefined = strategyRow?.current_execution_plan?.brain_instruction_override;
 
             const finalContent = await this.generatePlatformContent({
                 platform: task.platform,
@@ -173,9 +189,16 @@ Return JSON:
                 dayNumber: 1,
                 totalDays: 30,
                 trends,
-                instructionOverride: task.content.virality_hook
-                    ? `Apply virality hook: ${task.content.virality_hook}. Algorithm target: ${task.content.algorithm_exploit}`
-                    : undefined
+                platformIntel,
+                socialData,
+                emotionalData,
+                instructionOverride: [
+                    task.content.virality_hook
+                        ? `Virality hook: ${task.content.virality_hook}. Algorithm target: ${task.content.algorithm_exploit}`
+                        : undefined,
+                    brainOverride,
+                    geoData.length ? `GEO narrative gaps: ${geoData.map((g: any) => g.missing_claims?.slice(0, 2)?.join(', ')).filter(Boolean).join(' | ')}` : undefined,
+                ].filter(Boolean).join(' | ') || undefined,
             });
 
             const hashtags = (finalContent.hashtags || []).slice(0, 20).map((h: string) => `#${h}`).join(' ');

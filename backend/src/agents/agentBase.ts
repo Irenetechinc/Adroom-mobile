@@ -1319,6 +1319,35 @@ Only include comments that should be replied to. Keep replies natural and authen
 
     // ─── INTELLIGENCE RETRIEVAL ──────────────────────────────────────────────────
 
+    /**
+     * Fetches ALL 4 intelligence streams in parallel for a given task context.
+     * Call this at the start of every executeTask and pass the result straight
+     * into generatePlatformContent so every agent always works with live data.
+     */
+    async fetchLiveIntelligence(params: {
+        platform: string;
+        category: string;
+        productName: string;
+    }): Promise<{ platformIntel: any; socialData: any[]; emotionalData: any[]; geoData: any[] }> {
+        const [platformIntel, socialData, emotionalData, geoData] = await Promise.all([
+            this.getLatestPlatformIntelligence(params.platform),
+            this.getLatestSocialConversations(params.category),
+            this.getEmotionalOwnership(params.category),
+            this.getGeoNarratives(params.productName),
+        ]);
+        return { platformIntel, socialData, emotionalData, geoData };
+    }
+
+    private async getLatestSocialConversations(category: string): Promise<any[]> {
+        const { data } = await this.supabase
+            .from('social_conversations')
+            .select('content, topics, sentiment, intent, entities')
+            .eq('category', category)
+            .order('collected_at', { ascending: false })
+            .limit(20);
+        return data || [];
+    }
+
     async getLatestPlatformIntelligence(platform: string): Promise<any> {
         const { data } = await this.supabase
             .from('platform_intelligence')
