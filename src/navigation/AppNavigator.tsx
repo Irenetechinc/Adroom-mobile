@@ -5,6 +5,7 @@ import { Text, TextInput } from 'react-native';
 import * as Linking from 'expo-linking';
 import { RootStackParamList } from '../types';
 import { useAuthStore } from '../store/authStore';
+import { useNotificationStore } from '../store/notificationStore';
 
 // Disable system-level font scaling globally so the app looks identical on
 // all devices regardless of the user's accessibility font-size setting.
@@ -77,10 +78,24 @@ export default function AppNavigator() {
   const { session, isLoading, hasActiveStrategy, initialize } = useAuthStore();
   const [splashDone, setSplashDone] = useState(false);
   const splashStartedAt = useRef<number>(Date.now());
+  const attachNotifications = useNotificationStore((s) => s.attach);
+  const detachNotifications = useNotificationStore((s) => s.detach);
 
   useEffect(() => {
     initialize();
   }, [initialize]);
+
+  // Keep the realtime notification channel alive for the entire session.
+  // Attaching here (instead of only in SettingsScreen) ensures the unread
+  // badge is always current — even on cold start — without navigating away
+  // and back to force a refresh.
+  useEffect(() => {
+    const userId = session?.user?.id ?? null;
+    attachNotifications(userId);
+    return () => {
+      if (!userId) detachNotifications();
+    };
+  }, [session?.user?.id]);
 
   // Hold the splash for a minimum duration so it doesn't flash off briefly
   // before the auth state is resolved.

@@ -184,6 +184,43 @@ export class SchedulerService {
             }
         });
 
+        // ─── AUTO TOP-UP RETRY (failed on-demand charges) ───────────────────────
+        // Every hour (offset +45m): retry failed auto top-ups whose retry time has elapsed.
+        cron.schedule('45 * * * *', async () => {
+            console.log('[Scheduler] Running auto top-up retry sweep...');
+            try {
+                const supabase = getServiceSupabaseClient();
+                const nowIso = new Date().toISOString();
+                const { data: rows, error } = await supabase
+                    .from('energy_accounts')
+                    .select('user_id, on_demand_top_up_amount, on_demand_top_up_retry_at')
+                    .eq('on_demand_enabled', true)
+                    .not('on_demand_top_up_retry_at', 'is', null)
+                    .lte('on_demand_top_up_retry_at', nowIso);
+
+                if (error) { console.error('[Scheduler] Auto top-up retry DB error:', error.message); return; }
+                if (!rows?.length) { console.log('[Scheduler] Auto top-up retry: nothing due'); return; }
+
+                console.log(`[Scheduler] Auto top-up retry: ${rows.length} pending charge(s)`);
+                const { energyService } = await import('./energyService');
+                for (const row of rows) {
+                    try {
+                        // Clear retry timestamp first to prevent double-firing
+                        await supabase.from('energy_accounts')
+                            .update({ on_demand_top_up_retry_at: null })
+                            .eq('user_id', row.user_id);
+                        // Re-trigger the on-demand check — it will charge if balance is still low
+                        await (energyService as any).checkAndTriggerOnDemand(row.user_id, 0);
+                        console.log(`[Scheduler] Auto top-up retry triggered for user ${row.user_id}`);
+                    } catch (e: any) {
+                        console.error(`[Scheduler] Auto top-up retry error for user ${row.user_id}:`, e.message);
+                    }
+                }
+            } catch (e: any) {
+                console.error('[Scheduler] Auto top-up retry sweep error:', e.message);
+            }
+        });
+
         // ─── INTELLIGENCE LOOPS ──────────────────────────────────────────────────
 
         cron.schedule(SCHED_IPE_CRON, async () => {

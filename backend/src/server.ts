@@ -28,6 +28,42 @@ dotenv.config();
 const app = express();
 const PORT = process.env.PORT || 8000;
 
+// ── Console → Admin SSE bridge ────────────────────────────────────────────────
+// Intercept console.log / warn / error and pipe them to the admin Live Terminal
+// via adminBroadcast. Uses an inline require (not ESM import) to avoid any
+// circular-module issues at startup time. The broadcast is fire-and-forget;
+// errors inside it are silently swallowed so we never break normal logging.
+(function patchConsole() {
+  const _log   = console.log.bind(console);
+  const _warn  = console.warn.bind(console);
+  const _error = console.error.bind(console);
+  const _info  = console.info.bind(console);
+
+  function toMsg(args: unknown[]): string {
+    return args.map(a => {
+      if (a === null) return 'null';
+      if (a === undefined) return 'undefined';
+      if (typeof a === 'object') { try { return JSON.stringify(a); } catch { return String(a); } }
+      return String(a);
+    }).join(' ');
+  }
+
+  function broadcast(level: string, args: unknown[]) {
+    try {
+      // Dynamic require prevents circular import — adminRouter is already
+      // resolved by the time any log fires after startup.
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      const { adminBroadcast } = require('./admin/adminRouter');
+      adminBroadcast('server_log', { level, msg: toMsg(args), ts: new Date().toISOString() });
+    } catch { /* ignore */ }
+  }
+
+  console.log   = (...args: unknown[]) => { _log(...args);   broadcast('INFO',  args); };
+  console.info  = (...args: unknown[]) => { _info(...args);  broadcast('INFO',  args); };
+  console.warn  = (...args: unknown[]) => { _warn(...args);  broadcast('WARN',  args); };
+  console.error = (...args: unknown[]) => { _error(...args); broadcast('ERROR', args); };
+})();
+
 /**
  * Build the public, externally-reachable base URL of the backend.
  * Used to point Resend email `redirectTo` URLs at our own /auth/* HTML pages
