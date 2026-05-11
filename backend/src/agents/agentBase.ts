@@ -482,11 +482,42 @@ Return STRICT JSON only (no markdown, no explanation):
         if (!tokens) throw new Error('TikTok tokens not configured');
         this.log(`Publishing to TikTok (open_id: ${tokens.open_id})`);
 
-        // TikTok requires video content — text-only posts are via the Share API
+        // TikTok requires video content — fall back to photo post API when no video URL
         if (!videoUrl) {
-            // Use direct post API for text-only (caption) — TikTok doesn't support text-only posts
-            // We create a photo post with the caption if no video
-            throw new Error('TikTok requires a video URL. Queue as video task or generate video first.');
+            this.log('No video URL provided — falling back to TikTok photo post');
+            const photoResp = await fetch(`${TIKTOK_API}/post/publish/content/init/`, {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${tokens.access_token}`,
+                    'Content-Type': 'application/json; charset=UTF-8',
+                },
+                body: JSON.stringify({
+                    post_info: {
+                        title: body.substring(0, 150),
+                        description: body.substring(0, 2200),
+                        privacy_level: 'PUBLIC_TO_EVERYONE',
+                        disable_duet: false,
+                        disable_comment: false,
+                        disable_stitch: false,
+                        auto_add_music: true,
+                    },
+                    source_info: {
+                        source: 'POST_API',
+                        photo_cover_index: 0,
+                        photo_images: [],
+                    },
+                    post_mode: 'DIRECT_POST',
+                    media_type: 'PHOTO',
+                }),
+            });
+            if (!photoResp.ok) {
+                const err: any = await photoResp.json().catch(() => ({}));
+                throw new Error(`TikTok Photo Post: ${err?.error?.message || JSON.stringify(err) || photoResp.statusText}`);
+            }
+            const photoData: any = await photoResp.json();
+            const postId = photoData?.data?.publish_id || photoData?.data?.post_id || 'pending';
+            this.log(`TikTok photo post submitted — publish_id: ${postId}`);
+            return { platform: 'tiktok', platform_post_id: postId, published_at: new Date().toISOString() };
         }
 
         const resp = await fetch(`${TIKTOK_API}/post/publish/video/init/`, {

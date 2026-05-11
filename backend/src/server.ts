@@ -2040,6 +2040,30 @@ app.post('/api/billing/verify-topup', async (req, res) => {
 });
 
 /**
+ * POST /api/billing/retry-topup — manually retry a failed auto top-up immediately
+ */
+app.post('/api/billing/retry-topup', async (req, res) => {
+  try {
+    const supabase = getSupabaseClient(req as any);
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return res.status(401).json({ error: 'Unauthorized.' });
+
+    // Clear the retry_at timestamp so the throttle check passes
+    await getServiceSupabaseClient()
+      .from('energy_accounts')
+      .update({ on_demand_top_up_retry_at: null })
+      .eq('user_id', user.id);
+
+    // Trigger the on-demand check with balance=0 to force a charge
+    await energyService.checkAndTriggerOnDemand(user.id, 0);
+
+    res.status(200).json({ success: true, message: 'Auto top-up retry triggered.' });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
  * POST /api/billing/cancel-subscription
  */
 app.post('/api/billing/cancel-subscription', async (req, res) => {
