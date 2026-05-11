@@ -831,6 +831,48 @@ router.get('/api/notifications', auth, async (req, res) => {
   }
 });
 
+// ─── TRIALS MONITORING ────────────────────────────────────────────────────────
+router.get('/api/trials', auth, async (_req, res) => {
+  try {
+    const sb = getServiceSupabaseClient();
+    const now = new Date();
+    const in48h = new Date(now.getTime() + 48 * 60 * 60 * 1000).toISOString();
+
+    const [activeTrials, failedConversions, pastDue] = await Promise.all([
+      sb.from('subscriptions')
+        .select('user_id, plan, trial_start, trial_end, trial_charged, flw_card_token, billing_email, flw_card_last4, flw_card_brand')
+        .eq('status', 'trialing')
+        .order('trial_end', { ascending: true }),
+      sb.from('energy_transactions')
+        .select('user_id, description, created_at, metadata')
+        .in('type', ['trial_conversion_failed', 'renewal_failed'])
+        .order('created_at', { ascending: false })
+        .limit(50),
+      sb.from('subscriptions')
+        .select('user_id, plan, current_period_end, renewal_next_retry_at, billing_email, flw_card_last4')
+        .eq('status', 'past_due')
+        .order('renewal_next_retry_at', { ascending: true })
+        .limit(50),
+    ]);
+
+    const trials = (activeTrials.data || []).map((t: any) => ({
+      ...t,
+      days_left: t.trial_end ? Math.max(0, Math.ceil((new Date(t.trial_end).getTime() - now.getTime()) / 86400000)) : null,
+      upcoming_charge: t.trial_end && new Date(t.trial_end) <= new Date(in48h),
+      has_card: !!t.flw_card_token,
+    }));
+
+    res.json({
+      active_trials: trials,
+      upcoming_charges: trials.filter((t: any) => t.upcoming_charge),
+      failed_conversions: failedConversions.data || [],
+      past_due: pastDue.data || [],
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ─── SSE REAL-TIME STREAM ─────────────────────────────────────────────────────
 router.get('/api/stream', auth, (req, res) => {
   res.setHeader('Content-Type', 'text/event-stream');
@@ -1045,6 +1087,9 @@ label{font-size:12px;color:#94A3B8;font-weight:600}
       <span>🗑️</span> Deletion Requests <span class="badge" id="deletion-badge" style="display:none">0</span>
     </button>
     <div class="nav-section">MONITORING</div>
+    <button class="nav-item" onclick="showSection('trials')" id="nav-trials">
+      <span>🧪</span> Trials &amp; Billing <span class="badge" id="trials-badge" style="display:none">0</span>
+    </button>
     <button class="nav-item" onclick="showSection('activity')" id="nav-activity">
       <span>📡</span> Live Activity
     </button>
@@ -1220,6 +1265,53 @@ label{font-size:12px;color:#94A3B8;font-weight:600}
             <tbody id="deletions-table-body">
               <tr><td colspan="5" class="empty">Loading…</td></tr>
             </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- ───────────── TRIALS & BILLING ───────────── -->
+      <div id="section-trials" class="section">
+        <div class="section-header">
+          <div class="section-title">Trials &amp; Billing Monitor</div>
+          <button class="btn btn-ghost btn-sm" onclick="loadTrials()">↺ Refresh</button>
+        </div>
+
+        <div class="stats-grid" style="grid-template-columns:repeat(4,1fr);margin-bottom:20px">
+          <div class="stat-card"><div class="stat-label">Active Trials</div><div class="stat-value" id="trials-active-count" style="color:#00F0FF">—</div><div class="stat-sub">Currently trialing</div></div>
+          <div class="stat-card"><div class="stat-label">Charging in 48h</div><div class="stat-value" id="trials-upcoming-count" style="color:#F59E0B">—</div><div class="stat-sub">Day-15 upcoming</div></div>
+          <div class="stat-card"><div class="stat-label">Failed Conversions</div><div class="stat-value" id="trials-failed-count" style="color:#EF4444">—</div><div class="stat-sub">Last 50 events</div></div>
+          <div class="stat-card"><div class="stat-label">Past Due</div><div class="stat-value" id="trials-pastdue-count" style="color:#F59E0B">—</div><div class="stat-sub">Renewal failures</div></div>
+        </div>
+
+        <div class="card" style="margin-bottom:16px">
+          <div style="font-size:13px;font-weight:700;color:#E2E8F0;margin-bottom:14px">Active Trials</div>
+          <table>
+            <thead><tr><th>User</th><th>Plan</th><th>Days Left</th><th>Card Saved</th><th>Trial End</th><th>Status</th></tr></thead>
+            <tbody id="trials-active-body"><tr><td colspan="6" class="empty">Loading…</td></tr></tbody>
+          </table>
+        </div>
+
+        <div class="card" style="margin-bottom:16px">
+          <div style="font-size:13px;font-weight:700;color:#F59E0B;margin-bottom:14px">⚠ Charging Within 48 Hours</div>
+          <table>
+            <thead><tr><th>User</th><th>Plan</th><th>Days Left</th><th>Card</th><th>Billing Email</th><th>Trial End</th></tr></thead>
+            <tbody id="trials-upcoming-body"><tr><td colspan="6" class="empty">None upcoming</td></tr></tbody>
+          </table>
+        </div>
+
+        <div class="card" style="margin-bottom:16px">
+          <div style="font-size:13px;font-weight:700;color:#EF4444;margin-bottom:14px">Failed Conversions &amp; Renewals</div>
+          <table>
+            <thead><tr><th>User</th><th>Type</th><th>Description</th><th>Time</th></tr></thead>
+            <tbody id="trials-failed-body"><tr><td colspan="4" class="empty">Loading…</td></tr></tbody>
+          </table>
+        </div>
+
+        <div class="card">
+          <div style="font-size:13px;font-weight:700;color:#F59E0B;margin-bottom:14px">Past Due — Renewal Retries Pending</div>
+          <table>
+            <thead><tr><th>User</th><th>Plan</th><th>Card</th><th>Next Retry</th><th>Period End</th></tr></thead>
+            <tbody id="trials-pastdue-body"><tr><td colspan="5" class="empty">None past due</td></tr></tbody>
           </table>
         </div>
       </div>
@@ -1531,8 +1623,8 @@ if (TOKEN) {
 }
 
 // ── Navigation ────────────────────────────────────────────────────────────────
-const SECTIONS = ['dashboard', 'users', 'credits', 'notifications', 'deletions', 'activity', 'logs', 'cma'];
-const TITLES = { dashboard: 'Dashboard', users: 'All Users', credits: 'Credit Management', notifications: 'Push Notifications', deletions: 'Account Deletion Requests', activity: 'Live Activity', logs: 'Admin Logs', cma: 'CMA Savings Dashboard' };
+const SECTIONS = ['dashboard', 'users', 'credits', 'notifications', 'deletions', 'trials', 'activity', 'logs', 'cma'];
+const TITLES = { dashboard: 'Dashboard', users: 'All Users', credits: 'Credit Management', notifications: 'Push Notifications', deletions: 'Account Deletion Requests', trials: 'Trials & Billing Monitor', activity: 'Live Activity', logs: 'Admin Logs', cma: 'CMA Savings Dashboard' };
 
 function showSection(name) {
   SECTIONS.forEach(s => {
@@ -1542,6 +1634,75 @@ function showSection(name) {
   });
   document.getElementById('page-title').textContent = TITLES[name] || name;
   if (name === 'cma') { loadCMAStats(); loadModelCredits(); }
+  if (name === 'trials') { loadTrials(); }
+}
+
+// ── Trials & Billing ─────────────────────────────────────────────────────────
+async function loadTrials() {
+  try {
+    const d = await api('GET', '/api/trials');
+    const fmt = (iso) => iso ? new Date(iso).toLocaleString() : '—';
+    const planBadge = (p) => {
+      const c = p === 'pro_plus' ? '#F59E0B' : p === 'pro' ? '#7C3AED' : '#00F0FF';
+      return \`<span class="badge" style="background:\${c}20;color:\${c};border:1px solid \${c}40">\${p}</span>\`;
+    };
+
+    document.getElementById('trials-active-count').textContent = (d.active_trials || []).length;
+    document.getElementById('trials-upcoming-count').textContent = (d.upcoming_charges || []).length;
+    document.getElementById('trials-failed-count').textContent = (d.failed_conversions || []).length;
+    document.getElementById('trials-pastdue-count').textContent = (d.past_due || []).length;
+
+    // Active trials
+    document.getElementById('trials-active-body').innerHTML = (d.active_trials || []).length === 0
+      ? '<tr><td colspan="6" class="empty">No active trials</td></tr>'
+      : (d.active_trials || []).map(t => \`<tr>
+          <td style="font-size:11px;color:#94A3B8;max-width:140px;overflow:hidden;text-overflow:ellipsis">\${t.billing_email || t.user_id?.slice(0,8)+'…'}</td>
+          <td>\${planBadge(t.plan)}</td>
+          <td><span style="color:\${t.days_left <= 2 ? '#EF4444' : t.days_left <= 5 ? '#F59E0B' : '#10B981'};font-weight:700">\${t.days_left ?? '?'}d</span></td>
+          <td>\${t.has_card ? '<span class="badge badge-green">✓ Saved</span>' : '<span class="badge badge-red">✗ None</span>'}</td>
+          <td style="font-size:11px;color:#64748B">\${fmt(t.trial_end)}</td>
+          <td>\${t.trial_charged ? '<span class="badge badge-green">Charged</span>' : '<span class="badge badge-yellow">Pending</span>'}</td>
+        </tr>\`).join('');
+
+    // Upcoming charges
+    document.getElementById('trials-upcoming-body').innerHTML = (d.upcoming_charges || []).length === 0
+      ? '<tr><td colspan="6" class="empty">None in next 48h</td></tr>'
+      : (d.upcoming_charges || []).map(t => \`<tr>
+          <td style="font-size:11px;color:#94A3B8">\${t.billing_email || t.user_id?.slice(0,8)+'…'}</td>
+          <td>\${planBadge(t.plan)}</td>
+          <td><span style="color:#EF4444;font-weight:700">\${t.days_left ?? '?'}d</span></td>
+          <td>\${t.has_card ? '<span class="badge badge-green">✓ \${t.flw_card_last4 || ''}</span>' : '<span class="badge badge-red">✗ Missing</span>'}</td>
+          <td style="font-size:11px;color:#94A3B8">\${t.billing_email || '—'}</td>
+          <td style="font-size:11px;color:#64748B">\${fmt(t.trial_end)}</td>
+        </tr>\`).join('');
+
+    // Failed conversions
+    document.getElementById('trials-failed-body').innerHTML = (d.failed_conversions || []).length === 0
+      ? '<tr><td colspan="4" class="empty">No failures</td></tr>'
+      : (d.failed_conversions || []).map(f => \`<tr>
+          <td style="font-size:11px;color:#94A3B8">\${f.user_id?.slice(0,8)+'…'}</td>
+          <td><span class="badge badge-red">\${(f.metadata?.type || f.type || 'failed').replace('_', ' ')}</span></td>
+          <td style="font-size:12px;color:#94A3B8;max-width:260px">\${f.description || '—'}</td>
+          <td style="font-size:11px;color:#64748B">\${fmt(f.created_at)}</td>
+        </tr>\`).join('');
+
+    // Past due
+    document.getElementById('trials-pastdue-body').innerHTML = (d.past_due || []).length === 0
+      ? '<tr><td colspan="5" class="empty">No past-due subscriptions</td></tr>'
+      : (d.past_due || []).map(p => \`<tr>
+          <td style="font-size:11px;color:#94A3B8">\${p.billing_email || p.user_id?.slice(0,8)+'…'}</td>
+          <td>\${planBadge(p.plan)}</td>
+          <td>\${p.flw_card_last4 ? '<span class="badge badge-green">···\${p.flw_card_last4}</span>' : '<span class="badge badge-red">No Card</span>'}</td>
+          <td style="font-size:11px;color:\${p.renewal_next_retry_at && new Date(p.renewal_next_retry_at) < new Date() ? '#EF4444' : '#F59E0B'}">\${fmt(p.renewal_next_retry_at)}</td>
+          <td style="font-size:11px;color:#64748B">\${fmt(p.current_period_end)}</td>
+        </tr>\`).join('');
+
+    // Update badge
+    const urgentCount = (d.upcoming_charges || []).length + (d.past_due || []).length;
+    const badge = document.getElementById('trials-badge');
+    badge.style.display = urgentCount > 0 ? '' : 'none';
+    badge.textContent = urgentCount;
+  } catch (e) { console.error('Trials load error:', e); }
 }
 
 // ── Stats ─────────────────────────────────────────────────────────────────────

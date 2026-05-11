@@ -42,6 +42,8 @@ const SCHED_DAILY_SUMMARY_CRON= process.env.SCHED_DAILY_SUMMARY_CRON|| '0 8 * * 
 const SCHED_PSYCHOLOGIST_CRON = process.env.SCHED_PSYCHOLOGIST_CRON  || '*/15 * * * *';  // Psychologist Engine every 15 min
 const SCHED_VIDEO_EDIT_CRON   = process.env.SCHED_VIDEO_EDIT_CRON    || '*/30 * * * *';  // Execute pending video edit jobs every 30 min
 const SCHED_TRIAL_BILLING_CRON= process.env.SCHED_TRIAL_BILLING_CRON || '0 * * * *';     // Trial auto-charge sweep every hour
+const SCHED_RENEWAL_CRON      = process.env.SCHED_RENEWAL_CRON       || '15 * * * *';    // Subscription auto-renewal sweep every hour (offset 15m from trial)
+const SCHED_RENEWAL_RETRY_CRON= process.env.SCHED_RENEWAL_RETRY_CRON || '30 * * * *';   // Retry failed renewals every hour (offset 30m)
 
 export class SchedulerService {
     private ipe: PlatformIntelligenceEngine;
@@ -111,6 +113,74 @@ export class SchedulerService {
                 }
             } catch (e: any) {
                 console.error('[Scheduler] Trial billing sweep error:', e.message);
+            }
+        });
+
+        // ─── SUBSCRIPTION AUTO-RENEWAL ──────────────────────────────────────────
+        // Every hour (offset +15m): find active subs whose current_period_end has
+        // passed and cancel_at_period_end is false → charge saved card → new period.
+        cron.schedule(SCHED_RENEWAL_CRON, async () => {
+            console.log('[Scheduler] Running subscription renewal sweep...');
+            try {
+                const supabase = getServiceSupabaseClient();
+                const nowIso = new Date().toISOString();
+                const { data: dueRenewals, error } = await supabase
+                    .from('subscriptions')
+                    .select('user_id, plan, current_period_end, flw_card_token')
+                    .eq('status', 'active')
+                    .eq('cancel_at_period_end', false)
+                    .lt('current_period_end', nowIso);
+
+                if (error) { console.error('[Scheduler] Renewal sweep DB error:', error.message); return; }
+                if (!dueRenewals?.length) { console.log('[Scheduler] Renewal: no subscriptions due'); return; }
+
+                console.log(`[Scheduler] Renewal: processing ${dueRenewals.length} subscription(s)`);
+                const { energyService } = await import('./energyService');
+                for (const row of dueRenewals) {
+                    try {
+                        const result = await energyService.renewSubscription(row.user_id);
+                        console.log(`[Scheduler] Renewal user ${row.user_id}: ${result.success ? '✓' : '✗'} ${result.message}`);
+                    } catch (e: any) {
+                        console.error(`[Scheduler] Renewal error for user ${row.user_id}:`, e.message);
+                    }
+                }
+            } catch (e: any) {
+                console.error('[Scheduler] Renewal sweep error:', e.message);
+            }
+        });
+
+        // ─── RENEWAL RETRY (failed past_due) ─────────────────────────────────────
+        // Every hour (offset +30m): find past_due subs where renewal_next_retry_at
+        // is set and has elapsed → attempt charge again.
+        cron.schedule(SCHED_RENEWAL_RETRY_CRON, async () => {
+            console.log('[Scheduler] Running renewal retry sweep...');
+            try {
+                const supabase = getServiceSupabaseClient();
+                const nowIso = new Date().toISOString();
+                const { data: retryRows, error } = await supabase
+                    .from('subscriptions')
+                    .select('user_id, plan, renewal_next_retry_at, flw_card_token')
+                    .eq('status', 'past_due')
+                    .not('renewal_next_retry_at', 'is', null)
+                    .lte('renewal_next_retry_at', nowIso);
+
+                if (error) { console.error('[Scheduler] Retry sweep DB error:', error.message); return; }
+                if (!retryRows?.length) { console.log('[Scheduler] Renewal retry: nothing to retry'); return; }
+
+                console.log(`[Scheduler] Renewal retry: processing ${retryRows.length} failed subscription(s)`);
+                const { energyService } = await import('./energyService');
+                for (const row of retryRows) {
+                    try {
+                        // Temporarily reset status to active so renewSubscription() proceeds
+                        await supabase.from('subscriptions').update({ status: 'active' }).eq('user_id', row.user_id);
+                        const result = await energyService.renewSubscription(row.user_id);
+                        console.log(`[Scheduler] Renewal retry user ${row.user_id}: ${result.success ? '✓' : '✗'} ${result.message}`);
+                    } catch (e: any) {
+                        console.error(`[Scheduler] Renewal retry error for user ${row.user_id}:`, e.message);
+                    }
+                }
+            } catch (e: any) {
+                console.error('[Scheduler] Renewal retry sweep error:', e.message);
             }
         });
 
@@ -302,6 +372,9 @@ export class SchedulerService {
         console.log('[Scheduler]   Optimization: Self-adjustment — every 2 hours');
         console.log('[Scheduler]   Lead Follow-up: Salesman DMs — every 30 min');
         console.log('[Scheduler]   Google Maps Outreach: All strategy types — every 6 hours');
+        console.log('[Scheduler]   Trial Billing: Convert expired trials — hourly');
+        console.log('[Scheduler]   Subscription Renewal: Auto-renew active subs — hourly');
+        console.log('[Scheduler]   Renewal Retry: Retry failed past_due subs — hourly');
     }
 
     private async runEmotionalCycle() {

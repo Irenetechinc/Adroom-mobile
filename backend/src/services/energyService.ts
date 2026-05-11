@@ -763,6 +763,128 @@ export class EnergyService {
   }
 
   /**
+   * Auto-renew a subscription whose billing period has expired.
+   * Charges the saved card for the plan price, credits the user, updates period dates.
+   * On failure: logs, sends push, and sets renewal_next_retry_at to 24h later.
+   * Safe to call multiple times within a cycle — idempotent via renewal_charged_at check.
+   */
+  async renewSubscription(userId: string): Promise<{ success: boolean; message: string }> {
+    const sub = await this.getSubscription(userId);
+    if (!sub) return { success: false, message: 'No subscription found.' };
+    if (sub.status !== 'active') return { success: false, message: `Status is ${sub.status}, not active.` };
+
+    const plan = PLANS[sub.plan as keyof typeof PLANS];
+    if (!plan) return { success: false, message: `Unknown plan: ${sub.plan}.` };
+
+    if (!sub.flw_card_token) {
+      await this.supabase.from('subscriptions').update({
+        status: 'past_due',
+        updated_at: new Date().toISOString(),
+      }).eq('user_id', userId);
+      pushService.send(userId, {
+        title: 'Renewal failed — no payment method',
+        body: `We couldn't renew your ${plan.name} subscription. Please add a payment method to continue.`,
+        data: { type: 'renewal_no_card', plan_id: sub.plan },
+        channelId: 'alerts',
+      }).catch(() => {});
+      return { success: false, message: 'No saved card — subscription set to past_due.' };
+    }
+
+    const txRef = flutterwaveService.generateTxRef('ADROOM-RENEW');
+    const email = sub.billing_email || '';
+
+    console.log(`[Energy] Auto-renewal: charging ${plan.name} ($${plan.price_usd}) for user ${userId}`);
+
+    try {
+      const charge = await flutterwaveService.chargeToken({
+        token: sub.flw_card_token,
+        email,
+        amount: plan.price_usd,
+        currency: 'USD',
+        tx_ref: txRef,
+        narration: `AdRoom ${plan.name} — Monthly Renewal`,
+      });
+
+      const ok = charge?.status === 'success' && (charge as any)?.data?.status === 'successful';
+
+      if (!ok) {
+        // Log failed attempt, set retry in 24h
+        const retryAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+        await this.supabase.from('subscriptions').update({
+          status: 'past_due',
+          renewal_next_retry_at: retryAt,
+          updated_at: new Date().toISOString(),
+        }).eq('user_id', userId);
+
+        await this.supabase.from('energy_transactions').insert({
+          user_id: userId,
+          type: 'renewal_failed',
+          credits: 0,
+          balance_after: 0,
+          description: `Auto-renewal failed: ${charge?.message ?? 'Card declined'}`,
+          metadata: { plan_id: sub.plan, tx_ref: txRef, flw_message: charge?.message, retry_at: retryAt },
+        });
+
+        pushService.send(userId, {
+          title: 'Subscription renewal failed',
+          body: `We couldn't charge your card for ${plan.name} ($${plan.price_usd}). ${charge?.message ?? 'Card declined'}. We'll retry tomorrow automatically.`,
+          data: { type: 'renewal_failed', plan_id: sub.plan },
+          channelId: 'alerts',
+        }).catch(() => {});
+
+        return { success: false, message: `Charge failed: ${charge?.message}` };
+      }
+
+      // Success — apply new billing period
+      const now = new Date();
+      const newPeriodEnd = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
+      const flwId = String((charge as any).data?.id ?? '');
+
+      await this.supabase.from('subscriptions').update({
+        status: 'active',
+        current_period_start: now.toISOString(),
+        current_period_end: newPeriodEnd.toISOString(),
+        renewal_next_retry_at: null,
+        flw_subscription_id: flwId,
+        updated_at: now.toISOString(),
+      }).eq('user_id', userId);
+
+      const account = await this.getAccount(userId);
+      const prevBalance = account?.energy_balance ?? 0;
+      const newBalance = await this.creditEnergy(
+        userId,
+        plan.energy_credits,
+        'subscription_grant',
+        `${plan.name} auto-renewal — ${plan.energy_credits} energy credits`,
+        txRef,
+        plan.price_usd,
+      );
+
+      await this.supabase.from('energy_transactions').insert({
+        user_id: userId,
+        type: 'renewal_success',
+        credits: plan.energy_credits,
+        balance_after: newBalance,
+        description: `${plan.name} subscription renewed — $${plan.price_usd} charged`,
+        metadata: { plan_id: sub.plan, tx_ref: txRef, flw_id: flwId },
+      });
+
+      pushService.send(userId, {
+        title: `${plan.name} renewed successfully`,
+        body: `Your subscription renewed for $${plan.price_usd}. +${plan.energy_credits} energy credits added to your account.`,
+        data: { type: 'renewal_success', plan_id: sub.plan, credits: plan.energy_credits },
+        channelId: 'default',
+      }).catch(() => {});
+
+      console.log(`[Energy] Renewal success for user ${userId}: ${plan.name} +${plan.energy_credits} credits`);
+      return { success: true, message: `Renewed ${plan.name} — charged $${plan.price_usd}, credited ${plan.energy_credits} credits.` };
+    } catch (err: any) {
+      console.error(`[Energy] Renewal exception for user ${userId}:`, err.message);
+      return { success: false, message: err.message };
+    }
+  }
+
+  /**
    * Sweep: flip subscriptions whose current_period_end has passed and
    * cancel_at_period_end=true to status='cancelled'. Safe to call on every
    * billing-status read or via a cron.
