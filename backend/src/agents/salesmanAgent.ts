@@ -208,11 +208,37 @@ Return JSON:
 
             const publishBody = `${finalContent.headline}\n\n${finalContent.body}\n\n${(finalContent.hashtags || []).map((h: string) => `#${h}`).join(' ')}`;
 
+            // Generate a unique, conversion-optimized graphic via GraphicsDesignerAgent
+            let postImageUrl: string | undefined;
+            if (task.platform !== 'twitter' && task.platform !== 'x' && task.platform !== 'tiktok') {
+                try {
+                    const { graphicsDesignerAgent } = await import('./graphicsDesignerAgent');
+                    postImageUrl = await graphicsDesignerAgent.getImageForPost({
+                        userId: task.user_id,
+                        productId: task.strategies?.product_id,
+                        strategyId: task.strategy_id,
+                        platform: task.platform,
+                        goal: 'SALESMAN',
+                        agentType: 'SALESMAN',
+                        headline: finalContent.headline,
+                        body: finalContent.body,
+                        hashtags: finalContent.hashtags,
+                        cta: finalContent.cta,
+                        taskType: task.task_type,
+                        product,
+                    });
+                    if (postImageUrl) this.log(`Sales graphic generated — ${postImageUrl.split('/').pop()}`);
+                } catch (e: any) {
+                    this.log(`GraphicsDesignerAgent failed (non-fatal): ${e.message}`);
+                }
+            }
+
             let result;
             if (task.platform === 'facebook' && tokens.facebook) {
-                result = await this.publishToFacebook(tokens.facebook, publishBody);
+                result = await this.publishToFacebook(tokens.facebook, publishBody, postImageUrl);
             } else if (task.platform === 'instagram' && tokens.instagram) {
-                result = await this.publishToInstagram(tokens.instagram, publishBody);
+                if (!postImageUrl) throw new Error('Instagram requires an image — GraphicsDesignerAgent must provide one');
+                result = await this.publishToInstagram(tokens.instagram, publishBody, postImageUrl);
             } else if (task.platform === 'twitter' && tokens.twitter) {
                 result = await this.publishToTwitter(tokens.twitter, publishBody.slice(0, 280));
             } else if (task.platform === 'linkedin' && tokens.linkedin) {

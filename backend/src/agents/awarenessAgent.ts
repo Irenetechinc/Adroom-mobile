@@ -181,11 +181,38 @@ Return JSON:
             const hashtags = (finalContent.hashtags || []).slice(0, 20).map((h: string) => `#${h}`).join(' ');
             const body = `${finalContent.headline}\n\n${finalContent.body}\n\n${hashtags}`;
 
+            // Generate a unique, platform-optimized graphic via GraphicsDesignerAgent
+            let postImageUrl: string | undefined;
+            if (task.platform !== 'twitter' && task.platform !== 'x' && task.platform !== 'tiktok') {
+                try {
+                    const { graphicsDesignerAgent } = await import('./graphicsDesignerAgent');
+                    postImageUrl = await graphicsDesignerAgent.getImageForPost({
+                        userId: task.user_id,
+                        productId: task.strategies?.product_id,
+                        strategyId: task.strategy_id,
+                        platform: task.platform,
+                        goal: 'AWARENESS',
+                        agentType: 'AWARENESS',
+                        headline: finalContent.headline,
+                        body: finalContent.body,
+                        hashtags: finalContent.hashtags,
+                        cta: finalContent.cta,
+                        taskType: task.task_type,
+                        dayNumber: task.content?.day_number,
+                        product,
+                    });
+                    if (postImageUrl) this.log(`Graphic generated for ${task.platform} post — ${postImageUrl.split('/').pop()}`);
+                } catch (e: any) {
+                    this.log(`GraphicsDesignerAgent failed (non-fatal): ${e.message}`);
+                }
+            }
+
             let result;
             if (task.platform === 'facebook' && tokens.facebook) {
-                result = await this.publishToFacebook(tokens.facebook, body);
+                result = await this.publishToFacebook(tokens.facebook, body, postImageUrl);
             } else if (task.platform === 'instagram' && tokens.instagram) {
-                result = await this.publishToInstagram(tokens.instagram, body);
+                if (!postImageUrl) throw new Error('Instagram requires an image — GraphicsDesignerAgent must provide one');
+                result = await this.publishToInstagram(tokens.instagram, body, postImageUrl);
             } else if (task.platform === 'twitter' && tokens.twitter) {
                 result = await this.publishToTwitter(tokens.twitter, body.slice(0, 280));
             } else if (task.platform === 'linkedin' && tokens.linkedin) {
