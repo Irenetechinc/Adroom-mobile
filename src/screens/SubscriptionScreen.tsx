@@ -14,6 +14,7 @@ import {
 import { useEnergyStore, PLAN_DETAILS, TOPUP_OPTIONS } from '../store/energyStore';
 import Constants from 'expo-constants';
 import { Skeleton } from '../components/Skeleton';
+import TrialPromoModal from '../components/TrialPromoModal';
 
 const API_URL = process.env.EXPO_PUBLIC_API_URL || Constants.expoConfig?.extra?.apiUrl || 'http://localhost:8000';
 
@@ -550,6 +551,11 @@ export default function SubscriptionScreen() {
   };
 
   return (
+    <>
+    <TrialPromoModal onStartTrial={(planId) => {
+      autoStartTrialFiredRef.current = false;
+      navigation.setParams({ autoStartTrial: planId });
+    }} />
     <SafeAreaView style={{ flex: 1, backgroundColor: COLORS.bg }} edges={['top']}>
       {/* Header */}
       <View style={styles.header}>
@@ -1556,6 +1562,7 @@ export default function SubscriptionScreen() {
         </KeyboardAvoidingView>
       </Modal>
     </SafeAreaView>
+    </>
   );
 }
 
