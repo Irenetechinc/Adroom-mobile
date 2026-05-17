@@ -1,0 +1,25 @@
+the notification counter only shows in the setting screen when user visite the notifaction screen, the notifcation count should show even if user hasnt visited the notication screen 
+and notication counter shoud increemtn in settingss screen in realtime sooon as a new notication.
+
+i nticed something i need you to fix in the side menue when installed on some device the energy option menue and the sing out option menue clsh whith each other couse the 
+side energy menue option to clash with each the enrgy menu ove the the sign out meneu cousing the teo menue ]option inassesable fix this so in cases or diviced where the menue option is at the that level the enery 
+menue option should just continue bind/below the sign out option wher user can scroll up to revel the rest of the mune option but the singout meneu ermain at its position 
+
+also the claim 14 days trail modal dosnt apear to new user as required, it should apear to new user and with a count down of 48hr after which 
+the modal disapears and 14days trail is forfitted, also ensure that can only claim this trail by upgrading to a starter plan which will be auto deducted fromn the
+user connectd card.
+
+
+also ensure that when user clickon the claim trail button they are redirectd to the fluter chech out pop where they will be charged 2 dollar to ensure that the card is 
+active after xhich the 2 dollars is refunded, but the card is stared hence and will be user to auto pay for subscription after trial ends and when ever user subscription ends.
+
+also ensure that user can cliam trail by subscribing for a any of the plane from starter to pro+ here the user while be charged 0 doaller for 14 days only the 2 dollar for card activness will be deducted and refunded then after the user 14days has expired the user subscription plan in which the trail was claimed with should auto debited from user connectd card and subsquently the user resubscription when every user subscription cirlce eelapses.
+
+also check for implimentations that are incomplet or simssing somethig and fix them so the can work 100% in full capacity 
+
+i also nopticed the the flter checkout modal pop dosnt have the adroom logo fix this to use adroom logo.
+
+
+Note:
+Do not disrupt any already. Made progress, no dummy or demo implementations, no hard coded data look what been don and update, creat and Impliment where required avoid any form of double implimentation make sure all fix and Implemtations are for realtime and production. All implimentation must align with what already done and work in syc. 
+This is a mobile app not web application. And must run 100% off replit, railway for backend and supabase for database
