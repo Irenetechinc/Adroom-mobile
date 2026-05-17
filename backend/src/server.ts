@@ -2668,6 +2668,27 @@ app.get('/api/notifications/inbox', async (req, res) => {
   }
 });
 
+app.get('/api/notifications/unread-count', async (req, res) => {
+  try {
+    const supabase = getSupabaseClient(req as any);
+    const { data: { user }, error: authErr } = await supabase.auth.getUser();
+    if (authErr || !user) return res.status(401).json({ error: 'Unauthorized' });
+    const svc = getServiceSupabaseClient();
+    const { count, error } = await svc
+      .from('user_notifications')
+      .select('id', { count: 'exact', head: true })
+      .eq('user_id', user.id)
+      .eq('is_read', false);
+    if (error) {
+      if (error.code === '42P01') return res.json({ count: 0 });
+      throw error;
+    }
+    res.json({ count: count ?? 0 });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 app.put('/api/notifications/inbox/:id/read', async (req, res) => {
   try {
     const supabase = getSupabaseClient(req as any);
@@ -3817,6 +3838,170 @@ async function ensureStorageBuckets(): Promise<void> {
   } catch (e: any) {
     console.warn('[Storage] Bucket ensure failed (non-fatal):', e.message);
   }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// REFERRAL SYSTEM
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/**
+ * GET /api/referrals/my-code — returns (or generates) the authenticated
+ * user's unique referral code. Safe to call repeatedly — idempotent.
+ */
+app.get('/api/referrals/my-code', async (req, res) => {
+  try {
+    const supabase = getSupabaseClient(req as any);
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return res.status(401).json({ error: 'Unauthorized' });
+
+    const svc = getServiceSupabaseClient();
+
+    // Try to fetch existing code from profiles
+    const { data: profile } = await svc
+      .from('profiles')
+      .select('referral_code')
+      .eq('id', user.id)
+      .single();
+
+    if (profile?.referral_code) {
+      return res.json({ code: profile.referral_code });
+    }
+
+    // Generate a new 8-char uppercase alphanumeric code
+    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+    let code = '';
+    for (let i = 0; i < 8; i++) code += chars[Math.floor(Math.random() * chars.length)];
+
+    await svc
+      .from('profiles')
+      .update({ referral_code: code })
+      .eq('id', user.id);
+
+    res.json({ code });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * GET /api/referrals/stats — returns the user's referral statistics.
+ */
+app.get('/api/referrals/stats', async (req, res) => {
+  try {
+    const supabase = getSupabaseClient(req as any);
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return res.status(401).json({ error: 'Unauthorized' });
+
+    const svc = getServiceSupabaseClient();
+    const { data: referrals } = await svc
+      .from('referrals')
+      .select('id, status, credits_awarded, created_at')
+      .eq('referrer_id', user.id)
+      .order('created_at', { ascending: false });
+
+    const rows = referrals || [];
+    const total = rows.length;
+    const completed = rows.filter(r => r.status === 'completed').length;
+    const totalCredits = rows.reduce((sum, r) => sum + (r.credits_awarded || 0), 0);
+
+    res.json({ total, completed, pending: total - completed, total_credits_earned: totalCredits, referrals: rows });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * POST /api/referrals/apply-code — store referral code linkage at signup.
+ * Called by the client immediately after a successful registration with
+ * the referral code the new user entered.
+ * Does NOT award credits yet — credits are awarded when the referred user
+ * activates their first plan.
+ */
+app.post('/api/referrals/apply-code', async (req, res) => {
+  try {
+    const supabase = getSupabaseClient(req as any);
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return res.status(401).json({ error: 'Unauthorized' });
+
+    const { referral_code } = req.body;
+    if (!referral_code) return res.status(400).json({ error: 'referral_code required' });
+
+    const svc = getServiceSupabaseClient();
+
+    // Make sure this user hasn't already been referred
+    const { data: existing } = await svc
+      .from('referrals')
+      .select('id')
+      .eq('referred_id', user.id)
+      .single();
+    if (existing) return res.json({ success: true, message: 'Already applied.' });
+
+    // Find referrer by code
+    const { data: referrerProfile } = await svc
+      .from('profiles')
+      .select('id')
+      .eq('referral_code', referral_code.trim().toUpperCase())
+      .single();
+
+    if (!referrerProfile) return res.status(404).json({ error: 'Invalid referral code.' });
+    if (referrerProfile.id === user.id) return res.status(400).json({ error: 'Cannot refer yourself.' });
+
+    await svc.from('referrals').insert({
+      referrer_id: referrerProfile.id,
+      referred_id: user.id,
+      status: 'pending',
+      credits_awarded: 0,
+    });
+
+    res.json({ success: true, message: 'Referral code applied! Your friend will earn credits when you activate a plan.' });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * POST /api/referrals/process-award — awards credits to the referrer when
+ * the referred user (userId) activates their first plan. Safe to call multiple
+ * times — idempotent via status='completed' check. Called internally from
+ * billing endpoints when a trial or subscription is first activated.
+ * Not exposed as a public action — only called from server-side billing hooks.
+ */
+async function processReferralAward(referredUserId: string): Promise<void> {
+  try {
+    const REFERRAL_CREDITS = 25;
+    const svc = getServiceSupabaseClient();
+
+    const { data: referral } = await svc
+      .from('referrals')
+      .select('id, referrer_id')
+      .eq('referred_id', referredUserId)
+      .eq('status', 'pending')
+      .single();
+
+    if (!referral) return;
+
+    // Mark completed first (idempotency guard)
+    await svc
+      .from('referrals')
+      .update({ status: 'completed', credits_awarded: REFERRAL_CREDITS })
+      .eq('id', referral.id);
+
+    // Award energy credits to referrer
+    await energyService.creditEnergy(
+      referral.referrer_id,
+      REFERRAL_CREDITS,
+      'referral_reward',
+      `Referral reward — friend activated their first plan (+${REFERRAL_CREDITS} credits)`,
+    );
+
+    // Push-notify referrer
+    pushService.send(referral.referrer_id, {
+      title: 'Referral Reward!',
+      body: `Your friend just activated their plan — you've earned ${REFERRAL_CREDITS} energy credits!`,
+      data: { type: 'referral_reward', credits: REFERRAL_CREDITS },
+      channelId: 'default',
+    }).catch(() => {});
+  } catch { /* non-fatal — never break billing */ }
 }
 
 app.listen(PORT, async () => {

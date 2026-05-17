@@ -17,7 +17,8 @@ export type RootStackParamList = {
     connectWhatsApp?: boolean;
   };
   ConnectedAccounts: undefined;
-  Subscription: { scrollToPlan?: string; tab?: string } | undefined;
+  Subscription: { scrollToPlan?: string; tab?: string; autoStartTrial?: string } | undefined;
+  Referral: undefined;
   PrivacySecurity: undefined;
   Notifications: undefined;
   About: undefined;

@@ -12,7 +12,7 @@ import { RootStackParamList } from '../types';
 import { DrawerActions } from '@react-navigation/native';
 import {
   Menu, Link, LogOut, User, Shield, ChevronRight,
-  Bell, HelpCircle, Info, Settings as SettingsIcon, Zap,
+  Bell, HelpCircle, Info, Settings as SettingsIcon, Zap, Gift,
 } from 'lucide-react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import Animated, { FadeInDown } from 'react-native-reanimated';
@@ -128,6 +128,13 @@ export default function SettingsScreen() {
           sublabel: 'Manage Facebook & other platforms',
           color: '#00F0FF',
           onPress: () => navigation.navigate('ConnectedAccounts'),
+        },
+        {
+          icon: Gift,
+          label: 'Refer & Earn',
+          sublabel: 'Earn 25 credits for every friend you invite',
+          color: '#F59E0B',
+          onPress: () => navigation.navigate('Referral'),
         },
       ],
     },

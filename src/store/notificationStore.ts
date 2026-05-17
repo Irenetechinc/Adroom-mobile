@@ -1,6 +1,9 @@
 import { create } from 'zustand';
 import type { RealtimeChannel } from '@supabase/supabase-js';
 import { supabase } from '../services/supabase';
+import Constants from 'expo-constants';
+
+const API_URL = process.env.EXPO_PUBLIC_API_URL || Constants.expoConfig?.extra?.apiUrl || 'http://localhost:8000';
 
 interface NotificationState {
   unreadCount: number;
@@ -14,10 +17,11 @@ interface NotificationState {
 
 /**
  * Single source of truth for the unread notifications counter.
- * Consumed by the Settings row badge and the Notifications screen so they
- * always agree. One realtime channel per user, attached at the App.tsx level
- * the moment a session is available, then refreshed on every insert/update
- * to user_notifications for that user.
+ * Consumed by the Settings row badge and the Notifications screen.
+ * Uses backend API as the authoritative source (bypasses any RLS quirks),
+ * with Supabase direct count as a fast local fallback.
+ * One realtime channel per user is attached at the App.tsx level the moment
+ * a session is available so the badge stays live without any screen visit.
  */
 export const useNotificationStore = create<NotificationState>((set, get) => ({
   unreadCount: 0,
@@ -28,14 +32,31 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
 
   refresh: async (userId) => {
     if (!userId) { set({ unreadCount: 0 }); return; }
+
+    // Primary source: backend API (most reliable — not affected by Supabase RLS
+    // configuration differences between envs).
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session?.access_token) {
+        const res = await fetch(`${API_URL}/api/notifications/unread-count`, {
+          headers: { Authorization: `Bearer ${session.access_token}` },
+        });
+        if (res.ok) {
+          const data = await res.json();
+          set({ unreadCount: Math.max(0, (data.count ?? 0) | 0) });
+          return;
+        }
+      }
+    } catch { /* fall through to Supabase direct */ }
+
+    // Fallback: Supabase direct count (works offline / without backend)
     try {
       const { count, error } = await supabase
         .from('user_notifications')
         .select('id', { count: 'exact', head: true })
         .eq('user_id', userId)
         .eq('is_read', false);
-      if (error) return;
-      set({ unreadCount: count ?? 0 });
+      if (!error) set({ unreadCount: count ?? 0 });
     } catch { /* ignore */ }
   },
 
@@ -68,6 +89,7 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
       .subscribe();
 
     set({ currentUserId: userId, channel: ch });
+    // Fetch count immediately after attaching
     await get().refresh(userId);
   },
 

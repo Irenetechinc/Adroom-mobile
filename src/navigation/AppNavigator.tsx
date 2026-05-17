@@ -28,6 +28,7 @@ import SubscriptionScreen from '../screens/SubscriptionScreen';
 import PrivacySecurityScreen from '../screens/PrivacySecurityScreen';
 import NotificationsScreen from '../screens/NotificationsScreen';
 import AboutScreen from '../screens/AboutScreen';
+import ReferralScreen from '../screens/ReferralScreen';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
@@ -165,6 +166,11 @@ export default function AppNavigator() {
             <Stack.Screen
               name="About"
               component={AboutScreen}
+              options={{ headerShown: false }}
+            />
+            <Stack.Screen
+              name="Referral"
+              component={ReferralScreen}
               options={{ headerShown: false }}
             />
           </>

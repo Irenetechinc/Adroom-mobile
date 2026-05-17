@@ -79,9 +79,10 @@ export default function SideMenu(props: DrawerContentComponentProps) {
         {/* Nav Items — scrollable so Energy never overlaps Sign Out on small screens */}
         <ScrollView
           style={{ flex: 1 }}
-          contentContainerStyle={{ paddingHorizontal: 12, paddingTop: 4, paddingBottom: 8 }}
+          contentContainerStyle={{ paddingHorizontal: 12, paddingTop: 4, paddingBottom: 120 }}
           showsVerticalScrollIndicator={false}
           bounces={false}
+          keyboardShouldPersistTaps="handled"
         >
           {menuItems.map((item, index) => {
             const activeRoute = props.state.routes[props.state.index]?.name;

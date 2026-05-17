@@ -1,9 +1,15 @@
 import { create } from 'zustand';
 import { Session, User } from '@supabase/supabase-js';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import Constants from 'expo-constants';
 import { supabase } from '../services/supabase';
 import { useAgentStore } from './agentStore';
 import { unregisterPushToken } from '../services/notificationService';
+
+const BACKEND_URL =
+  process.env.EXPO_PUBLIC_API_URL ||
+  (Constants.expoConfig?.extra?.apiUrl as string) ||
+  '';
 
 interface AuthState {
   session: Session | null;
@@ -117,6 +123,23 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         // the flag is also persisted to AsyncStorage by the agent store.
         if (event === 'SIGNED_IN' && newUserId) {
           try { await useAgentStore.getState().setPendingSessionPrompt(true); } catch { /* ignore */ }
+
+          // Apply any pending referral code stored during signup
+          try {
+            const pendingCode = await AsyncStorage.getItem('adroom:pendingReferralCode');
+            if (pendingCode) {
+              await AsyncStorage.removeItem('adroom:pendingReferralCode');
+              const { session: currentSession } = get();
+              const token = newSession?.access_token ?? currentSession?.access_token;
+              if (token && BACKEND_URL) {
+                fetch(`${BACKEND_URL}/api/referrals/apply-code`, {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+                  body: JSON.stringify({ referral_code: pendingCode }),
+                }).catch(() => {});
+              }
+            }
+          } catch { /* non-fatal */ }
         }
 
         if (newUserId) {

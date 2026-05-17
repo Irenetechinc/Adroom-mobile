@@ -368,7 +368,7 @@ export default function DashboardScreen() {
 
   return (
     <>
-    <TrialPromoModal onNavigateToSubscription={() => navigation.navigate('Subscription')} />
+    <TrialPromoModal onStartTrial={(planId) => navigation.navigate('Subscription', { autoStartTrial: planId })} />
     <SafeAreaView style={styles.safe} edges={['top']}>
       <View style={styles.header}>
         <TouchableOpacity onPress={() => navigation.dispatch(DrawerActions.openDrawer())} style={styles.menuBtn}>
