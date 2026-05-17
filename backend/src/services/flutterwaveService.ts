@@ -230,7 +230,7 @@ export class FlutterwaveService {
       customizations: {
         title: params.title,
         description: params.description,
-        logo: 'https://adroom.app/logo.png',
+        logo: `${process.env.PUBLIC_BASE_URL ?? 'https://backend.adroomai.com'}/api/logo.png`,
       },
     };
   }

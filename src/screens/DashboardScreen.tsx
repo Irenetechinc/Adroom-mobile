@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { View, Text, ScrollView, RefreshControl, TouchableOpacity, StyleSheet } from 'react-native';
+import TrialPromoModal from '../components/TrialPromoModal';
 import { Skeleton } from '../components/Skeleton';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
@@ -366,6 +367,8 @@ export default function DashboardScreen() {
   };
 
   return (
+    <>
+    <TrialPromoModal onNavigateToSubscription={() => navigation.navigate('Subscription')} />
     <SafeAreaView style={styles.safe} edges={['top']}>
       <View style={styles.header}>
         <TouchableOpacity onPress={() => navigation.dispatch(DrawerActions.openDrawer())} style={styles.menuBtn}>
@@ -837,6 +840,7 @@ export default function DashboardScreen() {
         </>}
       </ScrollView>
     </SafeAreaView>
+    </>
   );
 }
 

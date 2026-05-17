@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text, TouchableOpacity } from 'react-native';
+import { View, Text, TouchableOpacity, ScrollView } from 'react-native';
 import { DrawerContentComponentProps } from '@react-navigation/drawer';
 import { useNavigation } from '@react-navigation/native';
 import { useAuthStore } from '../store/authStore';
@@ -76,8 +76,13 @@ export default function SideMenu(props: DrawerContentComponentProps) {
           </View>
         </View>
 
-        {/* Nav Items */}
-        <View style={{ flex: 1, paddingHorizontal: 12, paddingTop: 4 }}>
+        {/* Nav Items — scrollable so Energy never overlaps Sign Out on small screens */}
+        <ScrollView
+          style={{ flex: 1 }}
+          contentContainerStyle={{ paddingHorizontal: 12, paddingTop: 4, paddingBottom: 8 }}
+          showsVerticalScrollIndicator={false}
+          bounces={false}
+        >
           {menuItems.map((item, index) => {
             const activeRoute = props.state.routes[props.state.index]?.name;
             const isFocused = activeRoute === item.route;
@@ -151,7 +156,7 @@ export default function SideMenu(props: DrawerContentComponentProps) {
               <ChevronRight color="#F59E0B" size={14} />
             </TouchableOpacity>
           </Animated.View>
-        </View>
+        </ScrollView>
 
         {/* Footer */}
         <View style={{ paddingHorizontal: 12, paddingBottom: 24, borderTopWidth: 1, borderTopColor: 'rgba(0,240,255,0.06)', paddingTop: 12 }}>
