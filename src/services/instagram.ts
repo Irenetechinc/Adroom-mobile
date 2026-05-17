@@ -1,61 +1,65 @@
-import * as WebBrowser from 'expo-web-browser';
-import * as AuthSession from 'expo-auth-session';
+import { Linking } from 'react-native';
 import { supabase } from './supabase';
 
-// Instagram Graph API is accessed via Facebook Login
-// But usually requires specific scopes (instagram_basic, instagram_content_publish, etc.)
-// And accounts are linked to FB Pages.
+// Instagram uses Facebook's OAuth dialog, which detects Chrome Custom Tabs on
+// Android and redirects to the native Facebook app — breaking openAuthSessionAsync.
+// Fix: open via system browser (Linking.openURL) and catch the adroom:// deep-link.
 
 const FB_APP_ID = process.env.EXPO_PUBLIC_FACEBOOK_APP_ID;
 
 export const InstagramService = {
   async login(): Promise<string | null> {
-    try {
-      // We use the same FB Login but with extra scopes
-      const redirectUri = AuthSession.makeRedirectUri({
-        scheme: 'adroom',
-        path: 'auth/instagram/callback',
+    const BACKEND_URL = process.env.EXPO_PUBLIC_API_URL;
+    if (!BACKEND_URL) throw new Error('EXPO_PUBLIC_API_URL is not configured');
+    if (!FB_APP_ID)   throw new Error('EXPO_PUBLIC_FACEBOOK_APP_ID is not configured');
+
+    const callbackUrl = `${BACKEND_URL}/auth/instagram/callback`;
+    const scopes = 'instagram_basic,instagram_content_publish,instagram_manage_comments,instagram_manage_insights,pages_show_list,ads_management';
+    const authUrl = `https://www.facebook.com/v18.0/dialog/oauth?client_id=${FB_APP_ID}&redirect_uri=${encodeURIComponent(callbackUrl)}&response_type=code&scope=${scopes}`;
+
+    console.log('[InstagramService] Opening system browser for OAuth…');
+
+    return new Promise((resolve, reject) => {
+      let settled = false;
+      let timeoutId: ReturnType<typeof setTimeout>;
+
+      const finish = (result: string | null | Error) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timeoutId);
+        subscription.remove();
+        if (result instanceof Error) reject(result);
+        else resolve(result);
+      };
+
+      const subscription = Linking.addEventListener('url', async ({ url }) => {
+        if (!url.startsWith('adroom://auth/instagram/callback')) return;
+        console.log('[InstagramService] Deep-link received:', url);
+
+        const errorMatch = url.match(/[?&]error=([^&]+)/);
+        if (errorMatch) { finish(null); return; }
+
+        const codeMatch = url.match(/[?&]code=([^&]+)/);
+        const code = codeMatch ? decodeURIComponent(codeMatch[1]) : null;
+        if (!code) { finish(null); return; }
+
+        try {
+          const exchangeRes = await fetch(`${BACKEND_URL}/api/auth/facebook/exchange`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ code, redirectUri: callbackUrl }),
+          });
+          const exchangeData = await exchangeRes.json();
+          if (exchangeData.access_token) finish(exchangeData.access_token);
+          else finish(new Error(exchangeData.error || 'Instagram Token Exchange Failed'));
+        } catch (e: any) {
+          finish(new Error(e.message || 'Token exchange failed'));
+        }
       });
 
-      const BACKEND_URL = process.env.EXPO_PUBLIC_API_URL;
-      if (!BACKEND_URL) throw new Error('EXPO_PUBLIC_API_URL is not configured');
-      const callbackUrl = `${BACKEND_URL}/auth/instagram/callback`;
-
-      if (!FB_APP_ID) {
-        throw new Error('EXPO_PUBLIC_FACEBOOK_APP_ID is not configured');
-      }
-
-      const scopes = 'instagram_basic,instagram_content_publish,instagram_manage_comments,instagram_manage_insights,pages_show_list,ads_management';
-      
-      const authUrl = `https://www.facebook.com/v18.0/dialog/oauth?client_id=${FB_APP_ID}&redirect_uri=${encodeURIComponent(callbackUrl)}&response_type=code&scope=${scopes}`;
-      
-      console.log('[InstagramService] Initiating login via FB...');
-      const result = await WebBrowser.openAuthSessionAsync(authUrl, redirectUri);
-
-      if (result.type === 'success' && result.url) {
-        const match = result.url.match(/code=([^&]+)/);
-        const code = match ? match[1] : null;
-
-        if (code) {
-            // Exchange code via backend (reuse FB exchange logic)
-            const exchangeRes = await fetch(`${BACKEND_URL}/api/auth/facebook/exchange`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ code, redirectUri: callbackUrl })
-            });
-            
-            const exchangeData = await exchangeRes.json();
-            if (exchangeData.access_token) {
-                return exchangeData.access_token;
-            }
-            throw new Error(exchangeData.error || 'Instagram Token Exchange Failed');
-        }
-      }
-      return null;
-    } catch (error) {
-      console.error('Instagram login error:', error);
-      throw error;
-    }
+      timeoutId = setTimeout(() => finish(null), 5 * 60 * 1000);
+      Linking.openURL(authUrl).catch((e) => finish(new Error(e.message)));
+    });
   },
 
   async getInstagramAccounts(accessToken: string): Promise<any[]> {
