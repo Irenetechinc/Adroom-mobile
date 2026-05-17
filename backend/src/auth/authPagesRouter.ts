@@ -317,4 +317,53 @@ router.get('/auth/reset-password', (_req: Request, res: Response) => {
   res.send(html);
 });
 
+/**
+ * GET /auth/facebook/callback
+ * Facebook OAuth redirects here after the user grants or denies permissions.
+ * We forward to the adroom:// app scheme so WebBrowser.openAuthSessionAsync()
+ * detects the redirect and closes the in-app browser, handing control back
+ * to the FacebookService.login() caller with the auth code.
+ */
+router.get('/auth/facebook/callback', (req: Request, res: Response) => {
+  const code  = req.query.code  as string | undefined;
+  const error = req.query.error as string | undefined;
+
+  if (error || !code) {
+    const reason = (req.query.error_reason as string) || error || 'access_denied';
+    return res.redirect(`adroom://auth/facebook/callback?error=${encodeURIComponent(reason)}`);
+  }
+  return res.redirect(`adroom://auth/facebook/callback?code=${encodeURIComponent(code)}`);
+});
+
+/**
+ * GET /auth/instagram/callback
+ * Same pattern as Facebook — Instagram login also goes through the Facebook
+ * OAuth dialog and redirects here before the app picks up the code.
+ */
+router.get('/auth/instagram/callback', (req: Request, res: Response) => {
+  const code  = req.query.code  as string | undefined;
+  const error = req.query.error as string | undefined;
+
+  if (error || !code) {
+    const reason = (req.query.error_reason as string) || error || 'access_denied';
+    return res.redirect(`adroom://auth/instagram/callback?error=${encodeURIComponent(reason)}`);
+  }
+  return res.redirect(`adroom://auth/instagram/callback?code=${encodeURIComponent(code)}`);
+});
+
+/**
+ * GET /auth/whatsapp/callback
+ * WhatsApp Business uses the same Facebook OAuth flow with different scopes.
+ */
+router.get('/auth/whatsapp/callback', (req: Request, res: Response) => {
+  const code  = req.query.code  as string | undefined;
+  const error = req.query.error as string | undefined;
+
+  if (error || !code) {
+    const reason = (req.query.error_reason as string) || error || 'access_denied';
+    return res.redirect(`adroom://auth/whatsapp/callback?error=${encodeURIComponent(reason)}`);
+  }
+  return res.redirect(`adroom://auth/whatsapp/callback?code=${encodeURIComponent(code)}`);
+});
+
 export default router;
