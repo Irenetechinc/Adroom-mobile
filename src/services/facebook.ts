@@ -1,14 +1,13 @@
 import { supabase } from './supabase';
 import { FacebookConfig } from '../types/facebook';
-import * as AuthSession from 'expo-auth-session';
-import * as WebBrowser from 'expo-web-browser';
+import { Linking } from 'react-native';
 
-WebBrowser.maybeCompleteAuthSession();
+// Facebook's OAuth dialog detects Chrome Custom Tabs and redirects to the
+// native Facebook app, causing WebBrowser.openAuthSessionAsync to see an
+// immediate dismiss.  We use Linking.openURL (system browser) + a deep-link
+// listener so the flow survives the Facebook-app handoff.
 
-// The Facebook App ID identifies the "AdRoom" application itself to Facebook.
-// It is NOT a specific user's account ID. 
-// This allows AdRoom to ask ANY user for permission to manage THEIR specific pages.
-const FB_APP_ID = process.env.EXPO_PUBLIC_FACEBOOK_APP_ID; 
+const FB_APP_ID = process.env.EXPO_PUBLIC_FACEBOOK_APP_ID;
 
 export interface FacebookPage {
   id: string;
@@ -18,68 +17,70 @@ export interface FacebookPage {
 }
 
 export const FacebookService = {
-  
+
   /**
-   * Initiate Facebook Login Flow
+   * Initiate Facebook Login Flow.
+   * Opens the system browser, waits for the adroom:// deep-link callback,
+   * then exchanges the code for an access token via the backend.
    */
   async login(): Promise<string | null> {
-    try {
-      // Use useAuthRequest hook pattern or manual browser flow if startAsync is deprecated
-      // However, for Expo 50+, startAsync is still available in expo-auth-session but marked deprecated in some contexts
-      // We will suppress the TS error for now or use the WebBrowser directly if needed.
-      // Correct modern approach: useAuthRequest + makeRedirectUri
-      
-      const redirectUri = AuthSession.makeRedirectUri({
-        scheme: 'adroom',
-        path: 'auth/facebook/callback',
+    const BACKEND_URL = process.env.EXPO_PUBLIC_API_URL;
+    if (!BACKEND_URL) throw new Error('EXPO_PUBLIC_API_URL is not configured');
+    if (!FB_APP_ID)   throw new Error('EXPO_PUBLIC_FACEBOOK_APP_ID is not configured');
+
+    const callbackUrl = `${BACKEND_URL}/auth/facebook/callback`;
+    const authUrl =
+      `https://www.facebook.com/v18.0/dialog/oauth` +
+      `?client_id=${FB_APP_ID}` +
+      `&redirect_uri=${encodeURIComponent(callbackUrl)}` +
+      `&response_type=code` +
+      `&scope=pages_show_list,pages_read_engagement,pages_manage_posts,pages_messaging,public_profile`;
+
+    console.log('[FacebookService] Opening system browser for OAuth…');
+
+    return new Promise((resolve, reject) => {
+      let settled = false;
+      let timeoutId: ReturnType<typeof setTimeout>;
+
+      const finish = (result: string | null | Error) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timeoutId);
+        subscription.remove();
+        if (result instanceof Error) reject(result);
+        else resolve(result);
+      };
+
+      const subscription = Linking.addEventListener('url', async ({ url }) => {
+        if (!url.startsWith('adroom://auth/facebook/callback')) return;
+        console.log('[FacebookService] Deep-link received:', url);
+
+        const errorMatch = url.match(/[?&]error=([^&]+)/);
+        if (errorMatch) { finish(null); return; }
+
+        const codeMatch = url.match(/[?&]code=([^&]+)/);
+        const code = codeMatch ? decodeURIComponent(codeMatch[1]) : null;
+        if (!code) { finish(null); return; }
+
+        try {
+          const res = await fetch(`${BACKEND_URL}/api/auth/facebook/exchange`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ code, redirectUri: callbackUrl }),
+          });
+          const data = await res.json();
+          if (data.access_token) finish(data.access_token);
+          else finish(new Error('Failed to exchange code: ' + (data.error || 'unknown')));
+        } catch (e: any) {
+          finish(new Error(e.message || 'Token exchange failed'));
+        }
       });
 
-      const BACKEND_URL = process.env.EXPO_PUBLIC_API_URL;
-      if (!BACKEND_URL) {
-        throw new Error('EXPO_PUBLIC_API_URL is not configured');
-      }
-      const callbackUrl = `${BACKEND_URL}/auth/facebook/callback`;
+      // 5-minute timeout in case the user abandons the browser
+      timeoutId = setTimeout(() => finish(null), 5 * 60 * 1000);
 
-      // Using WebBrowser directly as a fallback for custom OAuth flows
-      // SWITCHING TO RESPONSE_TYPE=CODE for backend exchange
-      if (!FB_APP_ID) {
-        throw new Error('EXPO_PUBLIC_FACEBOOK_APP_ID is not configured');
-      }
-
-      const authUrl = `https://www.facebook.com/v18.0/dialog/oauth?client_id=${FB_APP_ID}&redirect_uri=${encodeURIComponent(callbackUrl)}&response_type=code&scope=pages_show_list,pages_read_engagement,pages_manage_posts,pages_messaging,public_profile`;
-      
-      console.log('[FacebookService] Initiating login with redirect_uri:', callbackUrl);
-      
-      const result = await WebBrowser.openAuthSessionAsync(authUrl, redirectUri);
-
-      if (result.type === 'success' && result.url) {
-        // Parse code from URL query params
-        // Result URL will be like: adroom://auth/facebook/callback?code=...
-        const match = result.url.match(/code=([^&]+)/);
-        const code = match ? match[1] : null;
-
-        if (code) {
-            // Exchange code for token via backend
-            const exchangeRes = await fetch(`${BACKEND_URL}/api/auth/facebook/exchange`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ code, redirectUri: callbackUrl })
-            });
-            
-            const exchangeData = await exchangeRes.json();
-            if (exchangeData.access_token) {
-                return exchangeData.access_token;
-            } else {
-                throw new Error('Failed to exchange code for token: ' + (exchangeData.error || 'Unknown error'));
-            }
-        }
-      }
-      
-      return null;
-    } catch (error) {
-      console.error('Facebook login error:', error);
-      throw error;
-    }
+      Linking.openURL(authUrl).catch((e) => finish(new Error(e.message)));
+    });
   },
 
   /**
