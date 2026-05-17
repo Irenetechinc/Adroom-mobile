@@ -46,6 +46,8 @@ export default function SubscriptionScreen() {
   const navigation = useNavigation<any>();
   const route = useRoute<any>();
   const scrollToPlan = route.params?.scrollToPlan ?? null;
+  const autoStartTrial = route.params?.autoStartTrial ?? null;
+  const autoStartTrialFiredRef = useRef(false);
   const insets = useSafeAreaInsets();
   const {
     account, subscription, transactions, planLimitsUsage, isLoading,
@@ -106,6 +108,17 @@ export default function SubscriptionScreen() {
     fetchEnergy();
     fetchPlanLimits();
   }, []);
+
+  // Auto-start trial when navigated from the TrialPromoModal with a plan pre-selected.
+  // We wait until trialEligible is confirmed (async check below) before firing.
+  useEffect(() => {
+    if (!autoStartTrial || autoStartTrialFiredRef.current) return;
+    if (!trialEligible) return; // wait for eligibility check to pass
+    autoStartTrialFiredRef.current = true;
+    // Small delay so the screen finishes mounting and the WebView can render
+    const t = setTimeout(() => handleStartTrial(autoStartTrial), 600);
+    return () => clearTimeout(t);
+  }, [autoStartTrial, trialEligible]);
 
   // Check trial eligibility — backend is primary, Supabase user metadata is fallback.
   // New users (account < 48h old, no prior trial/subscription) should always see the offer.

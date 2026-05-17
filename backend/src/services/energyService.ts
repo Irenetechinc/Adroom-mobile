@@ -379,6 +379,35 @@ export class EnergyService {
     // Push-notify the trial start so the user sees confirmation on their device.
     pushService.notifyTrialStarted(userId, trialCredits, 14).catch(() => {});
 
+    // Award referrer if this user was referred
+    try {
+      const { data: referral } = await this.supabase
+        .from('referrals')
+        .select('id, referrer_id')
+        .eq('referred_id', userId)
+        .eq('status', 'pending')
+        .single();
+      if (referral) {
+        const REFERRAL_CREDITS = 25;
+        await this.supabase
+          .from('referrals')
+          .update({ status: 'completed', credits_awarded: REFERRAL_CREDITS })
+          .eq('id', referral.id);
+        await this.creditEnergy(
+          referral.referrer_id,
+          REFERRAL_CREDITS,
+          'referral_reward',
+          `Referral reward — friend activated their first plan (+${REFERRAL_CREDITS} credits)`,
+        );
+        pushService.send(referral.referrer_id, {
+          title: 'Referral Reward!',
+          body: `Your friend just activated their plan — you've earned ${REFERRAL_CREDITS} energy credits!`,
+          data: { type: 'referral_reward', credits: REFERRAL_CREDITS },
+          channelId: 'default',
+        }).catch(() => {});
+      }
+    } catch { /* non-fatal — never break trial flow */ }
+
     return { success: true, message: `Trial started! You have ${trialCredits} energy credits for 14 days on the ${plan.name} plan.`, credits: trialCredits };
   }
 

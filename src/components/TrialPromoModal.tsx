@@ -1,23 +1,30 @@
 import React, { useEffect, useState, useRef } from 'react';
 import {
-  Modal, View, Text, TouchableOpacity, StyleSheet, Animated,
+  Modal, View, Text, TouchableOpacity, StyleSheet, Animated, ScrollView,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { Zap, X, Star, Check } from 'lucide-react-native';
+import { Zap, X, Star, Check, Crown } from 'lucide-react-native';
 import Constants from 'expo-constants';
 import { supabase } from '../services/supabase';
 
 const API_URL = process.env.EXPO_PUBLIC_API_URL || Constants.expoConfig?.extra?.apiUrl || 'http://localhost:8000';
 const SEEN_KEY = 'adroom-trial-modal-seen';
 
+const TRIAL_PLANS = [
+  { id: 'starter', name: 'Starter', price: 20, credits: 100, color: '#00F0FF', desc: 'Perfect for getting started' },
+  { id: 'pro',     name: 'Pro',     price: 45, credits: 300, color: '#7C3AED', desc: 'Most popular — all agents' },
+  { id: 'pro_plus',name: 'Pro+',    price: 100, credits: 600, color: '#F59E0B', desc: 'Maximum power & platforms' },
+];
+
 interface Props {
-  onNavigateToSubscription: () => void;
+  onStartTrial: (planId: string) => void;
 }
 
-export default function TrialPromoModal({ onNavigateToSubscription }: Props) {
+export default function TrialPromoModal({ onStartTrial }: Props) {
   const [visible, setVisible] = useState(false);
   const [countdown, setCountdown] = useState('');
   const [expiresAt, setExpiresAt] = useState<number | null>(null);
+  const [selectedPlan, setSelectedPlan] = useState('pro');
   const pulseAnim = useRef(new Animated.Value(1)).current;
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -25,7 +32,7 @@ export default function TrialPromoModal({ onNavigateToSubscription }: Props) {
     checkAndShow();
   }, []);
 
-  // Pulse animation on the CTA button
+  // Pulse animation on CTA
   useEffect(() => {
     if (!visible) return;
     const loop = Animated.loop(
@@ -61,34 +68,44 @@ export default function TrialPromoModal({ onNavigateToSubscription }: Props) {
 
   const checkAndShow = async () => {
     try {
-      // Don't show if user has already seen/dismissed it
       const seen = await AsyncStorage.getItem(SEEN_KEY);
       if (seen) return;
 
-      // Get current user
       const { data: { session } } = await supabase.auth.getSession();
       if (!session?.user) return;
 
-      // Check eligibility from backend (source of truth)
-      const res = await fetch(`${API_URL}/api/billing/trial-eligibility`, {
-        headers: { Authorization: `Bearer ${session.access_token}` },
-      });
-      if (!res.ok) return;
-      const data = await res.json();
-      if (!data.eligible) return;
-
-      // Calculate 48h expiry from account creation time
       const createdAt = new Date(session.user.created_at).getTime();
       const expiry = createdAt + 48 * 60 * 60 * 1000;
+
+      // Already past the 48h window
       if (Date.now() >= expiry) {
-        // Already expired — mark seen silently so we don't keep checking
         await AsyncStorage.setItem(SEEN_KEY, 'expired');
         return;
       }
 
+      // Check eligibility — backend is authoritative, local age-check is fallback
+      let eligible = false;
+      try {
+        const res = await fetch(`${API_URL}/api/billing/trial-eligibility`, {
+          headers: { Authorization: `Bearer ${session.access_token}` },
+        });
+        if (res.ok) {
+          const data = await res.json();
+          eligible = data.eligible === true;
+        } else {
+          // Backend unreachable: fall back to age-based check
+          eligible = Date.now() < expiry;
+        }
+      } catch {
+        // Network error: fall back to age-based check
+        eligible = Date.now() < expiry;
+      }
+
+      if (!eligible) return;
+
       setExpiresAt(expiry);
       setVisible(true);
-    } catch { /* non-fatal — modal is optional */ }
+    } catch { /* non-fatal */ }
   };
 
   const dismiss = async () => {
@@ -99,7 +116,7 @@ export default function TrialPromoModal({ onNavigateToSubscription }: Props) {
   const handleClaim = async () => {
     setVisible(false);
     await AsyncStorage.setItem(SEEN_KEY, 'claimed').catch(() => {});
-    onNavigateToSubscription();
+    onStartTrial(selectedPlan);
   };
 
   if (!visible) return null;
@@ -121,16 +138,50 @@ export default function TrialPromoModal({ onNavigateToSubscription }: Props) {
           {/* Title */}
           <Text style={styles.title}>14-Day Free Trial</Text>
           <Text style={styles.subtitle}>
-            Start your free trial today. No charge for 14 days — just a $2 card hold to verify your payment method (refunded instantly).
+            Try AdRoom free for 14 days. Pick a plan below — you'll only be charged a{' '}
+            <Text style={{ color: '#F59E0B', fontWeight: '700' }}>$2 refundable card hold</Text>{' '}
+            to verify your payment method. Your plan starts billing after 14 days.
           </Text>
 
           {/* Features */}
-          {['All 4 AI agents active', '50 energy credits included', 'Auto-publish to all platforms', 'Cancel anytime'].map((f) => (
+          {['No charge for 14 days', '50 energy credits to start', 'Auto-publish to all platforms', 'Cancel anytime before day 15'].map((f) => (
             <View key={f} style={styles.featureRow}>
               <Check color="#10B981" size={14} strokeWidth={2.5} />
               <Text style={styles.featureText}>{f}</Text>
             </View>
           ))}
+
+          {/* Plan selector */}
+          <Text style={styles.planSelectorLabel}>Choose your plan:</Text>
+          {TRIAL_PLANS.map((plan) => {
+            const isSelected = plan.id === selectedPlan;
+            return (
+              <TouchableOpacity
+                key={plan.id}
+                onPress={() => setSelectedPlan(plan.id)}
+                activeOpacity={0.75}
+                style={[
+                  styles.planRow,
+                  { borderColor: isSelected ? plan.color : 'rgba(100,116,139,0.3)' },
+                  isSelected && { backgroundColor: `${plan.color}12` },
+                ]}
+              >
+                <View style={[styles.planCheck, { borderColor: plan.color, backgroundColor: isSelected ? plan.color : 'transparent' }]}>
+                  {isSelected && <Check color="#000" size={10} strokeWidth={3} />}
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.planName, { color: isSelected ? plan.color : '#CBD5E1' }]}>
+                    {plan.name}
+                  </Text>
+                  <Text style={styles.planDesc}>{plan.desc} · ${plan.price}/mo after trial</Text>
+                </View>
+                <View style={[styles.planCredits, { backgroundColor: `${plan.color}20` }]}>
+                  <Zap size={10} color={plan.color} />
+                  <Text style={[styles.planCreditsText, { color: plan.color }]}>{plan.credits}</Text>
+                </View>
+              </TouchableOpacity>
+            );
+          })}
 
           {/* Countdown */}
           <View style={styles.countdownBox}>
@@ -142,8 +193,8 @@ export default function TrialPromoModal({ onNavigateToSubscription }: Props) {
           {/* CTA */}
           <Animated.View style={{ transform: [{ scale: pulseAnim }], width: '100%' }}>
             <TouchableOpacity style={styles.ctaBtn} onPress={handleClaim} activeOpacity={0.85}>
-              <Zap color="#000" size={16} strokeWidth={2.5} />
-              <Text style={styles.ctaText}>Claim Free Trial</Text>
+              <Crown color="#000" size={16} strokeWidth={2.5} />
+              <Text style={styles.ctaText}>Claim 14-Day Free Trial</Text>
             </TouchableOpacity>
           </Animated.View>
 
@@ -159,19 +210,19 @@ export default function TrialPromoModal({ onNavigateToSubscription }: Props) {
 const styles = StyleSheet.create({
   overlay: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.75)',
+    backgroundColor: 'rgba(0,0,0,0.8)',
     justifyContent: 'center',
     alignItems: 'center',
-    paddingHorizontal: 24,
+    paddingHorizontal: 20,
   },
   card: {
     width: '100%',
-    maxWidth: 360,
+    maxWidth: 380,
     backgroundColor: '#0D1421',
     borderRadius: 24,
     borderWidth: 1,
     borderColor: 'rgba(245,158,11,0.3)',
-    padding: 24,
+    padding: 22,
     alignItems: 'center',
     position: 'relative',
   },
@@ -182,15 +233,15 @@ const styles = StyleSheet.create({
     padding: 4,
   },
   iconRing: {
-    width: 72,
-    height: 72,
-    borderRadius: 36,
+    width: 64,
+    height: 64,
+    borderRadius: 32,
     backgroundColor: 'rgba(245,158,11,0.12)',
     borderWidth: 2,
     borderColor: 'rgba(245,158,11,0.35)',
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 16,
+    marginBottom: 14,
     marginTop: 8,
   },
   title: {
@@ -203,21 +254,71 @@ const styles = StyleSheet.create({
   },
   subtitle: {
     color: '#94A3B8',
-    fontSize: 13,
-    lineHeight: 19,
+    fontSize: 12,
+    lineHeight: 18,
     textAlign: 'center',
-    marginBottom: 16,
+    marginBottom: 14,
   },
   featureRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
     alignSelf: 'flex-start',
-    marginBottom: 6,
+    marginBottom: 5,
   },
   featureText: {
     color: '#CBD5E1',
-    fontSize: 13,
+    fontSize: 12,
+  },
+  planSelectorLabel: {
+    color: '#64748B',
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 0.8,
+    textTransform: 'uppercase',
+    alignSelf: 'flex-start',
+    marginTop: 14,
+    marginBottom: 8,
+  },
+  planRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    width: '100%',
+    borderWidth: 1.5,
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    marginBottom: 7,
+  },
+  planCheck: {
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    borderWidth: 2,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  planName: {
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  planDesc: {
+    color: '#475569',
+    fontSize: 11,
+    marginTop: 1,
+  },
+  planCredits: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+    borderRadius: 8,
+  },
+  planCreditsText: {
+    fontSize: 11,
+    fontWeight: '700',
   },
   countdownBox: {
     flexDirection: 'row',
@@ -229,8 +330,8 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     paddingHorizontal: 12,
     paddingVertical: 7,
-    marginTop: 16,
-    marginBottom: 20,
+    marginTop: 14,
+    marginBottom: 16,
   },
   countdownLabel: {
     color: '#94A3B8',

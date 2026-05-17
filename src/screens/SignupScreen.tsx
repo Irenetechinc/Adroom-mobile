@@ -7,7 +7,7 @@ import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import Animated, { FadeInDown } from 'react-native-reanimated';
 import { RootStackParamList } from '../types';
 import { supabase } from '../services/supabase';
-import { Mail, Lock, Eye, EyeOff, ArrowLeft, UserPlus, CheckCircle, AlertCircle, LogIn } from 'lucide-react-native';
+import { Mail, Lock, Eye, EyeOff, ArrowLeft, UserPlus, CheckCircle, AlertCircle, LogIn, Gift } from 'lucide-react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Constants from 'expo-constants';
 import InlineAlert, { InlineAlertVariant } from '../components/InlineAlert';
@@ -35,6 +35,8 @@ export default function SignupScreen({ navigation }: Props) {
   const [resendSent, setResendSent] = useState(false);
   const [resendCooldown, setResendCooldown] = useState(0);
   const [duplicateEmail, setDuplicateEmail] = useState<string | null>(null);
+  const [referralCode, setReferralCode] = useState('');
+  const [referralFocused, setReferralFocused] = useState(false);
 
   const [alert, setAlert] = useState<{ visible: boolean; title: string; message?: string; variant: InlineAlertVariant }>({
     visible: false, title: '', variant: 'error',
@@ -96,6 +98,13 @@ export default function SignupScreen({ navigation }: Props) {
           showAlert('Sign-Up Failed', error.message, 'error');
           return;
         }
+      }
+      // Persist referral code so authStore can apply it once the user verifies and signs in
+      if (referralCode.trim()) {
+        try {
+          const AsyncStorage = (await import('@react-native-async-storage/async-storage')).default;
+          await AsyncStorage.setItem('adroom:pendingReferralCode', referralCode.trim().toUpperCase());
+        } catch { /* non-fatal */ }
       }
       setRegisteredEmail(email.trim());
       setShowEmailModal(true);
@@ -233,6 +242,25 @@ export default function SignupScreen({ navigation }: Props) {
                 <TouchableOpacity onPress={() => setShowConfirm(!showConfirm)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
                   {showConfirm ? <EyeOff size={18} color="#475569" /> : <Eye size={18} color="#475569" />}
                 </TouchableOpacity>
+              </View>
+            </View>
+
+            {/* Referral code (optional) */}
+            <View style={styles.fieldGroup}>
+              <Text style={styles.label}>Referral Code <Text style={{ color: '#475569', fontWeight: '400' }}>(optional)</Text></Text>
+              <View style={[styles.inputWrap, referralFocused && styles.inputFocused]}>
+                <Gift size={18} color={referralFocused ? '#F59E0B' : '#475569'} style={{ marginRight: 10 }} />
+                <TextInput
+                  style={styles.input}
+                  placeholder="e.g. ADRM7X2Q"
+                  placeholderTextColor="#475569"
+                  value={referralCode}
+                  onChangeText={(t) => setReferralCode(t.toUpperCase())}
+                  autoCapitalize="characters"
+                  maxLength={12}
+                  onFocus={() => setReferralFocused(true)}
+                  onBlur={() => setReferralFocused(false)}
+                />
               </View>
             </View>
 
