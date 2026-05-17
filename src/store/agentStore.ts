@@ -271,6 +271,8 @@ interface AgentState {
   handleAccountSelection: (platform: string, account: any) => Promise<void>;
   disconnectPlatform: (platform: string) => Promise<void>;
   loadConnectedPlatforms: () => Promise<void>;
+  attachPlatformConfigs: (userId: string) => Promise<void>;
+  detachPlatformConfigs: () => void;
   clearAll: () => Promise<void>;
 
   // Legacy (Keep for compatibility if needed, but we'll use unified)
@@ -1577,6 +1579,49 @@ export const useAgentStore = create<AgentState>()(
       }
   },
 
+  // ─── REALTIME PLATFORM CONFIG SUBSCRIPTION ──────────────────────────────────
+  // Mirrors the pattern in notificationStore. Called from App.tsx the moment
+  // a session is available. Keeps connectedPlatforms in sync across devices
+  // and survives logout/login without any manual refresh.
+  attachPlatformConfigs: async (userId: string) => {
+    try {
+      // Tear down any existing channel
+      const state = get() as any;
+      if (state._adConfigsChannel) {
+        try { await supabase.removeChannel(state._adConfigsChannel); } catch {}
+      }
+
+      // Create new channel for this user's ad_configs rows
+      const ch = supabase
+        .channel(`ad_configs_${userId}`)
+        .on(
+          'postgres_changes',
+          { event: '*', schema: 'public', table: 'ad_configs', filter: `user_id=eq.${userId}` },
+          () => {
+            // Any INSERT/UPDATE/DELETE on the user's ad_configs → re-sync
+            get().loadConnectedPlatforms().catch(() => {});
+          },
+        )
+        .subscribe();
+
+      // Stash the channel ref on the store object (not Zustand state, so no re-renders)
+      (get() as any)._adConfigsChannel = ch;
+
+      // Load fresh data immediately
+      await get().loadConnectedPlatforms();
+    } catch { /* non-fatal */ }
+  },
+
+  detachPlatformConfigs: () => {
+    try {
+      const ch = (get() as any)._adConfigsChannel;
+      if (ch) {
+        supabase.removeChannel(ch);
+        (get() as any)._adConfigsChannel = null;
+      }
+    } catch { /* non-fatal */ }
+  },
+
   loadConnectedPlatforms: async () => {
     const CACHE_KEY = 'adroom-connected-platforms';
 
@@ -1615,14 +1660,26 @@ export const useAgentStore = create<AgentState>()(
       });
     };
 
-    // Layer 0: AsyncStorage cache — show immediately while network loads
-    // This ensures connected accounts appear instantly even on cold start or login.
+    // Layer 0: AsyncStorage cache — show immediately while network loads.
+    // Only applies the cache if every entry belongs to the current user
+    // so a different device/user never sees stale cross-user data.
     try {
+      const { data: { user: currentUser } } = await supabase.auth.getUser();
+      const currentUserId = currentUser?.id;
       const cached = await AsyncStorage.getItem(CACHE_KEY);
-      if (cached) {
+      if (cached && currentUserId) {
         const parsed = JSON.parse(cached);
         if (parsed && typeof parsed === 'object' && Object.keys(parsed).length > 0) {
-          applyConfigs(parsed, false); // non-authoritative: don't clear new connections
+          // All entries must belong to the current user
+          const allMatch = Object.values(parsed).every(
+            (v: any) => !v._user_id || v._user_id === currentUserId
+          );
+          if (allMatch) {
+            applyConfigs(parsed, false); // non-authoritative: don't clear new connections
+          } else {
+            // Stale cache from different user — clear it
+            await AsyncStorage.removeItem(CACHE_KEY);
+          }
         }
       }
     } catch {}

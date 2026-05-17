@@ -1,4 +1,5 @@
 import express, { type Request } from 'express';
+import path from 'path';
 import bodyParser from 'body-parser';
 import multer from 'multer';
 import dotenv from 'dotenv';
@@ -152,6 +153,21 @@ function semverCompareInt(a: string, b: string): number {
   if (a2 !== b2) return a2 - b2;
   return a3 - b3;
 }
+
+// Serve the AdRoom logo so Flutterwave checkout can display it
+app.get('/api/logo.png', (_req, res) => {
+  const logoPath = path.resolve(__dirname, '../../public/logo.png');
+  res.sendFile(logoPath, (err) => {
+    if (err) {
+      // Fallback: transparent 1×1 PNG so Flutterwave doesn't show a broken image
+      const tiny = Buffer.from(
+        'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==',
+        'base64'
+      );
+      res.set('Content-Type', 'image/png').send(tiny);
+    }
+  });
+});
 
 app.get('/api/app/version', async (req, res) => {
   try {
@@ -1982,7 +1998,7 @@ app.post('/api/billing/payment-link', async (req, res) => {
           description: type === 'subscription'
             ? `Monthly subscription — ${id}`
             : `Energy top-up pack — ${id}`,
-          logo: 'https://adroom.app/logo.png',
+          logo: `${getPublicBaseUrl(req)}/api/logo.png`,
         },
         payment_options: 'card',
         meta: { user_id: user.id, type, plan_or_pack_id: id },

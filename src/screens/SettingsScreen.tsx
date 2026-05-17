@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
+import { useFocusEffect } from '@react-navigation/native';
 import { View, Text, TouchableOpacity, Alert, StyleSheet, ScrollView } from 'react-native';
 import { useAuthStore } from '../store/authStore';
 import { useProfileStore } from '../store/profileStore';
@@ -73,11 +74,13 @@ export default function SettingsScreen() {
     fetchEnergy().finally(() => setReady(true));
   }, [user?.id]);
 
-  // Belt-and-braces refresh whenever the Settings screen mounts so the
-  // counter is correct even if the realtime channel is reconnecting.
-  useEffect(() => {
-    if (user?.id) refreshUnread(user.id);
-  }, [user?.id, refreshUnread]);
+  // Refresh unread count every time this screen comes into focus — covers
+  // the cold-start case, reconnect after background, and direct navigation.
+  useFocusEffect(
+    useCallback(() => {
+      if (user?.id) refreshUnread(user.id);
+    }, [user?.id, refreshUnread])
+  );
 
   const balance = parseFloat(String(account?.balance_credits ?? '0'));
   const plan = subscription?.plan ?? 'none';

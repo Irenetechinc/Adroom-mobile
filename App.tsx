@@ -45,35 +45,28 @@ export default function App() {
       if (!userId) {
         useProfileStore.getState().reset();
         useNotificationStore.getState().detach();
+        useAgentStore.getState().detachPlatformConfigs();
         return;
       }
       await Promise.all([
         useProfileStore.getState().load(userId, email),
         useNotificationStore.getState().attach(userId),
+        // Attach a Supabase Realtime subscription on ad_configs so connected
+        // platforms stay in sync across devices and survive logout/login
+        // without any manual refresh or screen visit.
+        useAgentStore.getState().attachPlatformConfigs(userId),
       ]);
-    };
-
-    // Pull the connected-platforms list from the backend the moment we
-    // have a session. This is what lets connected accounts survive an APK
-    // update / fresh install — AsyncStorage may be wiped, but `ad_configs`
-    // on Supabase is the source of truth and we re-hydrate from it on
-    // every cold start instead of waiting for the user to open the
-    // ConnectedAccounts screen.
-    const refreshConnectedPlatforms = () => {
-      try {
-        useAgentStore.getState().loadConnectedPlatforms().catch(() => {});
-      } catch { /* store may not be ready yet */ }
     };
 
     supabase.auth.getSession().then(({ data }: any) => {
       hydrateForUser(data.session?.user?.id, data.session?.user?.email);
-      if (data.session?.user?.id) refreshConnectedPlatforms();
     });
 
     const { data: sub } = supabase.auth.onAuthStateChange((event: string, session: any) => {
       if (event === 'SIGNED_OUT') {
         useProfileStore.getState().reset();
         useNotificationStore.getState().detach();
+        useAgentStore.getState().detachPlatformConfigs();
         return;
       }
       // USER_UPDATED fires after the client picks up new user_metadata
@@ -81,9 +74,6 @@ export default function App() {
       // reflects it without a sign-out.
       if (session?.user?.id) {
         hydrateForUser(session.user.id, session.user.email);
-        if (event === 'SIGNED_IN' || event === 'INITIAL_SESSION' || event === 'TOKEN_REFRESHED') {
-          refreshConnectedPlatforms();
-        }
       }
     });
 
