@@ -1,9 +1,9 @@
 import { supabase } from './supabase';
-import { Linking } from 'react-native';
+import * as WebBrowser from 'expo-web-browser';
 
-// WhatsApp uses Facebook's OAuth dialog, which detects Chrome Custom Tabs on
-// Android and redirects to the native Facebook app — breaking openAuthSessionAsync.
-// Fix: open via system browser (Linking.openURL) and catch the adroom:// deep-link.
+// WhatsApp uses Facebook's OAuth dialog which hijacks Chrome Custom Tabs on
+// Android. We open the browser fire-and-forget and poll the backend for the
+// auth code — works in Expo Go and standalone builds.
 
 const FB_APP_ID = process.env.EXPO_PUBLIC_FACEBOOK_APP_ID;
 
@@ -20,52 +20,50 @@ export const WhatsAppService = {
     if (!BACKEND_URL) throw new Error('EXPO_PUBLIC_API_URL is not configured');
     if (!FB_APP_ID)   throw new Error('EXPO_PUBLIC_FACEBOOK_APP_ID is not configured');
 
+    const state = Math.random().toString(36).substring(2) + Date.now().toString(36);
     const callbackUrl = `${BACKEND_URL}/auth/whatsapp/callback`;
     const scopes = 'whatsapp_business_management,whatsapp_business_messaging,business_management,public_profile';
-    const authUrl = `https://www.facebook.com/v18.0/dialog/oauth?client_id=${FB_APP_ID}&redirect_uri=${encodeURIComponent(callbackUrl)}&response_type=code&scope=${scopes}`;
+    const authUrl =
+      `https://www.facebook.com/v18.0/dialog/oauth` +
+      `?client_id=${FB_APP_ID}` +
+      `&redirect_uri=${encodeURIComponent(callbackUrl)}` +
+      `&response_type=code` +
+      `&scope=${scopes}` +
+      `&state=${state}`;
 
-    console.log('[WhatsAppService] Opening system browser for OAuth…');
+    console.log('[WhatsAppService] Opening browser for OAuth…');
+    WebBrowser.openBrowserAsync(authUrl).catch(() => {});
 
-    return new Promise((resolve, reject) => {
-      let settled = false;
-      let timeoutId: ReturnType<typeof setTimeout>;
+    return new Promise((resolve) => {
+      const POLL_MS = 2000;
+      const TIMEOUT_MS = 5 * 60 * 1000;
+      const start = Date.now();
 
-      const finish = (result: string | null | Error) => {
-        if (settled) return;
-        settled = true;
-        clearTimeout(timeoutId);
-        subscription.remove();
-        if (result instanceof Error) reject(result);
-        else resolve(result);
-      };
-
-      const subscription = Linking.addEventListener('url', async ({ url }) => {
-        if (!url.startsWith('adroom://auth/whatsapp/callback')) return;
-        console.log('[WhatsAppService] Deep-link received:', url);
-
-        const errorMatch = url.match(/[?&]error=([^&]+)/);
-        if (errorMatch) { finish(null); return; }
-
-        const codeMatch = url.match(/[?&]code=([^&]+)/);
-        const code = codeMatch ? decodeURIComponent(codeMatch[1]) : null;
-        if (!code) { finish(null); return; }
-
-        try {
-          const exchangeRes = await fetch(`${BACKEND_URL}/api/auth/whatsapp/exchange`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ code, redirectUri: callbackUrl }),
-          });
-          const exchangeData = await exchangeRes.json();
-          if (exchangeData.access_token) finish(exchangeData.access_token);
-          else finish(new Error(exchangeData.error || 'Token exchange failed'));
-        } catch (e: any) {
-          finish(new Error(e.message || 'Token exchange failed'));
+      const poll = setInterval(async () => {
+        if (Date.now() - start > TIMEOUT_MS) {
+          clearInterval(poll);
+          resolve(null);
+          return;
         }
-      });
-
-      timeoutId = setTimeout(() => finish(null), 5 * 60 * 1000);
-      Linking.openURL(authUrl).catch((e) => finish(new Error(e.message)));
+        try {
+          const res = await fetch(`${BACKEND_URL}/auth/poll?state=${state}`);
+          if (!res.ok) return;
+          const data = await res.json();
+          if (data.error) { clearInterval(poll); resolve(null); return; }
+          if (data.code) {
+            clearInterval(poll);
+            try {
+              const exchangeRes = await fetch(`${BACKEND_URL}/api/auth/whatsapp/exchange`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ code: data.code, redirectUri: callbackUrl }),
+              });
+              const exchangeData = await exchangeRes.json();
+              resolve(exchangeData.access_token || null);
+            } catch { resolve(null); }
+          }
+        } catch { /* keep polling */ }
+      }, POLL_MS);
     });
   },
 

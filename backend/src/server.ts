@@ -23,6 +23,7 @@ import { energyCheck, deductEnergyForUser } from './services/energyMiddleware';
 import { checkFeatureAccess, getSubscriptionGuard, SUBSCRIPTION_PLAN_LIMITS } from './services/subscriptionGuard';
 import adminRouter from './admin/adminRouter';
 import authPagesRouter from './auth/authPagesRouter';
+import { popOAuthEntry } from './auth/oauthStore';
 
 dotenv.config();
 
@@ -244,6 +245,20 @@ app.get('/api/app/version', async (req, res) => {
       changelog: [],
     });
   }
+});
+
+/**
+ * GET /auth/poll
+ * Mobile app polls this after opening the browser for Facebook/Instagram/WhatsApp
+ * OAuth. Returns { code } when the callback has arrived, { pending: true } otherwise.
+ */
+app.get('/auth/poll', (req, res) => {
+  const state = typeof req.query.state === 'string' ? req.query.state : undefined;
+  if (!state) return res.status(400).json({ error: 'state is required' });
+  const entry = popOAuthEntry(state);
+  if (!entry) return res.json({ pending: true });
+  if (entry.error) return res.json({ error: entry.error });
+  return res.json({ code: entry.code });
 });
 
 app.get('/auth/facebook/callback', (req, res) => {
