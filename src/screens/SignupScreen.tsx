@@ -14,6 +14,41 @@ import InlineAlert, { InlineAlertVariant } from '../components/InlineAlert';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Signup'>;
 
+// Most common fake / placeholder / disposable domains — checked client-side
+// for instant feedback. The backend applies the full blocklist authoritatively.
+const BLOCKED_EMAIL_DOMAINS = new Set([
+  'example.com', 'example.org', 'example.net', 'example.io',
+  'test.com', 'test.org', 'test.net', 'testing.com',
+  'fake.com', 'fake.org', 'fake.net', 'fake.email',
+  'invalid.com', 'invalid.org', 'invalid.net',
+  'mailinator.com', 'mailinator.org',
+  'guerrillamail.com', 'guerrillamail.org', 'guerrillamail.net',
+  'yopmail.com', 'yopmail.fr',
+  'tempmail.com', 'tempmail.net', 'tempmail.org',
+  'temp-mail.org', 'temp-mail.io',
+  'throwaway.email', 'trashmail.com', 'trashmail.net', 'trashmail.me',
+  'dispostable.com', 'mailnull.com',
+  '10minutemail.com', '10minutemail.org',
+  'spamgourmet.com', 'maildrop.cc',
+  'sharklasers.com', 'grr.la', 'spam4.me',
+  'noemail.com', 'noreply.com', 'null.com',
+  'localhost.com', 'placeholder.com', 'demo.com', 'sample.com',
+  'burnermail.io', 'burnmail.ca', 'getnada.com', 'mailsac.com',
+]);
+
+function isEmailDomainBlocked(email: string): boolean {
+  const parts = email.trim().toLowerCase().split('@');
+  if (parts.length !== 2) return false;
+  const domain = parts[1];
+  if (BLOCKED_EMAIL_DOMAINS.has(domain)) return true;
+  // also check root domain (e.g. sub.mailinator.com)
+  const segments = domain.split('.');
+  for (let i = 1; i < segments.length - 1; i++) {
+    if (BLOCKED_EMAIL_DOMAINS.has(segments.slice(i).join('.'))) return true;
+  }
+  return false;
+}
+
 const BACKEND_URL =
   process.env.EXPO_PUBLIC_API_URL ||
   (Constants.expoConfig?.extra?.apiUrl as string) ||
@@ -60,7 +95,16 @@ export default function SignupScreen({ navigation }: Props) {
     }
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRegex.test(email.trim())) {
-      showAlert('Invalid Email', 'Please enter a valid email address (e.g. name@example.com).', 'warning');
+      showAlert('Invalid Email', 'Please enter a valid email address (e.g. name@gmail.com).', 'warning');
+      return;
+    }
+    if (isEmailDomainBlocked(email.trim())) {
+      const domain = email.trim().toLowerCase().split('@')[1] ?? '';
+      showAlert(
+        'Invalid Email',
+        `"${domain}" is not accepted. Please use a real email address such as Gmail, Outlook, or your work email.`,
+        'warning',
+      );
       return;
     }
 
