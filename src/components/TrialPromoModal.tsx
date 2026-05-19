@@ -138,9 +138,7 @@ export default function TrialPromoModal({ onStartTrial }: Props) {
           {/* Title */}
           <Text style={styles.title}>14-Day Free Trial</Text>
           <Text style={styles.subtitle}>
-            Try AdRoom free for 14 days. Pick a plan below — you'll only be charged a{' '}
-            <Text style={{ color: '#F59E0B', fontWeight: '700' }}>$2 refundable card hold</Text>{' '}
-            to verify your payment method. Your plan starts billing after 14 days.
+            Try AdRoom completely free for 14 days. Pick a plan below to unlock your AI marketing team — no charge until day 15.
           </Text>
 
           {/* Features */}

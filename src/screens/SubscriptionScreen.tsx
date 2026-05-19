@@ -60,12 +60,14 @@ export default function SubscriptionScreen() {
   const [tab, setTab] = useState<'plans' | 'topup' | 'usage'>('plans');
   const [countdown, setCountdown] = useState<string | null>(null);
   const [graceActive, setGraceActive] = useState(false);
+  const [trialCountdown, setTrialCountdown] = useState<string | null>(null);
   const [showAutoTopUpPicker, setShowAutoTopUpPicker] = useState(false);
   const [autoTopUpSaving, setAutoTopUpSaving] = useState(false);
   const [retrying, setRetrying] = useState(false);
 
-  // Trial eligibility: only shown for brand-new accounts (< 48 h) that have never subscribed or trialed
-  const [trialEligible, setTrialEligible] = useState(false);
+  // Trial eligibility: null = still checking, true = eligible, false = not eligible
+  // Using null prevents the flash where plan buttons briefly show "Subscribe" before flipping to "Start Free Trial"
+  const [trialEligible, setTrialEligible] = useState<boolean | null>(null);
   // Tracks which plan the user chose for their trial so we know which verify endpoint to call
   const trialPlanIdRef = useRef<string | null>(null);
 
@@ -111,12 +113,11 @@ export default function SubscriptionScreen() {
   }, []);
 
   // Auto-start trial when navigated from the TrialPromoModal with a plan pre-selected.
-  // We wait until trialEligible is confirmed (async check below) before firing.
+  // We wait until trialEligible is confirmed (not null) before firing.
   useEffect(() => {
     if (!autoStartTrial || autoStartTrialFiredRef.current) return;
-    if (!trialEligible) return; // wait for eligibility check to pass
+    if (trialEligible !== true) return; // wait for eligibility check to pass
     autoStartTrialFiredRef.current = true;
-    // Small delay so the screen finishes mounting and the WebView can render
     const t = setTimeout(() => handleStartTrial(autoStartTrial), 600);
     return () => clearTimeout(t);
   }, [autoStartTrial, trialEligible]);
@@ -136,6 +137,8 @@ export default function SubscriptionScreen() {
           setTrialEligible(false);
           return;
         }
+        // If subscription data loaded and status is clearly none/inactive/cancelled, unblock check
+        // (don't return early — fall through to the backend check)
 
         // Try backend first (authoritative)
         try {
@@ -165,6 +168,35 @@ export default function SubscriptionScreen() {
       } catch {}
     })();
   }, [subscription?.status, subscription?.trial_start]);
+
+  // Live countdown for active trial end date
+  useEffect(() => {
+    if (!isTrialing || !subscription?.trial_end) {
+      setTrialCountdown(null);
+      return;
+    }
+    const trialEndMs = new Date(subscription.trial_end).getTime();
+    const tick = () => {
+      const remaining = trialEndMs - Date.now();
+      if (remaining <= 0) {
+        setTrialCountdown('Trial ended');
+        clearInterval(trialTimer);
+        return;
+      }
+      const d = Math.floor(remaining / 86400000);
+      const h = Math.floor((remaining % 86400000) / 3600000);
+      const m = Math.floor((remaining % 3600000) / 60000);
+      const s = Math.floor((remaining % 60000) / 1000);
+      if (d > 0) {
+        setTrialCountdown(`${d}d ${String(h).padStart(2,'0')}h ${String(m).padStart(2,'0')}m ${String(s).padStart(2,'0')}s`);
+      } else {
+        setTrialCountdown(`${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`);
+      }
+    };
+    tick();
+    const trialTimer = setInterval(tick, 1000);
+    return () => clearInterval(trialTimer);
+  }, [isTrialing, subscription?.trial_end]);
 
   // 72h grace period countdown: shown when trial just ended (within 72h)
   useEffect(() => {
@@ -388,19 +420,15 @@ export default function SubscriptionScreen() {
 
   const handleStartTrial = async (planId: string) => {
     const p = PLAN_DETAILS[planId as keyof typeof PLAN_DETAILS];
-    const isProPlan = planId === 'pro' || planId === 'pro_plus';
-    const holdAmount = isProPlan ? 2 : 2;
     Alert.alert(
       '14-Day Free Trial',
-      isProPlan
-        ? `Start your free ${p?.name ?? planId} trial. A $2 temporary card hold is used to verify your payment method — it is refunded immediately. You will not be charged until after 14 days.`
-        : `Start your free trial. A $2 card verification hold will be placed and immediately refunded. You will not be charged during your 14-day trial.`,
+      `Start your free 14-day ${p?.name ?? planId} trial today.\n\nYou get ${p?.credits ?? 50} energy credits to power your AI campaigns. No charge until after your trial ends on day 15 — cancel anytime before then.`,
       [
         {
           text: 'Continue',
           onPress: () => {
             trialPlanIdRef.current = planId;
-            initiateWebPayment(holdAmount, 'subscription', planId);
+            initiateWebPayment(2, 'subscription', planId);
           },
         },
         { text: 'Cancel', style: 'cancel' },
@@ -725,13 +753,13 @@ export default function SubscriptionScreen() {
         {tab === 'plans' && (
           <Animated.View entering={FadeInDown.delay(100).duration(400)}>
             {/* Trial Banner — only for new eligible users (< 48 h old, never subscribed) */}
-            {!isActive && trialEligible && (
+            {!isActive && trialEligible === true && (
               <View style={styles.trialBanner}>
                 <View style={{ flex: 1 }}>
                   <Text style={styles.trialTitle}>14-Day Free Trial</Text>
                   <Text style={styles.trialDesc}>
                     Try AdRoom free for 14 days — <Text style={{ color: COLORS.neon, fontWeight: '700' }}>50 energy credits included, no charge until day 15</Text>.{'\n'}
-                    A $2 card hold confirms your payment method (refunded instantly). Pick a plan below to begin.
+                    Pick a plan below to begin your free trial.
                   </Text>
                 </View>
               </View>
@@ -743,9 +771,12 @@ export default function SubscriptionScreen() {
                 <View style={{ flex: 1 }}>
                   <Text style={[styles.trialTitle, { color: COLORS.amber }]}>You're on a 14-Day Trial</Text>
                   <Text style={styles.trialDesc}>
-                    {trialDaysLeft != null && trialDaysLeft > 0
-                      ? `${trialDaysLeft} day${trialDaysLeft !== 1 ? 's' : ''} remaining — your saved card will be charged on day 15.`
-                      : 'Your trial has ended. Your card will be charged shortly.'}{'\n'}
+                    {trialCountdown
+                      ? <Text><Text style={{ color: COLORS.amber, fontWeight: '800', fontVariant: ['tabular-nums'] }}>{trialCountdown}</Text> remaining — your card will be charged on day 15.</Text>
+                      : trialDaysLeft != null && trialDaysLeft > 0
+                        ? `${trialDaysLeft} day${trialDaysLeft !== 1 ? 's' : ''} remaining — your card will be charged on day 15.`
+                        : 'Your trial has ended. Your card will be charged shortly.'
+                    }{'\n'}
                     Want full access now? Tap <Text style={{ color: COLORS.amber, fontWeight: '700' }}>Skip Trial</Text> on any plan below.
                   </Text>
                 </View>
@@ -764,9 +795,10 @@ export default function SubscriptionScreen() {
 
               const handleCardPress = () => {
                 if (isCurrent) return;
+                if (trialEligible === null) return; // still checking eligibility — prevent premature action
                 if (canSkipTrial) {
                   handleSkipTrial(planId);
-                } else if (trialEligible && !isActive) {
+                } else if (trialEligible === true && !isActive) {
                   handleStartTrial(planId);
                 } else {
                   handleSubscribe(planId);
@@ -796,7 +828,7 @@ export default function SubscriptionScreen() {
                         <Text style={[styles.planName, { color: p.color }]}>{p.name}</Text>
                         <Text style={styles.planPrice}>
                           ${p.price}<Text style={styles.planPer}>/mo</Text>
-                          {trialEligible && !isActive && (
+                          {trialEligible === true && !isActive && (
                             <Text style={[styles.planPer, { color: COLORS.neon }]}> · 14 days free</Text>
                           )}
                         </Text>
@@ -844,16 +876,20 @@ export default function SubscriptionScreen() {
                         </Text>
                       </View>
                     ) : (
-                      <View style={[styles.planBtn, { backgroundColor: p.color }]}>
-                        <Text style={[styles.planBtnText, { color: '#000' }]}>
-                          {paymentLoading
-                            ? 'Processing...'
-                            : trialEligible && !isActive
-                              ? 'Start Free Trial'
-                              : isActive
-                                ? 'Switch Plan'
-                                : 'Subscribe'}
-                        </Text>
+                      <View style={[styles.planBtn, { backgroundColor: trialEligible === null && !isActive ? COLORS.border : p.color, opacity: trialEligible === null && !isActive ? 0.7 : 1 }]}>
+                        {trialEligible === null && !isActive ? (
+                          <ActivityIndicator size="small" color={COLORS.muted} />
+                        ) : (
+                          <Text style={[styles.planBtnText, { color: '#000' }]}>
+                            {paymentLoading
+                              ? 'Processing...'
+                              : trialEligible === true && !isActive
+                                ? 'Start Free Trial'
+                                : isActive
+                                  ? 'Switch Plan'
+                                  : 'Subscribe'}
+                          </Text>
+                        )}
                       </View>
                     )}
                   </TouchableOpacity>
@@ -1319,8 +1355,8 @@ export default function SubscriptionScreen() {
             <TouchableOpacity
               onPress={async () => {
                 setShowConfirmModal(false);
-                setWebViewLoading(true);
-                setShowPaymentWebView(true);
+                // Do NOT show the WebView here — initiateWebPayment opens it only after
+                // a valid URL is received from the backend. Opening it before causes a blank page.
                 if (confirmPayload?.type === 'subscription' && confirmPayload.planId) {
                   await initiateWebPayment(confirmPayload.amount, 'subscription', confirmPayload.planId);
                 } else if (confirmPayload?.type === 'topup' && confirmPayload.pack) {
