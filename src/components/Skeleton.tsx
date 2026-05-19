@@ -101,7 +101,7 @@ export const AuthLoadingSkeleton = () => {
         <Text style={splashStyles.brand}>
           AdRoom <Text style={{ color: '#00F0FF' }}>AI</Text>
         </Text>
-        <Text style={splashStyles.tagline}>Intelligent Marketing Framework</Text>
+        <Text style={splashStyles.tagline}>Autonomous Intelligent Marketing Framework</Text>
       </View>
       <View style={splashStyles.footer}>
         <View style={splashStyles.dotRow}>
