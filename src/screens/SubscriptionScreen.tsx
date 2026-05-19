@@ -65,6 +65,11 @@ export default function SubscriptionScreen() {
   const [autoTopUpSaving, setAutoTopUpSaving] = useState(false);
   const [retrying, setRetrying] = useState(false);
 
+  // Custom modal states (replace basic Alert.alert popups)
+  const [showTrialModal, setShowTrialModal] = useState(false);
+  const [trialModalPlanId, setTrialModalPlanId] = useState<string | null>(null);
+  const [showAuthModal, setShowAuthModal] = useState(false);
+
   // Trial eligibility: null = still checking, true = eligible, false = not eligible
   // Using null prevents the flash where plan buttons briefly show "Subscribe" before flipping to "Start Free Trial"
   const [trialEligible, setTrialEligible] = useState<boolean | null>(null);
@@ -282,7 +287,7 @@ export default function SubscriptionScreen() {
     setCardLoading(true);
     try {
       const { data: { session } } = await (await import('../services/supabase')).supabase.auth.getSession();
-      if (!session) { Alert.alert('Error', 'Please sign in again.'); return; }
+      if (!session) { setShowAuthModal(true); return; }
 
       const res = await fetch(`${API_URL}/api/billing/charge-card`, {
         method: 'POST',
@@ -365,7 +370,7 @@ export default function SubscriptionScreen() {
     setPinLoading(true);
     try {
       const { data: { session } } = await (await import('../services/supabase')).supabase.auth.getSession();
-      if (!session) { Alert.alert('Error', 'Please sign in again.'); return; }
+      if (!session) { setShowAuthModal(true); return; }
 
       const res = await fetch(`${API_URL}/api/billing/charge-card/validate-pin`, {
         method: 'POST',
@@ -419,21 +424,8 @@ export default function SubscriptionScreen() {
   };
 
   const handleStartTrial = async (planId: string) => {
-    const p = PLAN_DETAILS[planId as keyof typeof PLAN_DETAILS];
-    Alert.alert(
-      '14-Day Free Trial',
-      `Start your free 14-day ${p?.name ?? planId} trial today.\n\nYou get ${p?.credits ?? 50} energy credits to power your AI campaigns. No charge until after your trial ends on day 15 — cancel anytime before then.`,
-      [
-        {
-          text: 'Continue',
-          onPress: () => {
-            trialPlanIdRef.current = planId;
-            initiateWebPayment(2, 'subscription', planId);
-          },
-        },
-        { text: 'Cancel', style: 'cancel' },
-      ],
-    );
+    setTrialModalPlanId(planId);
+    setShowTrialModal(true);
   };
 
   const verifyAndActivateTrial = async (txRef: string, transactionId: string | undefined, planId: string): Promise<{ success: boolean; message: string }> => {
@@ -458,7 +450,7 @@ export default function SubscriptionScreen() {
       const { data: { session } } = await (await import('../services/supabase')).supabase.auth.getSession();
       if (!session) {
         setShowPaymentWebView(false);
-        Alert.alert('Error', 'Please sign in again.');
+        setShowAuthModal(true);
         return;
       }
 
@@ -1603,6 +1595,113 @@ export default function SubscriptionScreen() {
           </View>
         </KeyboardAvoidingView>
       </Modal>
+
+      {/* ── Trial Confirmation Modal ───────────────────────────────────────── */}
+      <Modal visible={showTrialModal} transparent animationType="fade" onRequestClose={() => setShowTrialModal(false)}>
+        <View style={styles.modalOverlay}>
+          <View style={styles.trialModalCard}>
+            {/* Header bar */}
+            <View style={styles.trialModalHeader}>
+              <View style={styles.trialModalIconWrap}>
+                <Star size={22} color="#F59E0B" />
+              </View>
+              <TouchableOpacity onPress={() => setShowTrialModal(false)} style={styles.modalClose}>
+                <X size={20} color={COLORS.muted} />
+              </TouchableOpacity>
+            </View>
+
+            <Text style={styles.trialModalBadge}>14-DAY FREE TRIAL</Text>
+            <Text style={styles.trialModalTitle}>
+              {PLAN_DETAILS[trialModalPlanId as keyof typeof PLAN_DETAILS]?.name ?? 'Pro'} Plan — Free for 14 Days
+            </Text>
+
+            {/* What you get */}
+            <View style={styles.trialFeatureBox}>
+              <View style={styles.trialFeatureRow}>
+                <Zap size={14} color={COLORS.neon} />
+                <Text style={styles.trialFeatureText}>
+                  <Text style={{ color: COLORS.neon, fontWeight: '800' }}>
+                    {PLAN_DETAILS[trialModalPlanId as keyof typeof PLAN_DETAILS]?.credits ?? 50}
+                  </Text>{' '}energy credits to power AI campaigns
+                </Text>
+              </View>
+              <View style={styles.trialFeatureRow}>
+                <Shield size={14} color="#10B981" />
+                <Text style={styles.trialFeatureText}>No charge until day 15 — cancel anytime</Text>
+              </View>
+              <View style={styles.trialFeatureRow}>
+                <CheckCircle size={14} color="#10B981" />
+                <Text style={styles.trialFeatureText}>Full access to all 4 autonomous AI agents</Text>
+              </View>
+              <View style={styles.trialFeatureRow}>
+                <Globe size={14} color={COLORS.purple} />
+                <Text style={styles.trialFeatureText}>Multi-platform publishing — Facebook, Instagram & more</Text>
+              </View>
+            </View>
+
+            {/* Pricing note */}
+            <View style={styles.trialPriceNote}>
+              <Text style={styles.trialPriceNoteText}>
+                After your trial, you'll be charged{' '}
+                <Text style={{ color: COLORS.amber, fontWeight: '700' }}>
+                  ${PLAN_DETAILS[trialModalPlanId as keyof typeof PLAN_DETAILS]?.price ?? '—'}/mo
+                </Text>
+                . We collect a small card verification fee now to confirm your card is active.
+              </Text>
+            </View>
+
+            {/* CTA */}
+            <TouchableOpacity
+              style={styles.trialCTA}
+              activeOpacity={0.85}
+              onPress={() => {
+                setShowTrialModal(false);
+                if (trialModalPlanId) {
+                  trialPlanIdRef.current = trialModalPlanId;
+                  initiateWebPayment(2, 'subscription', trialModalPlanId);
+                }
+              }}
+            >
+              <Star size={16} color="#000" style={{ marginRight: 6 }} />
+              <Text style={styles.trialCTAText}>Start My Free Trial</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity onPress={() => setShowTrialModal(false)} style={styles.trialCancelBtn} activeOpacity={0.7}>
+              <Text style={styles.trialCancelText}>Maybe Later</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* ── Session Expired / Not Signed In Modal ─────────────────────────── */}
+      <Modal visible={showAuthModal} transparent animationType="fade" onRequestClose={() => setShowAuthModal(false)}>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalCard}>
+            <View style={{ alignItems: 'center', marginBottom: 16 }}>
+              <View style={styles.authModalIconRing}>
+                <Lock size={28} color={COLORS.amber} />
+              </View>
+            </View>
+            <Text style={styles.modalTitle}>Session Expired</Text>
+            <Text style={styles.modalDesc}>
+              Your session has timed out. Please sign in again to continue.
+            </Text>
+            <TouchableOpacity
+              style={styles.authModalSignInBtn}
+              activeOpacity={0.85}
+              onPress={() => {
+                setShowAuthModal(false);
+                navigation.navigate('Login' as never);
+              }}
+            >
+              <Text style={styles.authModalSignInText}>Sign In</Text>
+            </TouchableOpacity>
+            <TouchableOpacity onPress={() => setShowAuthModal(false)} style={styles.modalSecondary} activeOpacity={0.7}>
+              <Text style={styles.modalSecondaryText}>Dismiss</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
     </>
   );
@@ -1711,8 +1810,65 @@ const styles = StyleSheet.create({
   txDesc: { color: COLORS.text, fontSize: 13, fontWeight: '500' },
   txDate: { color: COLORS.muted, fontSize: 11, marginTop: 2 },
   txAmount: { fontSize: 15, fontWeight: '800', marginLeft: 8 },
-  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'center', alignItems: 'center', padding: 20 },
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.75)', justifyContent: 'center', alignItems: 'center', padding: 20 },
   modalCard: { backgroundColor: COLORS.card, borderRadius: 20, padding: 24, width: '100%', borderWidth: 1, borderColor: COLORS.border },
+
+  // Trial Confirmation Modal
+  trialModalCard: {
+    backgroundColor: COLORS.card, borderRadius: 24, width: '100%',
+    borderWidth: 1, borderColor: 'rgba(112,0,255,0.3)',
+    overflow: 'hidden',
+  },
+  trialModalHeader: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    paddingHorizontal: 20, paddingTop: 20, paddingBottom: 0,
+  },
+  trialModalIconWrap: {
+    width: 44, height: 44, borderRadius: 14,
+    backgroundColor: 'rgba(245,158,11,0.12)', borderWidth: 1, borderColor: 'rgba(245,158,11,0.3)',
+    alignItems: 'center', justifyContent: 'center',
+  },
+  trialModalBadge: {
+    color: '#7C3AED', fontSize: 10, fontWeight: '800', letterSpacing: 1.5,
+    textTransform: 'uppercase', textAlign: 'center', marginTop: 16, marginBottom: 6,
+  },
+  trialModalTitle: {
+    color: '#FFFFFF', fontSize: 20, fontWeight: '900', textAlign: 'center',
+    paddingHorizontal: 20, marginBottom: 20, lineHeight: 26,
+  },
+  trialFeatureBox: {
+    marginHorizontal: 20, marginBottom: 16,
+    backgroundColor: 'rgba(0,240,255,0.04)', borderRadius: 14,
+    borderWidth: 1, borderColor: 'rgba(0,240,255,0.1)', padding: 14, gap: 10,
+  },
+  trialFeatureRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 10 },
+  trialFeatureText: { color: '#CBD5E1', fontSize: 13, flex: 1, lineHeight: 18 },
+  trialPriceNote: {
+    marginHorizontal: 20, marginBottom: 20,
+    backgroundColor: 'rgba(245,158,11,0.07)', borderRadius: 10,
+    borderWidth: 1, borderColor: 'rgba(245,158,11,0.18)', padding: 12,
+  },
+  trialPriceNoteText: { color: '#94A3B8', fontSize: 12, lineHeight: 17, textAlign: 'center' },
+  trialCTA: {
+    marginHorizontal: 20, marginBottom: 10,
+    backgroundColor: '#7C3AED', borderRadius: 14,
+    paddingVertical: 16, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
+  },
+  trialCTAText: { color: '#FFFFFF', fontWeight: '800', fontSize: 16 },
+  trialCancelBtn: { marginHorizontal: 20, marginBottom: 20, paddingVertical: 12, alignItems: 'center' },
+  trialCancelText: { color: '#475569', fontWeight: '600', fontSize: 14 },
+
+  // Session-Expired / Auth Modal
+  authModalIconRing: {
+    width: 64, height: 64, borderRadius: 20,
+    backgroundColor: 'rgba(245,158,11,0.1)', borderWidth: 1.5, borderColor: 'rgba(245,158,11,0.3)',
+    alignItems: 'center', justifyContent: 'center',
+  },
+  authModalSignInBtn: {
+    backgroundColor: '#7C3AED', borderRadius: 12, paddingVertical: 14,
+    alignItems: 'center', marginBottom: 10,
+  },
+  authModalSignInText: { color: '#FFFFFF', fontWeight: '800', fontSize: 15 },
   modalClose: { position: 'absolute', top: 16, right: 16, padding: 4 },
   modalTitle: { color: COLORS.text, fontSize: 18, fontWeight: '800', textAlign: 'center', marginBottom: 10 },
   modalDesc: { color: COLORS.muted, fontSize: 13, textAlign: 'center', lineHeight: 20, marginBottom: 20 },
