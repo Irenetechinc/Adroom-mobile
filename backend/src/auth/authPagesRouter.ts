@@ -320,10 +320,44 @@ router.get('/auth/reset-password', (_req: Request, res: Response) => {
 import { setOAuthCode, setOAuthError } from './oauthStore';
 
 /**
+ * Build a self-closing HTML page shown after OAuth.
+ * Uses window.close() so Chrome Custom Tabs dismiss automatically.
+ * The mobile app retrieves the auth code via polling — no deep-link redirect needed.
+ */
+function buildOAuthClosePage(isError: boolean, platform: string): string {
+  const icon = isError
+    ? `<svg viewBox="0 0 24 24" fill="none" stroke="#EF4444" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="15" y1="9" x2="9" y2="15"></line><line x1="9" y1="9" x2="15" y2="15"></line></svg>`
+    : `<svg viewBox="0 0 24 24" fill="none" stroke="#10B981" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>`;
+  const iconClass = isError ? 'error' : 'success';
+  const title = isError ? `${platform} connection failed` : `${platform} connected!`;
+  const body = isError
+    ? `Something went wrong. Please return to the AdRoom app and try again.`
+    : `Your ${platform} account has been authorised. Return to the AdRoom app to continue.`;
+
+  return `<!doctype html>
+<html lang="en">
+<head>${SHARED_HEAD}
+<script>
+  try { window.close(); } catch(e) {}
+  setTimeout(function() { try { window.close(); } catch(e) {} }, 500);
+</script>
+</head>
+<body>
+  <div class="card">
+    ${shellHeader()}
+    <div class="icon-wrap ${iconClass}">${icon}</div>
+    <h1>${title}</h1>
+    <p>${body}</p>
+    <p class="small">You can close this tab and return to AdRoom AI.</p>
+  </div>
+</body>
+</html>`;
+}
+
+/**
  * GET /auth/facebook/callback
  * Stores the code in the polling store so the mobile app can retrieve it,
  * then shows a "you can close this tab" page.
- * Also redirects to adroom:// for standalone builds that support deep links.
  */
 router.get('/auth/facebook/callback', (req: Request, res: Response) => {
   const code  = req.query.code  as string | undefined;
@@ -339,11 +373,8 @@ router.get('/auth/facebook/callback', (req: Request, res: Response) => {
     }
   }
 
-  if (error || !code) {
-    const reason = (req.query.error_reason as string) || error || 'access_denied';
-    return res.redirect(`adroom://auth/facebook/callback?error=${encodeURIComponent(reason)}`);
-  }
-  return res.redirect(`adroom://auth/facebook/callback?code=${encodeURIComponent(code)}${state ? `&state=${encodeURIComponent(state)}` : ''}`);
+  const isError = !!(error || !code);
+  return res.send(buildOAuthClosePage(isError, 'Facebook'));
 });
 
 /**
@@ -363,11 +394,8 @@ router.get('/auth/instagram/callback', (req: Request, res: Response) => {
     }
   }
 
-  if (error || !code) {
-    const reason = (req.query.error_reason as string) || error || 'access_denied';
-    return res.redirect(`adroom://auth/instagram/callback?error=${encodeURIComponent(reason)}`);
-  }
-  return res.redirect(`adroom://auth/instagram/callback?code=${encodeURIComponent(code)}${state ? `&state=${encodeURIComponent(state)}` : ''}`);
+  const isError = !!(error || !code);
+  return res.send(buildOAuthClosePage(isError, 'Instagram'));
 });
 
 /**
@@ -387,11 +415,8 @@ router.get('/auth/whatsapp/callback', (req: Request, res: Response) => {
     }
   }
 
-  if (error || !code) {
-    const reason = (req.query.error_reason as string) || error || 'access_denied';
-    return res.redirect(`adroom://auth/whatsapp/callback?error=${encodeURIComponent(reason)}`);
-  }
-  return res.redirect(`adroom://auth/whatsapp/callback?code=${encodeURIComponent(code)}${state ? `&state=${encodeURIComponent(state)}` : ''}`);
+  const isError = !!(error || !code);
+  return res.send(buildOAuthClosePage(isError, 'WhatsApp'));
 });
 
 export default router;

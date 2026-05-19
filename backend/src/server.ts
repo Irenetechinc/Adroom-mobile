@@ -2734,6 +2734,10 @@ app.post('/api/auth/register', async (req, res) => {
   try {
     const { email, password } = req.body;
     if (!email || !password) return res.status(400).json({ error: 'Email and password are required.' });
+    const emailFormatRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailFormatRegex.test(String(email).trim())) {
+      return res.status(400).json({ error: 'Please enter a valid email address (e.g. name@example.com).' });
+    }
     if (password.length < 6) return res.status(400).json({ error: 'Password must be at least 6 characters.' });
 
     const cleanEmail = email.trim().toLowerCase();
