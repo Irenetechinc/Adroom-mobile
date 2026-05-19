@@ -58,6 +58,11 @@ export default function SignupScreen({ navigation }: Props) {
       showAlert('Weak Password', 'Your password needs to be at least 6 characters long.', 'warning');
       return;
     }
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email.trim())) {
+      showAlert('Invalid Email', 'Please enter a valid email address (e.g. name@example.com).', 'warning');
+      return;
+    }
 
     setLoading(true);
     setDuplicateEmail(null);

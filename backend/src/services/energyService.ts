@@ -557,7 +557,7 @@ export class EnergyService {
   async isTrialEligible(userId: string): Promise<boolean> {
     const sub = await this.getSubscription(userId);
     if (sub?.trial_start) return false;
-    if (sub?.status && sub.status !== 'none' && sub.status !== 'cancelled') return false;
+    if (sub?.status && sub.status !== 'none' && sub.status !== 'cancelled' && sub.status !== 'inactive') return false;
 
     // Check account creation time via auth.users
     const { data } = await this.supabase.auth.admin.getUserById(userId).catch(() => ({ data: null })) as any;

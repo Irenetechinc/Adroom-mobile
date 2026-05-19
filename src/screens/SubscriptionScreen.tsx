@@ -131,7 +131,8 @@ export default function SubscriptionScreen() {
         if (!session) return;
 
         // Already have a subscription status — if active/trialing/expired, not eligible
-        if (subscription?.trial_start || (subscription?.status && subscription.status !== 'none' && subscription.status !== 'cancelled')) {
+        // 'inactive' is the default for new users and should still be eligible for the trial
+        if (subscription?.trial_start || (subscription?.status && subscription.status !== 'none' && subscription.status !== 'cancelled' && subscription.status !== 'inactive')) {
           setTrialEligible(false);
           return;
         }
@@ -427,7 +428,11 @@ export default function SubscriptionScreen() {
   const initiateWebPayment = async (amount: number, type: 'subscription' | 'topup', id: string) => {
     try {
       const { data: { session } } = await (await import('../services/supabase')).supabase.auth.getSession();
-      if (!session) { Alert.alert('Error', 'Please sign in again.'); return; }
+      if (!session) {
+        setShowPaymentWebView(false);
+        Alert.alert('Error', 'Please sign in again.');
+        return;
+      }
 
       const res = await fetch(`${API_URL}/api/billing/payment-link`, {
         method: 'POST',
@@ -436,13 +441,11 @@ export default function SubscriptionScreen() {
       });
       const data = await res.json();
       if (!res.ok || !data.payment_url) {
+        setShowPaymentWebView(false);
         Alert.alert('Payment Error', data.error || 'Could not generate payment link. Please try again.');
         return;
       }
 
-      // Open Flutterwave checkout in-app using a WebView modal so the user
-      // never leaves the app. The WebView intercepts the redirect to
-      // adroom://payment-callback to know when payment is complete.
       setPaymentWebUrl(data.payment_url);
       setPaymentTxRef(data.tx_ref);
       setPaymentType(type);
@@ -450,6 +453,7 @@ export default function SubscriptionScreen() {
       setWebViewLoading(true);
       setShowPaymentWebView(true);
     } catch (err: any) {
+      setShowPaymentWebView(false);
       Alert.alert('Payment Error', err.message || 'Something went wrong. Please try again.');
     }
   };
@@ -1313,12 +1317,14 @@ export default function SubscriptionScreen() {
             </View>
 
             <TouchableOpacity
-              onPress={() => {
+              onPress={async () => {
                 setShowConfirmModal(false);
+                setWebViewLoading(true);
+                setShowPaymentWebView(true);
                 if (confirmPayload?.type === 'subscription' && confirmPayload.planId) {
-                  initiateWebPayment(confirmPayload.amount, 'subscription', confirmPayload.planId);
+                  await initiateWebPayment(confirmPayload.amount, 'subscription', confirmPayload.planId);
                 } else if (confirmPayload?.type === 'topup' && confirmPayload.pack) {
-                  initiateWebPayment(confirmPayload.amount, 'topup', confirmPayload.pack.id);
+                  await initiateWebPayment(confirmPayload.amount, 'topup', confirmPayload.pack.id);
                 }
               }}
               style={[styles.modalDanger, { backgroundColor: confirmPayload?.color ?? COLORS.amber }]}

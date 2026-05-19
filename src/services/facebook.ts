@@ -41,19 +41,25 @@ export const FacebookService = {
       const TIMEOUT_MS = 5 * 60 * 1000;
       const start = Date.now();
 
+      const finish = (result: string | null) => {
+        clearInterval(poll);
+        WebBrowser.dismissBrowser().catch(() => {});
+        resolve(result);
+      };
+
       const poll = setInterval(async () => {
         if (Date.now() - start > TIMEOUT_MS) {
-          clearInterval(poll);
-          resolve(null);
+          finish(null);
           return;
         }
         try {
           const res = await fetch(`${BACKEND_URL}/auth/poll?state=${state}`);
           if (!res.ok) return;
           const data = await res.json();
-          if (data.error) { clearInterval(poll); resolve(null); return; }
+          if (data.error) { finish(null); return; }
           if (data.code) {
             clearInterval(poll);
+            WebBrowser.dismissBrowser().catch(() => {});
             try {
               const exchangeRes = await fetch(`${BACKEND_URL}/api/auth/facebook/exchange`, {
                 method: 'POST',
