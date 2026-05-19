@@ -1468,6 +1468,38 @@ export default function AgentChatScreen({ navigation, route }: Props) {
   const [isActive, setIsActive] = useState(false);
   const activityTimer = useRef<NodeJS.Timeout | null>(null);
 
+  // ── 48-hour free-trial countdown ────────────────────────────────────────────
+  const [trialCountdown, setTrialCountdown] = useState('');
+  const [trialWindowExpired, setTrialWindowExpired] = useState(false);
+  const trialTimerRef = useRef<NodeJS.Timeout | null>(null);
+
+  useEffect(() => {
+    if (!user?.created_at) return;
+    const expiresAt = new Date(user.created_at).getTime() + 48 * 60 * 60 * 1000;
+
+    const tick = () => {
+      const remaining = expiresAt - Date.now();
+      if (remaining <= 0) {
+        setTrialWindowExpired(true);
+        setTrialCountdown('');
+        if (trialTimerRef.current) clearInterval(trialTimerRef.current);
+        return;
+      }
+      setTrialWindowExpired(false);
+      const h = Math.floor(remaining / 3_600_000);
+      const m = Math.floor((remaining % 3_600_000) / 60_000);
+      const s = Math.floor((remaining % 60_000) / 1_000);
+      setTrialCountdown(
+        `${h}h ${String(m).padStart(2, '0')}m ${String(s).padStart(2, '0')}s`
+      );
+    };
+
+    tick();
+    trialTimerRef.current = setInterval(tick, 1000);
+    return () => { if (trialTimerRef.current) clearInterval(trialTimerRef.current); };
+  }, [user?.created_at]);
+  // ────────────────────────────────────────────────────────────────────────────
+
   const markActive = () => {
     setIsActive(true);
     if (activityTimer.current) clearTimeout(activityTimer.current);
@@ -1874,6 +1906,30 @@ export default function AgentChatScreen({ navigation, route }: Props) {
 
           // New user — never subscribed or started a trial
           if (!hasEverSubscribed) {
+            // Within 48h window → show trial CTA with live countdown
+            if (!trialWindowExpired) {
+              return (
+                <View style={{ backgroundColor: 'rgba(245,158,11,0.10)', borderTopWidth: 1, borderTopColor: 'rgba(245,158,11,0.30)', paddingHorizontal: 16, paddingTop: 12, paddingBottom: Math.max(12, insets.bottom + 8), flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                  <View style={{ width: 32, height: 32, borderRadius: 10, backgroundColor: 'rgba(245,158,11,0.15)', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                    <Text style={{ fontSize: 16 }}>👑</Text>
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={{ color: '#FCD34D', fontWeight: '700', fontSize: 13, marginBottom: 2 }}>Claim 14-Day Free Trial</Text>
+                    <Text style={{ color: '#94A3B8', fontSize: 12, lineHeight: 17 }}>
+                      {trialCountdown ? `Offer expires in ${trialCountdown}` : 'Limited-time offer for new users.'}
+                    </Text>
+                  </View>
+                  <TouchableOpacity
+                    onPress={() => (navigation as any).navigate('Subscription', {})}
+                    style={{ backgroundColor: '#F59E0B', borderRadius: 8, paddingHorizontal: 10, paddingVertical: 6 }}
+                  >
+                    <Text style={{ color: '#000000', fontWeight: '700', fontSize: 12 }}>Claim Now</Text>
+                  </TouchableOpacity>
+                </View>
+              );
+            }
+
+            // Past 48h → show regular subscribe banner
             return (
               <View style={{ backgroundColor: 'rgba(0,240,255,0.06)', borderTopWidth: 1, borderTopColor: 'rgba(0,240,255,0.15)', paddingHorizontal: 16, paddingTop: 12, paddingBottom: Math.max(12, insets.bottom + 8), flexDirection: 'row', alignItems: 'center', gap: 10 }}>
                 <View style={{ width: 32, height: 32, borderRadius: 10, backgroundColor: 'rgba(0,240,255,0.10)', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
@@ -1884,10 +1940,10 @@ export default function AgentChatScreen({ navigation, route }: Props) {
                   <Text style={{ color: '#94A3B8', fontSize: 12, lineHeight: 17 }}>Choose a plan to activate your AI marketing agents.</Text>
                 </View>
                 <TouchableOpacity
-                  onPress={() => (navigation as any).navigate('Subscription', { scrollToPlan: undefined })}
+                  onPress={() => (navigation as any).navigate('Subscription', {})}
                   style={{ backgroundColor: '#00F0FF', borderRadius: 8, paddingHorizontal: 10, paddingVertical: 6 }}
                 >
-                  <Text style={{ color: '#000000', fontWeight: '700', fontSize: 12 }}>Subscribe</Text>
+                  <Text style={{ color: '#000000', fontWeight: '700', fontSize: 12 }}>Subscribe Now</Text>
                 </TouchableOpacity>
               </View>
             );
