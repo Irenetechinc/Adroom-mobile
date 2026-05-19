@@ -24,6 +24,7 @@ import { checkFeatureAccess, getSubscriptionGuard, SUBSCRIPTION_PLAN_LIMITS } fr
 import adminRouter from './admin/adminRouter';
 import authPagesRouter from './auth/authPagesRouter';
 import { popOAuthEntry, setOAuthCode, setOAuthError } from './auth/oauthStore';
+import { validateEmail } from './utils/emailValidator';
 
 dotenv.config();
 
@@ -2808,9 +2809,9 @@ app.post('/api/auth/register', async (req, res) => {
   try {
     const { email, password } = req.body;
     if (!email || !password) return res.status(400).json({ error: 'Email and password are required.' });
-    const emailFormatRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailFormatRegex.test(String(email).trim())) {
-      return res.status(400).json({ error: 'Please enter a valid email address (e.g. name@example.com).' });
+    const emailCheck = validateEmail(String(email).trim());
+    if (!emailCheck.valid) {
+      return res.status(400).json({ error: emailCheck.error });
     }
     if (password.length < 6) return res.status(400).json({ error: 'Password must be at least 6 characters.' });
 
