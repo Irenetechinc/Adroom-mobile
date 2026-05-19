@@ -24,7 +24,7 @@ import { checkFeatureAccess, getSubscriptionGuard, SUBSCRIPTION_PLAN_LIMITS } fr
 import adminRouter from './admin/adminRouter';
 import authPagesRouter from './auth/authPagesRouter';
 import { popOAuthEntry, setOAuthCode, setOAuthError } from './auth/oauthStore';
-import { validateEmail } from './utils/emailValidator';
+import { validateEmailAsync } from './utils/emailValidator';
 
 dotenv.config();
 
@@ -2809,7 +2809,7 @@ app.post('/api/auth/register', async (req, res) => {
   try {
     const { email, password } = req.body;
     if (!email || !password) return res.status(400).json({ error: 'Email and password are required.' });
-    const emailCheck = validateEmail(String(email).trim());
+    const emailCheck = await validateEmailAsync(String(email).trim());
     if (!emailCheck.valid) {
       return res.status(400).json({ error: emailCheck.error });
     }
