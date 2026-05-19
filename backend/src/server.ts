@@ -23,7 +23,7 @@ import { energyCheck, deductEnergyForUser } from './services/energyMiddleware';
 import { checkFeatureAccess, getSubscriptionGuard, SUBSCRIPTION_PLAN_LIMITS } from './services/subscriptionGuard';
 import adminRouter from './admin/adminRouter';
 import authPagesRouter from './auth/authPagesRouter';
-import { popOAuthEntry } from './auth/oauthStore';
+import { popOAuthEntry, setOAuthCode, setOAuthError } from './auth/oauthStore';
 
 dotenv.config();
 
@@ -261,12 +261,51 @@ app.get('/auth/poll', (req, res) => {
   return res.json({ code: entry.code });
 });
 
+function buildOAuthClosePage(platform: string, success: boolean, message?: string): string {
+  const title = success ? 'Connected!' : 'Connection Failed';
+  const body = success
+    ? `Your ${platform} account has been authorized. Return to the AdRoom app to continue.`
+    : (message || `There was a problem connecting your ${platform} account. Please return to the app and try again.`);
+  const icon = success ? '✅' : '❌';
+  return `<!DOCTYPE html><html><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>${title} — AdRoom</title>
+<style>
+  :root{color-scheme:dark}*{box-sizing:border-box}
+  body{margin:0;padding:24px;min-height:100vh;display:flex;align-items:center;justify-content:center;
+    background:radial-gradient(120% 80% at 50% 0%,#0F172A 0%,#0B0F19 60%,#020617 100%);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;color:#E2E8F0}
+  .card{width:100%;max-width:420px;background:linear-gradient(180deg,#0F172A 0%,#0B0F19 100%);
+    border:1px solid #1E293B;border-radius:20px;padding:40px 28px;text-align:center;
+    box-shadow:0 30px 80px -20px rgba(0,0,0,0.6),0 0 0 1px rgba(0,240,255,0.05)}
+  .logo{font-size:22px;font-weight:800;color:#00F0FF;letter-spacing:0.5px}
+  .tag{color:#94A3B8;font-size:11px;text-transform:uppercase;letter-spacing:1.5px;margin-top:6px;margin-bottom:28px}
+  .icon{font-size:52px;margin-bottom:16px}
+  h1{font-size:22px;font-weight:800;margin:0 0 10px}
+  p{color:#94A3B8;font-size:14px;line-height:1.6;margin:0}
+  .hint{margin-top:24px;font-size:12px;color:#475569}
+</style></head><body><div class="card">
+  <div class="logo">AdRoom</div>
+  <div class="tag">AI Marketing Platform</div>
+  <div class="icon">${icon}</div>
+  <h1>${title}</h1>
+  <p>${body}</p>
+  <p class="hint">You can close this tab and return to the app.</p>
+</div></body></html>`;
+}
+
 app.get('/auth/facebook/callback', (req, res) => {
   const code = typeof req.query.code === 'string' ? req.query.code : undefined;
   const state = typeof req.query.state === 'string' ? req.query.state : undefined;
   const error = typeof req.query.error === 'string' ? req.query.error : undefined;
   const error_description = typeof req.query.error_description === 'string' ? req.query.error_description : undefined;
-  res.redirect(buildDeepLink('facebook', { code, state, error, error_description }));
+  if (state && code) {
+    setOAuthCode(state, code);
+    return res.send(buildOAuthClosePage('Facebook', true));
+  }
+  if (state && error) {
+    setOAuthError(state, error_description || error || 'oauth_error');
+  }
+  return res.send(buildOAuthClosePage('Facebook', false, error_description));
 });
 
 app.get('/auth/instagram/callback', (req, res) => {
@@ -274,7 +313,14 @@ app.get('/auth/instagram/callback', (req, res) => {
   const state = typeof req.query.state === 'string' ? req.query.state : undefined;
   const error = typeof req.query.error === 'string' ? req.query.error : undefined;
   const error_description = typeof req.query.error_description === 'string' ? req.query.error_description : undefined;
-  res.redirect(buildDeepLink('instagram', { code, state, error, error_description }));
+  if (state && code) {
+    setOAuthCode(state, code);
+    return res.send(buildOAuthClosePage('Instagram', true));
+  }
+  if (state && error) {
+    setOAuthError(state, error_description || error || 'oauth_error');
+  }
+  return res.send(buildOAuthClosePage('Instagram', false, error_description));
 });
 
 app.get('/auth/twitter/callback', (req, res) => {
@@ -282,7 +328,14 @@ app.get('/auth/twitter/callback', (req, res) => {
   const state = typeof req.query.state === 'string' ? req.query.state : undefined;
   const error = typeof req.query.error === 'string' ? req.query.error : undefined;
   const error_description = typeof req.query.error_description === 'string' ? req.query.error_description : undefined;
-  res.redirect(buildDeepLink('twitter', { code, state, error, error_description }));
+  if (state && code) {
+    setOAuthCode(state, code);
+    return res.send(buildOAuthClosePage('Twitter / X', true));
+  }
+  if (state && error) {
+    setOAuthError(state, error_description || error || 'oauth_error');
+  }
+  return res.send(buildOAuthClosePage('Twitter / X', false, error_description));
 });
 
 app.get('/auth/linkedin/callback', (req, res) => {
@@ -290,7 +343,14 @@ app.get('/auth/linkedin/callback', (req, res) => {
   const state = typeof req.query.state === 'string' ? req.query.state : undefined;
   const error = typeof req.query.error === 'string' ? req.query.error : undefined;
   const error_description = typeof req.query.error_description === 'string' ? req.query.error_description : undefined;
-  res.redirect(buildDeepLink('linkedin', { code, state, error, error_description }));
+  if (state && code) {
+    setOAuthCode(state, code);
+    return res.send(buildOAuthClosePage('LinkedIn', true));
+  }
+  if (state && error) {
+    setOAuthError(state, error_description || error || 'oauth_error');
+  }
+  return res.send(buildOAuthClosePage('LinkedIn', false, error_description));
 });
 
 app.get('/auth/tiktok/callback', (req, res) => {
@@ -299,8 +359,15 @@ app.get('/auth/tiktok/callback', (req, res) => {
   const state = typeof req.query.state === 'string' ? req.query.state : undefined;
   const error = typeof req.query.error === 'string' ? req.query.error : undefined;
   const error_description = typeof req.query.error_description === 'string' ? req.query.error_description : undefined;
-  // TikTok uses both 'code' and 'auth_code' depending on API version
-  res.redirect(buildDeepLink('tiktok', { code: code || auth_code, state, error, error_description }));
+  const finalCode = code || auth_code;
+  if (state && finalCode) {
+    setOAuthCode(state, finalCode);
+    return res.send(buildOAuthClosePage('TikTok', true));
+  }
+  if (state && error) {
+    setOAuthError(state, error_description || error || 'oauth_error');
+  }
+  return res.send(buildOAuthClosePage('TikTok', false, error_description));
 });
 
 app.get('/auth/whatsapp/callback', (req, res) => {
@@ -308,7 +375,14 @@ app.get('/auth/whatsapp/callback', (req, res) => {
   const state = typeof req.query.state === 'string' ? req.query.state : undefined;
   const error = typeof req.query.error === 'string' ? req.query.error : undefined;
   const error_description = typeof req.query.error_description === 'string' ? req.query.error_description : undefined;
-  res.redirect(buildDeepLink('whatsapp', { code, state, error, error_description }));
+  if (state && code) {
+    setOAuthCode(state, code);
+    return res.send(buildOAuthClosePage('WhatsApp Business', true));
+  }
+  if (state && error) {
+    setOAuthError(state, error_description || error || 'oauth_error');
+  }
+  return res.send(buildOAuthClosePage('WhatsApp Business', false, error_description));
 });
 
 /**
