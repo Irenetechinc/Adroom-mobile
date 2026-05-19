@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useFocusEffect } from '@react-navigation/native';
-import { View, Text, TouchableOpacity, Alert, StyleSheet, ScrollView } from 'react-native';
+import { View, Text, TouchableOpacity, Alert, StyleSheet, ScrollView, Modal, ActivityIndicator } from 'react-native';
 import { useAuthStore } from '../store/authStore';
 import { useProfileStore } from '../store/profileStore';
 import { useNotificationStore } from '../store/notificationStore';
@@ -56,6 +56,7 @@ export default function SettingsScreen() {
   const { signOut, user } = useAuthStore();
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const [signingOut, setSigningOut] = useState(false);
+  const [showSignOutModal, setShowSignOutModal] = useState(false);
   const insets = useSafeAreaInsets();
   const { account, subscription, fetchEnergy, isLoading: energyLoading } = useEnergyStore();
   const [ready, setReady] = useState(false);
@@ -87,24 +88,20 @@ export default function SettingsScreen() {
   const planInfo = PLAN_DETAILS[plan as keyof typeof PLAN_DETAILS];
   const balanceColor = balance > 20 ? '#00F0FF' : balance > 5 ? '#F59E0B' : '#EF4444';
 
-  const handleSignOut = async () => {
-    Alert.alert('Sign Out', 'Are you sure you want to sign out?', [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Sign Out',
-        style: 'destructive',
-        onPress: async () => {
-          setSigningOut(true);
-          try {
-            await signOut();
-          } catch {
-            Alert.alert('Error', 'Failed to sign out. Please try again.');
-          } finally {
-            setSigningOut(false);
-          }
-        },
-      },
-    ]);
+  const handleSignOut = () => {
+    setShowSignOutModal(true);
+  };
+
+  const confirmSignOut = async () => {
+    setShowSignOutModal(false);
+    setSigningOut(true);
+    try {
+      await signOut();
+    } catch {
+      Alert.alert('Error', 'Failed to sign out. Please try again.');
+    } finally {
+      setSigningOut(false);
+    }
   };
 
   const userInitial = profileInitial && profileInitial !== 'U'
@@ -268,6 +265,57 @@ export default function SettingsScreen() {
 
         <Text style={styles.versionText}>AdRoom AI • v2.2.7</Text>
       </ScrollView>
+
+      {/* ── Sign Out Confirmation Modal ──────────────────────────────────── */}
+      <Modal visible={showSignOutModal} transparent animationType="fade" onRequestClose={() => setShowSignOutModal(false)}>
+        <View style={styles.soOverlay}>
+          <View style={styles.soCard}>
+            {/* Icon */}
+            <View style={styles.soIconRing}>
+              <LogOut size={26} color="#EF4444" />
+            </View>
+
+            <Text style={styles.soTitle}>Sign Out?</Text>
+            <Text style={styles.soMessage}>
+              You'll be returned to the login screen. Your campaigns and data will be waiting when you come back.
+            </Text>
+
+            {/* User pill */}
+            {user?.email ? (
+              <View style={styles.soUserPill}>
+                <View style={styles.soUserAvatar}>
+                  <Text style={styles.soUserAvatarText}>{userInitial}</Text>
+                </View>
+                <Text style={styles.soUserEmail} numberOfLines={1}>{user.email}</Text>
+              </View>
+            ) : null}
+
+            {/* Buttons */}
+            <TouchableOpacity
+              onPress={confirmSignOut}
+              disabled={signingOut}
+              style={[styles.soSignOutBtn, signingOut && { opacity: 0.55 }]}
+              activeOpacity={0.85}
+            >
+              {signingOut
+                ? <ActivityIndicator color="#fff" size="small" />
+                : <>
+                    <LogOut size={16} color="#fff" />
+                    <Text style={styles.soSignOutBtnText}>Sign Out</Text>
+                  </>
+              }
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              onPress={() => setShowSignOutModal(false)}
+              style={styles.soStayBtn}
+              activeOpacity={0.7}
+            >
+              <Text style={styles.soStayBtnText}>Stay Signed In</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -341,4 +389,49 @@ const styles = StyleSheet.create({
   },
   signOutText: { color: '#EF4444', fontWeight: '700', fontSize: 15 },
   versionText: { color: '#1E293B', fontSize: 11, textAlign: 'center', marginTop: 8 },
+
+  // Sign-Out Modal
+  soOverlay: {
+    flex: 1, backgroundColor: 'rgba(0,0,0,0.75)',
+    justifyContent: 'center', alignItems: 'center', padding: 24,
+  },
+  soCard: {
+    backgroundColor: '#151B2B', borderRadius: 24, width: '100%',
+    borderWidth: 1, borderColor: '#1E293B',
+    alignItems: 'center', padding: 28,
+  },
+  soIconRing: {
+    width: 64, height: 64, borderRadius: 20,
+    backgroundColor: 'rgba(239,68,68,0.1)', borderWidth: 1.5, borderColor: 'rgba(239,68,68,0.3)',
+    alignItems: 'center', justifyContent: 'center', marginBottom: 18,
+  },
+  soTitle: { color: '#FFFFFF', fontSize: 22, fontWeight: '900', marginBottom: 8, textAlign: 'center' },
+  soMessage: {
+    color: '#64748B', fontSize: 14, textAlign: 'center', lineHeight: 20,
+    marginBottom: 20, paddingHorizontal: 8,
+  },
+  soUserPill: {
+    flexDirection: 'row', alignItems: 'center', gap: 10,
+    backgroundColor: 'rgba(0,240,255,0.06)', borderWidth: 1, borderColor: 'rgba(0,240,255,0.12)',
+    borderRadius: 12, paddingVertical: 10, paddingHorizontal: 14,
+    marginBottom: 24, width: '100%',
+  },
+  soUserAvatar: {
+    width: 32, height: 32, borderRadius: 10,
+    backgroundColor: 'rgba(0,240,255,0.12)', borderWidth: 1, borderColor: 'rgba(0,240,255,0.25)',
+    alignItems: 'center', justifyContent: 'center',
+  },
+  soUserAvatarText: { color: '#00F0FF', fontWeight: '800', fontSize: 14 },
+  soUserEmail: { color: '#94A3B8', fontSize: 13, flex: 1 },
+  soSignOutBtn: {
+    width: '100%', backgroundColor: '#EF4444', borderRadius: 14,
+    paddingVertical: 15, flexDirection: 'row', alignItems: 'center',
+    justifyContent: 'center', gap: 8, marginBottom: 10,
+  },
+  soSignOutBtnText: { color: '#FFFFFF', fontWeight: '800', fontSize: 16 },
+  soStayBtn: {
+    width: '100%', borderWidth: 1, borderColor: '#1E293B',
+    borderRadius: 14, paddingVertical: 14, alignItems: 'center',
+  },
+  soStayBtnText: { color: '#64748B', fontWeight: '600', fontSize: 15 },
 });
