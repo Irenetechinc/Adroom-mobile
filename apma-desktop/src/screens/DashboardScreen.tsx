@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useRef, useState, useCallback } from 'react';
 import { apmaApi } from '../services/api';
 import { clearCredentials } from '../services/api';
 import { useAuthStore, useDashboardStore } from '../store';
@@ -9,7 +9,22 @@ import RecommendationsList from '../components/RecommendationsList';
 import ThemesPanel from '../components/ThemesPanel';
 import BlogsPanel from '../components/BlogsPanel';
 
-type Tab = 'overview' | 'actions' | 'recommendations' | 'blogs';
+type Tab = 'overview' | 'actions' | 'recommendations' | 'blogs' | 'monitor';
+
+const EVENT_COLOURS: Record<string, string> = {
+  start:           '#818CF8',
+  perception_start:'#38BDF8',
+  perception_done: '#22D3EE',
+  score_updated:   '#34D399',
+  decision_start:  '#FBBF24',
+  decision_done:   '#F59E0B',
+  action_start:    '#FB923C',
+  action_done:     '#22C55E',
+  action_resume:   '#F472B6',
+  cycle_complete:  '#A78BFA',
+  prediction_start:'#60A5FA',
+  prediction_done: '#93C5FD',
+};
 
 export default function DashboardScreen() {
   const { clearAuth } = useAuthStore();
@@ -20,6 +35,9 @@ export default function DashboardScreen() {
   const [actions, setActions] = useState<any>(null);
   const [recs, setRecs] = useState<any[]>([]);
   const [blogs, setBlogs] = useState<any[]>([]);
+  const [monitorEvents, setMonitorEvents] = useState<any[]>([]);
+  const monitorSeqRef = useRef<number>(0);
+  const monitorTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const fetchAll = useCallback(async () => {
     setLoading(true);
@@ -50,6 +68,26 @@ export default function DashboardScreen() {
     return () => clearInterval(interval);
   }, [fetchAll]);
 
+  // Monitor tab: poll events every 5 s while active
+  useEffect(() => {
+    if (tab !== 'monitor') {
+      if (monitorTimerRef.current) { clearInterval(monitorTimerRef.current); monitorTimerRef.current = null; }
+      return;
+    }
+    async function pollEvents() {
+      try {
+        const res = await apmaApi.events(monitorSeqRef.current);
+        if (res.events.length > 0) {
+          monitorSeqRef.current = res.latest_seq;
+          setMonitorEvents((prev) => [...prev, ...res.events].slice(-200));
+        }
+      } catch {}
+    }
+    pollEvents();
+    monitorTimerRef.current = setInterval(pollEvents, 5000);
+    return () => { if (monitorTimerRef.current) { clearInterval(monitorTimerRef.current); monitorTimerRef.current = null; } };
+  }, [tab]);
+
   async function handleSignOut() {
     await clearCredentials();
     clearAuth();
@@ -69,6 +107,7 @@ export default function DashboardScreen() {
     { id: 'actions',         label: 'Actions'         },
     { id: 'recommendations', label: 'Recommendations' },
     { id: 'blogs',           label: 'Blogs'           },
+    { id: 'monitor',         label: '⬤ Monitor'       },
   ];
 
   return (
@@ -174,6 +213,50 @@ export default function DashboardScreen() {
           <div className="card">
             <h3 style={{ fontWeight:600, marginBottom:16, color:'#f1f5f9', fontSize:14 }}>Blog Network</h3>
             <BlogsPanel blogs={blogs} />
+          </div>
+        )}
+
+        {tab === 'monitor' && (
+          <div className="card" style={{ display:'flex', flexDirection:'column', gap:0 }}>
+            <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:14 }}>
+              <h3 style={{ fontWeight:600, color:'#f1f5f9', fontSize:14, margin:0 }}>Live Cycle Monitor</h3>
+              <div style={{ display:'flex', alignItems:'center', gap:10 }}>
+                <div style={{ width:8, height:8, borderRadius:'50%', background: monitorTimerRef.current ? '#22C55E' : '#475569' }} />
+                <span style={{ fontSize:11, color:'#64748b' }}>{monitorTimerRef.current ? 'Polling every 5s' : 'Idle'}</span>
+                <button
+                  onClick={() => { setMonitorEvents([]); monitorSeqRef.current = 0; }}
+                  style={{ background:'none', border:'1px solid #334155', color:'#94a3b8', borderRadius:5, padding:'3px 10px', fontSize:11, cursor:'pointer' }}
+                >
+                  Clear
+                </button>
+              </div>
+            </div>
+            <div style={{ height:480, overflowY:'auto', background:'#0a1628', borderRadius:8, padding:'12px 14px', fontFamily:'monospace', fontSize:11, display:'flex', flexDirection:'column', gap:4 }}>
+              {monitorEvents.length === 0 ? (
+                <span style={{ color:'#475569' }}>No cycle events yet. Events appear here every 15 minutes when a campaign cycle runs.</span>
+              ) : (
+                monitorEvents.map((ev, i) => {
+                  const colour = EVENT_COLOURS[ev.event as string] ?? '#94a3b8';
+                  const ts = new Date(ev.ts).toLocaleTimeString();
+                  const label = ev.event.replace(/_/g, ' ').replace(/\b\w/g, (c: string) => c.toUpperCase());
+                  const clientName = ev.client_name ? ` [${ev.client_name}]` : '';
+                  let detail = '';
+                  if (ev.data?.client)               detail = ` — ${ev.data.client}`;
+                  else if (ev.data?.executed != null) detail = ` — ${ev.data.executed} ok / ${ev.data.failed} fail`;
+                  else if (ev.data?.sample_size)      detail = ` — ${ev.data.sample_size} samples, sentiment ${(ev.data.overall_sentiment ?? 0).toFixed(2)}`;
+                  else if (ev.data?.narrative_score != null) detail = ` — score ${ev.data.narrative_score.toFixed(2)}`;
+                  else if (ev.data?.total_actions)    detail = ` — ${ev.data.total_actions} actions`;
+                  return (
+                    <div key={i} style={{ display:'flex', gap:6 }}>
+                      <span style={{ color:'#475569', flexShrink:0 }}>[{ts}]</span>
+                      <span style={{ color:'#6366f1', flexShrink:0 }}>{clientName}</span>
+                      <span style={{ color:colour, fontWeight:600, flexShrink:0 }}>{label}</span>
+                      <span style={{ color:'#94a3b8' }}>{detail}</span>
+                    </div>
+                  );
+                })
+              )}
+            </div>
           </div>
         )}
       </div>

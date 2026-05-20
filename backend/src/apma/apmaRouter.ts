@@ -6,6 +6,7 @@ import { apmaHumanizerService } from './apmaHumanizerService';
 import { apmaPerceptionService } from './apmaPerceptionService';
 import { apmaDecisionService } from './apmaDecisionService';
 import { registerSSEClient, unregisterSSEClient } from '../events/sseBroadcast';
+import { getAPMAEvents, getLatestSeq } from './apmaEventLog';
 
 export const apmaAdminRouter = Router();   // mounted at /admin/apma  (admin-JWT protected in adminRouter)
 export const apmaClientRouter = Router();  // mounted at /api/apma/client  (APMA API-key protected)
@@ -218,6 +219,13 @@ apmaAdminRouter.post('/self-improvement/:id/deploy', async (req, res) => {
   res.json({ ok: true });
 });
 
+// ─── Recent cycle events (for admin live monitor polling) ─────────────────
+apmaAdminRouter.get('/events', (req, res) => {
+  const since = req.query.since != null ? parseInt(String(req.query.since), 10) : undefined;
+  const events = getAPMAEvents(since);
+  res.json({ events, latest_seq: getLatestSeq() });
+});
+
 // ─── System stats ─────────────────────────────────────────────────────────
 apmaAdminRouter.get('/stats', async (_req, res) => {
   const sb = getServiceSupabaseClient();
@@ -242,6 +250,23 @@ apmaAdminRouter.get('/stats', async (_req, res) => {
 // ════════════════════════════════════════════════════════════════════════════
 
 apmaClientRouter.use(apmaClientAuth);
+
+// ─── Recent cycle events (desktop app live monitor polling) ──────────────
+apmaClientRouter.get('/events', async (req: any, res) => {
+  const since = req.query.since != null ? parseInt(String(req.query.since), 10) : undefined;
+  // Resolve the client's active campaign_id for filtering
+  const sb = getServiceSupabaseClient();
+  const { data: campaign } = await sb
+    .from('apma_campaigns')
+    .select('id')
+    .eq('client_id', req.apmaClientId)
+    .eq('status', 'active')
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .single();
+  const events = getAPMAEvents(since, campaign?.id);
+  res.json({ events, latest_seq: getLatestSeq() });
+});
 
 apmaClientRouter.get('/dashboard', async (req: any, res) => {
   const data = await apmaOrchestrator.getClientDashboard(req.apmaClientId);

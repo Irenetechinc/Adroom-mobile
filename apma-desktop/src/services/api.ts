@@ -65,4 +65,5 @@ export const apmaApi = {
   actions:         (since?: string) => apiFetch<any>(`/actions${since ? `?since=${since}` : ''}`),
   blogs:           () => apiFetch<any>('/blogs'),
   vetoRec:         (id: string) => apiFetch<any>(`/veto/${id}`, { method: 'POST' }),
+  events:          (since?: number) => apiFetch<{ events: any[]; latest_seq: number }>(`/events${since != null ? `?since=${since}` : ''}`),
 };

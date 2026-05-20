@@ -211,4 +211,60 @@ export class AIEngine {
       return null;
     }
   }
+
+  async generateVideo(
+    promptText: string,
+    imageBase64?: string | null,
+    imageMime = 'image/png',
+  ): Promise<{ url: string; taskId: string } | null> {
+    const key = process.env.RUNWAY_API_KEY || '';
+    if (!key) { aiLog('RUNWAY', 'generateVideo SKIP — RUNWAY_API_KEY not set'); return null; }
+    aiLog('RUNWAY', `generateVideo START — prompt: ${promptText.slice(0, 80)}...`);
+    try {
+      const body: Record<string, unknown> = {
+        model: 'gen3a_turbo',
+        promptText: promptText.slice(0, 512),
+        duration: 5,
+        ratio: '1280:768',
+      };
+      if (imageBase64) {
+        body.promptImage = `data:${imageMime};base64,${imageBase64}`;
+      }
+      const createRes = await fetch('https://api.runwayml.com/v1/image_to_video', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${key}`,
+          'Content-Type': 'application/json',
+          'X-Runway-Version': '2024-11-06',
+        },
+        body: JSON.stringify(body),
+      });
+      if (!createRes.ok) {
+        const err = await createRes.json().catch(() => ({}));
+        throw new Error((err as any)?.error || `Runway API error ${createRes.status}`);
+      }
+      const { id: taskId } = await createRes.json();
+      if (!taskId) throw new Error('No task ID from Runway');
+
+      const deadline = Date.now() + 120_000;
+      while (Date.now() < deadline) {
+        await new Promise((r) => setTimeout(r, 8000));
+        const pollRes = await fetch(`https://api.runwayml.com/v1/tasks/${taskId}`, {
+          headers: { Authorization: `Bearer ${key}`, 'X-Runway-Version': '2024-11-06' },
+        });
+        if (!pollRes.ok) continue;
+        const task = await pollRes.json();
+        if (task.status === 'SUCCEEDED' && task.output?.[0]) {
+          aiLog('RUNWAY', 'generateVideo SUCCESS');
+          return { url: task.output[0] as string, taskId };
+        }
+        if (task.status === 'FAILED') throw new Error('Runway video generation failed');
+      }
+      aiLog('RUNWAY', 'generateVideo TIMEOUT — task not completed in 120s');
+      return null;
+    } catch (e: any) {
+      aiLog('RUNWAY', 'generateVideo ERROR', e.message);
+      return null;
+    }
+  }
 }
