@@ -226,6 +226,45 @@ apmaAdminRouter.get('/events', (req, res) => {
   res.json({ events, latest_seq: getLatestSeq() });
 });
 
+// ─── Predicted political events for a campaign (admin) ────────────────────
+apmaAdminRouter.get('/campaigns/:id/predicted-events', async (req, res) => {
+  const { id } = req.params;
+  const horizon = Math.min(90, Math.max(7, parseInt(String(req.query.horizon ?? '30'), 10))) as 7 | 30 | 90;
+  const sb = getServiceSupabaseClient();
+  const { data: campaign } = await sb
+    .from('apma_campaigns')
+    .select('*, apma_clients!apma_campaigns_client_id_fkey(*)')
+    .eq('id', id)
+    .single();
+  if (!campaign) return res.status(404).json({ error: 'Campaign not found' });
+  try {
+    const client = campaign.apma_clients;
+    const events = await apmaDecisionService.predictUpcomingEvents(client, campaign, horizon as 7 | 30 | 90);
+    res.json({ events, campaign_id: id, horizon });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── Predicted events for ALL active campaigns (admin calendar) ────────────
+apmaAdminRouter.get('/predicted-events', async (req, res) => {
+  const horizon = Math.min(90, Math.max(7, parseInt(String(req.query.horizon ?? '30'), 10))) as 7 | 30 | 90;
+  const sb = getServiceSupabaseClient();
+  const { data: rows } = await sb
+    .from('apma_campaigns')
+    .select('*, apma_clients!apma_campaigns_client_id_fkey(*)')
+    .eq('status', 'active');
+  const results: any[] = [];
+  for (const row of rows ?? []) {
+    try {
+      const evts = await apmaDecisionService.predictUpcomingEvents(row.apma_clients, row, horizon);
+      for (const e of evts) results.push({ ...e, campaign_id: row.id, campaign_name: row.name, client_name: row.apma_clients?.name });
+    } catch { /* skip failed */ }
+  }
+  results.sort((a, b) => a.date.localeCompare(b.date));
+  res.json({ events: results, horizon });
+});
+
 // ─── System stats ─────────────────────────────────────────────────────────
 apmaAdminRouter.get('/stats', async (_req, res) => {
   const sb = getServiceSupabaseClient();
@@ -334,4 +373,26 @@ apmaClientRouter.get('/blogs', async (req: any, res) => {
   const sb = getServiceSupabaseClient();
   const { data } = await sb.from('apma_blog_sites').select('id, name, domain, status, article_count, monthly_visits, created_at').eq('client_id', req.apmaClientId).order('created_at', { ascending: false });
   res.json({ blogs: data ?? [] });
+});
+
+// ─── Predicted events (client-facing calendar) ────────────────────────────
+apmaClientRouter.get('/predicted-events', async (req: any, res) => {
+  const horizon = Math.min(90, Math.max(7, parseInt(String(req.query.horizon ?? '30'), 10))) as 7 | 30 | 90;
+  const sb = getServiceSupabaseClient();
+  const { data: campaign } = await sb
+    .from('apma_campaigns')
+    .select('*, apma_clients!apma_campaigns_client_id_fkey(*)')
+    .eq('client_id', req.apmaClientId)
+    .eq('status', 'active')
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .single();
+  if (!campaign) return res.json({ events: [], horizon });
+  try {
+    const client = campaign.apma_clients;
+    const events = await apmaDecisionService.predictUpcomingEvents(client, campaign, horizon);
+    res.json({ events, campaign_id: campaign.id, horizon });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
 });

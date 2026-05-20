@@ -66,4 +66,5 @@ export const apmaApi = {
   blogs:           () => apiFetch<any>('/blogs'),
   vetoRec:         (id: string) => apiFetch<any>(`/veto/${id}`, { method: 'POST' }),
   events:          (since?: number) => apiFetch<{ events: any[]; latest_seq: number }>(`/events${since != null ? `?since=${since}` : ''}`),
+  predictedEvents: (horizon: 7 | 30 | 90 = 30) => apiFetch<{ events: any[]; campaign_id?: string; horizon: number }>(`/predicted-events?horizon=${horizon}`),
 };
