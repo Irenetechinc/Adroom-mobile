@@ -8,8 +8,9 @@ import ActionsGrid from '../components/ActionsGrid';
 import RecommendationsList from '../components/RecommendationsList';
 import ThemesPanel from '../components/ThemesPanel';
 import BlogsPanel from '../components/BlogsPanel';
+import PredictiveCalendar from '../components/PredictiveCalendar';
 
-type Tab = 'overview' | 'actions' | 'recommendations' | 'blogs' | 'monitor';
+type Tab = 'overview' | 'actions' | 'recommendations' | 'blogs' | 'calendar' | 'monitor';
 
 const EVENT_COLOURS: Record<string, string> = {
   start:           '#818CF8',
@@ -107,6 +108,7 @@ export default function DashboardScreen() {
     { id: 'actions',         label: 'Actions'         },
     { id: 'recommendations', label: 'Recommendations' },
     { id: 'blogs',           label: 'Blogs'           },
+    { id: 'calendar',        label: '📅 Calendar'     },
     { id: 'monitor',         label: '⬤ Monitor'       },
   ];
 
@@ -213,6 +215,16 @@ export default function DashboardScreen() {
           <div className="card">
             <h3 style={{ fontWeight:600, marginBottom:16, color:'#f1f5f9', fontSize:14 }}>Blog Network</h3>
             <BlogsPanel blogs={blogs} />
+          </div>
+        )}
+
+        {tab === 'calendar' && (
+          <div className="card">
+            <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:18 }}>
+              <h3 style={{ fontWeight:600, color:'#f1f5f9', fontSize:14, margin:0 }}>Predictive Events Calendar</h3>
+              <span style={{ fontSize:11, color:'#64748b' }}>AI-predicted political & narrative events requiring campaign action</span>
+            </div>
+            <PredictiveCalendar />
           </div>
         )}
 

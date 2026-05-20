@@ -25,11 +25,15 @@
       "dist-electron/**/*"
     ],
     "win": {
-      "target": ["nsis"],
+      "target": [
+        "nsis"
+      ],
       "icon": "assets/icon.ico"
     },
     "mac": {
-      "target": ["dmg"],
+      "target": [
+        "dmg"
+      ],
       "icon": "assets/icon.icns",
       "category": "public.app-category.business"
     },
@@ -53,6 +57,6 @@
     "electron": "^31.0.0",
     "electron-builder": "^24.13.3",
     "typescript": "^5.5.3",
-    "vite": "^5.3.4"
+    "vite": "^5.4.21"
   }
 }
