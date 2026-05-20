@@ -4,6 +4,7 @@ import { getServiceSupabaseClient } from '../config/supabase';
 import { SUBSCRIPTION_PLAN_LIMITS } from '../services/subscriptionGuard';
 import { pushService } from '../services/pushService';
 import { apmaAdminRouter } from '../apma/apmaRouter';
+import { broadcast as _sseBroadcast, registerSSEClient, unregisterSSEClient } from '../events/sseBroadcast';
 
 const router = Router();
 
@@ -18,17 +19,10 @@ if (!ADMIN_CONFIGURED) {
   console.warn('[Admin] ADMIN_EMAIL and/or ADMIN_PASSWORD not set — admin login is disabled until both are configured.');
 }
 
-// ─── SSE broadcast registry ──────────────────────────────────────────────────
-const sseClients = new Set<Response>();
-
-function broadcast(event: string, data: unknown) {
-  const msg = `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
-  sseClients.forEach((c) => { try { c.write(msg); } catch { sseClients.delete(c); } });
-}
-
+// ─── SSE broadcast helpers ────────────────────────────────────────────────────
 // Exported so server.ts can broadcast from its own routes
 export function adminBroadcast(event: string, data: unknown) {
-  broadcast(event, data);
+  _sseBroadcast(event, data);
 }
 
 // ─── Token helpers ────────────────────────────────────────────────────────────
@@ -922,10 +916,10 @@ router.get('/api/stream', auth, (req, res) => {
   // onopen until an actual event arrives.
   try { res.write('event: connected\ndata: {}\n\n'); } catch {}
 
-  sseClients.add(res);
+  registerSSEClient(res);
 
   const ping = setInterval(() => {
-    try { res.write(': ping\n\n'); } catch { clearInterval(ping); sseClients.delete(res); }
+    try { res.write(': ping\n\n'); } catch { clearInterval(ping); unregisterSSEClient(res); }
   }, 15000);
 
   const pollActivity = setInterval(async () => {
@@ -955,7 +949,7 @@ router.get('/api/stream', auth, (req, res) => {
   req.on('close', () => {
     clearInterval(ping);
     clearInterval(pollActivity);
-    sseClients.delete(res);
+    unregisterSSEClient(res);
   });
 });
 

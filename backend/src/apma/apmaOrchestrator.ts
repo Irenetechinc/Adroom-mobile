@@ -3,7 +3,12 @@ import { AIEngine } from '../config/ai-models';
 import { apmaPerceptionService } from './apmaPerceptionService';
 import { apmaDecisionService } from './apmaDecisionService';
 import { apmaActionService } from './apmaActionService';
+import { broadcast } from '../events/sseBroadcast';
 import type { APMAClient, APMACampaign, ClientDashboardData } from './apmaTypes';
+
+function apmaBroadcast(step: string, campaignId: string, data: Record<string, unknown>) {
+  broadcast('apma_cycle', { step, campaign_id: campaignId, ts: new Date().toISOString(), ...data });
+}
 
 export class APMAOrchestrator {
   private ai = AIEngine.getInstance();
@@ -34,9 +39,12 @@ export class APMAOrchestrator {
   }
 
   private async _processCampaign(client: APMAClient, campaign: APMACampaign): Promise<void> {
+    const cid = campaign.id;
     console.log(`[APMA] Processing: ${client.name} — ${campaign.name} (${client.country})`);
+    apmaBroadcast('start', cid, { client: client.name, campaign: campaign.name, country: client.country });
 
     // 1. Perception — gather political sentiment from the internet
+    apmaBroadcast('perception_start', cid, { keywords: campaign.keywords });
     const snapshot = await apmaPerceptionService.runPerceptionCycle(
       client.id,
       campaign.id,
@@ -45,10 +53,18 @@ export class APMAOrchestrator {
       client.country,
     );
     console.log(`[APMA] Perception: ${snapshot.sample_size} conversations, sentiment ${snapshot.overall_sentiment.toFixed(3)}`);
+    apmaBroadcast('perception_done', cid, {
+      sample_size: snapshot.sample_size,
+      overall_sentiment: snapshot.overall_sentiment,
+      dominant_topic: snapshot.dominant_topic,
+      threats: snapshot.threat_signals.slice(0, 3),
+      opportunities: snapshot.opportunity_signals.slice(0, 3),
+    });
 
     // 2. Update live narrative score
     const score = await apmaPerceptionService.computeNarrativeScore(client.id, campaign.id, 24);
     await this._updateNarrativeScore(client.id, campaign.id, score);
+    apmaBroadcast('score_updated', cid, { narrative_score: score, target: campaign.narrative_score_target });
 
     // 3. Record sentiment history
     const sb = getServiceSupabaseClient();
@@ -65,19 +81,31 @@ export class APMAOrchestrator {
 
     if (!hasPlannedToday) {
       console.log('[APMA] Generating daily plan...');
+      apmaBroadcast('decision_start', cid, { message: 'Generating daily plan...' });
       const plan = await apmaDecisionService.generateDailyPlan(client, campaign, snapshot);
+      apmaBroadcast('decision_done', cid, {
+        objective: plan.objective,
+        action_batches: plan.actions.length,
+        blog_tasks: plan.blog_tasks?.length ?? 0,
+        group_tasks: plan.group_tasks?.length ?? 0,
+      });
+
       const strategy = await this._getLatestStrategy(campaign.id);
       if (strategy) {
         console.log(`[APMA] Executing plan: ${plan.actions.length} action batches`);
+        apmaBroadcast('action_start', cid, { strategy_id: strategy.id, total_actions: plan.actions.reduce((s, a) => s + a.count, 0) });
         const { executed, failed } = await apmaActionService.executePlan(client, campaign, plan, strategy.id);
         console.log(`[APMA] Execution complete: ${executed} succeeded, ${failed} failed`);
+        apmaBroadcast('action_done', cid, { executed, failed });
       }
     } else {
       // Mid-cycle: resume any pending actions
       const pending = await this._getPendingStrategy(campaign.id);
       if (pending && pending.actions_done < pending.actions_total) {
         console.log('[APMA] Resuming pending strategy...');
-        await apmaActionService.executePlan(client, campaign, pending.plan, pending.id);
+        apmaBroadcast('action_resume', cid, { actions_done: pending.actions_done, actions_total: pending.actions_total });
+        const { executed, failed } = await apmaActionService.executePlan(client, campaign, pending.plan, pending.id);
+        apmaBroadcast('action_done', cid, { executed, failed });
       }
     }
 
@@ -86,6 +114,8 @@ export class APMAOrchestrator {
 
     // 6. Auto-implement non-sensitive recommendations
     await this._implementPendingRecommendations(client.id, campaign.id);
+
+    apmaBroadcast('cycle_complete', cid, { narrative_score: score });
   }
 
   private async _runSelfImprovementCheck(client: APMAClient, campaign: APMACampaign, snapshot: any): Promise<void> {
