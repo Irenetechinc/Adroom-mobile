@@ -3,7 +3,6 @@ import { AIEngine } from '../config/ai-models';
 import { apmaPerceptionService } from './apmaPerceptionService';
 import { apmaDecisionService } from './apmaDecisionService';
 import { apmaActionService } from './apmaActionService';
-import { apmaHumanizerService } from './apmaHumanizerService';
 import type { APMAClient, APMACampaign, ClientDashboardData } from './apmaTypes';
 
 export class APMAOrchestrator {
@@ -12,13 +11,21 @@ export class APMAOrchestrator {
 
   // ─── Main autonomous cycle (called by scheduler every 15 min) ────────────
   async runCycle(): Promise<void> {
-    if (this.running) return;
+    if (this.running) {
+      console.log('[APMA] Cycle already running — skipping');
+      return;
+    }
     this.running = true;
     try {
       const campaigns = await this._getActiveCampaigns();
+      if (!campaigns.length) {
+        console.log('[APMA] No active campaigns — cycle skipped');
+        return;
+      }
+      console.log(`[APMA] Processing ${campaigns.length} active campaign(s)...`);
       for (const { client, campaign } of campaigns) {
         await this._processCampaign(client, campaign).catch((err) =>
-          console.error(`[APMA] Campaign ${campaign.id} error:`, err?.message),
+          console.error(`[APMA] Campaign ${campaign.id} (${campaign.name}) error:`, err?.message),
         );
       }
     } finally {
@@ -27,10 +34,17 @@ export class APMAOrchestrator {
   }
 
   private async _processCampaign(client: APMAClient, campaign: APMACampaign): Promise<void> {
-    // 1. Perception — gather political conversations
+    console.log(`[APMA] Processing: ${client.name} — ${campaign.name} (${client.country})`);
+
+    // 1. Perception — gather political sentiment from the internet
     const snapshot = await apmaPerceptionService.runPerceptionCycle(
-      client.id, campaign.id, campaign.keywords, campaign.platforms,
+      client.id,
+      campaign.id,
+      campaign.keywords,
+      campaign.platforms,
+      client.country,
     );
+    console.log(`[APMA] Perception: ${snapshot.sample_size} conversations, sentiment ${snapshot.overall_sentiment.toFixed(3)}`);
 
     // 2. Update live narrative score
     const score = await apmaPerceptionService.computeNarrativeScore(client.id, campaign.id, 24);
@@ -46,36 +60,35 @@ export class APMAOrchestrator {
       dominant_topic: snapshot.dominant_topic,
     });
 
-    // 4. Decision — only generate a new daily plan once per day
+    // 4. Decision — generate daily plan once per day, then execute
     const hasPlannedToday = await this._hasPlannedToday(campaign.id);
-    if (!hasPlannedToday) {
-      const plan = await apmaDecisionService.generateDailyPlan(client, campaign, snapshot);
 
-      // 5. Action — execute the plan
+    if (!hasPlannedToday) {
+      console.log('[APMA] Generating daily plan...');
+      const plan = await apmaDecisionService.generateDailyPlan(client, campaign, snapshot);
       const strategy = await this._getLatestStrategy(campaign.id);
       if (strategy) {
-        await apmaActionService.executePlan(client, campaign, plan, strategy.id);
+        console.log(`[APMA] Executing plan: ${plan.actions.length} action batches`);
+        const { executed, failed } = await apmaActionService.executePlan(client, campaign, plan, strategy.id);
+        console.log(`[APMA] Execution complete: ${executed} succeeded, ${failed} failed`);
       }
     } else {
-      // Mid-cycle: execute any pending actions from today's existing strategy
-      const strategy = await this._getPendingStrategy(campaign.id);
-      if (strategy) {
-        await apmaActionService.executePlan(client, campaign, strategy.plan, strategy.id);
+      // Mid-cycle: resume any pending actions
+      const pending = await this._getPendingStrategy(campaign.id);
+      if (pending && pending.actions_done < pending.actions_total) {
+        console.log('[APMA] Resuming pending strategy...');
+        await apmaActionService.executePlan(client, campaign, pending.plan, pending.id);
       }
     }
 
-    // 6. Self-improvement check (every 6 hours)
+    // 5. Self-improvement (every 6 hours)
     await this._runSelfImprovementCheck(client, campaign, snapshot);
 
-    // 7. Auto-implement non-sensitive recommendations
+    // 6. Auto-implement non-sensitive recommendations
     await this._implementPendingRecommendations(client.id, campaign.id);
   }
 
-  private async _runSelfImprovementCheck(
-    client: APMAClient,
-    campaign: APMACampaign,
-    snapshot: any,
-  ): Promise<void> {
+  private async _runSelfImprovementCheck(client: APMAClient, campaign: APMACampaign, snapshot: any): Promise<void> {
     const sb = getServiceSupabaseClient();
     const sixHoursAgo = new Date(Date.now() - 6 * 3_600_000).toISOString();
     const { count } = await sb
@@ -84,22 +97,22 @@ export class APMAOrchestrator {
       .gte('created_at', sixHoursAgo);
     if ((count ?? 0) > 0) return;
 
-    const prompt = `You are APMA's self-improvement module. Review the following performance snapshot and suggest ONE new tactical skill or optimisation.
+    const prompt = `You are APMA's self-improvement module. Review this performance and suggest ONE new tactical skill.
 
-Campaign sentiment: ${snapshot.overall_sentiment}
-Top narratives: ${JSON.stringify(snapshot.top_narratives)}
-Threat signals: ${snapshot.threat_signals.join(', ')}
+Country: ${client.country}
+Campaign sentiment: ${snapshot.overall_sentiment.toFixed(3)}
+Top narratives: ${JSON.stringify(snapshot.top_narratives.slice(0, 3))}
+Threat signals: ${snapshot.threat_signals.join(', ') || 'none'}
 
-Identify ONE specific improvement (e.g. "monitor YouTube comment sections for viral political videos", "create counter-narrative memes", "add Nairaland forum monitoring").
-
-Return JSON: { skill_name, description, code_snippet (pseudocode), expected_performance_delta (0-1) }
+Suggest ONE specific, implementable improvement relevant to political marketing in ${client.country}.
+Return JSON: { "skill_name": "", "description": "", "code_snippet": "<pseudocode>", "expected_performance_delta": 0.05 }
 Only JSON.`;
 
     try {
-      const resp = await this.ai.generateWithGPT4(prompt, { maxTokens: 600, temperature: 0.6 });
+      const resp = await this.ai.generateWithGPT4(prompt, { maxTokens: 500, temperature: 0.6 });
       const parsed = JSON.parse((resp || '').replace(/```json|```/g, '').trim());
       await sb.from('apma_self_improvement_logs').insert({
-        skill_name: parsed.skill_name || 'optimisation',
+        skill_name: parsed.skill_name || 'general_optimisation',
         description: parsed.description || '',
         code_snippet: parsed.code_snippet || null,
         performance_delta: parsed.expected_performance_delta ?? 0,
@@ -112,7 +125,7 @@ Only JSON.`;
     const sb = getServiceSupabaseClient();
     const { data: recs } = await sb
       .from('apma_recommendations')
-      .select('*')
+      .select('id, veto_deadline')
       .eq('client_id', clientId)
       .eq('campaign_id', campaignId)
       .eq('status', 'implementing')
@@ -120,7 +133,9 @@ Only JSON.`;
 
     if (!recs?.length) return;
 
-    for (const rec of recs) {
+    for (const rec of recs as any[]) {
+      // If veto window still open, skip
+      if (rec.veto_deadline && new Date(rec.veto_deadline) > new Date()) continue;
       await sb.from('apma_recommendations').update({
         status: 'done',
         implemented_at: new Date().toISOString(),
@@ -128,7 +143,7 @@ Only JSON.`;
     }
   }
 
-  // ─── Dashboard data for desktop client ───────────────────────────────────
+  // ─── Client dashboard data for desktop app ─────────────────────────────
   async getClientDashboard(clientId: string): Promise<ClientDashboardData | null> {
     const sb = getServiceSupabaseClient();
 
@@ -146,39 +161,29 @@ Only JSON.`;
 
     if (!campaign) return null;
 
-    const { data: sentimentHistory } = await sb
-      .from('apma_sentiment_history')
-      .select('score, recorded_at')
-      .eq('campaign_id', campaign.id)
-      .order('recorded_at', { ascending: true })
-      .limit(168);
-
+    const since7d = new Date(Date.now() - 7 * 86_400_000).toISOString();
     const since24h = new Date(Date.now() - 86_400_000).toISOString();
-    const { data: actions24h } = await sb
-      .from('apma_actions')
-      .select('action_type')
-      .eq('campaign_id', campaign.id)
-      .gte('executed_at', since24h);
+
+    const [sentimentHistory, actions24h, topThemesRaw, recs] = await Promise.all([
+      sb.from('apma_sentiment_history').select('score, recorded_at').eq('campaign_id', campaign.id).order('recorded_at', { ascending: true }).limit(168),
+      sb.from('apma_actions').select('action_type').eq('campaign_id', campaign.id).gte('executed_at', since24h),
+      sb.from('political_conversations').select('narrative_cluster, sentiment').eq('campaign_id', campaign.id).gte('created_at', since7d),
+      sb.from('apma_recommendations').select('id, text, priority, status, created_at').eq('campaign_id', campaign.id).order('created_at', { ascending: false }).limit(10),
+    ]);
 
     const actionCounts = { posts: 0, comments: 0, blog_articles: 0, group_engagements: 0 };
-    for (const a of (actions24h ?? []) as any[]) {
+    for (const a of (actions24h.data ?? []) as any[]) {
       if (a.action_type === 'post') actionCounts.posts++;
       else if (['comment', 'reply'].includes(a.action_type)) actionCounts.comments++;
       else if (['blog_create', 'blog_article'].includes(a.action_type)) actionCounts.blog_articles++;
       else if (['group_create', 'group_post'].includes(a.action_type)) actionCounts.group_engagements++;
     }
 
-    const { data: topThemesRaw } = await sb
-      .from('political_conversations')
-      .select('narrative_cluster, sentiment')
-      .eq('campaign_id', campaign.id)
-      .gte('created_at', new Date(Date.now() - 7 * 86_400_000).toISOString());
-
     const themeMap: Record<string, { total: number; count: number }> = {};
-    for (const t of (topThemesRaw ?? []) as any[]) {
+    for (const t of (topThemesRaw.data ?? []) as any[]) {
       const c = t.narrative_cluster ?? 'general';
       if (!themeMap[c]) themeMap[c] = { total: 0, count: 0 };
-      themeMap[c].total += t.sentiment;
+      themeMap[c].total += t.sentiment ?? 0;
       themeMap[c].count++;
     }
     const topThemes = Object.entries(themeMap)
@@ -189,13 +194,6 @@ Only JSON.`;
         sentiment: v.total / v.count >= 0 ? ('positive' as const) : ('negative' as const),
         volume: v.count,
       }));
-
-    const { data: recs } = await sb
-      .from('apma_recommendations')
-      .select('id, text, priority, status, created_at')
-      .eq('campaign_id', campaign.id)
-      .order('created_at', { ascending: false })
-      .limit(10);
 
     const currentScore = campaign.narrative_score_current ?? 0;
     const startScore   = campaign.narrative_score_start  ?? 0;
@@ -211,20 +209,14 @@ Only JSON.`;
         narrative_score_target: campaign.narrative_score_target,
         score_delta: parseFloat((currentScore - startScore).toFixed(4)),
       },
-      sentiment_trend: (sentimentHistory ?? []).map((s: any) => ({
-        date: s.recorded_at,
-        score: s.score,
-      })),
+      sentiment_trend: (sentimentHistory.data ?? []).map((s: any) => ({ date: s.recorded_at, score: s.score })),
       top_themes: topThemes,
-      actions_24h: {
-        ...actionCounts,
-        total: (actions24h?.length ?? 0),
-      },
-      recommendations: (recs ?? []) as any[],
+      actions_24h: { ...actionCounts, total: actions24h.data?.length ?? 0 },
+      recommendations: (recs.data ?? []) as any[],
     };
   }
 
-  // ─── Helpers ──────────────────────────────────────────────────────────────
+  // ─── Helpers ─────────────────────────────────────────────────────────────
   private async _getActiveCampaigns(): Promise<Array<{ client: APMAClient; campaign: APMACampaign }>> {
     const sb = getServiceSupabaseClient();
     const { data } = await sb
@@ -234,7 +226,7 @@ Only JSON.`;
     return (data ?? []).map((row: any) => ({
       client: row.apma_clients as APMAClient,
       campaign: { ...row, apma_clients: undefined } as APMACampaign,
-    })).filter((r) => r.client);
+    })).filter((r) => r.client && r.client.status === 'active');
   }
 
   private async _hasPlannedToday(campaignId: string): Promise<boolean> {
@@ -279,14 +271,10 @@ Only JSON.`;
 
   private async _updateNarrativeScore(clientId: string, campaignId: string, score: number): Promise<void> {
     const sb = getServiceSupabaseClient();
-    await sb.from('apma_campaigns').update({
-      narrative_score_current: score,
-      updated_at: new Date().toISOString(),
-    }).eq('id', campaignId);
-    await sb.from('apma_clients').update({
-      narrative_score: score,
-      updated_at: new Date().toISOString(),
-    }).eq('id', clientId);
+    await Promise.all([
+      sb.from('apma_campaigns').update({ narrative_score_current: score, updated_at: new Date().toISOString() }).eq('id', campaignId),
+      sb.from('apma_clients').update({ narrative_score: score, updated_at: new Date().toISOString() }).eq('id', clientId),
+    ]);
   }
 }
 
