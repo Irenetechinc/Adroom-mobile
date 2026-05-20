@@ -34,23 +34,33 @@ export const FacebookService = {
       `&state=${state}`;
 
     console.log('[FacebookService] Opening browser for OAuth…');
-    WebBrowser.openBrowserAsync(authUrl).catch(() => {});
 
     return new Promise((resolve) => {
       const POLL_MS = 2000;
       const TIMEOUT_MS = 5 * 60 * 1000;
+      const BROWSER_CLOSE_GRACE_MS = 5000;
       const start = Date.now();
+      let codeReceived = false;
+      let browserClosedAt: number | null = null;
+
+      // Open browser — track when it closes so we can resolve quickly if user cancels
+      WebBrowser.openBrowserAsync(authUrl)
+        .then(() => { if (!codeReceived) browserClosedAt = Date.now(); })
+        .catch(() => { if (!codeReceived) browserClosedAt = Date.now(); });
 
       const finish = (result: string | null) => {
+        if (codeReceived && result === null) return; // already resolved with token
+        codeReceived = true;
         clearInterval(poll);
         WebBrowser.dismissBrowser().catch(() => {});
         resolve(result);
       };
 
       const poll = setInterval(async () => {
-        if (Date.now() - start > TIMEOUT_MS) {
-          finish(null);
-          return;
+        if (Date.now() - start > TIMEOUT_MS) { finish(null); return; }
+        // If browser was closed and no code received within grace period, user cancelled
+        if (browserClosedAt !== null && !codeReceived && Date.now() - browserClosedAt > BROWSER_CLOSE_GRACE_MS) {
+          finish(null); return;
         }
         try {
           const res = await fetch(`${BACKEND_URL}/auth/poll?state=${state}`);
@@ -58,6 +68,7 @@ export const FacebookService = {
           const data = await res.json();
           if (data.error) { finish(null); return; }
           if (data.code) {
+            codeReceived = true;
             clearInterval(poll);
             WebBrowser.dismissBrowser().catch(() => {});
             try {

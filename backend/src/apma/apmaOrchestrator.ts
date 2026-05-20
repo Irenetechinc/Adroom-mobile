@@ -3,6 +3,7 @@ import { AIEngine } from '../config/ai-models';
 import { apmaPerceptionService } from './apmaPerceptionService';
 import { apmaDecisionService } from './apmaDecisionService';
 import { apmaActionService } from './apmaActionService';
+import { apmaClientProfileService } from './apmaClientProfileService';
 import { broadcast } from '../events/sseBroadcast';
 import { pushAPMAEvent } from './apmaEventLog';
 import type { APMAClient, APMACampaign, ClientDashboardData } from './apmaTypes';
@@ -129,6 +130,9 @@ export class APMAOrchestrator {
     // 7. Weekly predictive pre-positioning
     await this._runWeeklyPrediction(client, campaign, bc);
 
+    // 8. Refresh client intelligence profile (every 24 hours)
+    await this._refreshClientProfile(client, campaign);
+
     bc('cycle_complete', { narrative_score: score });
   }
 
@@ -199,6 +203,23 @@ Only JSON.`;
         deployed: false,
       });
     } catch {}
+  }
+
+  private async _refreshClientProfile(client: APMAClient, campaign: APMACampaign): Promise<void> {
+    const sb = getServiceSupabaseClient();
+    const since24h = new Date(Date.now() - 24 * 3_600_000).toISOString();
+    const { count } = await sb
+      .from('apma_client_profiles')
+      .select('id', { count: 'exact', head: true })
+      .eq('client_id', client.id)
+      .gte('generated_at', since24h);
+    if ((count ?? 0) > 0) return; // already refreshed in past 24h
+    try {
+      await apmaClientProfileService.buildClientProfile(client, campaign);
+      console.log(`[APMA] Client profile refreshed for ${client.name}`);
+    } catch (e: any) {
+      console.error('[APMA][Profile]', e?.message);
+    }
   }
 
   private async _implementPendingRecommendations(clientId: string, campaignId: string): Promise<void> {

@@ -5,6 +5,7 @@ import { apmaOrchestrator } from './apmaOrchestrator';
 import { apmaHumanizerService } from './apmaHumanizerService';
 import { apmaPerceptionService } from './apmaPerceptionService';
 import { apmaDecisionService } from './apmaDecisionService';
+import { apmaClientProfileService } from './apmaClientProfileService';
 import { registerSSEClient, unregisterSSEClient } from '../events/sseBroadcast';
 import { getAPMAEvents, getLatestSeq } from './apmaEventLog';
 
@@ -219,6 +220,90 @@ apmaAdminRouter.post('/self-improvement/:id/deploy', async (req, res) => {
   res.json({ ok: true });
 });
 
+// ─── Client Intelligence Profile ─────────────────────────────────────────
+apmaAdminRouter.get('/campaigns/:id/profile', async (req, res) => {
+  const sb = getServiceSupabaseClient();
+  const { data: campaign } = await sb
+    .from('apma_campaigns')
+    .select('*, apma_clients!apma_campaigns_client_id_fkey(*)')
+    .eq('id', req.params.id)
+    .single();
+  if (!campaign) return res.status(404).json({ error: 'Campaign not found' });
+  try {
+    const profile = await apmaClientProfileService.getLatestProfile(campaign.client_id, campaign.id);
+    if (!profile) {
+      // Auto-generate on first request
+      const generated = await apmaClientProfileService.buildClientProfile(campaign.apma_clients, campaign);
+      return res.json({ profile: generated });
+    }
+    res.json({ profile });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+apmaAdminRouter.post('/campaigns/:id/profile/refresh', async (req, res) => {
+  const sb = getServiceSupabaseClient();
+  const { data: campaign } = await sb
+    .from('apma_campaigns')
+    .select('*, apma_clients!apma_campaigns_client_id_fkey(*)')
+    .eq('id', req.params.id)
+    .single();
+  if (!campaign) return res.status(404).json({ error: 'Campaign not found' });
+  try {
+    const profile = await apmaClientProfileService.buildClientProfile(campaign.apma_clients, campaign);
+    res.json({ profile });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── APMA Social Accounts (multi-account per platform) ───────────────────
+apmaAdminRouter.get('/clients/:clientId/social-accounts', async (req, res) => {
+  const sb = getServiceSupabaseClient();
+  const { data } = await sb
+    .from('apma_social_accounts')
+    .select('*')
+    .eq('client_id', req.params.clientId)
+    .order('created_at', { ascending: false });
+  res.json({ accounts: data ?? [] });
+});
+
+apmaAdminRouter.post('/clients/:clientId/social-accounts', async (req, res) => {
+  const sb = getServiceSupabaseClient();
+  const { platform, account_type, account_id, account_name, access_token, refresh_token, token_expires_at, phone_number, waba_id, meta } = req.body;
+  if (!platform || !account_id || !account_name || !access_token) {
+    return res.status(400).json({ error: 'platform, account_id, account_name, access_token required' });
+  }
+  const { data, error } = await sb.from('apma_social_accounts').insert({
+    client_id: req.params.clientId,
+    platform, account_type: account_type || 'page', account_id, account_name,
+    access_token, refresh_token, token_expires_at, phone_number, waba_id,
+    meta: meta || {},
+  }).select().single();
+  if (error) return res.status(500).json({ error: error.message });
+  res.json({ account: data });
+});
+
+apmaAdminRouter.patch('/social-accounts/:id', async (req, res) => {
+  const sb = getServiceSupabaseClient();
+  const { active } = req.body;
+  const { data, error } = await sb
+    .from('apma_social_accounts')
+    .update({ active, updated_at: new Date().toISOString() })
+    .eq('id', req.params.id)
+    .select()
+    .single();
+  if (error) return res.status(500).json({ error: error.message });
+  res.json({ account: data });
+});
+
+apmaAdminRouter.delete('/social-accounts/:id', async (req, res) => {
+  const sb = getServiceSupabaseClient();
+  await sb.from('apma_social_accounts').delete().eq('id', req.params.id);
+  res.json({ ok: true });
+});
+
 // ─── Recent cycle events (for admin live monitor polling) ─────────────────
 apmaAdminRouter.get('/events', (req, res) => {
   const since = req.query.since != null ? parseInt(String(req.query.since), 10) : undefined;
@@ -373,6 +458,107 @@ apmaClientRouter.get('/blogs', async (req: any, res) => {
   const sb = getServiceSupabaseClient();
   const { data } = await sb.from('apma_blog_sites').select('id, name, domain, status, article_count, monthly_visits, created_at').eq('client_id', req.apmaClientId).order('created_at', { ascending: false });
   res.json({ blogs: data ?? [] });
+});
+
+// ─── Client intelligence profile ──────────────────────────────────────────
+apmaClientRouter.get('/profile', async (req: any, res) => {
+  const sb = getServiceSupabaseClient();
+  const { data: campaign } = await sb
+    .from('apma_campaigns')
+    .select('*, apma_clients!apma_campaigns_client_id_fkey(*)')
+    .eq('client_id', req.apmaClientId)
+    .eq('status', 'active')
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .single();
+  if (!campaign) return res.json({ profile: null });
+  try {
+    const profile = await apmaClientProfileService.getLatestProfile(campaign.client_id, campaign.id);
+    if (!profile) {
+      const generated = await apmaClientProfileService.buildClientProfile(campaign.apma_clients, campaign);
+      return res.json({ profile: generated });
+    }
+    res.json({ profile });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+apmaClientRouter.post('/profile/refresh', async (req: any, res) => {
+  const sb = getServiceSupabaseClient();
+  const { data: campaign } = await sb
+    .from('apma_campaigns')
+    .select('*, apma_clients!apma_campaigns_client_id_fkey(*)')
+    .eq('client_id', req.apmaClientId)
+    .eq('status', 'active')
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .single();
+  if (!campaign) return res.json({ profile: null });
+  try {
+    const profile = await apmaClientProfileService.buildClientProfile(campaign.apma_clients, campaign);
+    res.json({ profile });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── Self-improvement logs (client-facing) ────────────────────────────────
+apmaClientRouter.get('/self-improvement', async (_req: any, res) => {
+  const sb = getServiceSupabaseClient();
+  const { data } = await sb
+    .from('apma_self_improvement_logs')
+    .select('id, skill_name, description, performance_delta, deployed, created_at, test_result')
+    .order('created_at', { ascending: false })
+    .limit(50);
+  res.json({ logs: data ?? [] });
+});
+
+// ─── Social accounts (client-facing — full CRUD for APMA operator) ────────
+apmaClientRouter.get('/social-accounts', async (req: any, res) => {
+  const sb = getServiceSupabaseClient();
+  const { data } = await sb
+    .from('apma_social_accounts')
+    .select('id, platform, account_type, account_name, active, last_used_at, usage_count, phone_number, created_at')
+    .eq('client_id', req.apmaClientId)
+    .order('created_at', { ascending: false });
+  res.json({ accounts: data ?? [] });
+});
+
+apmaClientRouter.post('/social-accounts', async (req: any, res) => {
+  const sb = getServiceSupabaseClient();
+  const { platform, account_type, account_id, account_name, access_token, phone_number, waba_id, meta } = req.body;
+  if (!platform || !account_id || !account_name || !access_token) {
+    return res.status(400).json({ error: 'platform, account_id, account_name, access_token required' });
+  }
+  const { data, error } = await sb.from('apma_social_accounts').insert({
+    client_id: req.apmaClientId,
+    platform, account_type: account_type || 'page', account_id, account_name,
+    access_token, phone_number, waba_id, meta: meta || {},
+  }).select().single();
+  if (error) return res.status(500).json({ error: error.message });
+  res.json({ account: data });
+});
+
+apmaClientRouter.patch('/social-accounts/:id', async (req: any, res) => {
+  const sb = getServiceSupabaseClient();
+  const { active } = req.body;
+  const { data: existing } = await sb.from('apma_social_accounts').select('client_id').eq('id', req.params.id).single();
+  if (!existing || existing.client_id !== req.apmaClientId) return res.status(403).json({ error: 'Not authorized' });
+  const { data, error } = await sb.from('apma_social_accounts')
+    .update({ active, updated_at: new Date().toISOString() })
+    .eq('id', req.params.id)
+    .select().single();
+  if (error) return res.status(500).json({ error: error.message });
+  res.json({ account: data });
+});
+
+apmaClientRouter.delete('/social-accounts/:id', async (req: any, res) => {
+  const sb = getServiceSupabaseClient();
+  const { data: existing } = await sb.from('apma_social_accounts').select('client_id').eq('id', req.params.id).single();
+  if (!existing || existing.client_id !== req.apmaClientId) return res.status(403).json({ error: 'Not authorized' });
+  await sb.from('apma_social_accounts').delete().eq('id', req.params.id);
+  res.json({ ok: true });
 });
 
 // ─── Predicted events (client-facing calendar) ────────────────────────────
