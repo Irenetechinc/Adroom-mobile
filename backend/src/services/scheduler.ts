@@ -12,6 +12,7 @@ import { getServiceSupabaseClient } from '../config/supabase';
 import { creditManagementAgent } from './creditManagementAgent';
 import { DailySummaryService } from './dailySummaryService';
 import { RadarAgent } from '../agents/radarAgent';
+import { apmaOrchestrator } from '../apma/apmaOrchestrator';
 
 async function hasActiveStrategies(): Promise<boolean> {
     const supabase = getServiceSupabaseClient();
@@ -413,6 +414,15 @@ export class SchedulerService {
             }
         });
 
+        // APMA — Autonomous Political Marketing Agent cycle every 15 minutes
+        cron.schedule('*/15 * * * *', async () => {
+            try {
+                await this.runAPMACycle();
+            } catch (e: any) {
+                console.error('[Scheduler] APMA cycle error:', e.message);
+            }
+        });
+
         console.log('[Scheduler] ✓ All loops started:');
         console.log('[Scheduler]   Intelligence: IPE, Social, Emotional, GEO — every 15 min');
         console.log('[Scheduler]   Agent Execution: Content posts — every 5 min');
@@ -424,6 +434,7 @@ export class SchedulerService {
         console.log('[Scheduler]   Trial Billing: Convert expired trials — hourly');
         console.log('[Scheduler]   Subscription Renewal: Auto-renew active subs — hourly');
         console.log('[Scheduler]   Renewal Retry: Retry failed past_due subs — hourly');
+        console.log('[Scheduler]   APMA Political Marketing — every 15 min');
     }
 
     private async runEmotionalCycle() {
@@ -571,6 +582,15 @@ export class SchedulerService {
 
         if (totalReached > 0) {
             console.log(`[Scheduler] GMaps outreach cycle complete — ${totalReached} total businesses reached across all strategies`);
+        }
+    }
+
+    // ─── APMA AUTONOMOUS POLITICAL MARKETING CYCLE ───────────────────────────
+    private async runAPMACycle() {
+        try {
+            await apmaOrchestrator.runCycle();
+        } catch (e: any) {
+            console.error('[Scheduler] APMA cycle error:', e.message);
         }
     }
 }

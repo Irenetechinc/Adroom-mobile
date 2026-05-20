@@ -1,0 +1,163 @@
+You are to build the Autonomous Political Marketing Agent (APMA) – a self-aware, self-improving AI system that can change a political client’s public narrative (from negative to positive, or positive to negative) within days, operate entirely autonomously, and never be detectable as AI.
+
+All code must be production‑ready, modular, and run on the existing stack (Node.js/Python, Supabase, Railway). No dummy implementations. Everything must be real, automated, and scalable.
+
+📌 Core Requirements
+#	Requirement	Description
+1	Narrative shifting	APMA must be able to move sentiment from negative → positive (or positive → negative) in 3–7 days using real‑time social listening and counter‑narrative generation.
+2	Predictive planning	Predict political events (7, 30, 90 days ahead) and proactively position the client.
+3	Self‑improvement	APMA must improve its own code, add new skills, and optimise without developer intervention (code‑writing AI + sandbox).
+4	Autonomous blog creation	Create fully branded political blogs (domain, logo, articles) and drive organic traffic.
+5	Community management	Create and manage groups on Facebook, Telegram, WhatsApp, Discord, Reddit autonomously.
+6	Humanizer layer	Make all outputs (text, images, behaviour) indistinguishable from a human political operative.
+7	Real‑time perception	Monitor news, social media, forums, and search trends 24/7 for narrative shifts.
+8	Client dashboard	Show narrative score, sentiment trend, actions taken, and recommendations that will be autonomuslly implimented by apma – no internal details.
+🧠 Architecture Overview
+Build APMA with five layers:
+
+Perception Layer – Scrapes/APIs for political conversation (Twitter, Facebook, Reddit, Nairaland, news comments, YouTube). Uses NADE emotion detection to track sentiment.
+
+Decision Layer – Dynamic planner (LLM‑based) sets daily objectives: which narratives to amplify, attack, or create. Uses reinforcement learning for long‑term strategy.
+
+Action Layer – Executes: posts, replies, blog creation, group management, ad buying (where legal).
+
+Learning Layer – Self‑improvement module. Writes code, tests it in sandbox, deploys if successful. Updates skills (e.g., “evade new platform detection”).
+
+Humanizer Layer – Persona library (100+ profiles), variable typing, intentional typos, local slang, random delays. Generates unique images/videos without stock artefacts.
+
+🔧 Detailed Implementation Steps
+Step 1 – Perception Layer
+Integrate APIs: Twitter v2, Reddit, Facebook Graph (Page Public Content Access), NewsAPI, Google Trends.
+
+Forums: Scrape Nairaland, Nigerian political blogs (respect robots.txt).
+
+NLP pipeline: Use existing NADE engine for emotion + intent. Cluster narratives (e.g., “corruption”, “economy”, “security”).
+
+Storage: Supabase table political_conversations (source, text, sentiment, emotions, topic, timestamp).
+
+Step 2 – Decision Layer (Planner)
+Use GPT‑5 or Gemini Ultra with a system prompt that forces the agent to think step‑by‑step.
+
+Input: Current sentiment score, top narratives, client goal (improve/damage).
+
+Output: A daily plan (e.g., { "actions": ["create_blog_post", "flood_comments", "boost_tweet"], "target_narrative": "jobs_created", "budget": 0 }).
+
+Store plans in political_strategies table.
+
+Step 3 – Action Layer Modules
+3.1 Blog Creation
+Use headless CMS (e.g., Strapi or direct Supabase) + AI content writer.
+
+When APMA decides to create a blog:
+
+Generate domain name (using Namecheap API or similar).
+
+Create logo (DALL‑E or Stable Diffusion).
+
+Write 10–20 SEO articles (each 500‑800 words) with citations.
+
+Publish on a subdomain (e.g., client-name.adroomai.com).
+
+Optimise for Google News and social sharing.
+
+3.2 Social Groups & Communities
+Facebook: Use official API to create groups, assign admins (fake personas), schedule posts, moderate comments.
+
+Telegram: Bot API to create channels, send messages, reply to members.
+
+WhatsApp: Use Twilio API for broadcast lists (with user consent) – only for opted‑in supporters.
+
+Discord: Bot to create servers, manage roles, host events.
+
+Reddit: Use Reddit API (with proper user‑agent rotation) to create subreddits, post, comment, and upvote.
+
+3.3 Traffic Generation
+Share blog posts across all owned groups.
+
+Run small‑budget ads (Meta, Google) using client’s ad account (client provides API access).
+
+Engage in high‑traffic comment sections with backlinks (using persona rotation).
+
+Step 4 – Learning Layer (Self‑Improvement)
+Implement a code‑writing agent (e.g., SWE‑agent or a fine‑tuned LLM).
+
+It has access to a sandbox (Docker container) where it can write, test, and evaluate new modules.
+
+Skills APMA can add:
+
+New social platform support (e.g., TikTok political ads).
+
+Better CAPTCHA solving.
+
+New humaniser techniques.
+
+Success is measured by performance improvement (e.g., faster sentiment shift, lower detection rate).
+
+All self‑generated code is stored in a separate repo and deployed via CI/CD.
+
+Step 5 – Humanizer Layer
+Persona database: 100+ profiles (name, age, location, occupation, writing style, emoji usage).
+
+Behaviour modelling: Random post intervals (20‑180 minutes), variable response times (2‑45 minutes), selective liking/sharing.
+
+Text humanisation: Use a style transfer model (e.g., fine‑tuned GPT) to rewrite LLM outputs into natural, imperfect text – occasional typos, local phrases, varied sentence lengths.
+
+Media humanisation: Use generative models to create unique images (not stock). For videos, use HeyGen or similar with natural background noise, slight head movements.
+
+Rotation: Each action uses a different persona to avoid pattern detection.
+
+Step 6 – Client Dashboard
+Build a secure, read‑only dashboard (React/Flutter) showing only:
+
+Current narrative score (e.g., -0.2 → +0.3)
+
+Sentiment trend (7‑day graph)
+
+Top positive/negative themes (word cloud)
+
+Actions taken in last 24h (counters: posts, blog articles, group engagements)
+
+AI recommendations and auto implimennt recomentdations autonomusly without human approval (e.g., “Launch a video testimonial in 48 hours”)
+
+No internal details – no IP addresses, no persona names, no code.
+
+🛡️ Ethical & Legal Safeguards
+Client agreement – Client must sign a legally binding document accepting responsibility for all content.
+
+Prohibited actions: Hate speech, direct threats, doxxing, impersonation of real people (except the client).
+
+Fact‑checking: Before posting any factual claim, APMA must verify via at least two credible sources.
+
+Human review flag – For sensitive actions (e.g., attacking a rival), send a notification to the client; the client can veto within 2 hours or auto‑proceed.
+
+🚫 What NOT to Expose
+The agent’s internal decision‑making process.
+
+Persona details or rotation logic.
+
+Self‑improvement code or prompt chains.
+
+Any information that could be used to detect APMA as AI.
+
+✅ Acceptance Criteria
+Criterion	Verification
+Can shift sentiment from negative to positive in ≤7 days on a test campaign	Controlled test with dummy social media accounts
+Creates a fully functional political blog in <1 hour	Automated test
+Manages 5 social groups concurrently without human intervention	Run for 72 hours, check logs
+No two consecutive messages are identical (text, timing, behaviour)	Analysis of 1,000 interactions
+Self‑improvement adds a new skill (e.g., “YouTube comment analysis”) without developer coding	Unit test
+Dashboard shows only approved metrics, no backend secrets	Code review
+📦 Deliverables
+Full source code for APMA (Node.js/Python) integrated with existing AdRoom AI backend.
+
+Database migrations (Supabase) for new tables (political_conversations, political_strategies, personas, self_improvement_logs).
+
+Docker configuration for sandbox self‑improvement environment.
+
+API documentation for internal modules.
+
+Deployment instructions for Railway.
+
+Note:
+Do not disrupt any already. Made progress, no dummy or demo implementations, no hard coded data look what been don and update, creat and Impliment where required avoid any form of double implimentation make sure all fix and Implemtations are for realtime and production. All implimentation must align with what already done and work in syc. 
+This is a mobile app not web application. And must run 100% without replit, railway for backend and supabase for database
