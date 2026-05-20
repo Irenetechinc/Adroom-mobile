@@ -4,6 +4,8 @@ import { apmaHumanizerService } from './apmaHumanizerService';
 import { apmaGeoService } from './apmaGeoService';
 import type { APMACampaign, APMAClient, DailyPlan, PlanAction, APMAPersona } from './apmaTypes';
 
+const VIDEO_PLATFORMS = new Set(['twitter', 'telegram']);
+
 const TWITTER_API_V2 = 'https://api.twitter.com/2';
 
 export class APMAActionService {
@@ -58,6 +60,7 @@ export class APMAActionService {
     // Generate a campaign graphic for every 5th post on visual platforms
     const VISUAL_PLATFORMS = new Set(['twitter', 'facebook', 'telegram']);
     const withGraphic = action.type === 'post' && VISUAL_PLATFORMS.has(action.platform);
+    const withVideo   = action.type === 'post' && action.priority === 'high' && VIDEO_PLATFORMS.has(action.platform) && !!process.env.RUNWAY_API_KEY;
 
     for (let i = 0; i < action.count; i++) {
       const rawContent = await this._generateContent(client, campaign, action);
@@ -78,6 +81,34 @@ export class APMAActionService {
       if (withGraphic && i % 5 === 0) {
         const imgResult = await this._generatePostGraphic(client, campaign, action, rawContent);
         if (imgResult) { imageBase64 = imgResult.base64; imageMime = imgResult.mimeType; }
+      }
+
+      // Generate a video for the FIRST high-priority post per batch (Runway quota guard)
+      if (withVideo && i === 0) {
+        const vidResult = await this._generatePostVideo(client, campaign, action, rawContent, imageBase64, imageMime);
+        if (vidResult?.url) {
+          const vRes = action.platform === 'twitter'
+            ? await this._twitterVideoPost(humanized.text, vidResult.url)
+            : await this._telegramVideoPost(humanized.text, campaign, vidResult.url);
+          const sb = getServiceSupabaseClient();
+          await sb.from('apma_actions').insert({
+            campaign_id: campaign.id,
+            client_id: client.id,
+            strategy_id: strategyId,
+            persona_id: humanized.persona.id,
+            action_type: 'video_post',
+            platform: action.platform,
+            content_summary: humanized.text.slice(0, 300),
+            external_id: vRes.id ?? null,
+            url: vRes.url ?? null,
+            metadata: { narrative_angle: action.narrative_angle, runway_task: vidResult.url },
+            success: vRes.success,
+            error: vRes.error ?? null,
+          });
+          if (vRes.success) success++; else fail++;
+          await this._sleep(Math.floor(Math.random() * 3000 + 1000));
+          continue; // skip standard text/image post for this iteration
+        }
       }
 
       const result = await this._publishContent(client, campaign, action, humanized, strategyId, imageBase64, imageMime);
@@ -435,11 +466,16 @@ Write ONLY the ${action.type} text. No quotes. No label.`;
       if (wpToken && wpSiteId) {
         const published = await this._publishToWordPress(wpToken, wpSiteId, article);
         if (published) {
+          const publishedUrl = `https://${wpSiteId}.wordpress.com/${article.slug}/`;
           await sb.from('apma_blog_articles')
             .update({ status: 'published', published_at: new Date().toISOString() })
             .eq('blog_id', blog.id)
             .eq('slug', article.slug);
           publishedCount++;
+          // Share blog URL back to active social platforms
+          await this._shareBlogUrl(client, campaign, article.title, publishedUrl, strategyId).catch((e) =>
+            console.error('[APMA][BlogShare]', e?.message),
+          );
         }
       }
       await this._sleep(2000);
@@ -618,6 +654,178 @@ Only valid JSON.`;
       status: isDone ? 'completed' : 'executing',
       ...(isDone ? { executed_at: new Date().toISOString() } : {}),
     }).eq('id', strategyId);
+  }
+
+  // ─── VIDEO GENERATION — Runway Gen-3 Alpha Turbo ──────────────────────────
+  private async _generatePostVideo(
+    client: APMAClient,
+    campaign: APMACampaign,
+    action: PlanAction,
+    textContent: string,
+    imageBase64: string | null,
+    imageMime: string,
+  ): Promise<{ url: string } | null> {
+    const isImprove = client.goal === 'improve';
+    const prompt = `5-second political ${action.platform} video for ${client.country} campaign.
+${isImprove ? 'Hopeful, inspiring civic energy' : 'Accountability-focused, civic urgency'}.
+Theme: ${action.narrative_angle}. Keywords: ${action.keywords.slice(0, 3).join(', ')}.
+Style: Clean political motion graphics, bold colours, professional broadcast quality.`;
+    try {
+      return await this.ai.generateVideo(prompt, imageBase64, imageMime);
+    } catch { return null; }
+  }
+
+  // ─── TWITTER VIDEO — chunked media upload + tweet ─────────────────────────
+  private async _twitterVideoPost(
+    text: string,
+    videoUrl: string,
+  ): Promise<{ success: boolean; id?: string; url?: string; error?: string }> {
+    const userToken = process.env.TWITTER_APMA_OAUTH_TOKEN || '';
+    if (!userToken) return { success: false, error: 'TWITTER_APMA_OAUTH_TOKEN not configured' };
+    try {
+      const videoRes = await fetch(videoUrl, { signal: AbortSignal.timeout(60_000) });
+      if (!videoRes.ok) throw new Error('Failed to fetch Runway video');
+      const videoBuffer = Buffer.from(await videoRes.arrayBuffer());
+      const totalBytes = videoBuffer.length;
+
+      // INIT
+      const initRes = await fetch('https://upload.twitter.com/1.1/media/upload.json', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded', Authorization: `Bearer ${userToken}` },
+        body: new URLSearchParams({ command: 'INIT', media_type: 'video/mp4', media_category: 'tweet_video', total_bytes: String(totalBytes) }).toString(),
+      });
+      const initData = await initRes.json();
+      const mediaId = initData.media_id_string;
+      if (!mediaId) throw new Error('Twitter media INIT failed');
+
+      // APPEND (5 MB chunks)
+      const CHUNK = 5 * 1024 * 1024;
+      let seg = 0;
+      for (let offset = 0; offset < totalBytes; offset += CHUNK) {
+        const chunk = videoBuffer.slice(offset, offset + CHUNK);
+        const form = new FormData();
+        form.append('command', 'APPEND');
+        form.append('media_id', mediaId);
+        form.append('segment_index', String(seg++));
+        form.append('media', new Blob([chunk], { type: 'video/mp4' }), 'video.mp4');
+        await fetch('https://upload.twitter.com/1.1/media/upload.json', {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${userToken}` },
+          body: form,
+        });
+      }
+
+      // FINALIZE
+      const finalRes = await fetch('https://upload.twitter.com/1.1/media/upload.json', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded', Authorization: `Bearer ${userToken}` },
+        body: new URLSearchParams({ command: 'FINALIZE', media_id: mediaId }).toString(),
+      });
+      const finalData = await finalRes.json();
+
+      // STATUS polling if needed
+      if (finalData.processing_info?.state === 'pending' || finalData.processing_info?.state === 'in_progress') {
+        for (let attempt = 0; attempt < 15; attempt++) {
+          await this._sleep((finalData.processing_info?.check_after_secs ?? 5) * 1000);
+          const statusRes = await fetch(
+            `https://upload.twitter.com/1.1/media/upload.json?command=STATUS&media_id=${mediaId}`,
+            { headers: { Authorization: `Bearer ${userToken}` } },
+          );
+          const s = await statusRes.json();
+          const state = s.processing_info?.state;
+          if (state === 'succeeded') break;
+          if (state === 'failed') throw new Error('Twitter video processing failed');
+        }
+      }
+
+      // Tweet with video
+      const tweetRes = await fetch(`${TWITTER_API_V2}/tweets`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${userToken}` },
+        body: JSON.stringify({ text: text.slice(0, 280), media: { media_ids: [mediaId] } }),
+      });
+      const tweetData = await tweetRes.json();
+      if (!tweetRes.ok) return { success: false, error: tweetData.detail ?? 'Twitter video tweet failed' };
+      return {
+        success: true,
+        id: tweetData.data?.id,
+        url: tweetData.data?.id ? `https://twitter.com/i/web/status/${tweetData.data.id}` : undefined,
+      };
+    } catch (e: any) { return { success: false, error: e.message }; }
+  }
+
+  // ─── TELEGRAM VIDEO — sendVideo via URL ────────────────────────────────────
+  private async _telegramVideoPost(
+    text: string,
+    campaign: APMACampaign,
+    videoUrl: string,
+  ): Promise<{ success: boolean; id?: string; url?: string; error?: string }> {
+    const botToken  = process.env.TELEGRAM_APMA_BOT_TOKEN  || (campaign.config as any)?.telegram_bot_token  || '';
+    const channelId = process.env.TELEGRAM_APMA_CHANNEL_ID || (campaign.config as any)?.telegram_channel_id || '';
+    if (!botToken || !channelId) return { success: false, error: 'Telegram not configured' };
+    try {
+      const res = await fetch(`https://api.telegram.org/bot${botToken}/sendVideo`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ chat_id: channelId, video: videoUrl, caption: text.slice(0, 1024), parse_mode: 'HTML', supports_streaming: true }),
+      });
+      const data = await res.json();
+      if (!data.ok) return { success: false, error: data.description ?? 'Telegram sendVideo failed' };
+      return { success: true, id: data.result?.message_id?.toString() };
+    } catch (e: any) { return { success: false, error: e.message }; }
+  }
+
+  // ─── BLOG URL SHARING — post published article links to social platforms ──
+  private async _shareBlogUrl(
+    client: APMAClient,
+    campaign: APMACampaign,
+    title: string,
+    url: string,
+    strategyId: string,
+  ): Promise<void> {
+    const sb = getServiceSupabaseClient();
+    const shareText = `${title} — ${url}`;
+
+    const promises: Array<Promise<any>> = [];
+
+    if (campaign.platforms.includes('twitter')) {
+      promises.push(
+        this._twitterPost(shareText.slice(0, 280)).then((r) =>
+          sb.from('apma_actions').insert({
+            campaign_id: campaign.id, client_id: client.id, strategy_id: strategyId,
+            action_type: 'blog_share', platform: 'twitter',
+            content_summary: shareText.slice(0, 300), external_id: r.id ?? null, url: r.url ?? null,
+            success: r.success, error: r.error ?? null,
+          }),
+        ).catch(() => null),
+      );
+    }
+    if (campaign.platforms.includes('telegram')) {
+      promises.push(
+        this._telegramPost(shareText, campaign).then((r) =>
+          sb.from('apma_actions').insert({
+            campaign_id: campaign.id, client_id: client.id, strategy_id: strategyId,
+            action_type: 'blog_share', platform: 'telegram',
+            content_summary: shareText.slice(0, 300), external_id: r.id ?? null,
+            success: r.success, error: r.error ?? null,
+          }),
+        ).catch(() => null),
+      );
+    }
+    if (campaign.platforms.includes('facebook')) {
+      promises.push(
+        this._facebookPost(shareText, campaign).then((r) =>
+          sb.from('apma_actions').insert({
+            campaign_id: campaign.id, client_id: client.id, strategy_id: strategyId,
+            action_type: 'blog_share', platform: 'facebook',
+            content_summary: shareText.slice(0, 300), external_id: r.id ?? null, url: r.url ?? null,
+            success: r.success, error: r.error ?? null,
+          }),
+        ).catch(() => null),
+      );
+    }
+
+    await Promise.allSettled(promises);
   }
 
   private _sleep(ms: number): Promise<void> {

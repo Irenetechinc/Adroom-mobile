@@ -1657,6 +1657,21 @@ label{font-size:12px;color:#94A3B8;font-weight:600}
           <div class="stat-card"><div class="stat-label">Active Personas</div><div class="stat-value" id="apma-stat-personas" style="color:#94A3B8">—</div></div>
         </div>
 
+        <!-- Live Cycle Monitor -->
+        <div class="card" style="margin-bottom:16px">
+          <div class="section-header" style="margin-bottom:10px">
+            <div style="display:flex;align-items:center;gap:8px">
+              <div class="section-title" style="font-size:14px">Live Cycle Monitor</div>
+              <div id="apma-monitor-dot" style="width:8px;height:8px;border-radius:50%;background:#475569;flex-shrink:0"></div>
+              <span id="apma-monitor-status" style="font-size:11px;color:#64748B">Idle</span>
+            </div>
+            <button class="btn btn-ghost btn-sm" onclick="clearAPMAMonitorLog()">Clear</button>
+          </div>
+          <div id="apma-monitor-feed" style="height:200px;overflow-y:auto;font-family:monospace;font-size:11px;background:#0A1628;border-radius:6px;padding:10px;display:flex;flex-direction:column;gap:3px">
+            <span style="color:#475569">Waiting for cycle events…</span>
+          </div>
+        </div>
+
         <!-- Client List -->
         <div class="card" style="margin-bottom:16px">
           <div class="section-header" style="margin-bottom:12px">
@@ -1904,7 +1919,7 @@ function showSection(name) {
   document.getElementById('page-title').textContent = TITLES[name] || name;
   if (name === 'cma') { loadCMAStats(); loadModelCredits(); }
   if (name === 'trials') { loadTrials(); }
-  if (name === 'apma') { loadAPMASection(); }
+  if (name === 'apma') { loadAPMASection(); startAPMAMonitor(); } else { stopAPMAMonitor(); }
   // Start polling when entering the agent network section, stop when leaving
   if (name === 'agentnet') { startAgentNetPolling(); } else { stopAgentNetPolling(); }
 }
@@ -3165,6 +3180,83 @@ let apmaSelectedClientId = null;
 
 async function loadAPMASection() {
   await Promise.all([loadAPMAStats(), loadAPMAClients()]);
+}
+
+/* ── APMA Live Cycle Monitor (polling) ────────────────────────────────────── */
+let _apmaMonitorTimer = null;
+let _apmaMonitorSeq   = 0;
+
+const APMA_EVENT_COLOURS = {
+  start:           '#818CF8',
+  perception_start:'#38BDF8',
+  perception_done: '#22D3EE',
+  score_updated:   '#34D399',
+  decision_start:  '#FBBF24',
+  decision_done:   '#F59E0B',
+  action_start:    '#FB923C',
+  action_done:     '#22C55E',
+  action_resume:   '#F472B6',
+  cycle_complete:  '#A78BFA',
+  prediction_start:'#60A5FA',
+  prediction_done: '#93C5FD',
+};
+
+function _apmaEventHtml(ev) {
+  const colour = APMA_EVENT_COLOURS[ev.event] || '#94A3B8';
+  const ts = new Date(ev.ts).toLocaleTimeString();
+  const label = ev.event.replace(/_/g,' ').replace(/\b\w/g, c => c.toUpperCase());
+  let detail = '';
+  if (ev.data.client)          detail = ' — ' + ev.data.client;
+  else if (ev.data.executed != null) detail = ' — ' + ev.data.executed + ' ok / ' + ev.data.failed + ' fail';
+  else if (ev.data.sample_size) detail = ' — ' + ev.data.sample_size + ' samples, sentiment ' + (ev.data.overall_sentiment ?? 0).toFixed(2);
+  else if (ev.data.narrative_score != null) detail = ' — score ' + ev.data.narrative_score.toFixed(2);
+  else if (ev.data.total_actions) detail = ' — ' + ev.data.total_actions + ' actions';
+  return '<div><span style="color:#475569">[' + ts + ']</span> <span style="color:' + colour + ';font-weight:600">' + label + '</span><span style="color:#94A3B8">' + detail + '</span></div>';
+}
+
+async function _apmaFetchEvents() {
+  try {
+    const data = await api('GET', '/api/apma/events?since=' + _apmaMonitorSeq);
+    if (!data || !data.events) return;
+    if (data.events.length === 0) return;
+    _apmaMonitorSeq = data.latest_seq;
+    const feed = document.getElementById('apma-monitor-feed');
+    if (!feed) return;
+    const wasEmpty = feed.children.length === 1 && feed.children[0].style && feed.children[0].style.color === 'rgb(71, 85, 105)';
+    if (wasEmpty) feed.innerHTML = '';
+    data.events.forEach(ev => { feed.insertAdjacentHTML('beforeend', _apmaEventHtml(ev)); });
+    feed.scrollTop = feed.scrollHeight;
+    const dot = document.getElementById('apma-monitor-dot');
+    const status = document.getElementById('apma-monitor-status');
+    if (dot) dot.style.background = '#22C55E';
+    if (status) status.textContent = 'Live — seq ' + _apmaMonitorSeq;
+  } catch {}
+}
+
+function startAPMAMonitor() {
+  if (_apmaMonitorTimer) return;
+  const dot = document.getElementById('apma-monitor-dot');
+  const status = document.getElementById('apma-monitor-status');
+  if (dot) dot.style.background = '#FBBF24';
+  if (status) status.textContent = 'Polling…';
+  _apmaFetchEvents();
+  _apmaMonitorTimer = setInterval(_apmaFetchEvents, 5000);
+}
+
+function stopAPMAMonitor() {
+  if (!_apmaMonitorTimer) return;
+  clearInterval(_apmaMonitorTimer);
+  _apmaMonitorTimer = null;
+  const dot = document.getElementById('apma-monitor-dot');
+  const status = document.getElementById('apma-monitor-status');
+  if (dot) dot.style.background = '#475569';
+  if (status) status.textContent = 'Idle';
+}
+
+function clearAPMAMonitorLog() {
+  const feed = document.getElementById('apma-monitor-feed');
+  if (feed) feed.innerHTML = '<span style="color:#475569">Log cleared.</span>';
+  _apmaMonitorSeq = 0;
 }
 
 async function loadAPMAStats() {
