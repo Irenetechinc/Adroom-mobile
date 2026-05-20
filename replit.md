@@ -138,11 +138,12 @@ npx expo start
 - **Desktop app**: `apma-desktop/` — Electron + React + Vite (Windows/macOS installer)
 
 ### APMA Pipeline (every 15 min)
-1. **Perception** (`apmaPerceptionService.ts`) — Twitter v2, Reddit, NewsAPI → Gemini 2.0 Flash sentiment
-2. **Decision** (`apmaDecisionService.ts`) — GPT-4o daily plan (posts, blogs, groups)
-3. **Humanizer** (`apmaHumanizerService.ts`) — 100+ Nigerian personas, typo injection, slang, delays
-4. **Action** (`apmaActionService.ts`) — Publish to Twitter/Facebook/Reddit, create blogs + groups
-5. **Orchestrator** (`apmaOrchestrator.ts`) — Coordinates cycle, narrative score, self-improvement
+1. **Geo Service** (`apmaGeoService.ts`) — GPT-4o generates country context (language, tone, personas, topics, slang) for ANY country. 6-hour cache.
+2. **Perception** (`apmaPerceptionService.ts`) — Twitter v2 (language-filtered), Reddit, NewsAPI (country-aware) → Gemini 2.0 Flash batch sentiment analysis
+3. **Decision** (`apmaDecisionService.ts`) — GPT-4o country-adaptive daily plan (posts, blogs, group tasks). No Nigeria hardcoding.
+4. **Humanizer** (`apmaHumanizerService.ts`) — AI-generated country-appropriate personas; geo-adaptive text rewriting via Gemini; typo injection, emoji, variable delays
+5. **Action** (`apmaActionService.ts`) — Real API calls: Twitter v2 (OAuth2 user token), Facebook Graph API, Reddit OAuth2, Telegram Bot API, WordPress.com REST API for blog publishing
+6. **Orchestrator** (`apmaOrchestrator.ts`) — Coordinates full cycle, narrative score tracking, 6h self-improvement, auto-implements non-sensitive recommendations
 
 ### Database Migration
 Run `backend/apma_migration.sql` in Supabase SQL Editor (after all AdRoom migrations)
@@ -153,12 +154,16 @@ Run `backend/apma_migration.sql` in Supabase SQL Editor (after all AdRoom migrat
 `apma_social_groups`, `apma_sentiment_history`, `apma_recommendations`, `apma_self_improvement_logs`
 
 ### Required New Env Vars (add to Replit + Railway)
-- `NEWSAPI_KEY` — NewsAPI.org
-- `REDDIT_CLIENT_ID`, `REDDIT_CLIENT_SECRET` — Reddit monitoring
-- `TWITTER_BEARER_TOKEN` — Twitter monitoring (shared with AdRoom OK)
-- `TWITTER_APMA_OAUTH_TOKEN`, `TWITTER_APMA_OAUTH_SECRET` — APMA publishing account
-- `FB_APMA_PAGE_TOKEN`, `FB_APMA_PAGE_ID` — APMA Facebook page
-- `REDDIT_APMA_ACCESS_TOKEN`, `REDDIT_APMA_SUBREDDIT` — APMA Reddit posting
+- `NEWSAPI_KEY` — NewsAPI.org (perception)
+- `REDDIT_CLIENT_ID`, `REDDIT_CLIENT_SECRET` — Reddit read access (perception)
+- `TWITTER_BEARER_TOKEN` — Twitter search/monitoring (shared with AdRoom OK)
+- `TWITTER_APMA_OAUTH_TOKEN` — **OAuth2 USER access token** for the APMA Twitter publishing account (NOT app-only bearer token)
+- `FB_APMA_PAGE_TOKEN`, `FB_APMA_PAGE_ID` — APMA Facebook page token + page ID
+- `REDDIT_APMA_ACCESS_TOKEN` — OAuth2 user token for APMA Reddit posting account
+- `REDDIT_APMA_SUBREDDIT` — Default subreddit for APMA posts (override per campaign via `config.reddit_subreddit`)
+- `TELEGRAM_APMA_BOT_TOKEN`, `TELEGRAM_APMA_CHANNEL_ID` — Telegram Bot API token + channel ID (@username or numeric ID)
+- `WORDPRESS_COM_TOKEN` — WordPress.com OAuth2 token (for blog publishing)
+- `WORDPRESS_APMA_SITE_ID` — WordPress.com site ID or domain (e.g. `myblog.wordpress.com`)
 
 ### Desktop App Build
 ```bash

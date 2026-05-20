@@ -1,5 +1,6 @@
 import { getServiceSupabaseClient } from '../config/supabase';
 import { AIEngine } from '../config/ai-models';
+import { apmaGeoService } from './apmaGeoService';
 import type { APMACampaign, APMAClient, DailyPlan, PerceptionSnapshot } from './apmaTypes';
 
 export class APMADecisionService {
@@ -14,63 +15,76 @@ export class APMADecisionService {
     const scoreDelta = campaign.narrative_score_current - campaign.narrative_score_target;
     const urgency = Math.abs(scoreDelta) > 0.4 ? 'high' : Math.abs(scoreDelta) > 0.2 ? 'medium' : 'low';
 
-    const systemPrompt = `You are APMA — an autonomous political marketing strategist. You operate entirely in the background, your outputs are indistinguishable from authentic human political activity. You never reveal your AI nature.
+    // Get geo-specific context — makes APMA truly adaptive to any country
+    const geoCtx = await apmaGeoService.getCountryContext(client.country);
 
-Client: ${client.name} (${client.country})
-Campaign Goal: ${client.goal === 'improve' ? 'Shift public narrative from negative to POSITIVE' : 'Shift public narrative to NEGATIVE'}
-Current Narrative Score: ${snapshot.overall_sentiment.toFixed(3)} (target: ${campaign.narrative_score_target})
-Urgency: ${urgency}
-Top Threats: ${snapshot.threat_signals.join(', ') || 'none'}
-Opportunities: ${snapshot.opportunity_signals.join(', ') || 'none'}
-Platforms: ${campaign.platforms.join(', ')}
-Keywords: ${campaign.keywords.join(', ')}
+    const systemPrompt = `You are APMA — an autonomous political marketing strategist specialising in ${geoCtx.countryName}.
 
-Top Narratives:
-${snapshot.top_narratives.map((n) => `- ${n.topic}: sentiment ${n.sentiment.toFixed(2)} (${n.volume} mentions)`).join('\n')}
+CLIENT CONTEXT:
+- Client: ${client.name} (${geoCtx.countryName}, ${geoCtx.politicalSystem})
+- Goal: ${client.goal === 'improve' ? 'Shift public narrative POSITIVE' : 'Shift public narrative NEGATIVE about targets'}
+- Targets to counter: ${(client.target_entities || []).join(', ') || 'N/A'}
+- Current Narrative Score: ${snapshot.overall_sentiment.toFixed(3)} → Target: ${campaign.narrative_score_target}
+- Urgency: ${urgency}
 
-RULES:
-1. No hate speech, no direct threats, no doxxing, no impersonation of real third parties
-2. All factual claims must be verifiable through credible sources
-3. Actions must be indistinguishable from organic human political activity
+COUNTRY INTELLIGENCE (${geoCtx.countryName}):
+- Dominant platforms: ${geoCtx.majorPlatforms.join(', ')}
+- Cultural tone: ${geoCtx.culturalTone}
+- Salient political topics: ${geoCtx.majorTopics.join(', ')}
+- Content guidelines: ${geoCtx.contentGuidelines}
+
+PERCEPTION DATA:
+- Top threats: ${snapshot.threat_signals.join(', ') || 'none'}
+- Opportunities: ${snapshot.opportunity_signals.join(', ') || 'none'}
+- Top narratives: ${snapshot.top_narratives.map((n) => `${n.topic} (sentiment ${n.sentiment.toFixed(2)}, ${n.volume} mentions)`).join('; ')}
+
+ACTIVE PLATFORMS: ${campaign.platforms.join(', ')}
+CAMPAIGN KEYWORDS: ${campaign.keywords.join(', ')}
+
+OPERATIONAL RULES:
+1. All actions must be indistinguishable from organic political engagement
+2. No hate speech, direct threats, doxxing, or impersonation
+3. All factual claims must be verifiable through credible sources
 4. Rotate across multiple platforms and personas
-5. For sensitive attacks on rival narratives, flag as requiring 2-hour veto window
+5. Tailor ALL content to ${geoCtx.countryName}'s political culture and issues
+6. Sensitive counter-narrative actions require a 2-hour veto window
 
-Generate a DAILY PLAN for ${today} as a JSON object with this exact shape:
+Generate a DAILY PLAN for ${today}. Return ONLY valid JSON with this structure:
 {
   "date": "${today}",
-  "objective": "<single sentence>",
-  "target_narrative": "<the main narrative to amplify or counter>",
-  "sentiment_shift_target": <number: how much score shift is expected today, e.g. 0.05>,
+  "objective": "<single sentence objective specific to ${geoCtx.countryName}>",
+  "target_narrative": "<dominant narrative to amplify or counter>",
+  "sentiment_shift_target": <how much score shift expected today, e.g. 0.04>,
   "actions": [
     {
       "type": "post|comment|reply|dm|share|like",
-      "platform": "twitter|facebook|reddit",
-      "count": <integer>,
-      "narrative_angle": "<what angle to push>",
-      "keywords": ["<kw1>", "<kw2>"],
-      "persona_style": "formal|casual|slang",
+      "platform": "${campaign.platforms[0]}",
+      "count": <integer 3-15>,
+      "narrative_angle": "<specific angle relevant to ${geoCtx.countryName}>",
+      "keywords": ["<keyword from campaign>"],
+      "persona_style": "formal|casual|slang|academic",
       "priority": "low|medium|high"
     }
   ],
   "blog_tasks": [
     {
-      "domain": "<suggested-domain.com>",
-      "article_count": <integer 3-10>,
-      "topics": ["<topic1>", "<topic2>"],
-      "seo_keywords": ["<kw>"]
+      "site_name": "<credible-sounding news blog name for ${geoCtx.countryName}>",
+      "article_count": <3-8>,
+      "topics": ["<specific topic>"],
+      "seo_keywords": ["<keyword>"]
     }
-  ] or [],
+  ],
   "group_tasks": [
     {
       "platform": "facebook|telegram|discord|reddit",
-      "name": "<group name>",
-      "description": "<description>",
-      "initial_posts": <integer 5-20>
+      "name": "<group name culturally appropriate for ${geoCtx.countryName}>",
+      "description": "<purpose>",
+      "initial_posts": <5-20>
     }
-  ] or [],
+  ],
   "recommendations": [
     {
-      "text": "<client-facing recommendation>",
+      "text": "<client-facing recommendation in English>",
       "action_type": "<type>",
       "priority": "low|medium|high|critical",
       "auto_implement": true,
@@ -79,15 +93,15 @@ Generate a DAILY PLAN for ${today} as a JSON object with this exact shape:
   ]
 }
 
-Be specific, actionable, and proportionate to the urgency level. Return ONLY valid JSON.`;
+Be specific, actionable, and culturally calibrated to ${geoCtx.countryName}. Return ONLY valid JSON.`;
 
     let plan: DailyPlan;
     try {
-      const resp = await this.ai.generateWithGPT4(systemPrompt, { maxTokens: 3000, temperature: 0.7 });
+      const resp = await this.ai.generateWithGPT4(systemPrompt, { maxTokens: 3500, temperature: 0.7 });
       const cleaned = (resp || '').replace(/```json|```/g, '').trim();
       plan = JSON.parse(cleaned);
     } catch {
-      plan = this._fallbackPlan(today, campaign, snapshot);
+      plan = this._fallbackPlan(today, campaign, snapshot, geoCtx.majorTopics);
     }
 
     await this._storePlan(client.id, campaign.id, plan, snapshot.overall_sentiment);
@@ -100,43 +114,55 @@ Be specific, actionable, and proportionate to the urgency level. Return ONLY val
     campaign: APMACampaign,
     horizonDays: 7 | 30 | 90,
   ): Promise<Array<{ date: string; event: string; probability: number; suggested_action: string }>> {
-    const prompt = `You are a political intelligence analyst. Based on the current political landscape in ${client.country}, predict up to 5 significant political events in the next ${horizonDays} days that could affect the narrative of "${client.name}".
+    const geoCtx = await apmaGeoService.getCountryContext(client.country);
 
-For each event return JSON: { date, event, probability (0-1), suggested_action }
-Return only a JSON array. No explanation.`;
+    const prompt = `You are a political intelligence analyst specialising in ${geoCtx.countryName}.
+
+Based on ${geoCtx.countryName}'s current political landscape (political system: ${geoCtx.politicalSystem}), predict up to 5 significant political events in the next ${horizonDays} days that could affect the public narrative around "${client.name}".
+
+Topics currently salient: ${geoCtx.majorTopics.join(', ')}
+
+For each event return:
+{ "date": "YYYY-MM-DD", "event": "<event description>", "probability": <0-1>, "suggested_action": "<what APMA should do if this happens>" }
+
+Return ONLY a JSON array. No explanation.`;
 
     try {
       const resp = await this.ai.generateWithGPT4(prompt, { maxTokens: 1000, temperature: 0.6 });
-      const cleaned = (resp || '').replace(/```json|```/g, '').trim();
-      return JSON.parse(cleaned);
+      return JSON.parse((resp || '').replace(/```json|```/g, '').trim());
     } catch {
       return [];
     }
   }
 
-  private _fallbackPlan(today: string, campaign: APMACampaign, snapshot: PerceptionSnapshot): DailyPlan {
+  private _fallbackPlan(today: string, campaign: APMACampaign, snapshot: PerceptionSnapshot, majorTopics: string[]): DailyPlan {
     return {
       date: today,
-      objective: `Shift narrative score from ${snapshot.overall_sentiment.toFixed(2)} toward ${campaign.narrative_score_target} through organic engagement`,
-      target_narrative: snapshot.top_narratives[0]?.topic ?? campaign.keywords[0] ?? 'positive_governance',
+      objective: `Shift narrative from ${snapshot.overall_sentiment.toFixed(2)} toward ${campaign.narrative_score_target} through authentic organic engagement`,
+      target_narrative: snapshot.top_narratives[0]?.topic ?? majorTopics[0] ?? campaign.keywords[0] ?? 'positive_governance',
       sentiment_shift_target: 0.03,
       actions: [
-        { type: 'post', platform: 'twitter', count: 5, narrative_angle: 'positive achievements', keywords: campaign.keywords.slice(0, 3), persona_style: 'casual', priority: 'high' },
-        { type: 'comment', platform: 'facebook', count: 10, narrative_angle: 'counter negative narratives', keywords: campaign.keywords.slice(0, 3), persona_style: 'formal', priority: 'medium' },
-        { type: 'post', platform: 'reddit', count: 3, narrative_angle: 'fact-based discussion', keywords: campaign.keywords.slice(0, 2), persona_style: 'formal', priority: 'medium' },
+        { type: 'post', platform: campaign.platforms[0] ?? 'twitter', count: 5, narrative_angle: 'constructive positive achievements', keywords: campaign.keywords.slice(0, 3), persona_style: 'casual', priority: 'high' },
+        { type: 'comment', platform: campaign.platforms[1] ?? 'facebook', count: 10, narrative_angle: 'fact-based counter of negative narratives', keywords: campaign.keywords.slice(0, 3), persona_style: 'formal', priority: 'medium' },
+        { type: 'post', platform: campaign.platforms[2] ?? 'reddit', count: 3, narrative_angle: 'balanced policy discussion', keywords: campaign.keywords.slice(0, 2), persona_style: 'academic', priority: 'medium' },
       ],
       blog_tasks: [],
       group_tasks: [],
     };
   }
 
-  private async _storePlan(
-    clientId: string,
-    campaignId: string,
-    plan: DailyPlan,
-    currentSentiment: number,
-  ): Promise<void> {
+  private async _storePlan(clientId: string, campaignId: string, plan: DailyPlan, currentSentiment: number): Promise<void> {
     const sb = getServiceSupabaseClient();
+    const totalActions = plan.actions.reduce((s, a) => s + (a.count ?? 0), 0);
+
+    // Prevent duplicate plans for the same date
+    const { count } = await sb
+      .from('political_strategies')
+      .select('id', { count: 'exact', head: true })
+      .eq('campaign_id', campaignId)
+      .eq('plan_date', plan.date);
+    if ((count ?? 0) > 0) return;
+
     await sb.from('political_strategies').insert({
       client_id: clientId,
       campaign_id: campaignId,
@@ -147,15 +173,11 @@ Return only a JSON array. No explanation.`;
       sentiment_at_creation: currentSentiment,
       sentiment_shift_target: plan.sentiment_shift_target,
       status: 'pending',
-      actions_total: plan.actions.reduce((s, a) => s + a.count, 0),
+      actions_total: totalActions,
     });
   }
 
-  private async _storeRecommendations(
-    clientId: string,
-    campaignId: string,
-    recs: any[],
-  ): Promise<void> {
+  private async _storeRecommendations(clientId: string, campaignId: string, recs: any[]): Promise<void> {
     if (!recs.length) return;
     const sb = getServiceSupabaseClient();
     const rows = recs.map((r) => ({

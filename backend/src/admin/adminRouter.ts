@@ -1146,6 +1146,10 @@ label{font-size:12px;color:#94A3B8;font-weight:600}
     <button class="nav-item" onclick="showSection('agentnet')" id="nav-agentnet">
       <span>🕸️</span> Agent Network
     </button>
+    <div class="nav-section">APMA</div>
+    <button class="nav-item" onclick="showSection('apma')" id="nav-apma">
+      <span>🎯</span> Political Marketing
+    </button>
     <div style="margin-top:auto;padding:16px 8px">
       <button class="nav-item" onclick="doLogout()" style="color:#EF4444">
         <span>🚪</span> Sign Out
@@ -1642,6 +1646,121 @@ label{font-size:12px;color:#94A3B8;font-weight:600}
         </div>
       </div>
 
+      <!-- ───────────── APMA POLITICAL MARKETING ───────────── -->
+      <div id="section-apma" class="section">
+        <div class="section-header">
+          <div class="section-title">APMA — Autonomous Political Marketing Agent</div>
+          <button class="btn btn-ghost btn-sm" onclick="loadAPMASection()">↺ Refresh</button>
+        </div>
+
+        <!-- Stats -->
+        <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:12px;margin-bottom:20px">
+          <div class="stat-card"><div class="stat-label">Active Clients</div><div class="stat-value" id="apma-stat-clients" style="color:#818CF8">—</div></div>
+          <div class="stat-card"><div class="stat-label">Active Campaigns</div><div class="stat-value" id="apma-stat-campaigns" style="color:#00F0FF">—</div></div>
+          <div class="stat-card"><div class="stat-label">Actions (24h)</div><div class="stat-value" id="apma-stat-actions" style="color:#22C55E">—</div></div>
+          <div class="stat-card"><div class="stat-label">Live Blogs</div><div class="stat-value" id="apma-stat-blogs" style="color:#F59E0B">—</div></div>
+          <div class="stat-card"><div class="stat-label">Active Personas</div><div class="stat-value" id="apma-stat-personas" style="color:#94A3B8">—</div></div>
+        </div>
+
+        <!-- Client List -->
+        <div class="card" style="margin-bottom:16px">
+          <div class="section-header" style="margin-bottom:12px">
+            <div class="section-title" style="font-size:14px">Clients</div>
+          </div>
+          <table style="width:100%;border-collapse:collapse;font-size:13px">
+            <thead>
+              <tr style="color:#64748B;font-size:11px;text-transform:uppercase;border-bottom:1px solid #1E293B">
+                <th style="padding:8px 12px;text-align:left">Name</th>
+                <th style="padding:8px 12px;text-align:left">Country</th>
+                <th style="padding:8px 12px;text-align:left">Goal</th>
+                <th style="padding:8px 12px;text-align:left">Score</th>
+                <th style="padding:8px 12px;text-align:left">Status</th>
+                <th style="padding:8px 12px;text-align:left">Actions</th>
+              </tr>
+            </thead>
+            <tbody id="apma-client-list">
+              <tr><td colspan="6" style="text-align:center;color:#64748B;padding:20px">Loading...</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <!-- Campaigns Panel -->
+        <div class="card" id="apma-campaigns-panel" style="display:none;margin-bottom:16px">
+          <div class="section-header" style="margin-bottom:12px">
+            <div class="section-title" style="font-size:14px" id="apma-campaigns-title">Campaigns</div>
+            <button class="btn btn-ghost btn-sm" onclick="document.getElementById('apma-new-campaign-form').style.display=document.getElementById('apma-new-campaign-form').style.display==='none'?'block':'none'">+ New Campaign</button>
+          </div>
+          <!-- New campaign form -->
+          <div id="apma-new-campaign-form" style="display:none;background:#1A2540;border-radius:8px;padding:16px;margin-bottom:16px">
+            <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:10px">
+              <input id="apma-camp-name" class="input" placeholder="Campaign name" style="font-size:13px" />
+              <input id="apma-camp-keywords" class="input" placeholder="Keywords (comma-separated)" style="font-size:13px" />
+              <input id="apma-camp-platforms" class="input" placeholder="Platforms (default: twitter,facebook,reddit)" style="font-size:13px" />
+            </div>
+            <button id="apma-camp-btn" class="btn btn-primary" onclick="apmaCreateCampaign()">Create Campaign</button>
+          </div>
+          <table style="width:100%;border-collapse:collapse;font-size:13px">
+            <thead>
+              <tr style="color:#64748B;font-size:11px;text-transform:uppercase;border-bottom:1px solid #1E293B">
+                <th style="padding:8px 12px;text-align:left">Name</th>
+                <th style="padding:8px 12px;text-align:left">Status</th>
+                <th style="padding:8px 12px;text-align:left">Score / Target</th>
+                <th style="padding:8px 12px;text-align:left">Start Date</th>
+                <th style="padding:8px 12px;text-align:left">Actions</th>
+              </tr>
+            </thead>
+            <tbody id="apma-campaign-list">
+              <tr><td colspan="5" style="color:#64748B;text-align:center;padding:16px">Select a client above</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <!-- Campaign Overview Panel -->
+        <div class="card" id="apma-overview-panel" style="display:none;margin-bottom:16px">
+          <div class="section-header" style="margin-bottom:12px">
+            <div class="section-title" style="font-size:14px">Campaign Overview</div>
+            <button class="btn btn-ghost btn-sm" onclick="document.getElementById('apma-overview-panel').style.display='none'">✕ Close</button>
+          </div>
+          <div id="apma-overview-content" style="font-size:13px;color:#94A3B8">Select a campaign to view overview.</div>
+        </div>
+
+        <!-- Create Client Form -->
+        <div class="card">
+          <div class="section-header" style="margin-bottom:12px">
+            <div class="section-title" style="font-size:14px">Create New Client</div>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
+            <div>
+              <label style="font-size:11px;color:#64748B;display:block;margin-bottom:4px">Client Name *</label>
+              <input id="apma-new-name" class="input" placeholder="e.g. President Candidate 2027" style="font-size:13px" />
+            </div>
+            <div>
+              <label style="font-size:11px;color:#64748B;display:block;margin-bottom:4px">Country Code * (ISO 2-letter)</label>
+              <input id="apma-new-country" class="input" placeholder="e.g. NG, GH, KE, ZA, US, GB..." style="font-size:13px;text-transform:uppercase" />
+            </div>
+            <div>
+              <label style="font-size:11px;color:#64748B;display:block;margin-bottom:4px">Campaign Goal</label>
+              <select id="apma-new-goal" class="input" style="font-size:13px">
+                <option value="improve">Improve — Build positive narrative</option>
+                <option value="damage">Damage — Counter opposition narrative</option>
+              </select>
+            </div>
+            <div>
+              <label style="font-size:11px;color:#64748B;display:block;margin-bottom:4px">Keywords (comma-separated)</label>
+              <input id="apma-new-keywords" class="input" placeholder="e.g. economic growth, infrastructure, reform" style="font-size:13px" />
+            </div>
+            <div style="grid-column:1/-1">
+              <label style="font-size:11px;color:#64748B;display:block;margin-bottom:4px">Target Entities to Monitor (comma-separated, optional)</label>
+              <input id="apma-new-targets" class="input" placeholder="e.g. Opposition Party, Rival Candidate" style="font-size:13px" />
+            </div>
+          </div>
+          <div style="font-size:11px;color:#64748B;margin-bottom:12px;background:#0F172A;border-radius:6px;padding:10px">
+            💡 Once created, the client receives an API key for the desktop app. APMA will autonomously generate country-appropriate personas and begin campaigns on the next 15-minute scheduler cycle.
+          </div>
+          <button id="apma-create-btn" class="btn btn-primary" onclick="apmaCreateClient()">Create Client</button>
+        </div>
+      </div><!-- /section-apma -->
+
     </div><!-- /content -->
   </div><!-- /main -->
 </div><!-- /app -->
@@ -1778,8 +1897,8 @@ if (TOKEN) {
 }
 
 // ── Navigation ────────────────────────────────────────────────────────────────
-const SECTIONS = ['dashboard', 'users', 'credits', 'notifications', 'deletions', 'trials', 'activity', 'terminal', 'logs', 'cma', 'agentnet'];
-const TITLES = { dashboard: 'Dashboard', users: 'All Users', credits: 'Credit Management', notifications: 'Push Notifications', deletions: 'Account Deletion Requests', trials: 'Trials & Billing Monitor', activity: 'Live Activity', terminal: 'Live Server Terminal', logs: 'Admin Logs', cma: 'CMA Savings Dashboard', agentnet: 'Agent Network' };
+const SECTIONS = ['dashboard', 'users', 'credits', 'notifications', 'deletions', 'trials', 'activity', 'terminal', 'logs', 'cma', 'agentnet', 'apma'];
+const TITLES = { dashboard: 'Dashboard', users: 'All Users', credits: 'Credit Management', notifications: 'Push Notifications', deletions: 'Account Deletion Requests', trials: 'Trials & Billing Monitor', activity: 'Live Activity', terminal: 'Live Server Terminal', logs: 'Admin Logs', cma: 'CMA Savings Dashboard', agentnet: 'Agent Network', apma: 'APMA — Political Marketing' };
 
 function showSection(name) {
   SECTIONS.forEach(s => {
@@ -1790,6 +1909,7 @@ function showSection(name) {
   document.getElementById('page-title').textContent = TITLES[name] || name;
   if (name === 'cma') { loadCMAStats(); loadModelCredits(); }
   if (name === 'trials') { loadTrials(); }
+  if (name === 'apma') { loadAPMASection(); }
   // Start polling when entering the agent network section, stop when leaving
   if (name === 'agentnet') { startAgentNetPolling(); } else { stopAgentNetPolling(); }
 }
@@ -3042,6 +3162,192 @@ async function loadAgentNetwork() {
     updateAgentNetStatusPanel();
   }
 }
+
+/* ═══════════════════════════════════════════════════════════════════
+   APMA — Autonomous Political Marketing Agent
+═══════════════════════════════════════════════════════════════════ */
+let apmaSelectedClientId = null;
+
+async function loadAPMASection() {
+  await Promise.all([loadAPMAStats(), loadAPMAClients()]);
+}
+
+async function loadAPMAStats() {
+  try {
+    const data = await api('GET', '/api/apma/stats');
+    document.getElementById('apma-stat-clients').textContent   = data.active_clients ?? 0;
+    document.getElementById('apma-stat-campaigns').textContent = data.active_campaigns ?? 0;
+    document.getElementById('apma-stat-actions').textContent   = data.actions_24h ?? 0;
+    document.getElementById('apma-stat-blogs').textContent     = data.live_blogs ?? 0;
+    document.getElementById('apma-stat-personas').textContent  = data.active_personas ?? 0;
+  } catch(e) { console.error('[APMA stats]', e.message); }
+}
+
+async function loadAPMAClients() {
+  const list = document.getElementById('apma-client-list');
+  list.innerHTML = '<tr><td colspan="6" style="text-align:center;color:#64748B;padding:20px">Loading...</td></tr>';
+  try {
+    const data = await api('GET', '/api/apma/clients');
+    if (!data.clients.length) {
+      list.innerHTML = '<tr><td colspan="6" style="text-align:center;color:#64748B;padding:20px">No clients yet — create one below.</td></tr>';
+      return;
+    }
+    list.innerHTML = data.clients.map(c => \`
+      <tr>
+        <td><strong style="color:#F1F5F9">\${c.name}</strong></td>
+        <td><span style="font-size:11px;color:#94A3B8">\${c.country}</span></td>
+        <td><span style="padding:2px 8px;border-radius:99px;font-size:11px;font-weight:600;background:\${c.goal==='improve'?'rgba(34,197,94,.15)':'rgba(239,68,68,.15)'};color:\${c.goal==='improve'?'#22C55E':'#EF4444'}">\${c.goal}</span></td>
+        <td style="font-weight:700;color:\${scoreColor(c.narrative_score)}">\${(c.narrative_score||0).toFixed(3)}</td>
+        <td><span style="padding:2px 8px;border-radius:99px;font-size:11px;background:\${c.status==='active'?'rgba(34,197,94,.15)':'rgba(100,116,139,.15)'};color:\${c.status==='active'?'#22C55E':'#94A3B8'}">\${c.status}</span></td>
+        <td>
+          <button onclick="loadAPMACampaigns('\${c.id}','\${c.name}')" style="background:#6366F1;color:#fff;border:none;border-radius:6px;padding:4px 12px;font-size:12px;cursor:pointer">Campaigns</button>
+          <button onclick="apmaRotateKey('\${c.id}')" style="background:transparent;color:#F59E0B;border:1px solid rgba(245,158,11,.3);border-radius:6px;padding:4px 12px;font-size:12px;cursor:pointer;margin-left:4px">Rotate Key</button>
+        </td>
+      </tr>
+    \`).join('');
+  } catch(e) {
+    list.innerHTML = \`<tr><td colspan="6" style="color:#EF4444;padding:12px">\${e.message}</td></tr>\`;
+  }
+}
+
+async function loadAPMACampaigns(clientId, clientName) {
+  apmaSelectedClientId = clientId;
+  document.getElementById('apma-campaigns-title').textContent = 'Campaigns — ' + clientName;
+  document.getElementById('apma-campaigns-panel').style.display = 'block';
+  const list = document.getElementById('apma-campaign-list');
+  list.innerHTML = '<tr><td colspan="5" style="color:#64748B;text-align:center;padding:16px">Loading...</td></tr>';
+  try {
+    const data = await api('GET', '/api/apma/clients/'+clientId+'/campaigns');
+    if (!data.campaigns.length) {
+      list.innerHTML = '<tr><td colspan="5" style="color:#64748B;text-align:center;padding:16px">No campaigns yet.</td></tr>';
+      return;
+    }
+    list.innerHTML = data.campaigns.map(c => \`
+      <tr>
+        <td style="color:#F1F5F9;font-weight:500">\${c.name}</td>
+        <td><span style="padding:2px 8px;border-radius:99px;font-size:11px;background:\${c.status==='active'?'rgba(34,197,94,.15)':'rgba(100,116,139,.15)'};color:\${c.status==='active'?'#22C55E':'#94A3B8'}">\${c.status}</span></td>
+        <td style="font-weight:700;color:\${scoreColor(c.narrative_score_current)}">\${(c.narrative_score_current||0).toFixed(3)} / \${(c.narrative_score_target||0.6).toFixed(2)}</td>
+        <td style="color:#94A3B8;font-size:12px">\${c.start_date}</td>
+        <td>
+          <button onclick="apmaViewOverview('\${c.id}')" style="background:transparent;color:#818CF8;border:1px solid rgba(129,140,248,.3);border-radius:6px;padding:4px 10px;font-size:11px;cursor:pointer">Overview</button>
+          <button onclick="apmaTrigger('\${c.id}')" style="background:#22C55E;color:#fff;border:none;border-radius:6px;padding:4px 10px;font-size:11px;cursor:pointer;margin-left:4px">▶ Trigger</button>
+        </td>
+      </tr>
+    \`).join('');
+  } catch(e) {
+    list.innerHTML = \`<tr><td colspan="5" style="color:#EF4444;padding:12px">\${e.message}</td></tr>\`;
+  }
+}
+
+async function apmaViewOverview(campaignId) {
+  try {
+    const data = await api('GET', '/api/apma/campaigns/'+campaignId+'/overview');
+    const score = data.campaign.narrative_score_current || 0;
+    document.getElementById('apma-overview-content').innerHTML = \`
+      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:20px">
+        <div style="background:#263348;border-radius:8px;padding:14px;text-align:center">
+          <div style="font-size:11px;color:#64748B">Narrative Score</div>
+          <div style="font-size:28px;font-weight:700;color:\${scoreColor(score)}">\${score.toFixed(3)}</div>
+        </div>
+        <div style="background:#263348;border-radius:8px;padding:14px;text-align:center">
+          <div style="font-size:11px;color:#64748B">Total Posts</div>
+          <div style="font-size:28px;font-weight:700;color:#818CF8">\${data.campaign.total_posts||0}</div>
+        </div>
+        <div style="background:#263348;border-radius:8px;padding:14px;text-align:center">
+          <div style="font-size:11px;color:#64748B">Blog Articles</div>
+          <div style="font-size:28px;font-weight:700;color:#22C55E">\${data.blogs.reduce((a,b)=>a+b.article_count,0)}</div>
+        </div>
+        <div style="background:#263348;border-radius:8px;padding:14px;text-align:center">
+          <div style="font-size:11px;color:#64748B">Strategies Run</div>
+          <div style="font-size:28px;font-weight:700;color:#F59E0B">\${data.strategies.length}</div>
+        </div>
+      </div>
+      <div style="font-size:13px;font-weight:600;color:#94A3B8;margin-bottom:8px">RECENT ACTIONS</div>
+      \${data.recent_actions.slice(0,10).map(a=>\`
+        <div style="display:flex;justify-content:space-between;padding:8px 12px;background:#263348;border-radius:6px;margin-bottom:4px">
+          <span style="color:#E2E8F0;text-transform:capitalize">\${a.action_type} on \${a.platform}</span>
+          <span style="color:\${a.success?'#22C55E':'#EF4444'};font-size:12px">\${a.success?'✓':'✗'} \${new Date(a.executed_at).toLocaleTimeString()}</span>
+        </div>
+      \`).join('')}
+    \`;
+    document.getElementById('apma-overview-panel').style.display = 'block';
+  } catch(e) {
+    alert('Error: ' + e.message);
+  }
+}
+
+async function apmaTrigger(campaignId) {
+  if (!confirm('Manually trigger a full APMA cycle for this campaign?')) return;
+  try {
+    const data = await api('POST', '/api/apma/campaigns/'+campaignId+'/trigger');
+    alert('✓ ' + data.message);
+  } catch(e) { alert('Error: ' + e.message); }
+}
+
+async function apmaRotateKey(clientId) {
+  if (!confirm('Rotate the API key for this client? The old key will stop working immediately.')) return;
+  try {
+    const data = await api('POST', '/api/apma/clients/'+clientId+'/rotate-key');
+    alert('New API key (copy now):\\n\\n' + data.api_key + '\\n\\nStore it securely — it will not be shown again.');
+  } catch(e) { alert('Error: ' + e.message); }
+}
+
+async function apmaCreateClient() {
+  const name = document.getElementById('apma-new-name').value.trim();
+  const country = document.getElementById('apma-new-country').value.trim().toUpperCase();
+  const goal = document.getElementById('apma-new-goal').value;
+  const keywords = document.getElementById('apma-new-keywords').value.trim();
+  const targets = document.getElementById('apma-new-targets').value.trim();
+  if (!name || !country) { alert('Name and country code are required.'); return; }
+  const btn = document.getElementById('apma-create-btn');
+  btn.textContent = 'Creating…'; btn.disabled = true;
+  try {
+    const data = await api('POST', '/api/apma/clients', {
+      name, country,
+      goal: goal || 'improve',
+      keywords: keywords ? keywords.split(',').map(k=>k.trim()).filter(Boolean) : [],
+      target_entities: targets ? targets.split(',').map(t=>t.trim()).filter(Boolean) : [],
+    });
+    alert('Client created!\\n\\nAPI KEY (copy now):\\n' + data.api_key + '\\n\\nThis key is shown ONCE. Store it securely.');
+    document.getElementById('apma-new-name').value='';
+    document.getElementById('apma-new-country').value='';
+    document.getElementById('apma-new-keywords').value='';
+    document.getElementById('apma-new-targets').value='';
+    await loadAPMAClients();
+    await loadAPMAStats();
+  } catch(e) { alert('Error: ' + e.message); }
+  finally { btn.textContent = 'Create Client'; btn.disabled = false; }
+}
+
+async function apmaCreateCampaign() {
+  if (!apmaSelectedClientId) { alert('Select a client first.'); return; }
+  const name = document.getElementById('apma-camp-name').value.trim();
+  const keywords = document.getElementById('apma-camp-keywords').value.trim();
+  const platforms = document.getElementById('apma-camp-platforms').value.trim();
+  if (!name || !keywords) { alert('Campaign name and keywords are required.'); return; }
+  const btn = document.getElementById('apma-camp-btn');
+  btn.textContent = 'Creating…'; btn.disabled = true;
+  try {
+    await api('POST', '/api/apma/clients/'+apmaSelectedClientId+'/campaigns', {
+      name,
+      keywords: keywords.split(',').map(k=>k.trim()).filter(Boolean),
+      platforms: platforms ? platforms.split(',').map(p=>p.trim().toLowerCase()).filter(Boolean) : ['twitter','facebook','reddit'],
+    });
+    document.getElementById('apma-camp-name').value='';
+    document.getElementById('apma-camp-keywords').value='';
+    document.getElementById('apma-camp-platforms').value='';
+    await loadAPMACampaigns(apmaSelectedClientId, document.getElementById('apma-campaigns-title').textContent.replace('Campaigns — ',''));
+  } catch(e) { alert('Error: ' + e.message); }
+  finally { btn.textContent = 'Create Campaign'; btn.disabled = false; }
+}
+
+function scoreColor(score) {
+  if (score >= 0.3) return '#22C55E';
+  if (score >= 0) return '#F59E0B';
+  return '#EF4444';
+}
+
+
 </script>
 </body>
 </html>`;

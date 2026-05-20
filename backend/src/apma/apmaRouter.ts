@@ -60,8 +60,9 @@ apmaAdminRouter.post('/clients', async (req, res) => {
     status: 'active',
   }).select().single();
   if (error) return res.status(500).json({ error: error.message });
-  await apmaHumanizerService.seedPersonas(data.id).catch(() => {});
-  res.json({ client: data, api_key: apiKey, message: 'Store the API key securely — it will not be shown again.' });
+  // Seed country-appropriate personas asynchronously so the response is instant
+  setImmediate(() => apmaHumanizerService.seedPersonas(data.id, country || 'US').catch(console.error));
+  res.json({ client: data, api_key: apiKey, message: 'Store the API key securely — it will not be shown again. Personas are being generated in the background.' });
 });
 
 // ─── Update APMA client ───────────────────────────────────────────────────
