@@ -29,9 +29,6 @@ export type RootStackParamList = {
   StrategyWizard_DurationSelection: undefined;
   StrategyWizard_Comparison: undefined;
 
-  // APMA — Autonomous Political Marketing Agent
-  APMAOnboarding: undefined;
-  APMADashboard: { clientId: string; clientName: string };
 };
 
 export type DrawerParamList = {

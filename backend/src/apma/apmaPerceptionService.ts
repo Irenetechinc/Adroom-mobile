@@ -43,6 +43,10 @@ export class APMAPerceptionService {
         : Promise.resolve(),
       // Always fetch news regardless of platforms — it's perception, not publishing
       this._fetchNews(allKeywords, country, geoCtx.language).then((r) => raw.push(...r)),
+      // Nairaland — Nigerian political forum (only for NG campaigns)
+      country === 'NG'
+        ? this._fetchNairaland(allKeywords).then((r) => raw.push(...r))
+        : Promise.resolve(),
     ]);
 
     if (!raw.length) {
@@ -122,6 +126,59 @@ export class APMAPerceptionService {
     } catch { return []; }
   }
 
+  // ─── NAIRALAND — Nigerian political forum HTML scraper ─────────────────────
+  private async _fetchNairaland(keywords: string[]): Promise<RawConversation[]> {
+    try {
+      const q = keywords.slice(0, 2).join('+');
+      const url = `https://www.nairaland.com/search?q=${encodeURIComponent(q)}&board=0&type=topics`;
+      const res = await fetch(url, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (compatible; APMA-Perception/2.0; political-research)',
+          'Accept': 'text/html',
+        },
+        signal: AbortSignal.timeout(8000),
+      });
+      if (!res.ok) return [];
+      const html = await res.text();
+
+      const results: RawConversation[] = [];
+      // Extract topic titles and snippets from Nairaland search HTML
+      const titleRegex = /<a\s+href="(\/\d+\/[^"]+)"[^>]*>([^<]{10,200})<\/a>/gi;
+      const snippetRegex = /<td[^>]*class="[^"]*body[^"]*"[^>]*>([\s\S]{20,500}?)<\/td>/gi;
+
+      let m: RegExpExecArray | null;
+      const titles: Array<{ url: string; title: string }> = [];
+      while ((m = titleRegex.exec(html)) !== null && titles.length < 20) {
+        const title = m[2].replace(/<[^>]+>/g, '').trim();
+        if (title.length > 15) {
+          titles.push({ url: `https://www.nairaland.com${m[1]}`, title });
+        }
+      }
+
+      const snippets: string[] = [];
+      while ((m = snippetRegex.exec(html)) !== null && snippets.length < 20) {
+        const text = m[1].replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim();
+        if (text.length > 30) snippets.push(text.slice(0, 500));
+      }
+
+      for (let i = 0; i < Math.max(titles.length, snippets.length); i++) {
+        const title = titles[i]?.title ?? '';
+        const snippet = snippets[i] ?? '';
+        const content = title && snippet ? `${title}. ${snippet}` : title || snippet;
+        if (content.length > 20) {
+          results.push({
+            source: 'nairaland',
+            content,
+            url: titles[i]?.url,
+            engagement_score: 40,
+          });
+        }
+      }
+
+      return results.slice(0, 15);
+    } catch { return []; }
+  }
+
   private async _fetchNews(keywords: string[], country: string, language: string): Promise<RawConversation[]> {
     if (!NEWSAPI_KEY) return [];
     try {
@@ -165,7 +222,7 @@ export class APMAPerceptionService {
       const texts = batch.map((b, idx) => `[${idx}] ${b.content.slice(0, 250)}`).join('\n');
 
       try {
-        const resp = await this.ai.generateWithGemini(
+        const resp = await this.ai.generateText(
           `You are a political sentiment analysis engine for ${countryName}.
 
 Analyse these ${batch.length} texts related to political keywords: ${keywords.slice(0, 5).join(', ')}.
@@ -180,7 +237,6 @@ Texts:
 ${texts}
 
 Return ONLY a valid JSON array of ${batch.length} objects. No explanation.`,
-          { maxTokens: 2000 },
         );
 
         let parsed: any[] = [];
