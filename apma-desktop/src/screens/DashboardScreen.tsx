@@ -9,8 +9,10 @@ import RecommendationsList from '../components/RecommendationsList';
 import ThemesPanel from '../components/ThemesPanel';
 import BlogsPanel from '../components/BlogsPanel';
 import PredictiveCalendar from '../components/PredictiveCalendar';
+import InsightsPanel from '../components/InsightsPanel';
+import SocialAccountsPanel from '../components/SocialAccountsPanel';
 
-type Tab = 'overview' | 'actions' | 'recommendations' | 'blogs' | 'calendar' | 'monitor';
+type Tab = 'overview' | 'actions' | 'recommendations' | 'blogs' | 'calendar' | 'insights' | 'accounts' | 'monitor';
 
 const EVENT_COLOURS: Record<string, string> = {
   start:           '#818CF8',
@@ -105,6 +107,8 @@ export default function DashboardScreen() {
 
   const TABS: { id: Tab; label: string }[] = [
     { id: 'overview',        label: 'Overview'        },
+    { id: 'insights',        label: '🧠 Insights'     },
+    { id: 'accounts',        label: '🔗 Accounts'     },
     { id: 'actions',         label: 'Actions'         },
     { id: 'recommendations', label: 'Recommendations' },
     { id: 'blogs',           label: 'Blogs'           },
@@ -215,6 +219,26 @@ export default function DashboardScreen() {
           <div className="card">
             <h3 style={{ fontWeight:600, marginBottom:16, color:'#f1f5f9', fontSize:14 }}>Blog Network</h3>
             <BlogsPanel blogs={blogs} />
+          </div>
+        )}
+
+        {tab === 'insights' && (
+          <div className="card">
+            <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:18 }}>
+              <h3 style={{ fontWeight:600, color:'#f1f5f9', fontSize:14, margin:0 }}>APMA Intelligence</h3>
+              <span style={{ fontSize:11, color:'#64748b' }}>Client intelligence profile & AI self-improvement activity</span>
+            </div>
+            <InsightsPanel />
+          </div>
+        )}
+
+        {tab === 'accounts' && (
+          <div className="card">
+            <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:18 }}>
+              <h3 style={{ fontWeight:600, color:'#f1f5f9', fontSize:14, margin:0 }}>Social Accounts</h3>
+              <span style={{ fontSize:11, color:'#64748b' }}>Connected accounts APMA uses autonomously across platforms</span>
+            </div>
+            <SocialAccountsPanel />
           </div>
         )}
 

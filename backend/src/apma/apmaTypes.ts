@@ -1,4 +1,4 @@
-export type NarrativeGoal = 'improve' | 'damage';
+export type NarrativeGoal = 'improve' | 'damage' | 'get_votes';
 export type CampaignStatus = 'active' | 'paused' | 'completed';
 export type CampaignType =
   | 'presidential' | 'gubernatorial' | 'senate' | 'house'

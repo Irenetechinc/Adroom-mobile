@@ -25,23 +25,31 @@ export const InstagramService = {
       `&state=${state}`;
 
     console.log('[InstagramService] Opening browser for OAuth…');
-    WebBrowser.openBrowserAsync(authUrl).catch(() => {});
 
     return new Promise((resolve) => {
       const POLL_MS = 2000;
       const TIMEOUT_MS = 5 * 60 * 1000;
+      const BROWSER_CLOSE_GRACE_MS = 5000;
       const start = Date.now();
+      let codeReceived = false;
+      let browserClosedAt: number | null = null;
+
+      WebBrowser.openBrowserAsync(authUrl)
+        .then(() => { if (!codeReceived) browserClosedAt = Date.now(); })
+        .catch(() => { if (!codeReceived) browserClosedAt = Date.now(); });
 
       const finish = (result: string | null) => {
+        if (codeReceived && result === null) return;
+        codeReceived = true;
         clearInterval(poll);
         WebBrowser.dismissBrowser().catch(() => {});
         resolve(result);
       };
 
       const poll = setInterval(async () => {
-        if (Date.now() - start > TIMEOUT_MS) {
-          finish(null);
-          return;
+        if (Date.now() - start > TIMEOUT_MS) { finish(null); return; }
+        if (browserClosedAt !== null && !codeReceived && Date.now() - browserClosedAt > BROWSER_CLOSE_GRACE_MS) {
+          finish(null); return;
         }
         try {
           const res = await fetch(`${BACKEND_URL}/auth/poll?state=${state}`);
@@ -49,6 +57,7 @@ export const InstagramService = {
           const data = await res.json();
           if (data.error) { finish(null); return; }
           if (data.code) {
+            codeReceived = true;
             clearInterval(poll);
             WebBrowser.dismissBrowser().catch(() => {});
             try {

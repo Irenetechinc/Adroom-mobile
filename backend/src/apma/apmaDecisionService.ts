@@ -18,11 +18,17 @@ export class APMADecisionService {
     // Get geo-specific context — makes APMA truly adaptive to any country
     const geoCtx = await apmaGeoService.getCountryContext(client.country);
 
+    const goalDescription =
+      client.goal === 'improve'    ? 'Shift public narrative POSITIVE — build trust, credibility, and public support' :
+      client.goal === 'damage'     ? 'Shift public narrative NEGATIVE about target entities — expose weaknesses, amplify controversies' :
+      client.goal === 'get_votes'  ? 'MAXIMIZE VOTE ACQUISITION — mobilize supporters, persuade undecided voters, suppress opposition enthusiasm, dominate key demographic narratives' :
+      'Improve overall public sentiment';
+
     const systemPrompt = `You are APMA — an autonomous political marketing strategist specialising in ${geoCtx.countryName}.
 
 CLIENT CONTEXT:
 - Client: ${client.name} (${geoCtx.countryName}, ${geoCtx.politicalSystem})
-- Goal: ${client.goal === 'improve' ? 'Shift public narrative POSITIVE' : 'Shift public narrative NEGATIVE about targets'}
+- Goal: ${goalDescription}
 - Targets to counter: ${(client.target_entities || []).join(', ') || 'N/A'}
 - Current Narrative Score: ${snapshot.overall_sentiment.toFixed(3)} → Target: ${campaign.narrative_score_target}
 - Urgency: ${urgency}
