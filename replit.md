@@ -128,6 +128,48 @@ npx expo start
 # Ensure EXPO_PUBLIC_API_URL points to your Replit/Railway backend URL
 ```
 
+## APMA — Autonomous Political Marketing Agent (May 2026)
+**Completely isolated from AdRoom mobile app.** Admin + Electron desktop only.
+
+### Architecture
+- **Backend services**: `backend/src/apma/` — 7 TypeScript modules
+- **API routes**: `/admin/api/apma/*` (admin-JWT) + `/api/apma/client/*` (APMA API key)
+- **Scheduler**: Runs every 15 min alongside AdRoom agents (no interference)
+- **Desktop app**: `apma-desktop/` — Electron + React + Vite (Windows/macOS installer)
+
+### APMA Pipeline (every 15 min)
+1. **Perception** (`apmaPerceptionService.ts`) — Twitter v2, Reddit, NewsAPI → Gemini 2.0 Flash sentiment
+2. **Decision** (`apmaDecisionService.ts`) — GPT-4o daily plan (posts, blogs, groups)
+3. **Humanizer** (`apmaHumanizerService.ts`) — 100+ Nigerian personas, typo injection, slang, delays
+4. **Action** (`apmaActionService.ts`) — Publish to Twitter/Facebook/Reddit, create blogs + groups
+5. **Orchestrator** (`apmaOrchestrator.ts`) — Coordinates cycle, narrative score, self-improvement
+
+### Database Migration
+Run `backend/apma_migration.sql` in Supabase SQL Editor (after all AdRoom migrations)
+
+### Key APMA Tables
+`apma_clients`, `apma_campaigns`, `political_conversations`, `political_strategies`,
+`apma_personas`, `apma_actions`, `apma_blog_sites`, `apma_blog_articles`,
+`apma_social_groups`, `apma_sentiment_history`, `apma_recommendations`, `apma_self_improvement_logs`
+
+### Required New Env Vars (add to Replit + Railway)
+- `NEWSAPI_KEY` — NewsAPI.org
+- `REDDIT_CLIENT_ID`, `REDDIT_CLIENT_SECRET` — Reddit monitoring
+- `TWITTER_BEARER_TOKEN` — Twitter monitoring (shared with AdRoom OK)
+- `TWITTER_APMA_OAUTH_TOKEN`, `TWITTER_APMA_OAUTH_SECRET` — APMA publishing account
+- `FB_APMA_PAGE_TOKEN`, `FB_APMA_PAGE_ID` — APMA Facebook page
+- `REDDIT_APMA_ACCESS_TOKEN`, `REDDIT_APMA_SUBREDDIT` — APMA Reddit posting
+
+### Desktop App Build
+```bash
+cd apma-desktop && npm install
+npm run dist:win   # → release/APMA Dashboard Setup.exe
+npm run dist:mac   # → release/APMA Dashboard.dmg
+```
+
+### Full Setup Guide
+See `APMA_SETUP.md` at project root.
+
 ## User Preferences
 - All code in TypeScript
 - No placeholder/mock data — always real API calls

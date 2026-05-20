@@ -25,6 +25,7 @@ import adminRouter from './admin/adminRouter';
 import authPagesRouter from './auth/authPagesRouter';
 import { popOAuthEntry, setOAuthCode, setOAuthError } from './auth/oauthStore';
 import { validateEmailAsync } from './utils/emailValidator';
+import { apmaClientRouter } from './apma/apmaRouter';
 
 dotenv.config();
 
@@ -122,6 +123,9 @@ app.use(bodyParser.json({ limit: '10mb' }));
 
 // Admin panel
 app.use('/admin', adminRouter);
+
+// APMA Client API — desktop app only, completely separate from AdRoom mobile
+app.use('/api/apma/client', apmaClientRouter);
 
 // Public auth pages opened from Resend email links (signup verified +
 // password reset form). Mounted before the /api routes so they're reachable

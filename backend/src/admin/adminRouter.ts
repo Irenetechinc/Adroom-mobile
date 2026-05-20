@@ -3,6 +3,7 @@ import crypto from 'crypto';
 import { getServiceSupabaseClient } from '../config/supabase';
 import { SUBSCRIPTION_PLAN_LIMITS } from '../services/subscriptionGuard';
 import { pushService } from '../services/pushService';
+import { apmaAdminRouter } from '../apma/apmaRouter';
 
 const router = Router();
 
@@ -82,6 +83,9 @@ router.post('/login', (req, res) => {
   }
   return res.json({ token: signToken(ADMIN_EMAIL), email: ADMIN_EMAIL });
 });
+
+// ─── APMA (Autonomous Political Marketing Agent) — admin-only ─────────────────
+router.use('/api/apma', auth, apmaAdminRouter);
 
 // ─── STATS ────────────────────────────────────────────────────────────────────
 router.get('/api/stats', auth, async (_req, res) => {
