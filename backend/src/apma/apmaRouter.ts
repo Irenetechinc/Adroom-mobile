@@ -1,10 +1,12 @@
 import { Router } from 'express';
 import crypto from 'crypto';
 import { getServiceSupabaseClient } from '../config/supabase';
+import { createClient } from '@supabase/supabase-js';
 import { apmaOrchestrator } from './apmaOrchestrator';
 import { apmaHumanizerService } from './apmaHumanizerService';
 import { apmaPerceptionService } from './apmaPerceptionService';
 import { apmaDecisionService } from './apmaDecisionService';
+import { registerSSEClient, unregisterSSEClient } from '../events/sseBroadcast';
 
 export const apmaAdminRouter = Router();   // mounted at /admin/apma  (admin-JWT protected in adminRouter)
 export const apmaClientRouter = Router();  // mounted at /api/apma/client  (APMA API-key protected)
@@ -88,21 +90,50 @@ apmaAdminRouter.post('/clients/:id/rotate-key', async (req, res) => {
   res.json({ api_key: apiKey, message: 'Key rotated. Store the new key securely.' });
 });
 
+// ─── SSE cycle monitor ────────────────────────────────────────────────────
+apmaAdminRouter.get('/cycle-monitor', (req, res) => {
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache, no-transform');
+  res.setHeader('Connection', 'keep-alive');
+  res.setHeader('X-Accel-Buffering', 'no');
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.flushHeaders();
+  try { res.write('event: connected\ndata: {"message":"APMA cycle monitor connected"}\n\n'); } catch {}
+  registerSSEClient(res);
+  const ping = setInterval(() => {
+    try { res.write(': ping\n\n'); }
+    catch { clearInterval(ping); unregisterSSEClient(res); }
+  }, 15000);
+  req.on('close', () => { clearInterval(ping); unregisterSSEClient(res); });
+});
+
 // ─── Create campaign for client ───────────────────────────────────────────
 apmaAdminRouter.post('/clients/:clientId/campaigns', async (req, res) => {
   const { clientId } = req.params;
-  const { name, goal, platforms, keywords, target_score, end_date } = req.body;
+  const {
+    name, goal, platforms, keywords, target_score, end_date,
+    campaign_type, campaign_subtype, duration_months,
+  } = req.body;
   if (!name || !keywords?.length) return res.status(400).json({ error: 'name and keywords required' });
   const sb = getServiceSupabaseClient();
   const { data: client } = await sb.from('apma_clients').select('goal').eq('id', clientId).single();
+
+  // Compute end_date from duration_months if not provided
+  const computedEndDate = end_date ?? (duration_months
+    ? new Date(Date.now() + (duration_months as number) * 30 * 86_400_000).toISOString().split('T')[0]
+    : null);
+
   const { data, error } = await sb.from('apma_campaigns').insert({
     client_id: clientId,
     name,
     goal: goal || client?.goal || 'improve',
+    campaign_type: campaign_type || 'gubernatorial',
+    campaign_subtype: campaign_subtype || 'build',
+    duration_months: duration_months || 12,
     platforms: platforms || ['twitter', 'facebook', 'reddit'],
     keywords,
     narrative_score_target: target_score ?? 0.6,
-    end_date: end_date ?? null,
+    end_date: computedEndDate,
     status: 'active',
   }).select().single();
   if (error) return res.status(500).json({ error: error.message });
@@ -210,6 +241,106 @@ apmaAdminRouter.get('/stats', async (_req, res) => {
 // ════════════════════════════════════════════════════════════════════════════
 // CLIENT API ROUTES  (for desktop app — API key auth)
 // ════════════════════════════════════════════════════════════════════════════
+
+// ════════════════════════════════════════════════════════════════════════════
+// MOBILE SETUP ROUTES  (Supabase JWT auth — for admin mobile app access)
+// ════════════════════════════════════════════════════════════════════════════
+
+export const apmaMobileRouter = Router();
+
+const SUPABASE_URL = process.env.SUPABASE_URL || process.env.EXPO_PUBLIC_SUPABASE_URL || '';
+const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
+const ADMIN_EMAIL = (process.env.ADMIN_EMAIL || '').toLowerCase();
+
+async function mobileAdminAuth(req: any, res: any, next: any) {
+  const authHeader = req.headers.authorization as string || '';
+  const token = authHeader.replace('Bearer ', '').trim();
+  if (!token) return res.status(401).json({ error: 'Authorization header required' });
+  try {
+    const sb = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
+    const { data: { user }, error } = await sb.auth.getUser(token);
+    if (error || !user) return res.status(401).json({ error: 'Invalid token' });
+    if (ADMIN_EMAIL && user.email?.toLowerCase() !== ADMIN_EMAIL) {
+      return res.status(403).json({ error: 'Admin access only' });
+    }
+    req.mobileUserId = user.id;
+    req.mobileUserEmail = user.email;
+    next();
+  } catch { return res.status(401).json({ error: 'Token validation failed' }); }
+}
+
+apmaMobileRouter.use(mobileAdminAuth);
+
+// ─── Setup: create client + campaign from mobile ──────────────────────────
+apmaMobileRouter.post('/setup', async (req: any, res) => {
+  const {
+    name, country, goal, target_entities, target_score,
+    campaign_name, platforms, keywords,
+    campaign_type, campaign_subtype, duration_months,
+  } = req.body;
+  if (!name || !country) return res.status(400).json({ error: 'name and country required' });
+  if (!keywords?.length) return res.status(400).json({ error: 'keywords required' });
+
+  const sb = getServiceSupabaseClient();
+  const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') + '-' + Date.now().toString(36);
+  const apiKey = crypto.randomBytes(32).toString('hex');
+  const apiKeyHash = crypto.createHash('sha256').update(apiKey).digest('hex');
+
+  const { data: client, error: clientErr } = await sb.from('apma_clients').insert({
+    name, slug, country,
+    goal: goal || 'improve',
+    target_entities: target_entities || [],
+    target_score: target_score ?? 0.6,
+    api_key: apiKey,
+    api_key_hash: apiKeyHash,
+    status: 'active',
+  }).select().single();
+  if (clientErr) return res.status(500).json({ error: clientErr.message });
+
+  const endDate = new Date(Date.now() + (duration_months || 12) * 30 * 86_400_000).toISOString().split('T')[0];
+
+  const { data: campaign, error: campErr } = await sb.from('apma_campaigns').insert({
+    client_id: client.id,
+    name: campaign_name || `${name} — ${campaign_type || 'Campaign'}`,
+    goal: goal || 'improve',
+    campaign_type: campaign_type || 'gubernatorial',
+    campaign_subtype: campaign_subtype || 'build',
+    duration_months: duration_months || 12,
+    platforms: platforms || ['twitter', 'facebook', 'reddit'],
+    keywords,
+    narrative_score_target: target_score ?? 0.6,
+    end_date: endDate,
+    status: 'active',
+  }).select().single();
+  if (campErr) return res.status(500).json({ error: campErr.message });
+
+  setImmediate(() => apmaHumanizerService.seedPersonas(client.id, country).catch(console.error));
+
+  res.json({
+    client,
+    campaign,
+    api_key: apiKey,
+    message: 'APMA client and campaign created. Store the api_key securely — it is used to access the campaign dashboard.',
+  });
+});
+
+// ─── List mobile clients (admin) ──────────────────────────────────────────
+apmaMobileRouter.get('/clients', async (_req, res) => {
+  const sb = getServiceSupabaseClient();
+  const { data, error } = await sb
+    .from('apma_clients')
+    .select('id, name, country, goal, status, narrative_score, target_score, created_at')
+    .order('created_at', { ascending: false });
+  if (error) return res.status(500).json({ error: error.message });
+  res.json({ clients: data ?? [] });
+});
+
+// ─── Mobile dashboard (uses client API key) ───────────────────────────────
+apmaMobileRouter.get('/dashboard/:clientId', async (req: any, res) => {
+  const data = await apmaOrchestrator.getClientDashboard(req.params.clientId);
+  if (!data) return res.status(404).json({ error: 'No active campaign found' });
+  res.json(data);
+});
 
 apmaClientRouter.use(apmaClientAuth);
 

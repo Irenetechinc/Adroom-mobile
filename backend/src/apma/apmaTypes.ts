@@ -1,5 +1,10 @@
 export type NarrativeGoal = 'improve' | 'damage';
 export type CampaignStatus = 'active' | 'paused' | 'completed';
+export type CampaignType =
+  | 'presidential' | 'gubernatorial' | 'senate' | 'house'
+  | 'city_council' | 'mayoral' | 'public_perception';
+export type CampaignSubtype =
+  | 'build' | 'defend' | 'offensive' | 'defensive' | 'general';
 export type ActionType =
   | 'post' | 'comment' | 'reply' | 'dm'
   | 'blog_create' | 'blog_article'
@@ -26,6 +31,9 @@ export interface APMACampaign {
   client_id: string;
   name: string;
   goal: NarrativeGoal;
+  campaign_type: CampaignType;
+  campaign_subtype: CampaignSubtype;
+  duration_months: 6 | 12 | 18 | 24;
   status: CampaignStatus;
   start_date: string;
   end_date?: string;
