@@ -97,7 +97,7 @@ Be specific, actionable, and culturally calibrated to ${geoCtx.countryName}. Ret
 
     let plan: DailyPlan;
     try {
-      const resp = await this.ai.generateWithGPT4(systemPrompt, { maxTokens: 3500, temperature: 0.7 });
+      const resp = await this.ai.generateText(systemPrompt);
       const cleaned = (resp || '').replace(/```json|```/g, '').trim();
       plan = JSON.parse(cleaned);
     } catch {
@@ -128,7 +128,7 @@ For each event return:
 Return ONLY a JSON array. No explanation.`;
 
     try {
-      const resp = await this.ai.generateWithGPT4(prompt, { maxTokens: 1000, temperature: 0.6 });
+      const resp = await this.ai.generateText(prompt);
       return JSON.parse((resp || '').replace(/```json|```/g, '').trim());
     } catch {
       return [];

@@ -24,6 +24,7 @@ if (!ADMIN_CONFIGURED) {
 export function adminBroadcast(event: string, data: unknown) {
   _sseBroadcast(event, data);
 }
+const broadcast = _sseBroadcast;
 
 // ─── Token helpers ────────────────────────────────────────────────────────────
 function signToken(email: string): string {

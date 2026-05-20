@@ -65,6 +65,8 @@ export interface APMAPersona {
   platforms: string[];
   platform_handles: Record<string, string>;
   active: boolean;
+  usage_count?: number;
+  last_used_at?: string;
 }
 
 export interface DailyPlan {

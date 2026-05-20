@@ -25,7 +25,7 @@ import adminRouter from './admin/adminRouter';
 import authPagesRouter from './auth/authPagesRouter';
 import { popOAuthEntry, setOAuthCode, setOAuthError } from './auth/oauthStore';
 import { validateEmailAsync } from './utils/emailValidator';
-import { apmaClientRouter, apmaMobileRouter } from './apma/apmaRouter';
+import { apmaClientRouter } from './apma/apmaRouter';
 
 dotenv.config();
 

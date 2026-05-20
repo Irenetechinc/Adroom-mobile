@@ -81,7 +81,7 @@ Only valid JSON. No explanation.`;
 
     let ctx: CountryContext;
     try {
-      const resp = await this.ai.generateWithGPT4(prompt, { maxTokens: 2500, temperature: 0.3 });
+      const resp = await this.ai.generateText(prompt);
       ctx = JSON.parse((resp || '').replace(/```json|```/g, '').trim());
     } catch {
       ctx = this._fallbackContext(countryCode, countryName);
@@ -123,7 +123,7 @@ Return ONLY a JSON array of objects with:
 Ensure variety in age, gender, location, occupation, and political lean. Only valid JSON array.`;
 
     try {
-      const resp = await this.ai.generateWithGPT4(prompt, { maxTokens: 3000, temperature: 0.8 });
+      const resp = await this.ai.generateText(prompt);
       return JSON.parse((resp || '').replace(/```json|```/g, '').trim());
     } catch {
       return ctx.demographicGroups.map((g, i) => ({
@@ -166,7 +166,7 @@ Requirements:
 Return ONLY the rewritten text. No quotes, no explanation.`;
 
     try {
-      const rewritten = await this.ai.generateWithGemini(prompt, { maxTokens: 400, temperature: 0.9 });
+      const rewritten = await this.ai.generateText(prompt);
       return (rewritten || text).trim();
     } catch {
       return text;

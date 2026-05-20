@@ -29,8 +29,6 @@ import PrivacySecurityScreen from '../screens/PrivacySecurityScreen';
 import NotificationsScreen from '../screens/NotificationsScreen';
 import AboutScreen from '../screens/AboutScreen';
 import ReferralScreen from '../screens/ReferralScreen';
-import APMAOnboardingScreen from '../screens/APMAOnboardingScreen';
-import APMADashboardScreen from '../screens/APMADashboardScreen';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 

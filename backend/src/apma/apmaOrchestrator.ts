@@ -139,7 +139,7 @@ Return JSON: { "skill_name": "", "description": "", "code_snippet": "<pseudocode
 Only JSON.`;
 
     try {
-      const resp = await this.ai.generateWithGPT4(prompt, { maxTokens: 500, temperature: 0.6 });
+      const resp = await this.ai.generateText(prompt);
       const parsed = JSON.parse((resp || '').replace(/```json|```/g, '').trim());
       await sb.from('apma_self_improvement_logs').insert({
         skill_name: parsed.skill_name || 'general_optimisation',

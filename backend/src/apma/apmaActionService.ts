@@ -55,6 +55,10 @@ export class APMAActionService {
     let success = 0;
     let fail    = 0;
 
+    // Generate a campaign graphic for every 5th post on visual platforms
+    const VISUAL_PLATFORMS = new Set(['twitter', 'facebook', 'telegram']);
+    const withGraphic = action.type === 'post' && VISUAL_PLATFORMS.has(action.platform);
+
     for (let i = 0; i < action.count; i++) {
       const rawContent = await this._generateContent(client, campaign, action);
       if (!rawContent) { fail++; continue; }
@@ -68,7 +72,15 @@ export class APMAActionService {
       );
       if (!humanized) { fail++; continue; }
 
-      const result = await this._publishContent(client, campaign, action, humanized, strategyId);
+      // Generate a graphic for every 5th visual post (rate-limited to avoid burning quotas)
+      let imageBase64: string | null = null;
+      let imageMime = 'image/png';
+      if (withGraphic && i % 5 === 0) {
+        const imgResult = await this._generatePostGraphic(client, campaign, action, rawContent);
+        if (imgResult) { imageBase64 = imgResult.base64; imageMime = imgResult.mimeType; }
+      }
+
+      const result = await this._publishContent(client, campaign, action, humanized, strategyId, imageBase64, imageMime);
       if (result.success) success++; else fail++;
 
       // Realistic inter-post delay (reduced in execution to max 5s so cycles don't time out)
@@ -76,6 +88,25 @@ export class APMAActionService {
     }
 
     return { success, fail };
+  }
+
+  private async _generatePostGraphic(
+    client: APMAClient,
+    campaign: APMACampaign,
+    action: PlanAction,
+    textContent: string,
+  ): Promise<{ base64: string; mimeType: string } | null> {
+    const isImprove = client.goal === 'improve';
+    const prompt = `Political campaign graphic for a ${action.platform} post.
+Style: Clean, modern political design. Bold typography. No faces.
+Message theme: ${action.narrative_angle}
+Tone: ${isImprove ? 'Hopeful, constructive, community-focused' : 'Accountability-focused, civic urgency'}
+Keywords: ${action.keywords.slice(0, 3).join(', ')}
+Content hint: ${textContent.slice(0, 100)}
+Visual: Appropriate for ${action.platform} political content. Professional. No text overlay needed.`;
+    try {
+      return await this.ai.generateImage(prompt);
+    } catch { return null; }
   }
 
   private async _generateContent(
@@ -114,7 +145,7 @@ CRITICAL RULES:
 Write ONLY the ${action.type} text. No quotes. No label.`;
 
     try {
-      return ((await this.ai.generateWithGemini(prompt, { maxTokens: 500, temperature: 0.88 })) || '').trim() || null;
+      return ((await this.ai.generateText(prompt)) || '').trim() || null;
     } catch { return null; }
   }
 
@@ -124,6 +155,8 @@ Write ONLY the ${action.type} text. No quotes. No label.`;
     action: PlanAction,
     humanized: { text: string; persona: APMAPersona; platform: string },
     strategyId: string,
+    imageBase64: string | null = null,
+    imageMime = 'image/png',
   ): Promise<{ success: boolean; error?: string }> {
     const sb = getServiceSupabaseClient();
     let externalId: string | null = null;
@@ -132,7 +165,7 @@ Write ONLY the ${action.type} text. No quotes. No label.`;
     let publishSuccess = false;
 
     try {
-      const r = await this._callPlatformApi(action.platform, action.type, humanized.text, humanized.persona, campaign);
+      const r = await this._callPlatformApi(action.platform, action.type, humanized.text, humanized.persona, campaign, imageBase64, imageMime);
       externalId = r.id ?? null;
       url        = r.url ?? null;
       publishSuccess = r.success;
@@ -166,26 +199,56 @@ Write ONLY the ${action.type} text. No quotes. No label.`;
     text: string,
     persona: APMAPersona,
     campaign: APMACampaign,
+    imageBase64: string | null = null,
+    imageMime = 'image/png',
   ): Promise<{ success: boolean; id?: string; url?: string; error?: string }> {
     switch (platform) {
-      case 'twitter': return this._twitterPost(text);
-      case 'facebook': return this._facebookPost(text, campaign);
+      case 'twitter': return this._twitterPost(text, imageBase64, imageMime);
+      case 'facebook': return this._facebookPost(text, campaign, imageBase64, imageMime);
       case 'reddit': return this._redditPost(text, actionType, campaign);
-      case 'telegram': return this._telegramPost(text, campaign);
+      case 'telegram': return this._telegramPost(text, campaign, imageBase64);
       default:
         return { success: false, error: `Platform "${platform}" requires additional credentials. Add them to campaign config.` };
     }
   }
 
   // ─── TWITTER v2 — OAuth2 User Access Token ─────────────────────────────────
-  private async _twitterPost(text: string): Promise<{ success: boolean; id?: string; url?: string; error?: string }> {
+  private async _twitterPost(
+    text: string,
+    imageBase64: string | null = null,
+    imageMime = 'image/png',
+  ): Promise<{ success: boolean; id?: string; url?: string; error?: string }> {
     const userToken = process.env.TWITTER_APMA_OAUTH_TOKEN || '';
     if (!userToken) return { success: false, error: 'TWITTER_APMA_OAUTH_TOKEN not configured. Set an OAuth2 user access token for the APMA Twitter account.' };
     try {
+      let mediaId: string | null = null;
+
+      // Upload image via Twitter v1.1 media/upload if we have one
+      if (imageBase64) {
+        try {
+          const uploadRes = await fetch('https://upload.twitter.com/1.1/media/upload.json', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/x-www-form-urlencoded',
+              Authorization: `Bearer ${userToken}`,
+            },
+            body: new URLSearchParams({
+              media_data: imageBase64,
+              media_type: imageMime,
+            }).toString(),
+          });
+          const uploadData = await uploadRes.json();
+          if (uploadData.media_id_string) mediaId = uploadData.media_id_string;
+        } catch { /* image upload failed — post text-only */ }
+      }
+
+      const body: Record<string, any> = { text: text.slice(0, 280) };
+      if (mediaId) body.media = { media_ids: [mediaId] };
+
       const res = await fetch(`${TWITTER_API_V2}/tweets`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${userToken}` },
-        body: JSON.stringify({ text: text.slice(0, 280) }),
+        body: JSON.stringify(body),
       });
       const data = await res.json();
       if (!res.ok) return { success: false, error: data.detail ?? data.title ?? JSON.stringify(data.errors?.[0] ?? 'Twitter API error') };
@@ -198,11 +261,39 @@ Write ONLY the ${action.type} text. No quotes. No label.`;
   }
 
   // ─── FACEBOOK — Graph API v19 ───────────────────────────────────────────────
-  private async _facebookPost(text: string, campaign: APMACampaign): Promise<{ success: boolean; id?: string; url?: string; error?: string }> {
+  private async _facebookPost(
+    text: string,
+    campaign: APMACampaign,
+    imageBase64: string | null = null,
+    imageMime = 'image/png',
+  ): Promise<{ success: boolean; id?: string; url?: string; error?: string }> {
     const pageToken = process.env.FB_APMA_PAGE_TOKEN || (campaign.config as any)?.fb_page_token || '';
     const pageId    = process.env.FB_APMA_PAGE_ID    || (campaign.config as any)?.fb_page_id    || '';
     if (!pageToken || !pageId) return { success: false, error: 'FB_APMA_PAGE_TOKEN and FB_APMA_PAGE_ID not configured.' };
     try {
+      // If we have an image, post to /{pageId}/photos for a photo post (includes caption)
+      if (imageBase64) {
+        try {
+          const ext = imageMime.split('/')[1] || 'png';
+          const imgBuf = Buffer.from(imageBase64, 'base64');
+          const formData = new FormData();
+          formData.append('source', new Blob([imgBuf], { type: imageMime }), `graphic.${ext}`);
+          formData.append('caption', text);
+          formData.append('access_token', pageToken);
+
+          const photoRes = await fetch(`https://graph.facebook.com/v19.0/${pageId}/photos`, {
+            method: 'POST',
+            body: formData,
+          });
+          const photoData = await photoRes.json();
+          if (photoRes.ok && photoData.id) {
+            return { success: true, id: photoData.id, url: `https://www.facebook.com/${photoData.id}` };
+          }
+          // Fall through to text-only post if photo upload fails
+        } catch { /* fall through */ }
+      }
+
+      // Text-only fallback
       const res = await fetch(`https://graph.facebook.com/v19.0/${pageId}/feed`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -247,11 +338,38 @@ Write ONLY the ${action.type} text. No quotes. No label.`;
   }
 
   // ─── TELEGRAM — Bot API ─────────────────────────────────────────────────────
-  private async _telegramPost(text: string, campaign: APMACampaign): Promise<{ success: boolean; id?: string; url?: string; error?: string }> {
+  private async _telegramPost(
+    text: string,
+    campaign: APMACampaign,
+    imageBase64: string | null = null,
+  ): Promise<{ success: boolean; id?: string; url?: string; error?: string }> {
     const botToken  = process.env.TELEGRAM_APMA_BOT_TOKEN  || (campaign.config as any)?.telegram_bot_token || '';
     const channelId = process.env.TELEGRAM_APMA_CHANNEL_ID || (campaign.config as any)?.telegram_channel_id || '';
     if (!botToken || !channelId) return { success: false, error: 'TELEGRAM_APMA_BOT_TOKEN and TELEGRAM_APMA_CHANNEL_ID not configured.' };
     try {
+      // If we have an image, use sendPhoto with caption
+      if (imageBase64) {
+        try {
+          const imgBuf = Buffer.from(imageBase64, 'base64');
+          const formData = new FormData();
+          formData.append('chat_id', channelId);
+          formData.append('caption', text.slice(0, 1024));
+          formData.append('parse_mode', 'HTML');
+          formData.append('photo', new Blob([imgBuf], { type: 'image/png' }), 'graphic.png');
+
+          const photoRes = await fetch(`https://api.telegram.org/bot${botToken}/sendPhoto`, {
+            method: 'POST',
+            body: formData,
+          });
+          const photoData = await photoRes.json();
+          if (photoData.ok) {
+            const msgId = photoData.result?.message_id?.toString();
+            return { success: true, id: msgId };
+          }
+          // Fall through to text-only
+        } catch { /* fall through */ }
+      }
+
       const res = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -379,7 +497,7 @@ Return ONLY this JSON:
 Only valid JSON.`;
 
     try {
-      const resp = await this.ai.generateWithGPT4(prompt, { maxTokens: 2000, temperature: 0.7 });
+      const resp = await this.ai.generateText(prompt);
       return JSON.parse((resp || '').replace(/```json|```/g, '').trim());
     } catch { return null; }
   }
