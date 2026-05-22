@@ -101,7 +101,7 @@ export default function DashboardScreen() {
       await apmaApi.vetoRec(id);
       setRecs((r) => r.map((x) => x.id === id ? { ...x, status: 'vetoed' } : x));
     } catch (err: any) {
-      alert('Veto failed: ' + err.message);
+      setError('Veto failed: ' + (err.message || 'Unknown error'));
     }
   }
 
