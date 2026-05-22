@@ -3341,7 +3341,7 @@ async function publishDesktopRelease() {
   const force   = document.getElementById('dr-force').checked;
   const min     = document.getElementById('dr-min').checked;
 
-  if (!version || !url) return alert('Version and download URL are required.');
+  if (!version || !url) { showToast('Version and download URL are required.', 'error'); return; }
 
   const btn = document.getElementById('dr-publish-btn');
   btn.disabled = true;
@@ -3349,7 +3349,7 @@ async function publishDesktopRelease() {
 
   try {
     await api('POST', '/api/apma/desktop-releases', { version, download_url: url, notes, force_update: force, is_min_supported: min });
-    alert('Desktop release v' + version + ' published! Clients will be notified on next launch.');
+    showToast('Desktop release v' + version + ' published! Clients will be notified on next launch.', 'success');
     document.getElementById('dr-version').value = '';
     document.getElementById('dr-url').value     = '';
     document.getElementById('dr-notes').value   = '';
@@ -3357,7 +3357,7 @@ async function publishDesktopRelease() {
     document.getElementById('dr-min').checked   = false;
     await loadDesktopReleases();
   } catch(e) {
-    alert('Failed to publish: ' + e.message);
+    showToast('Failed to publish: ' + e.message, 'error');
   } finally {
     btn.disabled    = false;
     btn.textContent = 'Publish Release';
@@ -3464,7 +3464,7 @@ async function apmaViewOverview(campaignId) {
     \`;
     document.getElementById('apma-overview-panel').style.display = 'block';
   } catch(e) {
-    alert('Error: ' + e.message);
+    showToast('Error loading overview: ' + e.message, 'error');
   }
 }
 
@@ -3472,16 +3472,16 @@ async function apmaTrigger(campaignId) {
   if (!confirm('Manually trigger a full APMA cycle for this campaign?')) return;
   try {
     const data = await api('POST', '/api/apma/campaigns/'+campaignId+'/trigger');
-    alert('✓ ' + data.message);
-  } catch(e) { alert('Error: ' + e.message); }
+    showToast('✓ ' + data.message, 'success');
+  } catch(e) { showToast('Error: ' + e.message, 'error'); }
 }
 
 async function apmaRotateKey(clientId) {
   if (!confirm('Rotate the API key for this client? The old key will stop working immediately.')) return;
   try {
     const data = await api('POST', '/api/apma/clients/'+clientId+'/rotate-key');
-    alert('New API key (copy now):\\n\\n' + data.api_key + '\\n\\nStore it securely — it will not be shown again.');
-  } catch(e) { alert('Error: ' + e.message); }
+    showApiKeyModal(data.api_key, 'API Key Rotated');
+  } catch(e) { showToast('Error: ' + e.message, 'error'); }
 }
 
 async function apmaCreateClient() {
@@ -3490,7 +3490,7 @@ async function apmaCreateClient() {
   const goal = document.getElementById('apma-new-goal').value;
   const keywords = document.getElementById('apma-new-keywords').value.trim();
   const targets = document.getElementById('apma-new-targets').value.trim();
-  if (!name || !country) { alert('Name and country code are required.'); return; }
+  if (!name || !country) { showToast('Name and country code are required.', 'error'); return; }
   const btn = document.getElementById('apma-create-btn');
   btn.textContent = 'Creating…'; btn.disabled = true;
   try {
@@ -3500,23 +3500,23 @@ async function apmaCreateClient() {
       keywords: keywords ? keywords.split(',').map(k=>k.trim()).filter(Boolean) : [],
       target_entities: targets ? targets.split(',').map(t=>t.trim()).filter(Boolean) : [],
     });
-    alert('Client created!\\n\\nAPI KEY (copy now):\\n' + data.api_key + '\\n\\nThis key is shown ONCE. Store it securely.');
+    showApiKeyModal(data.api_key, 'Client Created — Save Your API Key');
     document.getElementById('apma-new-name').value='';
     document.getElementById('apma-new-country').value='';
     document.getElementById('apma-new-keywords').value='';
     document.getElementById('apma-new-targets').value='';
     await loadAPMAClients();
     await loadAPMAStats();
-  } catch(e) { alert('Error: ' + e.message); }
+  } catch(e) { showToast('Error: ' + e.message, 'error'); }
   finally { btn.textContent = 'Create Client'; btn.disabled = false; }
 }
 
 async function apmaCreateCampaign() {
-  if (!apmaSelectedClientId) { alert('Select a client first.'); return; }
+  if (!apmaSelectedClientId) { showToast('Select a client first.', 'error'); return; }
   const name = document.getElementById('apma-camp-name').value.trim();
   const keywords = document.getElementById('apma-camp-keywords').value.trim();
   const platforms = document.getElementById('apma-camp-platforms').value.trim();
-  if (!name || !keywords) { alert('Campaign name and keywords are required.'); return; }
+  if (!name || !keywords) { showToast('Campaign name and keywords are required.', 'error'); return; }
   const btn = document.getElementById('apma-camp-btn');
   btn.textContent = 'Creating…'; btn.disabled = true;
   try {
@@ -3529,7 +3529,7 @@ async function apmaCreateCampaign() {
     document.getElementById('apma-camp-keywords').value='';
     document.getElementById('apma-camp-platforms').value='';
     await loadAPMACampaigns(apmaSelectedClientId, document.getElementById('apma-campaigns-title').textContent.replace('Campaigns — ',''));
-  } catch(e) { alert('Error: ' + e.message); }
+  } catch(e) { showToast('Error: ' + e.message, 'error'); }
   finally { btn.textContent = 'Create Campaign'; btn.disabled = false; }
 }
 
@@ -3539,8 +3539,56 @@ function scoreColor(score) {
   return '#EF4444';
 }
 
+// ── API Key Modal ─────────────────────────────────────────────────────────────
+function showApiKeyModal(apiKey, title) {
+  document.getElementById('api-key-modal-title').textContent = title || 'API Key';
+  document.getElementById('api-key-modal-value').textContent = apiKey;
+  document.getElementById('api-key-modal-copy-btn').textContent = 'Copy';
+  document.getElementById('api-key-modal').style.display = 'flex';
+}
+
+function closeApiKeyModal() {
+  document.getElementById('api-key-modal').style.display = 'none';
+}
+
+function copyApiKey() {
+  const key = document.getElementById('api-key-modal-value').textContent;
+  navigator.clipboard.writeText(key).then(() => {
+    const btn = document.getElementById('api-key-modal-copy-btn');
+    btn.textContent = '✓ Copied!';
+    btn.style.background = '#22C55E';
+    setTimeout(() => { btn.textContent = 'Copy'; btn.style.background = '#6366F1'; }, 2000);
+  }).catch(() => {
+    const el = document.getElementById('api-key-modal-value');
+    const range = document.createRange();
+    range.selectNode(el);
+    window.getSelection().removeAllRanges();
+    window.getSelection().addRange(range);
+  });
+}
 
 </script>
+
+<!-- ── API Key Modal ──────────────────────────────────────────────────────── -->
+<div id="api-key-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:9999;align-items:center;justify-content:center;">
+  <div style="background:#1E293B;border:1px solid #334155;border-radius:16px;padding:32px;width:540px;max-width:95vw;box-shadow:0 24px 60px rgba(0,0,0,.6);" onclick="event.stopPropagation()">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px">
+      <div>
+        <div id="api-key-modal-title" style="font-size:17px;font-weight:700;color:#F1F5F9"></div>
+        <div style="font-size:12px;color:#F59E0B;margin-top:4px">⚠ This key is shown only once — copy it now and store it securely.</div>
+      </div>
+      <button onclick="closeApiKeyModal()" style="background:none;border:none;color:#64748B;cursor:pointer;font-size:22px;line-height:1;">✕</button>
+    </div>
+    <div style="background:#0B1120;border:1px solid #1E293B;border-radius:8px;padding:14px 16px;margin-bottom:16px;display:flex;align-items:center;gap:12px;">
+      <code id="api-key-modal-value" style="flex:1;font-family:monospace;font-size:13px;color:#00F0FF;word-break:break-all;user-select:all;line-height:1.5;"></code>
+    </div>
+    <div style="display:flex;gap:10px;justify-content:flex-end;">
+      <button onclick="closeApiKeyModal()" style="background:#263348;border:1px solid #334155;color:#94A3B8;border-radius:8px;padding:10px 20px;font-size:13px;cursor:pointer;">Close</button>
+      <button id="api-key-modal-copy-btn" onclick="copyApiKey()" style="background:#6366F1;border:none;color:#fff;border-radius:8px;padding:10px 24px;font-size:13px;font-weight:700;cursor:pointer;transition:background .2s;">Copy</button>
+    </div>
+  </div>
+</div>
+
 </body>
 </html>`;
 

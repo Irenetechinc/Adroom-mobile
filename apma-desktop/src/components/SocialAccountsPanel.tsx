@@ -32,6 +32,7 @@ export default function SocialAccountsPanel() {
   const [error, setError] = useState('');
   const [connecting, setConnecting] = useState<string | null>(null);
   const [removingId, setRemovingId] = useState<string | null>(null);
+  const [confirmRemoveId, setConfirmRemoveId] = useState<string | null>(null);
   const [showAddModal, setShowAddModal] = useState(false);
   const [addForm, setAddForm] = useState({ platform: 'facebook', account_id: '', account_name: '', access_token: '', account_type: 'page', phone_number: '', waba_id: '' });
 
@@ -51,13 +52,13 @@ export default function SocialAccountsPanel() {
   useEffect(() => { load(); }, [load]);
 
   async function handleRemove(id: string) {
-    if (!confirm('Remove this account? APMA will stop using it immediately.')) return;
     setRemovingId(id);
+    setConfirmRemoveId(null);
     try {
       await apmaApi.removeSocialAccount(id);
       setAccounts((prev) => prev.filter((a) => a.id !== id));
     } catch (e: any) {
-      alert('Remove failed: ' + e.message);
+      setError('Remove failed: ' + (e.message || 'Unknown error'));
     } finally {
       setRemovingId(null);
     }
@@ -68,24 +69,25 @@ export default function SocialAccountsPanel() {
       const updated = await apmaApi.toggleSocialAccount(account.id, !account.active);
       setAccounts((prev) => prev.map((a) => a.id === account.id ? { ...a, active: updated.active } : a));
     } catch (e: any) {
-      alert('Toggle failed: ' + e.message);
+      setError('Toggle failed: ' + (e.message || 'Unknown error'));
     }
   }
 
   async function handleAdd(e: React.FormEvent) {
     e.preventDefault();
     if (!addForm.account_id || !addForm.account_name || !addForm.access_token) {
-      alert('Account ID, name, and access token are required.');
+      setError('Account ID, name, and access token are required.');
       return;
     }
     setConnecting(addForm.platform);
+    setError('');
     try {
       const res = await apmaApi.addSocialAccount(addForm);
       setAccounts((prev) => [...prev, res.account]);
       setShowAddModal(false);
       setAddForm({ platform: 'facebook', account_id: '', account_name: '', access_token: '', account_type: 'page', phone_number: '', waba_id: '' });
     } catch (e: any) {
-      alert('Add failed: ' + e.message);
+      setError('Add failed: ' + (e.message || 'Unknown error'));
     } finally {
       setConnecting(null);
     }
@@ -139,8 +141,9 @@ export default function SocialAccountsPanel() {
       </div>
 
       {error && (
-        <div style={{ background: 'rgba(239,68,68,.12)', border: '1px solid rgba(239,68,68,.3)', borderRadius: 8, padding: '10px 14px', color: '#ef4444', fontSize: 13 }}>
-          ⚠ {error}
+        <div style={{ background: 'rgba(239,68,68,.12)', border: '1px solid rgba(239,68,68,.3)', borderRadius: 8, padding: '10px 14px', color: '#ef4444', fontSize: 13, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <span>⚠ {error}</span>
+          <button onClick={() => setError('')} style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', fontSize: 16, lineHeight: 1 }}>✕</button>
         </div>
       )}
 
@@ -172,6 +175,7 @@ export default function SocialAccountsPanel() {
                   border: `1px solid ${acct.active ? `${PLATFORM_COLOR[platform]}33` : '#1e293b'}`,
                   borderLeft: `3px solid ${acct.active ? PLATFORM_COLOR[platform] : '#475569'}`,
                   opacity: acct.active ? 1 : 0.6,
+                  flexWrap: 'wrap', gap: 8,
                 }}
               >
                 <div>
@@ -199,13 +203,33 @@ export default function SocialAccountsPanel() {
                   >
                     {acct.active ? 'Active' : 'Paused'}
                   </button>
-                  <button
-                    onClick={() => handleRemove(acct.id)}
-                    disabled={removingId === acct.id}
-                    style={{ background: 'rgba(239,68,68,.1)', border: '1px solid rgba(239,68,68,.25)', color: '#ef4444', borderRadius: 5, padding: '4px 10px', fontSize: 11, cursor: 'pointer' }}
-                  >
-                    {removingId === acct.id ? '…' : 'Remove'}
-                  </button>
+
+                  {confirmRemoveId === acct.id ? (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'rgba(239,68,68,.1)', border: '1px solid rgba(239,68,68,.3)', borderRadius: 6, padding: '3px 8px' }}>
+                      <span style={{ fontSize: 11, color: '#fca5a5' }}>Remove?</span>
+                      <button
+                        onClick={() => handleRemove(acct.id)}
+                        disabled={removingId === acct.id}
+                        style={{ background: '#ef4444', border: 'none', color: '#fff', borderRadius: 4, padding: '2px 8px', fontSize: 11, cursor: 'pointer', fontWeight: 600 }}
+                      >
+                        {removingId === acct.id ? '…' : 'Yes'}
+                      </button>
+                      <button
+                        onClick={() => setConfirmRemoveId(null)}
+                        style={{ background: 'none', border: 'none', color: '#94a3b8', cursor: 'pointer', fontSize: 13 }}
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      onClick={() => setConfirmRemoveId(acct.id)}
+                      disabled={removingId === acct.id}
+                      style={{ background: 'rgba(239,68,68,.1)', border: '1px solid rgba(239,68,68,.25)', color: '#ef4444', borderRadius: 5, padding: '4px 10px', fontSize: 11, cursor: 'pointer' }}
+                    >
+                      Remove
+                    </button>
+                  )}
                 </div>
               </div>
             ))}

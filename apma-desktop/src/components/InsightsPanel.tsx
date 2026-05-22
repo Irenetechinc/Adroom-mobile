@@ -83,7 +83,7 @@ export default function InsightsPanel() {
       await apmaApi.deployImprovement(id);
       setLogs((prev) => prev.map((l) => l.id === id ? { ...l, deployed: true } : l));
     } catch (e: any) {
-      alert('Deploy failed: ' + e.message);
+      setError('Deploy failed: ' + (e.message || 'Unknown error'));
     } finally {
       setDeployingId(null);
     }
@@ -95,7 +95,7 @@ export default function InsightsPanel() {
       const data = await apmaApi.refreshProfile();
       setProfile(data.profile ?? null);
     } catch (e: any) {
-      alert('Profile refresh failed: ' + e.message);
+      setError('Profile refresh failed: ' + (e.message || 'Unknown error'));
     } finally {
       setLoadingProfile(false);
     }
