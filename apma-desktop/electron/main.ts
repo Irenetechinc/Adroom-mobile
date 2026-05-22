@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain, net, shell } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, Menu, net, shell } from 'electron';
 import path from 'path';
 
 // eslint-disable-next-line @typescript-eslint/no-var-requires
@@ -97,6 +97,9 @@ async function checkForUpdates(win: BrowserWindow): Promise<void> {
 }
 
 app.whenReady().then(() => {
+  // Remove the default "File Edit View Window Help" menu bar entirely
+  Menu.setApplicationMenu(null);
+
   createWindow();
 
   // Check for updates 5 s after launch so the window finishes loading first

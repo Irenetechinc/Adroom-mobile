@@ -4,7 +4,7 @@ import { useAuthStore } from '../store';
 
 export default function LoginScreen() {
   const { setAuth } = useAuthStore();
-  const [baseUrl, setBaseUrl] = useState('https://api.adroomai.com');
+  const [baseUrl, setBaseUrl] = useState('https://backend.adroomai.com');
   const [apiKey, setApiKey]   = useState('');
   const [error, setError]     = useState('');
   const [loading, setLoading] = useState(false);
@@ -42,7 +42,7 @@ export default function LoginScreen() {
               type="url"
               value={baseUrl}
               onChange={(e) => setBaseUrl(e.target.value)}
-              placeholder="https://api.adroomai.com"
+              placeholder="https://backend.adroomai.com"
             />
           </div>
           <div>
