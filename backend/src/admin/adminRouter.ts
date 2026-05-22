@@ -1769,6 +1769,56 @@ label{font-size:12px;color:#94A3B8;font-weight:600}
           </div>
           <button id="apma-create-btn" class="btn btn-primary" onclick="apmaCreateClient()">Create Client</button>
         </div>
+
+        <!-- Desktop Releases -->
+        <div class="card" style="margin-bottom:16px">
+          <div class="section-header" style="margin-bottom:14px">
+            <div class="section-title" style="font-size:14px">Desktop App Releases</div>
+            <span style="font-size:11px;color:#64748B">Publish a new version → desktop app notifies users automatically</span>
+          </div>
+          <table style="width:100%;border-collapse:collapse;font-size:13px;margin-bottom:18px">
+            <thead>
+              <tr style="border-bottom:1px solid #1E293B">
+                <th style="padding:8px 12px;text-align:left;color:#64748B;font-weight:500">Version</th>
+                <th style="padding:8px 12px;text-align:left;color:#64748B;font-weight:500">Released</th>
+                <th style="padding:8px 12px;text-align:left;color:#64748B;font-weight:500">Download URL</th>
+                <th style="padding:8px 12px;text-align:left;color:#64748B;font-weight:500">Force</th>
+                <th style="padding:8px 12px;text-align:left;color:#64748B;font-weight:500">Status</th>
+              </tr>
+            </thead>
+            <tbody id="desktop-releases-body">
+              <tr><td colspan="5" style="text-align:center;color:#64748B;padding:20px">Loading…</td></tr>
+            </tbody>
+          </table>
+
+          <div style="border-top:1px solid #1E293B;padding-top:14px">
+            <div style="font-size:12px;font-weight:600;color:#94A3B8;margin-bottom:10px;text-transform:uppercase;letter-spacing:.05em">Publish New Release</div>
+            <div style="display:grid;grid-template-columns:1fr 2fr;gap:10px;margin-bottom:10px">
+              <div>
+                <label style="font-size:11px;color:#64748B;display:block;margin-bottom:4px">Version (e.g. 1.1.0)</label>
+                <input id="dr-version" type="text" placeholder="1.1.0" class="form-input" style="width:100%" />
+              </div>
+              <div>
+                <label style="font-size:11px;color:#64748B;display:block;margin-bottom:4px">Download URL (.exe / .dmg / .AppImage)</label>
+                <input id="dr-url" type="url" placeholder="https://your-server.com/releases/APMA-Dashboard-Setup-1.1.0.exe" class="form-input" style="width:100%" />
+              </div>
+            </div>
+            <div style="margin-bottom:10px">
+              <label style="font-size:11px;color:#64748B;display:block;margin-bottom:4px">Release Notes (optional)</label>
+              <textarea id="dr-notes" rows="2" placeholder="What changed in this version…" class="form-input" style="width:100%;resize:vertical"></textarea>
+            </div>
+            <div style="display:flex;align-items:center;gap:20px;margin-bottom:12px">
+              <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:#94A3B8;cursor:pointer">
+                <input type="checkbox" id="dr-force" /> Force update (users must update before using the app)
+              </label>
+              <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:#94A3B8;cursor:pointer">
+                <input type="checkbox" id="dr-min" /> Set as minimum supported version
+              </label>
+            </div>
+            <button id="dr-publish-btn" class="btn btn-primary btn-sm" onclick="publishDesktopRelease()">Publish Release</button>
+          </div>
+        </div>
+
       </div><!-- /section-apma -->
 
     </div><!-- /content -->
@@ -3179,7 +3229,7 @@ async function loadAgentNetwork() {
 let apmaSelectedClientId = null;
 
 async function loadAPMASection() {
-  await Promise.all([loadAPMAStats(), loadAPMAClients()]);
+  await Promise.all([loadAPMAStats(), loadAPMAClients(), loadDesktopReleases()]);
 }
 
 /* ── APMA Live Cycle Monitor (polling) ────────────────────────────────────── */
@@ -3257,6 +3307,61 @@ function clearAPMAMonitorLog() {
   const feed = document.getElementById('apma-monitor-feed');
   if (feed) feed.innerHTML = '<span style="color:#475569">Log cleared.</span>';
   _apmaMonitorSeq = 0;
+}
+
+/* ── Desktop Releases ─────────────────────────────────────────────────────── */
+async function loadDesktopReleases() {
+  const tbody = document.getElementById('desktop-releases-body');
+  if (!tbody) return;
+  try {
+    const data = await api('GET', '/api/apma/desktop-releases');
+    if (!data.releases || !data.releases.length) {
+      tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:#64748B;padding:20px">No desktop releases published yet.</td></tr>';
+      return;
+    }
+    tbody.innerHTML = data.releases.map(function(r) {
+      return '<tr style="border-bottom:1px solid #1E293B">' +
+        '<td style="padding:8px 12px;font-weight:700;color:#F1F5F9">' + r.version + '</td>' +
+        '<td style="padding:8px 12px;font-size:11px;color:#94A3B8">' + new Date(r.released_at).toLocaleDateString() + '</td>' +
+        '<td style="padding:8px 12px;max-width:320px"><a href="' + r.store_url + '" target="_blank" style="color:#6366F1;font-size:11px;word-break:break-all">' + r.store_url + '</a></td>' +
+        '<td style="padding:8px 12px"><span style="color:' + (r.force_update ? '#EF4444' : '#475569') + ';font-size:12px">' + (r.force_update ? 'Yes' : 'No') + '</span></td>' +
+        '<td style="padding:8px 12px"><span style="padding:2px 8px;border-radius:99px;font-size:11px;background:rgba(34,197,94,.15);color:#22C55E">Published</span></td>' +
+        '</tr>';
+    }).join('');
+  } catch(e) {
+    if (tbody) tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:#EF4444;padding:20px">Failed to load releases.</td></tr>';
+    console.error('[DesktopReleases]', e.message);
+  }
+}
+
+async function publishDesktopRelease() {
+  const version = document.getElementById('dr-version').value.trim();
+  const url     = document.getElementById('dr-url').value.trim();
+  const notes   = document.getElementById('dr-notes').value.trim();
+  const force   = document.getElementById('dr-force').checked;
+  const min     = document.getElementById('dr-min').checked;
+
+  if (!version || !url) return alert('Version and download URL are required.');
+
+  const btn = document.getElementById('dr-publish-btn');
+  btn.disabled = true;
+  btn.textContent = 'Publishing…';
+
+  try {
+    await api('POST', '/api/apma/desktop-releases', { version, download_url: url, notes, force_update: force, is_min_supported: min });
+    alert('Desktop release v' + version + ' published! Clients will be notified on next launch.');
+    document.getElementById('dr-version').value = '';
+    document.getElementById('dr-url').value     = '';
+    document.getElementById('dr-notes').value   = '';
+    document.getElementById('dr-force').checked = false;
+    document.getElementById('dr-min').checked   = false;
+    await loadDesktopReleases();
+  } catch(e) {
+    alert('Failed to publish: ' + e.message);
+  } finally {
+    btn.disabled    = false;
+    btn.textContent = 'Publish Release';
+  }
 }
 
 async function loadAPMAStats() {

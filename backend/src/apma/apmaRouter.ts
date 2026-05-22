@@ -304,6 +304,46 @@ apmaAdminRouter.delete('/social-accounts/:id', async (req, res) => {
   res.json({ ok: true });
 });
 
+// ─── Desktop app releases (admin: publish + list) ─────────────────────────
+apmaAdminRouter.get('/desktop-releases', async (_req, res) => {
+  const sb = getServiceSupabaseClient();
+  const { data, error } = await sb
+    .from('app_releases')
+    .select('version, released_at, store_url, force_update, is_min_supported, changelog_md')
+    .eq('platform', 'desktop')
+    .eq('is_published', true)
+    .order('released_at', { ascending: false })
+    .limit(20);
+  if (error) return res.status(500).json({ error: error.message });
+  res.json({ releases: data ?? [] });
+});
+
+apmaAdminRouter.post('/desktop-releases', async (req, res) => {
+  const { version, download_url, notes, force_update, is_min_supported } = req.body as {
+    version?: string;
+    download_url?: string;
+    notes?: string;
+    force_update?: boolean;
+    is_min_supported?: boolean;
+  };
+  if (!version?.trim() || !download_url?.trim()) {
+    return res.status(400).json({ error: 'version and download_url are required' });
+  }
+  const sb = getServiceSupabaseClient();
+  const { error } = await sb.from('app_releases').insert({
+    platform: 'desktop',
+    version: version.trim(),
+    store_url: download_url.trim(),
+    changelog_md: notes?.trim() ?? '',
+    force_update: !!force_update,
+    is_min_supported: !!is_min_supported,
+    is_published: true,
+    released_at: new Date().toISOString(),
+  });
+  if (error) return res.status(500).json({ error: error.message });
+  res.json({ ok: true });
+});
+
 // ─── Recent cycle events (for admin live monitor polling) ─────────────────
 apmaAdminRouter.get('/events', (req, res) => {
   const since = req.query.since != null ? parseInt(String(req.query.since), 10) : undefined;
