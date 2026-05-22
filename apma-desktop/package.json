@@ -11,7 +11,8 @@
   "private": true,
   "scripts": {
     "dev": "concurrently \"npx vite\" \"electron .\"",
-    "build": "npx vite build && npx tsc -p tsconfig.electron.json",
+    "build": "npx vite build && node scripts/build-electron.js",
+    "build:electron": "node scripts/build-electron.js",
     "icons": "node scripts/generate-icons.js",
     "setup": "npm install --include=dev --legacy-peer-deps --prefix . && node scripts/generate-icons.js",
     "predist:win": "npm run setup && npm run build",
@@ -41,11 +42,15 @@
       "target": [
         {
           "target": "nsis",
-          "arch": ["x64"]
+          "arch": [
+            "x64"
+          ]
         },
         {
           "target": "portable",
-          "arch": ["x64"]
+          "arch": [
+            "x64"
+          ]
         }
       ],
       "icon": "assets/icon.ico",
@@ -55,7 +60,10 @@
       "target": [
         {
           "target": "dmg",
-          "arch": ["x64", "arm64"]
+          "arch": [
+            "x64",
+            "arm64"
+          ]
         }
       ],
       "icon": "assets/icon.icns",
@@ -65,11 +73,15 @@
       "target": [
         {
           "target": "AppImage",
-          "arch": ["x64"]
+          "arch": [
+            "x64"
+          ]
         },
         {
           "target": "deb",
-          "arch": ["x64"]
+          "arch": [
+            "x64"
+          ]
         }
       ],
       "icon": "assets/icon.png",
@@ -104,6 +116,7 @@
     "concurrently": "^9.0.1",
     "electron": "^31.0.0",
     "electron-builder": "^24.13.3",
+    "esbuild": "^0.28.0",
     "png-to-ico": "^2.1.8",
     "typescript": "^5.5.3",
     "vite": "^5.4.21"
