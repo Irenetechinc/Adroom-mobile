@@ -11,8 +11,11 @@ import BlogsPanel from '../components/BlogsPanel';
 import PredictiveCalendar from '../components/PredictiveCalendar';
 import InsightsPanel from '../components/InsightsPanel';
 import SocialAccountsPanel from '../components/SocialAccountsPanel';
+import OppositionPanel from '../components/OppositionPanel';
+import CampaignAnalytics from '../components/CampaignAnalytics';
+import { SkeletonStats, SkeletonCard } from '../components/SkeletonLoader';
 
-type Tab = 'overview' | 'actions' | 'recommendations' | 'blogs' | 'calendar' | 'insights' | 'accounts' | 'monitor';
+type Tab = 'overview' | 'analytics' | 'opposition' | 'actions' | 'recommendations' | 'blogs' | 'calendar' | 'insights' | 'accounts' | 'monitor';
 
 const EVENT_COLOURS: Record<string, string> = {
   start:           '#818CF8',
@@ -107,6 +110,8 @@ export default function DashboardScreen() {
 
   const TABS: { id: Tab; label: string }[] = [
     { id: 'overview',        label: 'Overview'        },
+    { id: 'analytics',       label: '📊 Analytics'   },
+    { id: 'opposition',      label: '🛡️ Opposition'  },
     { id: 'insights',        label: '🧠 Insights'     },
     { id: 'accounts',        label: '🔗 Accounts'     },
     { id: 'actions',         label: 'Actions'         },
@@ -123,7 +128,7 @@ export default function DashboardScreen() {
         <div style={{ display:'flex', alignItems:'center', gap:12 }}>
           <span style={{ fontSize:20 }}>🎯</span>
           <div>
-            <div style={{ fontWeight:700, fontSize:15, color:'#f1f5f9' }}>APMA Dashboard</div>
+            <div style={{ fontWeight:900, fontSize:16, color:'#f1f5f9', letterSpacing:'-0.01em' }}>APMA</div>
             {dashboard && (
               <div style={{ fontSize:11, color:'#64748b' }}>{dashboard.client?.name} · {dashboard.campaign?.name}</div>
             )}
@@ -172,7 +177,14 @@ export default function DashboardScreen() {
         )}
 
         {loading && !dashboard && (
-          <div style={{ textAlign:'center', color:'#64748b', padding:'80px 0' }}>Loading campaign data…</div>
+          <div style={{ display:'flex', flexDirection:'column', gap:20 }}>
+            <div style={{ display:'grid', gridTemplateColumns:'1fr 2fr', gap:20 }}>
+              <SkeletonCard lines={4} />
+              <SkeletonStats count={5} />
+            </div>
+            <SkeletonCard lines={5} />
+            <SkeletonCard lines={3} />
+          </div>
         )}
 
         {tab === 'overview' && dashboard && (
@@ -239,6 +251,26 @@ export default function DashboardScreen() {
               <span style={{ fontSize:11, color:'#64748b' }}>Connected accounts APMA uses autonomously across platforms</span>
             </div>
             <SocialAccountsPanel />
+          </div>
+        )}
+
+        {tab === 'analytics' && (
+          <div className="card">
+            <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:18 }}>
+              <h3 style={{ fontWeight:600, color:'#f1f5f9', fontSize:14, margin:0 }}>Campaign Analytics</h3>
+              <span style={{ fontSize:11, color:'#64748b' }}>Realtime — powered by live agent data</span>
+            </div>
+            <CampaignAnalytics />
+          </div>
+        )}
+
+        {tab === 'opposition' && (
+          <div className="card">
+            <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:18 }}>
+              <h3 style={{ fontWeight:600, color:'#f1f5f9', fontSize:14, margin:0 }}>Opposition Intelligence</h3>
+              <span style={{ fontSize:11, color:'#64748b' }}>Deep analysis of counter-narratives and threats</span>
+            </div>
+            <OppositionPanel />
           </div>
         )}
 

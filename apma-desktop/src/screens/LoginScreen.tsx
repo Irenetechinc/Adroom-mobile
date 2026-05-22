@@ -4,7 +4,7 @@ import { useAuthStore } from '../store';
 
 export default function LoginScreen() {
   const { setAuth } = useAuthStore();
-  const [baseUrl, setBaseUrl] = useState('https://backend.adroomai.com');
+  const [baseUrl, setBaseUrl] = useState('');
   const [apiKey, setApiKey]   = useState('');
   const [error, setError]     = useState('');
   const [loading, setLoading] = useState(false);
@@ -31,8 +31,9 @@ export default function LoginScreen() {
       <div style={{ width:'100%', maxWidth:420 }}>
         <div style={{ textAlign:'center', marginBottom:40 }}>
           <div style={{ fontSize:36, marginBottom:8 }}>🎯</div>
-          <h1 style={{ fontSize:22, fontWeight:700, color:'#f1f5f9' }}>APMA Dashboard</h1>
-          <p style={{ color:'#64748b', fontSize:13, marginTop:6 }}>Autonomous Political Marketing Agent</p>
+          <h1 style={{ fontSize:28, fontWeight:900, color:'#f1f5f9', letterSpacing:'-0.02em' }}>APMA</h1>
+          <p style={{ color:'#6366f1', fontSize:11, fontWeight:700, textTransform:'uppercase', letterSpacing:'0.15em', marginTop:4 }}>Autonomous Political Marketing Agent</p>
+          <p style={{ color:'#475569', fontSize:11, marginTop:4 }}>from AdRoom AI</p>
         </div>
 
         <form onSubmit={handleLogin} className="card" style={{ display:'flex', flexDirection:'column', gap:20 }}>

@@ -75,4 +75,6 @@ export const apmaApi = {
   refreshProfile:       () => apiFetch<{ profile: any }>('/profile/refresh', { method: 'POST' }),
   selfImprovementLogs:  () => apiFetch<{ logs: any[] }>('/self-improvement'),
   deployImprovement:    (id: string) => apiFetch<{ ok: boolean }>(`/self-improvement/${id}/deploy`, { method: 'POST' }),
+  opposition:           () => apiFetch<any>('/opposition'),
+  analytics:            (days = 30) => apiFetch<any>(`/analytics?days=${days}`),
 };

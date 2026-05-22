@@ -1769,17 +1769,29 @@ label{font-size:12px;color:#94A3B8;font-weight:600}
           <table style="width:100%;border-collapse:collapse;font-size:13px">
             <thead>
               <tr style="color:#64748B;font-size:11px;text-transform:uppercase;border-bottom:1px solid #1E293B">
-                <th style="padding:8px 12px;text-align:left">Name</th>
+                <th style="padding:8px 12px;text-align:left">Name / Type</th>
                 <th style="padding:8px 12px;text-align:left">Status</th>
                 <th style="padding:8px 12px;text-align:left">Score / Target</th>
                 <th style="padding:8px 12px;text-align:left">Start Date</th>
+                <th style="padding:8px 12px;text-align:left">Duration</th>
                 <th style="padding:8px 12px;text-align:left">Actions</th>
               </tr>
             </thead>
             <tbody id="apma-campaign-list">
-              <tr><td colspan="5" style="color:#64748B;text-align:center;padding:16px">Select a client above</td></tr>
+              <tr><td colspan="6" style="color:#64748B;text-align:center;padding:16px">Select a client above</td></tr>
             </tbody>
           </table>
+        </div>
+
+        <!-- Campaign Analytics Panel -->
+        <div class="card" id="apma-analytics-panel" style="display:none;margin-bottom:16px">
+          <div class="section-header" style="margin-bottom:16px">
+            <div class="section-title" style="font-size:14px" id="apma-analytics-title">Analytics</div>
+            <button class="btn btn-ghost btn-sm" onclick="document.getElementById('apma-analytics-panel').style.display='none'">✕ Close</button>
+          </div>
+          <div id="apma-analytics-content">
+            <div style="color:#64748B;text-align:center;padding:40px">Select a campaign to view analytics.</div>
+          </div>
         </div>
 
         <!-- Campaign Overview Panel -->
@@ -3516,27 +3528,192 @@ async function loadAPMACampaigns(clientId, clientName) {
   document.getElementById('apma-campaigns-title').textContent = 'Campaigns — ' + clientName;
   document.getElementById('apma-campaigns-panel').style.display = 'block';
   const list = document.getElementById('apma-campaign-list');
-  list.innerHTML = '<tr><td colspan="5" style="color:#64748B;text-align:center;padding:16px">Loading...</td></tr>';
+  list.innerHTML = '<tr><td colspan="6" style="color:#64748B;text-align:center;padding:16px">Loading…</td></tr>';
   try {
     const data = await api('GET', '/api/apma/clients/'+clientId+'/campaigns');
     if (!data.campaigns.length) {
-      list.innerHTML = '<tr><td colspan="5" style="color:#64748B;text-align:center;padding:16px">No campaigns yet.</td></tr>';
+      list.innerHTML = '<tr><td colspan="6" style="color:#64748B;text-align:center;padding:16px">No campaigns yet.</td></tr>';
       return;
     }
     list.innerHTML = data.campaigns.map(c => \`
-      <tr>
-        <td style="color:#F1F5F9;font-weight:500">\${c.name}</td>
-        <td><span style="padding:2px 8px;border-radius:99px;font-size:11px;background:\${c.status==='active'?'rgba(34,197,94,.15)':'rgba(100,116,139,.15)'};color:\${c.status==='active'?'#22C55E':'#94A3B8'}">\${c.status}</span></td>
-        <td style="font-weight:700;color:\${scoreColor(c.narrative_score_current)}">\${(c.narrative_score_current||0).toFixed(3)} / \${(c.narrative_score_target||0.6).toFixed(2)}</td>
-        <td style="color:#94A3B8;font-size:12px">\${c.start_date}</td>
+      <tr id="camp-row-\${c.id}">
+        <td style="color:#F1F5F9;font-weight:500">
+          \${c.name}
+          \${c.campaign_type ? '<br><span style="font-size:10px;color:#64748B;text-transform:capitalize">'+c.campaign_type+(c.campaign_subtype?'/'+c.campaign_subtype:'')+'</span>' : ''}
+        </td>
         <td>
-          <button onclick="apmaViewOverview('\${c.id}')" style="background:transparent;color:#818CF8;border:1px solid rgba(129,140,248,.3);border-radius:6px;padding:4px 10px;font-size:11px;cursor:pointer">Overview</button>
-          <button onclick="apmaTrigger('\${c.id}')" style="background:#22C55E;color:#fff;border:none;border-radius:6px;padding:4px 10px;font-size:11px;cursor:pointer;margin-left:4px">▶ Trigger</button>
+          <span id="camp-status-badge-\${c.id}" style="padding:2px 8px;border-radius:99px;font-size:11px;background:\${c.status==='active'?'rgba(34,197,94,.15)':c.status==='paused'?'rgba(245,158,11,.15)':'rgba(100,116,139,.15)'};color:\${c.status==='active'?'#22C55E':c.status==='paused'?'#F59E0B':'#94A3B8'}">\${c.status}</span>
+        </td>
+        <td style="font-weight:700;color:\${scoreColor(c.narrative_score_current)}">\${(c.narrative_score_current||0).toFixed(3)} / \${(c.narrative_score_target||0.6).toFixed(2)}</td>
+        <td style="color:#94A3B8;font-size:12px">\${c.start_date||'—'}</td>
+        <td style="color:#64748B;font-size:11px">\${c.duration_months ? c.duration_months+'mo' : '—'}</td>
+        <td>
+          <div style="display:flex;gap:4px;flex-wrap:wrap">
+            <button id="camp-pause-btn-\${c.id}" onclick="apmaToggleCampaign('\${c.id}','\${c.status}')"
+              style="background:\${c.status==='active'?'rgba(245,158,11,.15)':'rgba(34,197,94,.15)'};color:\${c.status==='active'?'#F59E0B':'#22C55E'};border:1px solid \${c.status==='active'?'rgba(245,158,11,.3)':'rgba(34,197,94,.3)'};border-radius:6px;padding:4px 10px;font-size:11px;cursor:pointer">
+              \${c.status==='active'?'⏸ Pause':'▶ Resume'}
+            </button>
+            <button onclick="apmaViewAnalytics('\${c.id}','\${c.name}')" style="background:transparent;color:#38BDF8;border:1px solid rgba(56,189,248,.3);border-radius:6px;padding:4px 10px;font-size:11px;cursor:pointer">📊 Analytics</button>
+            <button onclick="apmaViewOverview('\${c.id}')" style="background:transparent;color:#818CF8;border:1px solid rgba(129,140,248,.3);border-radius:6px;padding:4px 10px;font-size:11px;cursor:pointer">Overview</button>
+            <button onclick="apmaTrigger('\${c.id}')" style="background:#22C55E;color:#fff;border:none;border-radius:6px;padding:4px 10px;font-size:11px;cursor:pointer">▶ Trigger</button>
+          </div>
         </td>
       </tr>
     \`).join('');
   } catch(e) {
-    list.innerHTML = \`<tr><td colspan="5" style="color:#EF4444;padding:12px">\${e.message}</td></tr>\`;
+    list.innerHTML = \`<tr><td colspan="6" style="color:#EF4444;padding:12px">\${e.message}</td></tr>\`;
+  }
+}
+
+async function apmaToggleCampaign(id, currentStatus) {
+  const btn = document.getElementById('camp-pause-btn-'+id);
+  const badge = document.getElementById('camp-status-badge-'+id);
+  const newStatus = currentStatus === 'active' ? 'paused' : 'active';
+  if (btn) { btn.textContent = '…'; btn.disabled = true; }
+  try {
+    const res = await api('PATCH', '/api/apma/campaigns/'+id+'/status', { status: newStatus });
+    const s = res.campaign.status;
+    if (badge) {
+      badge.textContent = s;
+      badge.style.background = s==='active'?'rgba(34,197,94,.15)':s==='paused'?'rgba(245,158,11,.15)':'rgba(100,116,139,.15)';
+      badge.style.color = s==='active'?'#22C55E':s==='paused'?'#F59E0B':'#94A3B8';
+    }
+    if (btn) {
+      btn.textContent = s==='active'?'⏸ Pause':'▶ Resume';
+      btn.style.background = s==='active'?'rgba(245,158,11,.15)':'rgba(34,197,94,.15)';
+      btn.style.color = s==='active'?'#F59E0B':'#22C55E';
+      btn.style.borderColor = s==='active'?'rgba(245,158,11,.3)':'rgba(34,197,94,.3)';
+      btn.setAttribute('onclick', \`apmaToggleCampaign('\${id}','\${s}')\`);
+      btn.disabled = false;
+    }
+    showToast('Campaign '+s+' successfully', 'success');
+  } catch(e) {
+    showToast('Error: '+e.message, 'error');
+    if (btn) { btn.textContent = currentStatus==='active'?'⏸ Pause':'▶ Resume'; btn.disabled = false; }
+  }
+}
+
+async function apmaViewAnalytics(id, name) {
+  const panel = document.getElementById('apma-analytics-panel');
+  const content = document.getElementById('apma-analytics-content');
+  const title = document.getElementById('apma-analytics-title');
+  panel.style.display = 'block';
+  title.textContent = 'Analytics — '+name;
+  content.innerHTML = '<div style="color:#64748B;text-align:center;padding:40px">Loading analytics…</div>';
+  panel.scrollIntoView({ behavior:'smooth', block:'nearest' });
+  try {
+    const d = await api('GET', '/api/apma/campaigns/'+id+'/analytics?days=90');
+    const hist = d.sentiment_history || [];
+    const maxSentIdx = hist.length - 1;
+
+    // Build SVG line chart for sentiment
+    const svgW = 560, svgH = 100;
+    let svgPath = '', svgArea = '';
+    if (hist.length > 1) {
+      const scores = hist.map(h => h.score);
+      const minS = Math.min(...scores, -1), maxS = Math.max(...scores, 1);
+      const xs = hist.map((_, i) => (i / (hist.length-1)) * (svgW-40) + 20);
+      const ys = hist.map(h => svgH - ((h.score - minS) / (maxS - minS)) * (svgH-20) - 10);
+      svgPath = 'M'+xs.map((x,i)=>x+','+ys[i]).join(' L');
+      svgArea = 'M'+xs[0]+','+(svgH-10)+' L'+xs.map((x,i)=>x+','+ys[i]).join(' L')+' L'+xs[maxSentIdx]+','+(svgH-10)+' Z';
+    }
+
+    // Bar chart helpers
+    const maxType = d.by_type?.length ? Math.max(...d.by_type.map(t=>t.total)) : 1;
+    const maxPlat = d.by_platform?.length ? Math.max(...d.by_platform.map(p=>p.total)) : 1;
+
+    content.innerHTML = \`
+      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:20px">
+        <div style="background:#131C2E;border-radius:8px;padding:14px;text-align:center">
+          <div style="font-size:11px;color:#64748B">Narrative Score</div>
+          <div style="font-size:28px;font-weight:700;color:\${scoreColor(d.campaign?.narrative_score_current||0)}">\${(d.campaign?.narrative_score_current||0).toFixed(3)}</div>
+        </div>
+        <div style="background:#131C2E;border-radius:8px;padding:14px;text-align:center">
+          <div style="font-size:11px;color:#64748B">Total Actions (90d)</div>
+          <div style="font-size:28px;font-weight:700;color:#818CF8">\${d.total_actions||0}</div>
+        </div>
+        <div style="background:#131C2E;border-radius:8px;padding:14px;text-align:center">
+          <div style="font-size:11px;color:#64748B">Success Rate</div>
+          <div style="font-size:28px;font-weight:700;color:#22C55E">\${Math.round((d.success_rate||0)*100)}%</div>
+        </div>
+        <div style="background:#131C2E;border-radius:8px;padding:14px;text-align:center">
+          <div style="font-size:11px;color:#64748B">Blogs Live</div>
+          <div style="font-size:28px;font-weight:700;color:#F59E0B">\${d.blogs?.filter(b=>b.status==='live').length||0}</div>
+        </div>
+      </div>
+
+      <div style="background:#131C2E;border-radius:8px;padding:14px;margin-bottom:16px">
+        <div style="font-size:11px;font-weight:700;color:#64748B;margin-bottom:10px;text-transform:uppercase;letter-spacing:.05em">Narrative Score Trend (90 days)</div>
+        \${hist.length > 1 ? \`
+        <svg viewBox="0 0 \${svgW} \${svgH}" style="width:100%;height:100px;display:block">
+          <defs>
+            <linearGradient id="sentGrad" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stop-color="#818CF8" stop-opacity="0.3"/>
+              <stop offset="100%" stop-color="#818CF8" stop-opacity="0.0"/>
+            </linearGradient>
+          </defs>
+          <line x1="20" y1="\${svgH/2}" x2="\${svgW-20}" y2="\${svgH/2}" stroke="#334155" stroke-dasharray="4,4" stroke-width="1"/>
+          <path d="\${svgArea}" fill="url(#sentGrad)"/>
+          <path d="\${svgPath}" fill="none" stroke="#818CF8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+        \` : '<div style="color:#64748B;text-align:center;padding:24px;font-size:12px">No sentiment data yet — runs automatically with each campaign cycle.</div>'}
+      </div>
+
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px">
+        <div style="background:#131C2E;border-radius:8px;padding:14px">
+          <div style="font-size:11px;font-weight:700;color:#64748B;margin-bottom:10px;text-transform:uppercase;letter-spacing:.05em">Actions by Type</div>
+          \${(d.by_type||[]).map(t=>\`
+            <div style="margin-bottom:7px">
+              <div style="display:flex;justify-content:space-between;font-size:11px;margin-bottom:2px">
+                <span style="color:#E2E8F0;text-transform:capitalize">\${t.type.replace(/_/g,' ')}</span>
+                <span style="color:#64748B">\${t.total} (\${Math.round(t.rate*100)}% ok)</span>
+              </div>
+              <div style="height:6px;background:#1E293B;border-radius:3px;overflow:hidden">
+                <div style="height:100%;width:\${Math.round(t.total/maxType*100)}%;background:#6366F1;border-radius:3px;transition:width .4s"></div>
+              </div>
+            </div>
+          \`).join('')||'<div style="color:#64748B;font-size:12px">No action data yet.</div>'}
+        </div>
+        <div style="background:#131C2E;border-radius:8px;padding:14px">
+          <div style="font-size:11px;font-weight:700;color:#64748B;margin-bottom:10px;text-transform:uppercase;letter-spacing:.05em">Actions by Platform</div>
+          \${(d.by_platform||[]).map((p,i)=>{const colors=['#1DA1F2','#1877F2','#FF4500','#25D366','#229ED9','#0A66C2','#FF0050'];const c=colors[i%colors.length];return\`
+            <div style="margin-bottom:7px">
+              <div style="display:flex;justify-content:space-between;font-size:11px;margin-bottom:2px">
+                <span style="color:#E2E8F0;text-transform:capitalize">\${p.platform}</span>
+                <span style="color:#64748B">\${p.total}</span>
+              </div>
+              <div style="height:6px;background:#1E293B;border-radius:3px;overflow:hidden">
+                <div style="height:100%;width:\${Math.round(p.total/maxPlat*100)}%;background:\${c};border-radius:3px;transition:width .4s"></div>
+              </div>
+            </div>
+          \`}).join('')||'<div style="color:#64748B;font-size:12px">No platform data yet.</div>'}
+        </div>
+      </div>
+
+      \${d.strategies?.length ? \`
+      <div style="background:#131C2E;border-radius:8px;padding:14px">
+        <div style="font-size:11px;font-weight:700;color:#64748B;margin-bottom:10px;text-transform:uppercase;letter-spacing:.05em">Strategy Effectiveness (last 30 runs)</div>
+        <div style="overflow-x:auto">
+          <table style="width:100%;border-collapse:collapse;font-size:12px">
+            <thead><tr style="color:#64748B;font-size:10px;text-transform:uppercase">
+              <th style="padding:6px 10px;text-align:left">Date</th>
+              <th style="padding:6px 10px;text-align:right">Actions Done</th>
+              <th style="padding:6px 10px;text-align:right">Effectiveness</th>
+            </tr></thead>
+            <tbody>\${d.strategies.map(s=>\`
+              <tr style="border-top:1px solid #1E293B">
+                <td style="padding:6px 10px;color:#E2E8F0">\${s.plan_date||'—'}</td>
+                <td style="padding:6px 10px;text-align:right;color:#94A3B8">\${s.actions_done||0}/\${s.actions_total||0}</td>
+                <td style="padding:6px 10px;text-align:right;font-weight:600;color:\${(s.effectiveness||0)>=0.6?'#22C55E':(s.effectiveness||0)>=0.3?'#F59E0B':'#EF4444'}">\${s.effectiveness!=null?Math.round(s.effectiveness*100)+'%':'—'}</td>
+              </tr>
+            \`).join('')}</tbody>
+          </table>
+        </div>
+      </div>
+      \` : ''}
+    \`;
+  } catch(e) {
+    content.innerHTML = \`<div style="color:#EF4444;padding:12px">\${e.message}</div>\`;
   }
 }
 
