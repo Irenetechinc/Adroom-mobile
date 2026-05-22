@@ -60,7 +60,7 @@ npm run dist:all
 ## First-run setup
 
 When the app opens:
-1. Enter the **Backend URL** (e.g. `https://api.adroomai.com`)
+1. Enter the **Backend URL** (e.g. `https://backend.adroomai.com`)
 2. Enter the **APMA API Key** provided by the administrator
 3. Click **Connect** — the key is verified against the backend and stored securely in the OS keychain
 
