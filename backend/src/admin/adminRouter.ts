@@ -5,6 +5,7 @@ import { SUBSCRIPTION_PLAN_LIMITS } from '../services/subscriptionGuard';
 import { pushService } from '../services/pushService';
 import { apmaAdminRouter } from '../apma/apmaRouter';
 import { broadcast as _sseBroadcast, registerSSEClient, unregisterSSEClient } from '../events/sseBroadcast';
+import { runAPMAStartupMigration, checkAPMAMigrationStatus } from '../utils/apmaStartupMigration';
 
 const router = Router();
 
@@ -81,6 +82,25 @@ router.post('/login', (req, res) => {
 
 // ─── APMA (Autonomous Political Marketing Agent) — admin-only ─────────────────
 router.use('/api/apma', auth, apmaAdminRouter);
+
+// ─── APMA Migration endpoints ─────────────────────────────────────────────────
+router.get('/api/apma-migration/status', auth, async (_req, res) => {
+  try {
+    const status = await checkAPMAMigrationStatus();
+    res.json(status);
+  } catch (e: any) {
+    res.status(500).json({ migrated: false, missing: [e.message] });
+  }
+});
+
+router.post('/api/apma-migration/run', auth, async (_req, res) => {
+  try {
+    const result = await runAPMAStartupMigration();
+    res.json(result);
+  } catch (e: any) {
+    res.status(500).json({ ok: false, message: e.message });
+  }
+});
 
 // ─── STATS ────────────────────────────────────────────────────────────────────
 router.get('/api/stats', auth, async (_req, res) => {
@@ -1645,7 +1665,11 @@ label{font-size:12px;color:#94A3B8;font-weight:600}
       <div id="section-apma" class="section">
         <div class="section-header">
           <div class="section-title">APMA — Autonomous Political Marketing Agent</div>
-          <button class="btn btn-ghost btn-sm" onclick="loadAPMASection()">↺ Refresh</button>
+          <div style="display:flex;gap:8px;align-items:center">
+            <span id="apma-migration-badge" style="font-size:11px;padding:3px 8px;border-radius:4px;background:#1E293B;color:#64748B">Checking schema…</span>
+            <button class="btn btn-ghost btn-sm" id="apma-migration-btn" onclick="apmaRunMigration()" style="display:none">⚡ Apply Migration</button>
+            <button class="btn btn-ghost btn-sm" onclick="loadAPMASection()">↺ Refresh</button>
+          </div>
         </div>
 
         <!-- Stats -->
@@ -1703,9 +1727,42 @@ label{font-size:12px;color:#94A3B8;font-weight:600}
           <!-- New campaign form -->
           <div id="apma-new-campaign-form" style="display:none;background:#1A2540;border-radius:8px;padding:16px;margin-bottom:16px">
             <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:10px">
-              <input id="apma-camp-name" class="input" placeholder="Campaign name" style="font-size:13px" />
-              <input id="apma-camp-keywords" class="input" placeholder="Keywords (comma-separated)" style="font-size:13px" />
+              <input id="apma-camp-name" class="input" placeholder="Campaign name *" style="font-size:13px" />
+              <input id="apma-camp-keywords" class="input" placeholder="Keywords (comma-separated) *" style="font-size:13px" />
               <input id="apma-camp-platforms" class="input" placeholder="Platforms (default: twitter,facebook,reddit)" style="font-size:13px" />
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:12px">
+              <div>
+                <label style="font-size:11px;color:#64748B;display:block;margin-bottom:4px">Campaign Type</label>
+                <select id="apma-camp-type" class="input" style="font-size:13px">
+                  <option value="gubernatorial">Gubernatorial</option>
+                  <option value="presidential">Presidential</option>
+                  <option value="senate">Senate</option>
+                  <option value="house">House</option>
+                  <option value="mayoral">Mayoral</option>
+                  <option value="city_council">City Council</option>
+                  <option value="public_perception">Public Perception</option>
+                </select>
+              </div>
+              <div>
+                <label style="font-size:11px;color:#64748B;display:block;margin-bottom:4px">Campaign Subtype</label>
+                <select id="apma-camp-subtype" class="input" style="font-size:13px">
+                  <option value="build">Build (grow positive narrative)</option>
+                  <option value="defend">Defend (protect reputation)</option>
+                  <option value="offensive">Offensive (attack rivals)</option>
+                  <option value="defensive">Defensive (counter attacks)</option>
+                  <option value="general">General</option>
+                </select>
+              </div>
+              <div>
+                <label style="font-size:11px;color:#64748B;display:block;margin-bottom:4px">Duration (months)</label>
+                <select id="apma-camp-duration" class="input" style="font-size:13px">
+                  <option value="6">6 months</option>
+                  <option value="12" selected>12 months</option>
+                  <option value="18">18 months</option>
+                  <option value="24">24 months</option>
+                </select>
+              </div>
             </div>
             <button id="apma-camp-btn" class="btn btn-primary" onclick="apmaCreateCampaign()">Create Campaign</button>
           </div>
@@ -1881,6 +1938,8 @@ function toast(msg, type = 'info') {
   t.className = 'toast show ' + type;
   setTimeout(() => { t.className = 'toast'; }, 3500);
 }
+// Alias used by APMA and other sections
+function showToast(msg, type = 'info') { toast(msg, type); }
 
 function timeAgo(ts) {
   if (!ts) return '—';
@@ -3229,7 +3288,57 @@ async function loadAgentNetwork() {
 let apmaSelectedClientId = null;
 
 async function loadAPMASection() {
-  await Promise.all([loadAPMAStats(), loadAPMAClients(), loadDesktopReleases()]);
+  await Promise.all([loadAPMAStats(), loadAPMAClients(), loadDesktopReleases(), apmaCheckMigrationStatus()]);
+}
+
+async function apmaCheckMigrationStatus() {
+  const badge = document.getElementById('apma-migration-badge');
+  const btn = document.getElementById('apma-migration-btn');
+  if (!badge) return;
+  badge.textContent = 'Checking schema…';
+  badge.style.background = '#1E293B';
+  badge.style.color = '#64748B';
+  try {
+    const data = await api('GET', '/admin/api/apma-migration/status');
+    if (data.migrated) {
+      badge.textContent = '✓ Schema up-to-date';
+      badge.style.background = '#14532D';
+      badge.style.color = '#4ADE80';
+      btn.style.display = 'none';
+    } else if (data.missing && data.missing[0] === 'SUPABASE_DB_URL not configured') {
+      badge.textContent = '⚠ Set SUPABASE_DB_URL or SUPABASE_DB_PASSWORD on Railway to auto-migrate';
+      badge.style.background = '#451A03';
+      badge.style.color = '#FB923C';
+      btn.style.display = 'none';
+    } else {
+      badge.textContent = '⚠ Missing: ' + (data.missing || []).join(', ');
+      badge.style.background = '#450A0A';
+      badge.style.color = '#F87171';
+      btn.style.display = 'inline-flex';
+    }
+  } catch(e) {
+    badge.textContent = '? Status unknown';
+    badge.style.background = '#1E293B';
+    badge.style.color = '#64748B';
+  }
+}
+
+async function apmaRunMigration() {
+  const btn = document.getElementById('apma-migration-btn');
+  btn.textContent = 'Applying…'; btn.disabled = true;
+  try {
+    const data = await api('POST', '/admin/api/apma-migration/run');
+    if (data.ok) {
+      showToast('Migration applied successfully!', 'success');
+    } else {
+      showToast('Migration failed: ' + data.message, 'error');
+    }
+    await apmaCheckMigrationStatus();
+  } catch(e) {
+    showToast('Error: ' + e.message, 'error');
+  } finally {
+    btn.textContent = '⚡ Apply Migration'; btn.disabled = false;
+  }
 }
 
 /* ── APMA Live Cycle Monitor (polling) ────────────────────────────────────── */
@@ -3516,18 +3625,26 @@ async function apmaCreateCampaign() {
   const name = document.getElementById('apma-camp-name').value.trim();
   const keywords = document.getElementById('apma-camp-keywords').value.trim();
   const platforms = document.getElementById('apma-camp-platforms').value.trim();
+  const campaign_type = document.getElementById('apma-camp-type').value;
+  const campaign_subtype = document.getElementById('apma-camp-subtype').value;
+  const duration_months = parseInt(document.getElementById('apma-camp-duration').value, 10);
   if (!name || !keywords) { showToast('Campaign name and keywords are required.', 'error'); return; }
   const btn = document.getElementById('apma-camp-btn');
   btn.textContent = 'Creating…'; btn.disabled = true;
   try {
-    await api('POST', '/api/apma/clients/'+apmaSelectedClientId+'/campaigns', {
+    const result = await api('POST', '/api/apma/clients/'+apmaSelectedClientId+'/campaigns', {
       name,
       keywords: keywords.split(',').map(k=>k.trim()).filter(Boolean),
       platforms: platforms ? platforms.split(',').map(p=>p.trim().toLowerCase()).filter(Boolean) : ['twitter','facebook','reddit'],
+      campaign_type,
+      campaign_subtype,
+      duration_months,
     });
+    showToast('Campaign "' + result.campaign.name + '" created successfully!', 'success');
     document.getElementById('apma-camp-name').value='';
     document.getElementById('apma-camp-keywords').value='';
     document.getElementById('apma-camp-platforms').value='';
+    document.getElementById('apma-new-campaign-form').style.display='none';
     await loadAPMACampaigns(apmaSelectedClientId, document.getElementById('apma-campaigns-title').textContent.replace('Campaigns — ',''));
   } catch(e) { showToast('Error: ' + e.message, 'error'); }
   finally { btn.textContent = 'Create Campaign'; btn.disabled = false; }

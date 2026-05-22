@@ -3,6 +3,7 @@ import path from 'path';
 import bodyParser from 'body-parser';
 import multer from 'multer';
 import dotenv from 'dotenv';
+import { runAPMAStartupMigration } from './utils/apmaStartupMigration';
 import { EngagementService } from './services/engagement';
 import { CreativeService } from './services/creativeService';
 import { getSupabaseClient, getServiceSupabaseClient, getAnonSupabaseClient } from './config/supabase';
@@ -4120,6 +4121,12 @@ app.listen(PORT, async () => {
   } catch (e: any) {
     console.warn('[AdRoom Server] CMA init failed (non-fatal):', e.message);
   }
+
+  // Auto-apply APMA schema migrations (adds campaign_type, campaign_subtype, duration_months)
+  // Requires SUPABASE_DB_URL or SUPABASE_DB_PASSWORD env var on Railway
+  runAPMAStartupMigration().catch((e: any) =>
+    console.warn('[APMA Migration] Non-fatal startup error:', e.message)
+  );
 
   // Start all background intelligence + agent execution loops
   const scheduler = new SchedulerService();
