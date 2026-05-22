@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, net, shell } from 'electron';
 import path from 'path';
 
 // eslint-disable-next-line @typescript-eslint/no-var-requires
@@ -50,9 +50,10 @@ async function checkForUpdates(win: BrowserWindow): Promise<void> {
     if (!baseUrl) return;
 
     const current = app.getVersion();
-    const res = await fetch(
-      `${baseUrl}/api/app/version?platform=desktop&current=${encodeURIComponent(current)}`,
-    );
+    const url = `${baseUrl}/api/app/version?platform=desktop&current=${encodeURIComponent(current)}`;
+
+    // Use Electron's net.fetch — works in the main process without DOM types
+    const res = await net.fetch(url);
     if (!res.ok) return;
 
     const data = await res.json() as {
@@ -65,11 +66,10 @@ async function checkForUpdates(win: BrowserWindow): Promise<void> {
 
     if (!data.updateAvailable || !data.latestVersion) return;
 
-    const notes = data.changelog?.[0]?.notes?.slice(0, 400) ?? '';
-    const detail = [
-      `You are running v${current}.`,
-      notes ? `\nWhat's new in v${data.latestVersion}:\n${notes}` : '',
-    ].filter(Boolean).join('');
+    const notes = (data.changelog && data.changelog[0] && data.changelog[0].notes)
+      ? data.changelog[0].notes.slice(0, 400)
+      : '';
+    const detail = `You are running v${current}.${notes ? `\n\nWhat's new in v${data.latestVersion}:\n${notes}` : ''}`;
 
     const { response } = await dialog.showMessageBox(win, {
       type: 'info',
@@ -87,11 +87,11 @@ async function checkForUpdates(win: BrowserWindow): Promise<void> {
       shell.openExternal(data.storeUrl);
     }
 
-    // Force update: quit if user dismisses — they must update before using the app
+    // Force update: close the app if user dismisses — they must update first
     if (data.forceUpdate && response !== 0) {
       app.quit();
     }
-  } catch {
+  } catch (_e) {
     // Silent fail — never block the app on a network or parse error
   }
 }
@@ -99,7 +99,7 @@ async function checkForUpdates(win: BrowserWindow): Promise<void> {
 app.whenReady().then(() => {
   createWindow();
 
-  // Check for updates 5 s after launch so the window can finish loading first
+  // Check for updates 5 s after launch so the window finishes loading first
   setTimeout(() => { if (mainWin) checkForUpdates(mainWin); }, 5000);
 
   app.on('activate', () => {
@@ -112,8 +112,8 @@ app.on('window-all-closed', () => {
 });
 
 // ─── IPC handlers ─────────────────────────────────────────────────────────────
-ipcMain.handle('store-get',    (_e, key: string)               => store.get(key));
-ipcMain.handle('store-set',    (_e, key: string, value: unknown) => { store.set(key, value); });
-ipcMain.handle('store-delete', (_e, key: string)               => { store.delete(key); });
-ipcMain.handle('check-for-updates', () => { if (mainWin) checkForUpdates(mainWin); });
-ipcMain.handle('get-version',  () => app.getVersion());
+ipcMain.handle('store-get',         (_e, key: string)                => store.get(key));
+ipcMain.handle('store-set',         (_e, key: string, value: unknown) => { store.set(key, value); });
+ipcMain.handle('store-delete',      (_e, key: string)                => { store.delete(key); });
+ipcMain.handle('check-for-updates', ()                               => { if (mainWin) checkForUpdates(mainWin); });
+ipcMain.handle('get-version',       ()                               => app.getVersion());
