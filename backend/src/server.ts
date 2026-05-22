@@ -178,7 +178,7 @@ app.get('/api/logo.png', (_req, res) => {
 app.get('/api/app/version', async (req, res) => {
   try {
     const platformRaw = String(req.query.platform || 'android').toLowerCase();
-    const platform = platformRaw === 'ios' ? 'ios' : 'android';
+    const platform = platformRaw === 'ios' ? 'ios' : platformRaw === 'desktop' ? 'desktop' : 'android';
     const current = String(req.query.current || '0.0.0');
 
     const svc = getServiceSupabaseClient();
