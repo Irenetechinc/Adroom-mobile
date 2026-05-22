@@ -179,6 +179,76 @@ apmaAdminRouter.get('/campaigns/:id/overview', async (req, res) => {
   });
 });
 
+// ─── Pause / Resume campaign in realtime ──────────────────────────────────
+apmaAdminRouter.patch('/campaigns/:id/status', async (req, res) => {
+  const { status } = req.body;
+  if (!['active', 'paused', 'completed'].includes(status)) {
+    return res.status(400).json({ error: 'status must be active, paused, or completed' });
+  }
+  const sb = getServiceSupabaseClient();
+  const { data, error } = await sb
+    .from('apma_campaigns')
+    .update({ status, updated_at: new Date().toISOString() })
+    .eq('id', req.params.id)
+    .select('id, name, status, client_id')
+    .single();
+  if (error) return res.status(500).json({ error: error.message });
+  res.json({ campaign: data });
+});
+
+// ─── Full campaign analytics (admin) ──────────────────────────────────────
+apmaAdminRouter.get('/campaigns/:id/analytics', async (req, res) => {
+  const { id } = req.params;
+  const days = Math.min(180, parseInt(String(req.query.days ?? '90'), 10));
+  const since = new Date(Date.now() - days * 86_400_000).toISOString();
+  const sb = getServiceSupabaseClient();
+
+  const [campaignRes, sentimentRes, actionsRes, blogsRes, strategiesRes] = await Promise.all([
+    sb.from('apma_campaigns').select('*').eq('id', id).single(),
+    sb.from('apma_sentiment_history').select('score, recorded_at').eq('campaign_id', id).gte('recorded_at', since).order('recorded_at', { ascending: true }),
+    sb.from('apma_actions').select('action_type, platform, success, executed_at').eq('campaign_id', id).gte('executed_at', since),
+    sb.from('apma_blog_sites').select('name, domain, article_count, status').eq('campaign_id', id),
+    sb.from('political_strategies').select('plan_date, effectiveness, actions_total, actions_done').eq('campaign_id', id).order('plan_date', { ascending: false }).limit(30),
+  ]);
+
+  if (!campaignRes.data) return res.status(404).json({ error: 'Campaign not found' });
+
+  const byType: Record<string, { total: number; success: number }> = {};
+  const byPlatform: Record<string, { total: number; success: number }> = {};
+  const byDay: Record<string, number> = {};
+  let successCount = 0;
+
+  for (const a of (actionsRes.data ?? []) as any[]) {
+    if (!byType[a.action_type]) byType[a.action_type] = { total: 0, success: 0 };
+    byType[a.action_type].total++;
+    if (a.success) { byType[a.action_type].success++; successCount++; }
+
+    if (!byPlatform[a.platform]) byPlatform[a.platform] = { total: 0, success: 0 };
+    byPlatform[a.platform].total++;
+    if (a.success) byPlatform[a.platform].success++;
+
+    const day = (a.executed_at as string).split('T')[0];
+    byDay[day] = (byDay[day] ?? 0) + 1;
+  }
+
+  const total = actionsRes.data?.length ?? 0;
+
+  res.json({
+    campaign: campaignRes.data,
+    sentiment_history: sentimentRes.data ?? [],
+    by_type: Object.entries(byType).sort((a, b) => b[1].total - a[1].total)
+      .map(([type, v]) => ({ type, total: v.total, success: v.success, rate: v.total > 0 ? v.success / v.total : 0 })),
+    by_platform: Object.entries(byPlatform).sort((a, b) => b[1].total - a[1].total)
+      .map(([platform, v]) => ({ platform, total: v.total, success: v.success, rate: v.total > 0 ? v.success / v.total : 0 })),
+    by_day: Object.entries(byDay).sort(([a], [b]) => a.localeCompare(b))
+      .map(([date, count]) => ({ date, count })),
+    total_actions: total,
+    success_rate: total > 0 ? successCount / total : 0,
+    blogs: blogsRes.data ?? [],
+    strategies: strategiesRes.data ?? [],
+  });
+});
+
 // ─── Manually trigger a perception + planning cycle ───────────────────────
 apmaAdminRouter.post('/campaigns/:id/trigger', async (req, res) => {
   const { id } = req.params;
@@ -599,6 +669,96 @@ apmaClientRouter.delete('/social-accounts/:id', async (req: any, res) => {
   if (!existing || existing.client_id !== req.apmaClientId) return res.status(403).json({ error: 'Not authorized' });
   await sb.from('apma_social_accounts').delete().eq('id', req.params.id);
   res.json({ ok: true });
+});
+
+// ─── Real-time opposition intelligence ────────────────────────────────────
+apmaClientRouter.get('/opposition', async (req: any, res) => {
+  const sb = getServiceSupabaseClient();
+  const { data: campaign } = await sb
+    .from('apma_campaigns').select('id, name, keywords, goal')
+    .eq('client_id', req.apmaClientId).eq('status', 'active')
+    .order('created_at', { ascending: false }).limit(1).single();
+  if (!campaign) return res.json({ threats: [], momentum: 0, total_opposition_signals: 0, sentiment_history_7d: [] });
+
+  const since30d = new Date(Date.now() - 30 * 86_400_000).toISOString();
+  const since7d = new Date(Date.now() - 7 * 86_400_000).toISOString();
+
+  const [oppConvs, sentHist, recent7d] = await Promise.all([
+    sb.from('political_conversations')
+      .select('narrative_cluster, sentiment_score, platform, content_summary, recorded_at')
+      .eq('campaign_id', campaign.id).lt('sentiment_score', -0.25)
+      .gte('recorded_at', since30d).order('recorded_at', { ascending: false }).limit(300),
+    sb.from('apma_sentiment_history').select('score, recorded_at')
+      .eq('campaign_id', campaign.id).gte('recorded_at', since30d)
+      .order('recorded_at', { ascending: true }),
+    sb.from('political_conversations').select('narrative_cluster, sentiment_score')
+      .eq('campaign_id', campaign.id).lt('sentiment_score', -0.2).gte('recorded_at', since7d),
+  ]);
+
+  const clusterMap: Record<string, { count: number; sum: number; platforms: Set<string>; trending: boolean; samples: string[] }> = {};
+  const recentClusters = new Set((recent7d.data ?? []).map((c: any) => c.narrative_cluster));
+
+  for (const c of (oppConvs.data ?? []) as any[]) {
+    const key = c.narrative_cluster || 'general';
+    if (!clusterMap[key]) clusterMap[key] = { count: 0, sum: 0, platforms: new Set(), trending: false, samples: [] };
+    clusterMap[key].count++;
+    clusterMap[key].sum += c.sentiment_score ?? 0;
+    clusterMap[key].platforms.add(c.platform);
+    if (c.content_summary && clusterMap[key].samples.length < 3) clusterMap[key].samples.push(c.content_summary);
+    clusterMap[key].trending = recentClusters.has(key);
+  }
+
+  const threats = Object.entries(clusterMap)
+    .map(([cluster, d]) => ({ cluster, volume: d.count, avg_sentiment: d.count > 0 ? d.sum / d.count : 0, platforms: Array.from(d.platforms), trending: d.trending, samples: d.samples }))
+    .sort((a, b) => b.volume - a.volume).slice(0, 15);
+
+  const hist = (sentHist.data ?? []) as any[];
+  const half = Math.floor(hist.length / 2);
+  const avg = (arr: any[]) => arr.length ? arr.reduce((s, x) => s + x.score, 0) / arr.length : 0;
+  const momentum = hist.length > 1 ? avg(hist.slice(half)) - avg(hist.slice(0, half)) : 0;
+
+  res.json({ campaign_name: campaign.name, threats, momentum, total_opposition_signals: (oppConvs.data ?? []).length, sentiment_history_7d: hist.slice(-14) });
+});
+
+// ─── Client analytics dashboard ───────────────────────────────────────────
+apmaClientRouter.get('/analytics', async (req: any, res) => {
+  const days = Math.min(90, parseInt(String(req.query.days ?? '30'), 10));
+  const since = new Date(Date.now() - days * 86_400_000).toISOString();
+  const sb = getServiceSupabaseClient();
+  const { data: campaign } = await sb.from('apma_campaigns')
+    .select('id, name, narrative_score_current, narrative_score_target, total_posts, total_comments, total_blogs')
+    .eq('client_id', req.apmaClientId).eq('status', 'active')
+    .order('created_at', { ascending: false }).limit(1).single();
+  if (!campaign) return res.json({ analytics: null });
+
+  const [actionsRes, sentRes] = await Promise.all([
+    sb.from('apma_actions').select('action_type, platform, success, executed_at').eq('campaign_id', campaign.id).gte('executed_at', since),
+    sb.from('apma_sentiment_history').select('score, recorded_at').eq('campaign_id', campaign.id).gte('recorded_at', since).order('recorded_at', { ascending: true }),
+  ]);
+
+  const byType: Record<string, number> = {};
+  const byPlatform: Record<string, number> = {};
+  const byDay: Record<string, number> = {};
+  let successCount = 0;
+
+  for (const a of (actionsRes.data ?? []) as any[]) {
+    byType[a.action_type] = (byType[a.action_type] ?? 0) + 1;
+    byPlatform[a.platform] = (byPlatform[a.platform] ?? 0) + 1;
+    const day = (a.executed_at as string).split('T')[0];
+    byDay[day] = (byDay[day] ?? 0) + 1;
+    if (a.success) successCount++;
+  }
+
+  const total = actionsRes.data?.length ?? 0;
+  res.json({
+    campaign,
+    by_type: Object.entries(byType).sort((a, b) => b[1] - a[1]).map(([type, count]) => ({ type, count })),
+    by_platform: Object.entries(byPlatform).sort((a, b) => b[1] - a[1]).map(([platform, count]) => ({ platform, count })),
+    by_day: Object.entries(byDay).sort(([a], [b]) => a.localeCompare(b)).map(([date, count]) => ({ date, count })),
+    total,
+    success_rate: total > 0 ? successCount / total : 0,
+    sentiment_trend: sentRes.data ?? [],
+  });
 });
 
 // ─── Predicted events (client-facing calendar) ────────────────────────────

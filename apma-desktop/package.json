@@ -28,7 +28,7 @@
   },
   "build": {
     "appId": "com.adroomai.apma",
-    "productName": "APMA Dashboard",
+    "productName": "APMA",
     "copyright": "Copyright © 2026 AdRoom AI",
     "directories": {
       "output": "release"
@@ -93,7 +93,7 @@
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "shortcutName": "APMA Dashboard",
+      "shortcutName": "APMA",
       "installerIcon": "assets/icon.ico",
       "uninstallerIcon": "assets/icon.ico"
     },
