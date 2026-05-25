@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useCallback } from 'react';
 import { useAuthStore } from './store';
 import { getStoredCredentials } from './services/api';
 import SplashScreen from './screens/SplashScreen';
@@ -9,15 +9,15 @@ export default function App() {
   const { isAuthenticated, setAuth } = useAuthStore();
   const [ready, setReady] = useState(false);
 
-  function handleSplashDone() {
-    getStoredCredentials().then((creds) => {
+  const handleSplashDone = useCallback(async () => {
+    try {
+      const creds = await getStoredCredentials();
       if (creds) setAuth(creds.baseUrl);
-    }).finally(() => setReady(true));
-  }
+    } finally {
+      setReady(true);
+    }
+  }, []);
 
-  if (!ready) {
-    return <SplashScreen onDone={handleSplashDone} />;
-  }
-
+  if (!ready) return <SplashScreen onDone={handleSplashDone} />;
   return isAuthenticated ? <DashboardScreen /> : <LoginScreen />;
 }

@@ -115,6 +115,16 @@ Run in this order:
 3. `backend/referral_migration.sql` — profiles table (creates if missing) + referrals table + referral_code
 4. `backend/ad_configs_migration.sql` — ad_configs missing columns (open_id, refresh_token, page_name, person_urn, org_urn, instagram_account_id)
 5. `supabase/migrations/20260429000000_app_releases.sql` — force-update / changelog
+6. `backend/apma_migration.sql` — APMA core tables
+7. `backend/apma_oauth_migration.sql` — adds refresh_token, token_expires_at columns + unique constraint on apma_social_accounts(client_id, platform, account_id)
+
+## APMA OAuth — Required Redirect URIs
+Register these redirect URIs in each platform's developer app settings (use `PUBLIC_BASE_URL`):
+- **Facebook/Instagram**: `https://api.adroomai.com/api/apma/oauth/callback/facebook`
+- **Twitter/X**: `https://api.adroomai.com/api/apma/oauth/callback/twitter`
+- **LinkedIn**: `https://api.adroomai.com/api/apma/oauth/callback/linkedin`
+- **Reddit**: `https://api.adroomai.com/api/apma/oauth/callback/reddit`
+- Telegram & WhatsApp use bot tokens (no OAuth redirect needed — entered in APMA desktop directly)
 
 ## Backend Workflows
 - **Backend API** → `cd backend && ts-node src/server.ts` on port 8000

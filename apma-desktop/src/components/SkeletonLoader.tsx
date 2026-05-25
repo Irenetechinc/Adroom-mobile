@@ -1,19 +1,24 @@
-import { useEffect } from 'react';
+import React from 'react';
 
-const SHIMMER_ID = '__apma_shimmer__';
+const SHIMMER_CSS = `
+  @keyframes apma-shimmer {
+    0%   { background-position: 200% center; }
+    100% { background-position: -200% center; }
+  }
+`;
 
-function injectShimmer() {
-  if (document.getElementById(SHIMMER_ID)) return;
+let shimmerInjected = false;
+function ensureShimmer() {
+  if (shimmerInjected || typeof document === 'undefined') return;
+  if (document.getElementById('__apma_shimmer__')) { shimmerInjected = true; return; }
   const s = document.createElement('style');
-  s.id = SHIMMER_ID;
-  s.textContent = `
-    @keyframes apma-shimmer {
-      0%   { background-position: 200% 0; }
-      100% { background-position: -200% 0; }
-    }
-  `;
+  s.id = '__apma_shimmer__';
+  s.textContent = SHIMMER_CSS;
   document.head.appendChild(s);
+  shimmerInjected = true;
 }
+
+ensureShimmer();
 
 interface SkeletonProps {
   width?: string | number;
@@ -23,13 +28,14 @@ interface SkeletonProps {
 }
 
 export function Skeleton({ width = '100%', height = 14, borderRadius = 4, style }: SkeletonProps) {
-  useEffect(() => { injectShimmer(); }, []);
   return (
     <div style={{
-      width, height, borderRadius,
-      background: 'linear-gradient(90deg, #1a2540 25%, #263348 50%, #1a2540 75%)',
-      backgroundSize: '200% 100%',
-      animation: 'apma-shimmer 1.6s ease-in-out infinite',
+      width,
+      height,
+      borderRadius,
+      background: 'linear-gradient(90deg, #131c2e 0%, #1e2d45 40%, #263348 50%, #1e2d45 60%, #131c2e 100%)',
+      backgroundSize: '300% 100%',
+      animation: 'apma-shimmer 1.8s ease-in-out infinite',
       flexShrink: 0,
       ...style,
     }} />
@@ -38,10 +44,13 @@ export function Skeleton({ width = '100%', height = 14, borderRadius = 4, style 
 
 export function SkeletonCard({ lines = 3, gap = 10 }: { lines?: number; gap?: number }) {
   return (
-    <div style={{ background: '#131c2e', borderRadius: 12, padding: 16, border: '1px solid #1e293b', display: 'flex', flexDirection: 'column', gap }}>
-      <Skeleton width="55%" height={15} />
+    <div style={{
+      background: '#131c2e', borderRadius: 12, padding: 18,
+      border: '1px solid #1e293b', display: 'flex', flexDirection: 'column', gap,
+    }}>
+      <Skeleton width="55%" height={15} borderRadius={5} />
       {Array.from({ length: lines }).map((_, i) => (
-        <Skeleton key={i} width={i === lines - 1 ? '75%' : '100%'} height={12} />
+        <Skeleton key={i} width={i === lines - 1 ? '72%' : '100%'} height={12} />
       ))}
     </div>
   );
@@ -51,9 +60,12 @@ export function SkeletonStats({ count = 4 }: { count?: number }) {
   return (
     <div style={{ display: 'grid', gridTemplateColumns: `repeat(${count}, 1fr)`, gap: 12 }}>
       {Array.from({ length: count }).map((_, i) => (
-        <div key={i} style={{ background: '#131c2e', borderRadius: 8, padding: '14px 16px', border: '1px solid #1e293b', display: 'flex', flexDirection: 'column', gap: 10 }}>
-          <Skeleton width={48} height={30} borderRadius={6} />
-          <Skeleton width="65%" height={10} />
+        <div key={i} style={{
+          background: '#131c2e', borderRadius: 8, padding: '14px 16px',
+          border: '1px solid #1e293b', display: 'flex', flexDirection: 'column', gap: 12,
+        }}>
+          <Skeleton width={44} height={28} borderRadius={6} />
+          <Skeleton width="60%" height={10} />
         </div>
       ))}
     </div>
@@ -62,11 +74,16 @@ export function SkeletonStats({ count = 4 }: { count?: number }) {
 
 export function SkeletonTable({ rows = 4, cols = 4 }: { rows?: number; cols?: number }) {
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
       {Array.from({ length: rows }).map((_, r) => (
-        <div key={r} style={{ display: 'grid', gridTemplateColumns: `repeat(${cols}, 1fr)`, gap: 8, padding: '10px 0', borderBottom: '1px solid #1e293b' }}>
+        <div key={r} style={{
+          display: 'grid',
+          gridTemplateColumns: `repeat(${cols}, 1fr)`,
+          gap: 10, padding: '11px 0',
+          borderBottom: '1px solid #1e293b',
+        }}>
           {Array.from({ length: cols }).map((_, c) => (
-            <Skeleton key={c} width={c === 0 ? '80%' : '60%'} height={12} />
+            <Skeleton key={c} width={c === 0 ? '80%' : '55%'} height={12} />
           ))}
         </div>
       ))}

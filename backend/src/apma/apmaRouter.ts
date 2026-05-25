@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import crypto from 'crypto';
 import { getServiceSupabaseClient } from '../config/supabase';
+import { apmaOAuthStates } from './apmaOAuthStore';
 import { apmaOrchestrator } from './apmaOrchestrator';
 import { apmaHumanizerService } from './apmaHumanizerService';
 import { apmaPerceptionService } from './apmaPerceptionService';
@@ -781,4 +782,89 @@ apmaClientRouter.get('/predicted-events', async (req: any, res) => {
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
+});
+
+// ─── OAuth start — client initiates platform OAuth flow ───────────────────
+apmaClientRouter.post('/oauth/start/:platform', apmaClientAuth, async (req: any, res) => {
+  const { platform } = req.params;
+  const clientId: string = req.apmaClientId;
+
+  const base = (process.env.PUBLIC_BASE_URL ?? 'https://api.adroomai.com').replace(/\/+$/, '');
+  const redir = (p: string) => `${base}/api/apma/oauth/callback/${p}`;
+
+  const stateId = crypto.randomBytes(20).toString('hex');
+  let authUrl: string;
+  let codeVerifier: string | undefined;
+
+  switch (platform) {
+    case 'facebook':
+    case 'instagram': {
+      const FB_APP_ID = process.env.FB_APP_ID;
+      if (!FB_APP_ID) return res.status(500).json({ error: 'Facebook App ID not configured on server. Set FB_APP_ID.' });
+      const scope = 'pages_manage_posts,pages_read_engagement,pages_show_list,instagram_basic,instagram_content_publish,public_profile';
+      authUrl = `https://www.facebook.com/v18.0/dialog/oauth?client_id=${FB_APP_ID}&redirect_uri=${encodeURIComponent(redir('facebook'))}&scope=${encodeURIComponent(scope)}&state=${stateId}&response_type=code`;
+      break;
+    }
+    case 'twitter': {
+      const TWITTER_CLIENT_ID = process.env.TWITTER_CLIENT_ID;
+      if (!TWITTER_CLIENT_ID) return res.status(500).json({ error: 'Twitter Client ID not configured on server. Set TWITTER_CLIENT_ID.' });
+      codeVerifier = crypto.randomBytes(32).toString('base64url');
+      const codeChallenge = crypto.createHash('sha256').update(codeVerifier).digest('base64url');
+      const scope = 'tweet.read tweet.write users.read offline.access';
+      authUrl = `https://twitter.com/i/oauth2/authorize?response_type=code&client_id=${TWITTER_CLIENT_ID}&redirect_uri=${encodeURIComponent(redir('twitter'))}&scope=${encodeURIComponent(scope)}&state=${stateId}&code_challenge=${codeChallenge}&code_challenge_method=S256`;
+      break;
+    }
+    case 'linkedin': {
+      const LINKEDIN_CLIENT_ID = process.env.LINKEDIN_CLIENT_ID;
+      if (!LINKEDIN_CLIENT_ID) return res.status(500).json({ error: 'LinkedIn Client ID not configured on server. Set LINKEDIN_CLIENT_ID.' });
+      const scope = 'r_liteprofile r_emailaddress w_member_social';
+      authUrl = `https://www.linkedin.com/oauth/v2/authorization?response_type=code&client_id=${LINKEDIN_CLIENT_ID}&redirect_uri=${encodeURIComponent(redir('linkedin'))}&scope=${encodeURIComponent(scope)}&state=${stateId}`;
+      break;
+    }
+    case 'reddit': {
+      const REDDIT_CLIENT_ID = process.env.REDDIT_CLIENT_ID;
+      if (!REDDIT_CLIENT_ID) return res.status(500).json({ error: 'Reddit Client ID not configured on server. Set REDDIT_CLIENT_ID.' });
+      const scope = 'submit identity';
+      authUrl = `https://www.reddit.com/api/v1/authorize?client_id=${REDDIT_CLIENT_ID}&response_type=code&state=${stateId}&redirect_uri=${encodeURIComponent(redir('reddit'))}&duration=permanent&scope=${encodeURIComponent(scope)}`;
+      break;
+    }
+    default:
+      return res.status(400).json({ error: `OAuth is not available for ${platform}. Use manual token setup.` });
+  }
+
+  apmaOAuthStates.set(stateId, {
+    clientId,
+    platform,
+    status: 'pending',
+    codeVerifier,
+    expiresAt: Date.now() + 10 * 60_000,
+  });
+
+  res.json({ authUrl, stateId });
+});
+
+// ─── OAuth poll — desktop polls to check if OAuth completed ──────────────
+apmaClientRouter.get('/oauth/poll/:stateId', apmaClientAuth, async (req: any, res) => {
+  const { stateId } = req.params;
+  const clientId: string = req.apmaClientId;
+
+  const st = apmaOAuthStates.get(stateId);
+  if (!st) return res.json({ status: 'expired', error: 'OAuth session expired or not found. Please start again.' });
+  if (st.clientId !== clientId) return res.status(403).json({ error: 'Forbidden' });
+
+  if (st.status === 'pending') return res.json({ status: 'pending' });
+
+  if (st.status === 'error') {
+    apmaOAuthStates.delete(stateId);
+    return res.json({ status: 'error', error: st.error });
+  }
+
+  const sb = getServiceSupabaseClient();
+  const { data: accounts } = await sb
+    .from('apma_social_accounts')
+    .select('id, platform, account_type, account_name, active, last_used_at, usage_count, phone_number, created_at')
+    .in('id', st.accountIds ?? []);
+
+  apmaOAuthStates.delete(stateId);
+  return res.json({ status: 'completed', accounts: accounts ?? [] });
 });
