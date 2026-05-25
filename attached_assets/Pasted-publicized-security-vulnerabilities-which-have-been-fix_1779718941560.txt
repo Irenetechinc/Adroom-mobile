@@ -1,0 +1,30 @@
+publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+ ›   ModuleLoadError: [MODULE_NOT_FOUND] require failed to load 
+ ›   /home/runner/.npm/_npx/e25a38a8cc65d08e/node_modules/eas-cli/build/commands/build/index.js: 
+ ›   Cannot find module '@nodelib/fs.scandir'
+ ›   Require stack:
+ ›   - /home/runner/.npm/_npx/e25a38a8cc65d08e/node_modules/@nodelib/fs.walk/out/readers/async.js
+ ›   - /home/runner/.npm/_npx/e25a38a8cc65d08e/node_modules/@nodelib/fs.walk/out/providers/async.js
+ ›   - /home/runner/.npm/_npx/e25a38a8cc65d08e/node_modules/@nodelib/fs.walk/out/index.js
+ ›   - /home/runner/.npm/_npx/e25a38a8cc65d08e/node_modules/fast-glob/out/readers/async.js
+ ›   - /home/runner/.npm/_npx/e25a38a8cc65d08e/node_modules/fast-glob/out/providers/async.js
+ ›   - /home/runner/.npm/_npx/e25a38a8cc65d08e/node_modules/fast-glob/out/index.js
+ ›   - /home/runner/.npm/_npx/e25a38a8cc65d08e/node_modules/@expo/steps/dist/BuildStepContext.js
+ ›   - /home/runner/.npm/_npx/e25a38a8cc65d08e/node_modules/@expo/steps/dist/index.js
+ ›   - 
+ ›   /home/runner/.npm/_npx/e25a38a8cc65d08e/node_modules/eas-cli/build/project/customBuildConfig.js
+ ›   - 
+ ›   /home/runner/.npm/_npx/e25a38a8cc65d08e/node_modules/eas-cli/build/build/android/prepareJob.js
+ ›   - /home/runner/.npm/_npx/e25a38a8cc65d08e/node_modules/eas-cli/build/build/android/build.js
+ ›   - /home/runner/.npm/_npx/e25a38a8cc65d08e/node_modules/eas-cli/build/build/runBuildAndSubmit.js
+ ›   - /home/runner/.npm/_npx/e25a38a8cc65d08e/node_modules/eas-cli/build/commands/build/index.js
+ ›   - /home/runner/.npm/_npx/e25a38a8cc65d08e/node_modules/@oclif/core/lib/module-loader.js
+ ›   - /home/runner/.npm/_npx/e25a38a8cc65d08e/node_modules/@oclif/core/lib/help/index.js
+ ›   - /home/runner/.npm/_npx/e25a38a8cc65d08e/node_modules/@oclif/core/lib/errors/handle.js
+ ›   - /home/runner/.npm/_npx/e25a38a8cc65d08e/node_modules/@oclif/core/lib/errors/index.js
+ ›   - /home/runner/.npm/_npx/e25a38a8cc65d08e/node_modules/@oclif/core/lib/config/config.js
+ ›   - /home/runner/.npm/_npx/e25a38a8cc65d08e/node_modules/@oclif/core/lib/config/index.js
+ ›   - /home/runner/.npm/_npx/e25a38a8cc65d08e/node_modules/@oclif/core/lib/command.js
+ ›   - /home/runner/.npm/_npx/e25a38a8cc65d08e/node_modules/@oclif/core/lib/index.js
+ ›   - /home/runner/.npm/_npx/e25a38a8cc65d08e/node_modules/eas-cli/bin/run
+ ›   Code: MODULE_NOT_FOUND
