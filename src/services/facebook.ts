@@ -1,13 +1,14 @@
 import { supabase } from './supabase';
 import { FacebookConfig } from '../types/facebook';
+import * as AuthSession from 'expo-auth-session';
 import * as WebBrowser from 'expo-web-browser';
 
-// Facebook's OAuth dialog detects Chrome Custom Tabs on Android and redirects
-// to the native Facebook app, so WebBrowser.openAuthSessionAsync returns
-// "cancel" instantly.  We open the browser (fire-and-forget) and poll the
-// backend for the auth code instead — works in both Expo Go and standalone.
+WebBrowser.maybeCompleteAuthSession();
 
-const FB_APP_ID = process.env.EXPO_PUBLIC_FACEBOOK_APP_ID;
+// The Facebook App ID identifies the "AdRoom" application itself to Facebook.
+// It is NOT a specific user's account ID. 
+// This allows AdRoom to ask ANY user for permission to manage THEIR specific pages.
+const FB_APP_ID = process.env.EXPO_PUBLIC_FACEBOOK_APP_ID; 
 
 export interface FacebookPage {
   id: string;
@@ -18,74 +19,72 @@ export interface FacebookPage {
 
 export const FacebookService = {
 
+  /**
+   * Initiate Facebook Login Flow
+   */
   async login(): Promise<string | null> {
-    const BACKEND_URL = process.env.EXPO_PUBLIC_API_URL;
-    if (!BACKEND_URL) throw new Error('EXPO_PUBLIC_API_URL is not configured');
-    if (!FB_APP_ID)   throw new Error('EXPO_PUBLIC_FACEBOOK_APP_ID is not configured');
+    try {
+      // Use useAuthRequest hook pattern or manual browser flow if startAsync is deprecated
+      // However, for Expo 50+, startAsync is still available in expo-auth-session but marked deprecated in some contexts
+      // We will suppress the TS error for now or use the WebBrowser directly if needed.
+      // Correct modern approach: useAuthRequest + makeRedirectUri
 
-    const state = Math.random().toString(36).substring(2) + Date.now().toString(36);
-    const callbackUrl = `${BACKEND_URL}/auth/facebook/callback`;
-    const authUrl =
-      `https://www.facebook.com/v18.0/dialog/oauth` +
-      `?client_id=${FB_APP_ID}` +
-      `&redirect_uri=${encodeURIComponent(callbackUrl)}` +
-      `&response_type=code` +
-      `&scope=pages_show_list,pages_read_engagement,pages_manage_posts,pages_messaging,public_profile` +
-      `&state=${state}`;
+      const redirectUri = AuthSession.makeRedirectUri({
+        scheme: 'adroom',
+        path: 'auth/facebook/callback',
+      });
 
-    console.log('[FacebookService] Opening browser for OAuth…');
+      const BACKEND_URL = process.env.EXPO_PUBLIC_API_URL;
+      if (!BACKEND_URL) {
+        throw new Error('EXPO_PUBLIC_API_URL is not configured');
+      }
+      const callbackUrl = `${BACKEND_URL}/auth/facebook/callback`;
 
-    return new Promise((resolve) => {
-      const POLL_MS = 2000;
-      const TIMEOUT_MS = 5 * 60 * 1000;
-      const BROWSER_CLOSE_GRACE_MS = 5000;
-      const start = Date.now();
-      let codeReceived = false;
-      let browserClosedAt: number | null = null;
+      // Using WebBrowser directly as a fallback for custom OAuth flows
+      // SWITCHING TO RESPONSE_TYPE=CODE for backend exchange
+      if (!FB_APP_ID) {
+        throw new Error('EXPO_PUBLIC_FACEBOOK_APP_ID is not configured');
+      }
 
-      // Open browser — track when it closes so we can resolve quickly if user cancels
-      WebBrowser.openBrowserAsync(authUrl)
-        .then(() => { if (!codeReceived) browserClosedAt = Date.now(); })
-        .catch(() => { if (!codeReceived) browserClosedAt = Date.now(); });
+      const authUrl = `https://www.facebook.com/v18.0/dialog/oauth?client_id=${FB_APP_ID}&redirect_uri=${encodeURIComponent(callbackUrl)}&response_type=code&scope=pages_show_list,pages_read_engagement,pages_manage_posts,pages_messaging,public_profile`;
 
-      const finish = (result: string | null) => {
-        if (codeReceived && result === null) return; // already resolved with token
-        codeReceived = true;
-        clearInterval(poll);
-        WebBrowser.dismissBrowser().catch(() => {});
-        resolve(result);
-      };
+      console.log('[FacebookService] Initiating login with redirect_uri:', callbackUrl);
 
-      const poll = setInterval(async () => {
-        if (Date.now() - start > TIMEOUT_MS) { finish(null); return; }
-        // If browser was closed and no code received within grace period, user cancelled
-        if (browserClosedAt !== null && !codeReceived && Date.now() - browserClosedAt > BROWSER_CLOSE_GRACE_MS) {
-          finish(null); return;
-        }
-        try {
-          const res = await fetch(`${BACKEND_URL}/auth/poll?state=${state}`);
-          if (!res.ok) return;
-          const data = await res.json();
-          if (data.error) { finish(null); return; }
-          if (data.code) {
-            codeReceived = true;
-            clearInterval(poll);
-            WebBrowser.dismissBrowser().catch(() => {});
-            try {
-              const exchangeRes = await fetch(`${BACKEND_URL}/api/auth/facebook/exchange`, {
+      const result = await WebBrowser.openAuthSessionAsync(authUrl, redirectUri);
+
+      if (result.type === 'success' && result.url) {
+        // Parse code from URL query params
+        // Result URL will be like: adroom://auth/facebook/callback?code=...
+        const match = result.url.match(/code=([^&]+)/);
+        const code = match ? match[1] : null;
+
+        if (code) {
+            // Exchange code for token via backend
+            const exchangeRes = await fetch(`${BACKEND_URL}/api/auth/facebook/exchange`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ code: data.code, redirectUri: callbackUrl }),
-              });
-              const exchangeData = await exchangeRes.json();
-              resolve(exchangeData.access_token || null);
-            } catch { resolve(null); }
-          }
-        } catch { /* network error — keep polling */ }
-      }, POLL_MS);
-    });
+                body: JSON.stringify({ code, redirectUri: callbackUrl })
+            });
+
+            const exchangeData = await exchangeRes.json();
+            if (exchangeData.access_token) {
+                return exchangeData.access_token;
+            } else {
+                throw new Error('Failed to exchange code for token: ' + (exchangeData.error || 'Unknown error'));
+            }
+        }
+      }
+
+      return null;
+    } catch (error) {
+      console.error('Facebook login error:', error);
+      throw error;
+    }
   },
 
+  /**
+   * Fetch Active Config from Supabase
+   */
   async getConfig(): Promise<FacebookConfig | null> {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return null;
@@ -96,13 +95,16 @@ export const FacebookService = {
       .eq('user_id', user.id)
       .eq('platform', 'facebook')
       .maybeSingle();
-    
+
     if (error) {
         throw error;
     }
     return data;
   },
 
+  /**
+   * Fetch User's Pages
+   */
   async getPages(userAccessToken: string): Promise<FacebookPage[]> {
     const response = await fetch(
       `https://graph.facebook.com/v18.0/me/accounts?access_token=${userAccessToken}&fields=id,name,access_token,category`
@@ -112,9 +114,12 @@ export const FacebookService = {
     return data.data || [];
   },
 
+  /**
+   * Validate Credentials (Token)
+   */
   async validateCredentials(input: any): Promise<boolean> {
       if (!input.access_token) return false;
-      
+
       try {
         const meRes = await fetch(`https://graph.facebook.com/v18.0/me?access_token=${input.access_token}`);
         return meRes.ok;
@@ -124,6 +129,9 @@ export const FacebookService = {
       }
   },
 
+  /**
+   * Save the complete configuration
+   */
   async saveConfig(
     pageId: string, 
     pageName: string,
@@ -151,6 +159,9 @@ export const FacebookService = {
     return data;
   },
 
+  /**
+   * Post a comment or reply to an object (post or comment)
+   */
   async postComment(objectId: string, message: string, accessToken: string): Promise<string> {
     const response = await fetch(
       `https://graph.facebook.com/v18.0/${objectId}/comments`,
@@ -168,6 +179,9 @@ export const FacebookService = {
     return data.id;
   },
 
+  /**
+   * Like an object (post, comment, or media)
+   */
   async likeObject(objectId: string, accessToken: string): Promise<boolean> {
     const response = await fetch(
       `https://graph.facebook.com/v18.0/${objectId}/likes`,
@@ -184,6 +198,9 @@ export const FacebookService = {
     return data.success;
   },
 
+  /**
+   * Send a private message to a user (via Page)
+   */
   async postMessage(recipientId: string, message: string, accessToken: string): Promise<string> {
     const response = await fetch(
       `https://graph.facebook.com/v18.0/me/messages`,
@@ -202,13 +219,17 @@ export const FacebookService = {
     return data.message_id || data.recipient_id;
   },
 
+  /**
+   * Publish a post to the Page Feed
+   */
   async createPost(pageId: string, message: string, imageUrl: string | undefined, accessToken: string): Promise<string> {
     const body: any = {
         message: message,
         access_token: accessToken,
         published: true
     };
-    
+
+    // If image is provided, use /photos endpoint, otherwise /feed
     const endpoint = imageUrl ? 'photos' : 'feed';
     if (imageUrl) body.url = imageUrl;
 
