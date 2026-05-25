@@ -176,7 +176,7 @@ export default function DashboardScreen() {
           </div>
         )}
 
-        {loading && !dashboard && (
+        {!dashboard && !error && (
           <div style={{ display:'flex', flexDirection:'column', gap:20 }}>
             <div style={{ display:'grid', gridTemplateColumns:'1fr 2fr', gap:20 }}>
               <SkeletonCard lines={4} />

@@ -52,29 +52,32 @@ async function apiFetch<T>(endpoint: string, options?: RequestInit): Promise<T> 
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
-    throw new Error(err.error || `HTTP ${res.status}`);
+    throw new Error((err as any).error || `HTTP ${res.status}`);
   }
-  return res.json();
+  return res.json() as Promise<T>;
 }
 
 export const apmaApi = {
-  dashboard:           () => apiFetch<any>('/dashboard'),
-  campaigns:           () => apiFetch<any>('/campaigns'),
-  sentimentTrend:      (days = 30) => apiFetch<any>(`/sentiment-trend?days=${days}`),
-  recommendations:     () => apiFetch<any>('/recommendations'),
-  actions:             (since?: string) => apiFetch<any>(`/actions${since ? `?since=${since}` : ''}`),
-  blogs:               () => apiFetch<any>('/blogs'),
-  vetoRec:             (id: string) => apiFetch<any>(`/veto/${id}`, { method: 'POST' }),
-  events:              (since?: number) => apiFetch<{ events: any[]; latest_seq: number }>(`/events${since != null ? `?since=${since}` : ''}`),
-  predictedEvents:     (horizon: 7 | 30 | 90 = 30) => apiFetch<{ events: any[]; campaign_id?: string; horizon: number }>(`/predicted-events?horizon=${horizon}`),
-  socialAccounts:       () => apiFetch<{ accounts: any[] }>('/social-accounts'),
-  addSocialAccount:     (body: any) => apiFetch<{ account: any }>('/social-accounts', { method: 'POST', body: JSON.stringify(body) }),
-  removeSocialAccount:  (id: string) => apiFetch<{ ok: boolean }>(`/social-accounts/${id}`, { method: 'DELETE' }),
-  toggleSocialAccount:  (id: string, active: boolean) => apiFetch<{ account: any }>(`/social-accounts/${id}`, { method: 'PATCH', body: JSON.stringify({ active }) }),
-  clientProfile:        () => apiFetch<{ profile: any }>('/profile'),
-  refreshProfile:       () => apiFetch<{ profile: any }>('/profile/refresh', { method: 'POST' }),
-  selfImprovementLogs:  () => apiFetch<{ logs: any[] }>('/self-improvement'),
-  deployImprovement:    (id: string) => apiFetch<{ ok: boolean }>(`/self-improvement/${id}/deploy`, { method: 'POST' }),
-  opposition:           () => apiFetch<any>('/opposition'),
-  analytics:            (days = 30) => apiFetch<any>(`/analytics?days=${days}`),
+  dashboard:           ()                   => apiFetch<any>('/dashboard'),
+  campaigns:           ()                   => apiFetch<any>('/campaigns'),
+  sentimentTrend:      (days = 30)          => apiFetch<any>(`/sentiment-trend?days=${days}`),
+  recommendations:     ()                   => apiFetch<any>('/recommendations'),
+  actions:             (since?: string)     => apiFetch<any>(`/actions${since ? `?since=${since}` : ''}`),
+  blogs:               ()                   => apiFetch<any>('/blogs'),
+  vetoRec:             (id: string)         => apiFetch<any>(`/veto/${id}`, { method: 'POST' }),
+  events:              (since?: number)     => apiFetch<{ events: any[]; latest_seq: number }>(`/events${since != null ? `?since=${since}` : ''}`),
+  predictedEvents:     (horizon: 7|30|90 = 30) => apiFetch<{ events: any[]; campaign_id?: string; horizon: number }>(`/predicted-events?horizon=${horizon}`),
+  socialAccounts:      ()                   => apiFetch<{ accounts: any[] }>('/social-accounts'),
+  addSocialAccount:    (body: any)          => apiFetch<{ account: any }>('/social-accounts', { method: 'POST', body: JSON.stringify(body) }),
+  removeSocialAccount: (id: string)         => apiFetch<{ ok: boolean }>(`/social-accounts/${id}`, { method: 'DELETE' }),
+  toggleSocialAccount: (id: string, active: boolean) => apiFetch<{ account: any }>(`/social-accounts/${id}`, { method: 'PATCH', body: JSON.stringify({ active }) }),
+  clientProfile:       ()                   => apiFetch<{ profile: any }>('/profile'),
+  refreshProfile:      ()                   => apiFetch<{ profile: any }>('/profile/refresh', { method: 'POST' }),
+  selfImprovementLogs: ()                   => apiFetch<{ logs: any[] }>('/self-improvement'),
+  deployImprovement:   (id: string)         => apiFetch<{ ok: boolean }>(`/self-improvement/${id}/deploy`, { method: 'POST' }),
+  opposition:          ()                   => apiFetch<any>('/opposition'),
+  analytics:           (days = 30)          => apiFetch<any>(`/analytics?days=${days}`),
+
+  oauthStart: (platform: string)  => apiFetch<{ authUrl: string; stateId: string }>(`/oauth/start/${platform}`, { method: 'POST' }),
+  oauthPoll:  (stateId: string)   => apiFetch<{ status: 'pending' | 'completed' | 'error' | 'expired'; accounts?: any[]; error?: string }>(`/oauth/poll/${stateId}`),
 };
