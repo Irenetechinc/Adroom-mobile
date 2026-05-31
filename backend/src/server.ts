@@ -334,14 +334,13 @@ app.get('/auth/twitter/callback', (req, res) => {
   const state = typeof req.query.state === 'string' ? req.query.state : undefined;
   const error = typeof req.query.error === 'string' ? req.query.error : undefined;
   const error_description = typeof req.query.error_description === 'string' ? req.query.error_description : undefined;
-  if (state && code) {
-    setOAuthCode(state, code);
-    return res.send(buildOAuthClosePage('Twitter / X', true));
+  if (state) {
+    if (code) setOAuthCode(state, code);
+    else if (error) setOAuthError(state, error_description || error || 'oauth_error');
   }
-  if (state && error) {
-    setOAuthError(state, error_description || error || 'oauth_error');
-  }
-  return res.send(buildOAuthClosePage('Twitter / X', false, error_description));
+  if (error || !code) return res.send(buildOAuthClosePage('Twitter / X', false, error_description));
+  const qs = `code=${encodeURIComponent(code)}${state ? `&state=${encodeURIComponent(state)}` : ''}`;
+  return res.redirect(`adroom://auth/twitter/callback?${qs}`);
 });
 
 app.get('/auth/linkedin/callback', (req, res) => {
@@ -349,14 +348,13 @@ app.get('/auth/linkedin/callback', (req, res) => {
   const state = typeof req.query.state === 'string' ? req.query.state : undefined;
   const error = typeof req.query.error === 'string' ? req.query.error : undefined;
   const error_description = typeof req.query.error_description === 'string' ? req.query.error_description : undefined;
-  if (state && code) {
-    setOAuthCode(state, code);
-    return res.send(buildOAuthClosePage('LinkedIn', true));
+  if (state) {
+    if (code) setOAuthCode(state, code);
+    else if (error) setOAuthError(state, error_description || error || 'oauth_error');
   }
-  if (state && error) {
-    setOAuthError(state, error_description || error || 'oauth_error');
-  }
-  return res.send(buildOAuthClosePage('LinkedIn', false, error_description));
+  if (error || !code) return res.send(buildOAuthClosePage('LinkedIn', false, error_description));
+  const qs = `code=${encodeURIComponent(code)}${state ? `&state=${encodeURIComponent(state)}` : ''}`;
+  return res.redirect(`adroom://auth/linkedin/callback?${qs}`);
 });
 
 app.get('/auth/tiktok/callback', (req, res) => {
@@ -366,14 +364,12 @@ app.get('/auth/tiktok/callback', (req, res) => {
   const error = typeof req.query.error === 'string' ? req.query.error : undefined;
   const error_description = typeof req.query.error_description === 'string' ? req.query.error_description : undefined;
   const finalCode = code || auth_code;
-  if (state && finalCode) {
-    setOAuthCode(state, finalCode);
-    return res.send(buildOAuthClosePage('TikTok', true));
+  if (state) {
+    if (finalCode) setOAuthCode(state, finalCode);
+    else if (error) setOAuthError(state, error_description || error || 'oauth_error');
   }
-  if (state && error) {
-    setOAuthError(state, error_description || error || 'oauth_error');
-  }
-  return res.send(buildOAuthClosePage('TikTok', false, error_description));
+  if (error || !finalCode) return res.send(buildOAuthClosePage('TikTok', false, error_description));
+  return res.redirect(`adroom://auth/tiktok/callback?code=${encodeURIComponent(finalCode)}`);
 });
 
 app.get('/auth/whatsapp/callback', (req, res) => {

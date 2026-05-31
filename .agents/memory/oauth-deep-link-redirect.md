@@ -1,19 +1,27 @@
 ---
 name: OAuth deep-link redirect requirement
-description: Why Facebook/Instagram callbacks must redirect to adroom:// and WhatsApp must NOT use window.close()
+description: All openAuthSessionAsync platforms must redirect to adroom:// scheme; WhatsApp must NOT use window.close()
 ---
 
 ## Rule
-`/auth/facebook/callback` and `/auth/instagram/callback` MUST issue a 302 redirect to `adroom://auth/facebook/callback?code=...` (not HTML) on success.
-`/auth/whatsapp/callback` MUST show static HTML with NO `window.close()`.
+Every platform that uses `openAuthSessionAsync` in the mobile app must have its backend callback issue a **302 redirect to `adroom://auth/<platform>/callback?code=...`** on success — NOT HTML with `window.close()`.
+
+Platforms using `openAuthSessionAsync` (all fixed):
+- Facebook → `adroom://auth/facebook/callback?code=...` (authPagesRouter.ts — mounted first)
+- Instagram → `adroom://auth/instagram/callback?code=...` (authPagesRouter.ts — mounted first)
+- Twitter → `adroom://auth/twitter/callback?code=...&state=...` (server.ts direct)
+- LinkedIn → `adroom://auth/linkedin/callback?code=...&state=...` (server.ts direct)
+- TikTok → `adroom://auth/tiktok/callback?code=...` (server.ts direct; TikTok may send `auth_code` instead of `code` — use `finalCode = code || auth_code`)
+
+WhatsApp uses `openBrowserAsync` + polling — its callback shows static HTML with **NO** `window.close()`.
 
 ## Why
-- `facebook.ts` / `instagram.ts` use `WebBrowser.openAuthSessionAsync(authUrl, redirectUri)` where `redirectUri = adroom://...`. That function only resolves `{type:'success'}` when the browser navigates to a URL matching the `adroom://` scheme. If the backend returns HTML with `window.close()` instead, modern Android Chrome closes the Custom Tab, causing `{type:'dismiss'}` → null → "Connection Cancelled".
-- `whatsapp.ts` uses `openBrowserAsync` (fire-and-forget) + polling every 2 s via `/auth/poll?state=...`. `window.close()` in the callback HTML can close Chrome Custom Tabs before the first poll fires, triggering the 5-second grace-period timer and resolving null. The app calls `WebBrowser.dismissBrowser()` itself after the poll succeeds.
+`openAuthSessionAsync` only resolves `{type:'success'}` when the browser navigates to a URL matching the `adroom://` scheme. If the backend returns HTML with `window.close()` instead, modern Android Chrome closes the Custom Tab, causing `{type:'dismiss'}` → null → "Connection Cancelled". User sees it as "browser barely opened."
+
+WhatsApp: 2-second poll / 5-second grace period. `window.close()` can close the browser before the first poll fires. The app's own `dismissBrowser()` call closes the tab after poll success.
 
 ## How to apply
-- `authPagesRouter.ts` callbacks (mounted first at server.ts line 138, they shadow the direct server.ts routes):
-  - Facebook/Instagram success path: `res.redirect(\`adroom://auth/<platform>/callback?code=...\`)`
-  - Error path: show `buildOAuthClosePage(true, platform)` HTML
-  - WhatsApp: store code, return `buildWhatsAppClosePage(isError)` (no window.close script)
-- The `buildOAuthClosePage` function retains `window.close()` — it is still used for Twitter, LinkedIn, TikTok (polling-based with state; window.close is harmless there because the first poll fires within the grace period).
+- `authPagesRouter.ts` callbacks run FIRST (mounted at server.ts line 138) — Facebook and Instagram are fixed here.
+- `server.ts` direct routes handle Twitter, LinkedIn, TikTok, WhatsApp.
+- Twitter/LinkedIn: include `state=` in redirect URL (services parse it from `result.url`).
+- Error paths: return `buildOAuthClosePage(platform, false, message)` HTML (no deep link to return to).
