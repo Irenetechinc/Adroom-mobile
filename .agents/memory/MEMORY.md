@@ -1,0 +1,1 @@
+- [OAuth connect flow stale state](oauth-connect-stale-state.md) — connectionState guard in AgentChatScreen blocks reconnection; interactive card streamDelay must be 0.

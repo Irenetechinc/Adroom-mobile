@@ -1562,7 +1562,26 @@ export default function AgentChatScreen({ navigation, route }: Props) {
   );
 
   useEffect(() => {
-    if (connectionState !== 'IDLE') return;
+    const hasConnectParam = !!(
+      route.params?.fromStrategyApproval ||
+      route.params?.connectFacebook ||
+      route.params?.connectInstagram ||
+      route.params?.connectTikTok ||
+      route.params?.connectLinkedIn ||
+      route.params?.connectTwitter ||
+      route.params?.connectWhatsApp
+    );
+
+    if (hasConnectParam && connectionState !== 'IDLE') {
+      // Stale state from a previous (incomplete) OAuth attempt can leave
+      // connectionState stuck at 'CONNECTING'.  When the user navigates back
+      // here with an explicit connect param we must clear that stale state so
+      // initiateConnection() is not gated out by the guard below.
+      useAgentStore.setState({ connectionState: 'IDLE', isTyping: false, isInputDisabled: false });
+    } else if (!hasConnectParam && connectionState !== 'IDLE') {
+      return;
+    }
+
     if (route.params?.fromStrategyApproval) {
       initiateConnection('facebook', true);
       return;
@@ -1661,7 +1680,12 @@ export default function AgentChatScreen({ navigation, route }: Props) {
           .filter(m => m.sender === 'agent' && m.timestamp > mountedAtRef.current && m.text && m.id !== item.id && m.timestamp <= item.timestamp)
           .reduce((sum, m) => sum + (m.text?.length || 0), 0)
       : 0;
-    const streamDelay = charsBeforeMe * 2;
+    // Interactive-card messages (connect buttons, forms, etc.) must never be
+    // held back by the sequential-streaming delay — users would see the text
+    // finish but the action card not appearing for seconds or minutes if the
+    // chat history is long.  Plain text bubbles keep the natural delay so they
+    // still feel like a flowing conversation.
+    const streamDelay = (item.uiType && INTERACTIVE_TYPES.includes(item.uiType)) ? 0 : charsBeforeMe * 2;
 
     // Cards and forms only appear after the text in this bubble finishes
     // streaming. History messages (not new) are always immediately visible.
