@@ -308,14 +308,12 @@ app.get('/auth/facebook/callback', (req, res) => {
   const state = typeof req.query.state === 'string' ? req.query.state : undefined;
   const error = typeof req.query.error === 'string' ? req.query.error : undefined;
   const error_description = typeof req.query.error_description === 'string' ? req.query.error_description : undefined;
-  if (state && code) {
-    setOAuthCode(state, code);
-    return res.send(buildOAuthClosePage('Facebook', true));
+  if (state) {
+    if (code) setOAuthCode(state, code);
+    else if (error) setOAuthError(state, error_description || error || 'oauth_error');
   }
-  if (state && error) {
-    setOAuthError(state, error_description || error || 'oauth_error');
-  }
-  return res.send(buildOAuthClosePage('Facebook', false, error_description));
+  if (error || !code) return res.send(buildOAuthClosePage('Facebook', false, error_description));
+  return res.redirect(`adroom://auth/facebook/callback?code=${encodeURIComponent(code)}`);
 });
 
 app.get('/auth/instagram/callback', (req, res) => {
@@ -323,14 +321,12 @@ app.get('/auth/instagram/callback', (req, res) => {
   const state = typeof req.query.state === 'string' ? req.query.state : undefined;
   const error = typeof req.query.error === 'string' ? req.query.error : undefined;
   const error_description = typeof req.query.error_description === 'string' ? req.query.error_description : undefined;
-  if (state && code) {
-    setOAuthCode(state, code);
-    return res.send(buildOAuthClosePage('Instagram', true));
+  if (state) {
+    if (code) setOAuthCode(state, code);
+    else if (error) setOAuthError(state, error_description || error || 'oauth_error');
   }
-  if (state && error) {
-    setOAuthError(state, error_description || error || 'oauth_error');
-  }
-  return res.send(buildOAuthClosePage('Instagram', false, error_description));
+  if (error || !code) return res.send(buildOAuthClosePage('Instagram', false, error_description));
+  return res.redirect(`adroom://auth/instagram/callback?code=${encodeURIComponent(code)}`);
 });
 
 app.get('/auth/twitter/callback', (req, res) => {
@@ -385,14 +381,18 @@ app.get('/auth/whatsapp/callback', (req, res) => {
   const state = typeof req.query.state === 'string' ? req.query.state : undefined;
   const error = typeof req.query.error === 'string' ? req.query.error : undefined;
   const error_description = typeof req.query.error_description === 'string' ? req.query.error_description : undefined;
-  if (state && code) {
-    setOAuthCode(state, code);
-    return res.send(buildOAuthClosePage('WhatsApp Business', true));
+  // Store code/error for the polling flow (WhatsApp always provides state)
+  if (state) {
+    if (code) setOAuthCode(state, code);
+    else if (error) setOAuthError(state, error_description || error || 'oauth_error');
   }
-  if (state && error) {
-    setOAuthError(state, error_description || error || 'oauth_error');
-  }
-  return res.send(buildOAuthClosePage('WhatsApp Business', false, error_description));
+  const isError = !!(error || !code);
+  // Static page WITHOUT window.close() — the browser must stay open while the
+  // app polls /auth/poll?state=... and calls dismissBrowser() on success.
+  const body = isError
+    ? `There was a problem connecting your WhatsApp Business account. Please return to the app and try again.`
+    : `WhatsApp Business has been authorised. The AdRoom app will close this tab automatically — please wait a moment.`;
+  return res.send(buildOAuthClosePage('WhatsApp Business', !isError, isError ? error_description : body));
 });
 
 /**

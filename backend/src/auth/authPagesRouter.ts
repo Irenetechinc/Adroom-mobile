@@ -320,10 +320,34 @@ router.get('/auth/reset-password', (_req: Request, res: Response) => {
 import { setOAuthCode, setOAuthError } from './oauthStore';
 
 /**
- * Build a self-closing HTML page shown after OAuth.
- * Uses window.close() so Chrome Custom Tabs dismiss automatically.
- * The mobile app retrieves the auth code via polling — no deep-link redirect needed.
+ * buildWhatsAppClosePage — static HTML with NO window.close().
+ * Used by the WhatsApp callback so the browser stays open while the app
+ * polls for the code, then closes the tab via WebBrowser.dismissBrowser().
  */
+function buildWhatsAppClosePage(isError: boolean): string {
+  const icon = isError
+    ? `<svg viewBox="0 0 24 24" fill="none" stroke="#EF4444" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="15" y1="9" x2="9" y2="15"></line><line x1="9" y1="9" x2="15" y2="15"></line></svg>`
+    : `<svg viewBox="0 0 24 24" fill="none" stroke="#10B981" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>`;
+  const iconClass = isError ? 'error' : 'success';
+  const title = isError ? `WhatsApp connection failed` : `WhatsApp authenticated!`;
+  const body = isError
+    ? `Something went wrong. Please return to the AdRoom app and try again.`
+    : `WhatsApp Business has been authorised. The AdRoom app will close this tab automatically — please wait a moment.`;
+
+  return `<!doctype html>
+<html lang="en">
+<head>${SHARED_HEAD}</head>
+<body>
+  <div class="card">
+    ${shellHeader()}
+    <div class="icon-wrap ${iconClass}">${icon}</div>
+    <h1>${title}</h1>
+    <p>${body}</p>
+  </div>
+</body>
+</html>`;
+}
+
 function buildOAuthClosePage(isError: boolean, platform: string): string {
   const icon = isError
     ? `<svg viewBox="0 0 24 24" fill="none" stroke="#EF4444" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="15" y1="9" x2="9" y2="15"></line><line x1="9" y1="9" x2="15" y2="15"></line></svg>`
@@ -356,14 +380,20 @@ function buildOAuthClosePage(isError: boolean, platform: string): string {
 
 /**
  * GET /auth/facebook/callback
- * Stores the code in the polling store so the mobile app can retrieve it,
- * then shows a "you can close this tab" page.
+ *
+ * On success: redirect to the adroom:// deep link so openAuthSessionAsync
+ * receives {type:'success', url:'adroom://auth/facebook/callback?code=...'}.
+ * DO NOT send window.close() HTML — on modern Android Chrome that closes the
+ * Custom Tab immediately, causing openAuthSessionAsync to return {type:'dismiss'}
+ * which the mobile service treats as cancellation.
  */
 router.get('/auth/facebook/callback', (req: Request, res: Response) => {
   const code  = req.query.code  as string | undefined;
   const state = req.query.state as string | undefined;
   const error = req.query.error as string | undefined;
 
+  // Always store code/error in poll store when state is present
+  // (covers any future flow that uses state-based polling).
   if (state) {
     if (error || !code) {
       const reason = (req.query.error_reason as string) || error || 'access_denied';
@@ -373,12 +403,20 @@ router.get('/auth/facebook/callback', (req: Request, res: Response) => {
     }
   }
 
-  const isError = !!(error || !code);
-  return res.send(buildOAuthClosePage(isError, 'Facebook'));
+  // Error path — show HTML (no deep link to return to)
+  if (error || !code) {
+    const reason = (req.query.error_reason as string) || error || 'access_denied';
+    return res.send(buildOAuthClosePage(true, 'Facebook'));
+  }
+
+  // Success: redirect to the app deep link so openAuthSessionAsync completes.
+  return res.redirect(`adroom://auth/facebook/callback?code=${encodeURIComponent(code)}`);
 });
 
 /**
  * GET /auth/instagram/callback
+ *
+ * Same pattern as Facebook — redirect to deep link on success.
  */
 router.get('/auth/instagram/callback', (req: Request, res: Response) => {
   const code  = req.query.code  as string | undefined;
@@ -394,12 +432,25 @@ router.get('/auth/instagram/callback', (req: Request, res: Response) => {
     }
   }
 
-  const isError = !!(error || !code);
-  return res.send(buildOAuthClosePage(isError, 'Instagram'));
+  if (error || !code) {
+    return res.send(buildOAuthClosePage(true, 'Instagram'));
+  }
+
+  return res.redirect(`adroom://auth/instagram/callback?code=${encodeURIComponent(code)}`);
 });
 
 /**
  * GET /auth/whatsapp/callback
+ *
+ * WhatsApp uses openBrowserAsync + polling (NOT openAuthSessionAsync).
+ * The app polls /auth/poll?state=... every 2 s and calls dismissBrowser()
+ * once the code arrives.  We must NOT call window.close() here — doing so
+ * closes the Chrome Custom Tab before the first poll fires (2 s interval vs
+ * ~0 ms for window.close()), making the poll's 5-second grace period expire
+ * and resolve(null) → "Connection Cancelled".
+ *
+ * Instead: store the code and show a static "return to app" page.
+ * The app's own dismissBrowser() call closes the tab cleanly after success.
  */
 router.get('/auth/whatsapp/callback', (req: Request, res: Response) => {
   const code  = req.query.code  as string | undefined;
@@ -416,7 +467,9 @@ router.get('/auth/whatsapp/callback', (req: Request, res: Response) => {
   }
 
   const isError = !!(error || !code);
-  return res.send(buildOAuthClosePage(isError, 'WhatsApp'));
+  // Return HTML without window.close() so the browser stays open while the
+  // app polls for the code, then dismisses the browser itself.
+  return res.send(buildWhatsAppClosePage(isError));
 });
 
 export default router;

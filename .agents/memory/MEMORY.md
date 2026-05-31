@@ -1,1 +1,1 @@
-- [OAuth connect flow stale state](oauth-connect-stale-state.md) — connectionState guard in AgentChatScreen blocks reconnection; interactive card streamDelay must be 0.
+- [OAuth deep-link redirect requirement](oauth-deep-link-redirect.md) — Facebook/Instagram callbacks must redirect to adroom:// scheme; WhatsApp callback must NOT use window.close().
