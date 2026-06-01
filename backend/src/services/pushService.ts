@@ -283,6 +283,49 @@ export const pushService = {
   },
 
   /**
+   * Notifies a user that one of their platform connections has expired and
+   * needs to be reconnected — sent when the background token refresh fails.
+   *
+   * Includes 24-hour dedup so repeated refresh failures don't spam the user
+   * every 6 hours.  The push data carries `action: 'reconnect'` and the
+   * `platform` name so the mobile app can deep-link straight to the
+   * platform connection screen.
+   */
+  async notifyTokenRefreshFailed(userId: string, platform: string): Promise<void> {
+    const supabase = getServiceSupabaseClient();
+
+    // ── Dedup: skip if we already sent this notification within 24 hours ──
+    const cutoff = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+    const { data: recent } = await supabase
+      .from('user_notifications')
+      .select('id')
+      .eq('user_id', userId)
+      .eq('sent_by', 'system')
+      .gte('created_at', cutoff)
+      .filter('data->>type', 'eq', 'token_refresh_failed')
+      .filter('data->>platform', 'eq', platform)
+      .limit(1)
+      .maybeSingle();
+
+    if (recent) {
+      console.log(`[PushService] Skipping token_refresh_failed for ${platform} user ${userId} — already notified within 24h`);
+      return;
+    }
+
+    const displayName = platform.charAt(0).toUpperCase() + platform.slice(1);
+    const title = `Reconnect ${displayName}`;
+    const body  = `Your ${displayName} connection has expired. Tap to reconnect and keep your campaign running.`;
+    const data  = { type: 'token_refresh_failed', platform, action: 'reconnect' };
+
+    const tokens = await getUserTokens(userId);
+    await Promise.all([
+      sendExpoPush(tokens, { title, body, data, channelId: 'alerts' }),
+      insertNotification(userId, title, body, data),
+    ]);
+    console.log(`[PushService] Token refresh failed notification sent — ${platform} user ${userId}`);
+  },
+
+  /**
    * Diagnostic helper used by /api/push/test. Sends a real push to all of
    * the user's active devices and returns the full Expo response so the
    * client can show exactly why a push isn't being delivered (FCM not
