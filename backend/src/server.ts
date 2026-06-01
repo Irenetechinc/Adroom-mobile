@@ -1694,6 +1694,7 @@ app.get('/api/agents/performance/:strategyId', async (req, res) => {
             .limit(50);
 
         const totals = (perf || []).reduce((acc: any, p: any) => ({
+            impressions: (acc.impressions || 0) + (p.impressions || 0),
             reach: (acc.reach || 0) + (p.reach || 0),
             likes: (acc.likes || 0) + (p.likes || 0),
             comments: (acc.comments || 0) + (p.comments || 0),

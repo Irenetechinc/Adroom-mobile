@@ -9,6 +9,7 @@ import {
   Menu, Play, Clock, CheckCircle2, Image as ImageIcon, Video, History,
   Pause, ChevronDown, ChevronUp, Users, TrendingUp, Target, Globe,
   Zap, BarChart2, AlertCircle, RefreshCw,
+  Eye, Activity, Heart, MessageCircle, Share2, DollarSign,
 } from 'lucide-react-native';
 import { DrawerActions } from '@react-navigation/native';
 import { supabase } from '../services/supabase';
@@ -126,6 +127,159 @@ function SegmentCard({ seg }: { seg: DemoSegment }) {
               <Text style={styles.chipPainText}>⚡ {p}</Text>
             </View>
           ))}
+        </View>
+      )}
+    </View>
+  );
+}
+
+// ─── Performance Panel ────────────────────────────────────────────────────────
+
+function fmt(n: number): string {
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
+  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`;
+  return String(n);
+}
+
+const PLATFORM_EMOJI: Record<string, string> = {
+  facebook: '📘', instagram: '📸', twitter: '🐦', linkedin: '💼',
+  tiktok: '🎵', youtube: '▶️', whatsapp: '💬', unknown: '🌐',
+};
+
+interface PerfTotals {
+  impressions: number; reach: number; likes: number;
+  comments: number; shares: number; paid_equivalent_usd: number;
+}
+
+function PerformancePanel({ strategyId }: { strategyId: string }) {
+  const [totals, setTotals] = useState<PerfTotals | null>(null);
+  const [byPlatform, setByPlatform] = useState<Record<string, any>>({});
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const loadPerf = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.access_token || !BACKEND_URL) return;
+      const res = await globalThis.fetch(`${BACKEND_URL}/api/agents/performance/${strategyId}`, {
+        headers: { Authorization: `Bearer ${session.access_token}` },
+      });
+      const data = await res.json();
+      setTotals(data.totals ?? null);
+      const grouped: Record<string, any> = {};
+      for (const row of (data.performance ?? [])) {
+        const p = row.platform ?? 'unknown';
+        if (!grouped[p]) grouped[p] = { impressions: 0, likes: 0, comments: 0, shares: 0 };
+        grouped[p].impressions += row.impressions ?? 0;
+        grouped[p].likes       += row.likes       ?? 0;
+        grouped[p].comments    += row.comments    ?? 0;
+        grouped[p].shares      += row.shares      ?? 0;
+      }
+      setByPlatform(grouped);
+    } catch {
+      setError('Could not load performance data.');
+    } finally {
+      setLoading(false);
+    }
+  }, [strategyId]);
+
+  useEffect(() => { loadPerf(); }, [loadPerf]);
+
+  if (loading) {
+    return (
+      <View style={styles.perfLoading}>
+        <ActivityIndicator size="small" color="#10B981" />
+        <Text style={styles.intelLoadingText}>Loading performance metrics…</Text>
+      </View>
+    );
+  }
+
+  if (error) {
+    return (
+      <View style={styles.intelError}>
+        <AlertCircle size={16} color="#F87171" />
+        <Text style={styles.intelErrorText}>{error}</Text>
+        <TouchableOpacity onPress={loadPerf} style={styles.retryBtn}>
+          <RefreshCw size={12} color="#00F0FF" />
+          <Text style={styles.retryText}>Retry</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
+
+  const hasData = totals && (
+    (totals.impressions || 0) + (totals.likes || 0) +
+    (totals.comments || 0) + (totals.shares || 0) > 0
+  );
+
+  if (!hasData) {
+    return (
+      <View style={styles.perfLoading}>
+        <Activity size={14} color="#334155" />
+        <Text style={[styles.intelLoadingText, { color: '#334155' }]}>
+          No performance data yet — metrics appear after agents post content.
+        </Text>
+      </View>
+    );
+  }
+
+  const kpis = [
+    { icon: <Eye size={14} color="#00F0FF" />,         label: 'Impressions', value: fmt(totals!.impressions || 0), sub: `${fmt(totals!.reach || 0)} reach`, color: '#00F0FF' },
+    { icon: <Heart size={14} color="#F472B6" />,        label: 'Likes',       value: fmt(totals!.likes    || 0), sub: 'clicks',  color: '#F472B6' },
+    { icon: <MessageCircle size={14} color="#A78BFA" />,label: 'Replies',     value: fmt(totals!.comments || 0), sub: 'comments', color: '#A78BFA' },
+    { icon: <Share2 size={14} color="#34D399" />,       label: 'Shares',      value: fmt(totals!.shares   || 0), sub: 'reposts', color: '#34D399' },
+  ];
+
+  return (
+    <View style={styles.perfPanel}>
+      {/* Header */}
+      <View style={styles.intelPanelHeader}>
+        <Activity size={14} color="#10B981" />
+        <Text style={[styles.intelPanelTitle, { color: '#10B981' }]}>Live Performance</Text>
+        {totals!.paid_equivalent_usd > 0 && (
+          <View style={styles.mediaValueBadge}>
+            <DollarSign size={10} color="#FBBF24" />
+            <Text style={styles.mediaValueText}>
+              ${totals!.paid_equivalent_usd.toFixed(0)} media value
+            </Text>
+          </View>
+        )}
+      </View>
+
+      {/* KPI grid */}
+      <View style={styles.kpiGrid}>
+        {kpis.map((k, i) => (
+          <View key={i} style={styles.kpiTile}>
+            {k.icon}
+            <Text style={[styles.kpiValue, { color: k.color }]}>{k.value}</Text>
+            <Text style={styles.kpiLabel}>{k.label}</Text>
+            <Text style={styles.kpiSub}>{k.sub}</Text>
+          </View>
+        ))}
+      </View>
+
+      {/* Per-platform breakdown */}
+      {Object.keys(byPlatform).length > 0 && (
+        <View style={styles.intelSection}>
+          <Text style={styles.intelSectionLabel}>BY PLATFORM</Text>
+          <View style={styles.platformList}>
+            {Object.entries(byPlatform).map(([plat, m]: [string, any]) => (
+              <View key={plat} style={styles.platformRow}>
+                <Text style={styles.platformName}>
+                  {PLATFORM_EMOJI[plat] ?? '🌐'} {plat}
+                </Text>
+                <View style={styles.platformStats}>
+                  <Text style={styles.platformStat}>{fmt(m.impressions)} imp</Text>
+                  <Text style={styles.platformStatDot}>·</Text>
+                  <Text style={styles.platformStat}>{fmt(m.likes)} likes</Text>
+                  <Text style={styles.platformStatDot}>·</Text>
+                  <Text style={styles.platformStat}>{fmt(m.comments)} replies</Text>
+                </View>
+              </View>
+            ))}
+          </View>
         </View>
       )}
     </View>
@@ -362,6 +516,7 @@ export default function StrategyHistoryScreen() {
   const [initialLoad, setInitialLoad] = useState(true);
   const [pausingId, setPausingId] = useState<string | null>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [expandedPerfId, setExpandedPerfId] = useState<string | null>(null);
 
   const fetchHistory = async () => {
     setLoading(true);
@@ -453,6 +608,7 @@ export default function StrategyHistoryScreen() {
     const isPaid = item.type === 'PAID';
     const isLoadingAction = pausingId === item.id;
     const isExpanded = expandedId === item.id;
+    const isPerfExpanded = expandedPerfId === item.id;
 
     const statusColor = isActive ? '#00F0FF' : isPaused ? '#F59E0B' : '#64748B';
     const statusBg    = isActive ? 'rgba(0,240,255,0.08)' : isPaused ? 'rgba(245,158,11,0.08)' : 'rgba(100,116,139,0.08)';
@@ -514,6 +670,24 @@ export default function StrategyHistoryScreen() {
               )}
             </View>
           </View>
+
+          {/* Live Performance Toggle */}
+          <TouchableOpacity
+            onPress={() => setExpandedPerfId(isPerfExpanded ? null : item.id)}
+            style={styles.perfToggle}
+            activeOpacity={0.75}
+          >
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 7 }}>
+              <Activity size={13} color="#10B981" />
+              <Text style={styles.perfToggleText}>Live Performance</Text>
+            </View>
+            {isPerfExpanded
+              ? <ChevronUp size={14} color="#10B981" />
+              : <ChevronDown size={14} color="#10B981" />}
+          </TouchableOpacity>
+
+          {/* Performance Panel (lazy-loaded on expand) */}
+          {isPerfExpanded && <PerformancePanel strategyId={item.id} />}
 
           {/* Audience Intelligence Toggle */}
           <TouchableOpacity
@@ -658,6 +832,58 @@ const styles = StyleSheet.create({
   },
   emptyTitle: { color: '#FFFFFF', fontWeight: '700', fontSize: 17, marginBottom: 8 },
   emptySubtitle: { color: '#64748B', fontSize: 13, textAlign: 'center', lineHeight: 20 },
+
+  // ── Performance toggle ─────────────────────────────────────────────────────
+  perfToggle: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    paddingHorizontal: 16, paddingVertical: 11,
+    borderTopWidth: 1, borderTopColor: 'rgba(16,185,129,0.12)',
+    backgroundColor: 'rgba(16,185,129,0.04)',
+  },
+  perfToggleText: { color: '#10B981', fontSize: 12, fontWeight: '700', letterSpacing: 0.3 },
+
+  // ── Performance panel ──────────────────────────────────────────────────────
+  perfPanel: {
+    padding: 16,
+    borderTopWidth: 1, borderTopColor: 'rgba(16,185,129,0.1)',
+  },
+  perfLoading: {
+    flexDirection: 'row', alignItems: 'center', gap: 10,
+    padding: 16, borderTopWidth: 1, borderTopColor: 'rgba(16,185,129,0.1)',
+  },
+
+  // ── KPI grid ───────────────────────────────────────────────────────────────
+  kpiGrid: {
+    flexDirection: 'row', gap: 8, marginBottom: 14,
+  },
+  kpiTile: {
+    flex: 1, alignItems: 'center', gap: 3,
+    backgroundColor: 'rgba(255,255,255,0.03)', borderRadius: 12,
+    borderWidth: 1, borderColor: '#1E293B', padding: 10,
+  },
+  kpiValue: { fontSize: 16, fontWeight: '800' },
+  kpiLabel: { color: '#94A3B8', fontSize: 10, fontWeight: '700', letterSpacing: 0.3 },
+  kpiSub:   { color: '#475569', fontSize: 9 },
+
+  // ── Media value badge ──────────────────────────────────────────────────────
+  mediaValueBadge: {
+    flexDirection: 'row', alignItems: 'center', gap: 3,
+    backgroundColor: 'rgba(251,191,36,0.1)', borderWidth: 1, borderColor: 'rgba(251,191,36,0.25)',
+    borderRadius: 20, paddingHorizontal: 8, paddingVertical: 3,
+  },
+  mediaValueText: { color: '#FBBF24', fontSize: 10, fontWeight: '700' },
+
+  // ── Platform breakdown ─────────────────────────────────────────────────────
+  platformList: { gap: 6 },
+  platformRow: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    backgroundColor: 'rgba(255,255,255,0.02)', borderRadius: 10,
+    borderWidth: 1, borderColor: '#1E293B', paddingHorizontal: 12, paddingVertical: 8,
+  },
+  platformName: { color: '#E2E8F0', fontSize: 12, fontWeight: '600', textTransform: 'capitalize' },
+  platformStats: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  platformStat: { color: '#64748B', fontSize: 11 },
+  platformStatDot: { color: '#334155', fontSize: 11 },
 
   // ── Intelligence toggle ────────────────────────────────────────────────────
   intelToggle: {
