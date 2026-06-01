@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { NavigationContainer, DarkTheme, LinkingOptions } from '@react-navigation/native';
+import { navigationRef } from './navigationRef';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { Text, TextInput } from 'react-native';
 import * as Linking from 'expo-linking';
@@ -65,6 +66,8 @@ const linking: LinkingOptions<RootStackParamList> = {
       AgentChat: 'agent-chat',
       ConnectedAccounts: 'connected-accounts',
       StrategyApproval: 'strategy-approval',
+      Leads: 'leads',
+      Notifications: 'notifications',
       Login: 'login',
       Signup: 'signup',
       Onboarding: 'onboarding',
@@ -118,7 +121,7 @@ export default function AppNavigator() {
   const authedInitialDrawerRoute = hasActiveStrategy ? 'Dashboard' : 'AgentChat';
 
   return (
-    <NavigationContainer theme={AdRoomTheme} linking={linking}>
+    <NavigationContainer theme={AdRoomTheme} linking={linking} ref={navigationRef}>
       <Stack.Navigator
         screenOptions={{ headerShown: false }}
         initialRouteName={session ? 'Main' : 'Onboarding'}

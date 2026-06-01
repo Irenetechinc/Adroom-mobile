@@ -6,7 +6,7 @@ import {
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import { useFocusEffect } from '@react-navigation/native';
-import { ArrowLeft, Bell, BellOff, CheckCheck, X, Zap, CreditCard, AlertTriangle, Sparkles, Rocket } from 'lucide-react-native';
+import { ArrowLeft, Bell, BellOff, CheckCheck, X, Zap, CreditCard, AlertTriangle, Sparkles, Rocket, DollarSign, Tag, CheckCircle2 } from 'lucide-react-native';
 import Animated, { FadeInDown, FadeIn } from 'react-native-reanimated';
 import { supabase } from '../services/supabase';
 import { useNotificationStore } from '../store/notificationStore';
@@ -89,6 +89,10 @@ function iconForType(type: string | undefined, isRead: boolean) {
       return <Rocket size={16} color={color} />;
     case 'subscription_cancelled':
       return <Zap size={16} color={color} />;
+    case 'payment_proof':
+      return <DollarSign size={16} color={isRead ? '#475569' : '#10B981'} />;
+    case 'discount_approval':
+      return <Tag size={16} color={isRead ? '#475569' : '#FBBF24'} />;
     default:
       return <Bell size={16} color={color} />;
   }
@@ -103,6 +107,8 @@ export default function NotificationsScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [markingRead, setMarkingRead] = useState(false);
   const [selected, setSelected] = useState<UserNotification | null>(null);
+  const [actionTaking, setActionTaking] = useState<string | null>(null);
+  const [actedMap, setActedMap] = useState<Record<string, string>>({});
   const channelRef = useRef<any>(null);
 
   const fetchNotifications = useCallback(async (showRefresh = false) => {
@@ -235,7 +241,36 @@ export default function NotificationsScreen() {
     } catch {}
   }
 
+  async function handlePaymentAction(proofId: string, action: 'confirm' | 'reject' | 'not_seen') {
+    setActionTaking(action);
+    try {
+      const headers = await getAuthHeaders();
+      if (!headers) return;
+      const res = await fetch(`${BACKEND_URL}/api/notifications/payment-action/${proofId}`, {
+        method: 'POST',
+        headers: { ...headers, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action }),
+      });
+      if (res.ok) {
+        setActedMap(prev => ({ ...prev, [proofId]: action }));
+        if (selected) {
+          setNotifications(prev => prev.map(n => n.id === selected.id ? { ...n, is_read: true } : n));
+        }
+      }
+    } catch {} finally {
+      setActionTaking(null);
+    }
+  }
+
   function openDetail(item: UserNotification) {
+    const type = (item.data as any)?.type;
+    const leadId = (item.data as any)?.lead_id;
+    // Lead activity → navigate directly into the lead's conversation
+    if (leadId && !['payment_proof', 'discount_approval'].includes(type || '')) {
+      if (!item.is_read) markOneRead(item.id);
+      (navigation as any).navigate('Leads', { leadId });
+      return;
+    }
     setSelected(item);
     if (!item.is_read) markOneRead(item.id);
   }
@@ -359,6 +394,66 @@ export default function NotificationsScreen() {
 
               <ScrollView style={styles.modalBodyWrap} contentContainerStyle={{ paddingBottom: 12 }}>
                 <Text style={styles.modalBody}>{selected?.body}</Text>
+
+                {/* ── Payment proof — Confirm / Reject / Not Seen ──────────────── */}
+                {(selected?.data as any)?.action_type === 'payment_proof' && (() => {
+                  const proofId = (selected?.data as any)?.proof_id as string;
+                  const acted = proofId ? actedMap[proofId] : null;
+                  if (acted) {
+                    return (
+                      <View style={styles.actionDoneWrap}>
+                        <CheckCircle2 size={16} color="#10B981" />
+                        <Text style={styles.actionDoneText}>
+                          {acted === 'confirm'
+                            ? 'Payment confirmed — AI is replying to the buyer'
+                            : acted === 'reject'
+                            ? 'Payment rejected — AI will ask buyer to resend proof'
+                            : 'Noted — AI told the buyer you will confirm shortly'}
+                        </Text>
+                      </View>
+                    );
+                  }
+                  return (
+                    <View style={styles.actionWrap}>
+                      <Text style={styles.actionLabel}>What would you like to do?</Text>
+                      <View style={styles.actionRow}>
+                        <TouchableOpacity
+                          style={[styles.actionBtn, { backgroundColor: '#10B981' }]}
+                          onPress={() => proofId && handlePaymentAction(proofId, 'confirm')}
+                          disabled={!!actionTaking}
+                          activeOpacity={0.8}
+                        >
+                          <CheckCircle2 size={13} color="#FFF" />
+                          <Text style={styles.actionBtnText}>
+                            {actionTaking === 'confirm' ? '…' : 'Confirm'}
+                          </Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          style={[styles.actionBtn, { backgroundColor: '#EF4444' }]}
+                          onPress={() => proofId && handlePaymentAction(proofId, 'reject')}
+                          disabled={!!actionTaking}
+                          activeOpacity={0.8}
+                        >
+                          <X size={13} color="#FFF" />
+                          <Text style={styles.actionBtnText}>
+                            {actionTaking === 'reject' ? '…' : 'Reject'}
+                          </Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          style={[styles.actionBtn, { backgroundColor: '#475569' }]}
+                          onPress={() => proofId && handlePaymentAction(proofId, 'not_seen')}
+                          disabled={!!actionTaking}
+                          activeOpacity={0.8}
+                        >
+                          <Bell size={13} color="#FFF" />
+                          <Text style={styles.actionBtnText}>
+                            {actionTaking === 'not_seen' ? '…' : 'Not Seen'}
+                          </Text>
+                        </TouchableOpacity>
+                      </View>
+                    </View>
+                  );
+                })()}
               </ScrollView>
 
               <TouchableOpacity style={styles.modalDoneBtn} onPress={() => setSelected(null)} activeOpacity={0.8}>
@@ -463,4 +558,22 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   modalDoneText: { color: '#00F0FF', fontWeight: '700', fontSize: 14 },
+  actionWrap: {
+    marginTop: 16, padding: 12, borderRadius: 12,
+    backgroundColor: 'rgba(16,185,129,0.06)', borderWidth: 1, borderColor: 'rgba(16,185,129,0.2)',
+  },
+  actionLabel: { color: '#94A3B8', fontSize: 12, fontWeight: '600', marginBottom: 10 },
+  actionRow: { flexDirection: 'row', gap: 8 },
+  actionBtn: {
+    flex: 1, flexDirection: 'row', gap: 5,
+    alignItems: 'center', justifyContent: 'center',
+    paddingVertical: 10, borderRadius: 10,
+  },
+  actionBtnText: { color: '#FFFFFF', fontSize: 12, fontWeight: '700' },
+  actionDoneWrap: {
+    flexDirection: 'row', gap: 8, alignItems: 'center',
+    marginTop: 16, padding: 12, borderRadius: 12,
+    backgroundColor: 'rgba(16,185,129,0.08)', borderWidth: 1, borderColor: 'rgba(16,185,129,0.25)',
+  },
+  actionDoneText: { color: '#10B981', fontSize: 12, fontWeight: '600', flex: 1, lineHeight: 17 },
 });

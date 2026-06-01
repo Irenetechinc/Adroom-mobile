@@ -215,7 +215,7 @@ export class AgentOrchestrator {
             .from('agent_tasks')
             .select('*')
             .eq('status', 'pending')
-            .in('task_type', ['LEAD_SCAN', 'PERFORMANCE_CHECK', 'GMAPS_OUTREACH', 'COMMENT_SCAN', 'MENTION_SCAN', 'INBOUND_REPLY'])
+            .in('task_type', ['LEAD_SCAN', 'PERFORMANCE_CHECK', 'GMAPS_OUTREACH', 'COMMENT_SCAN', 'MENTION_SCAN', 'INBOUND_REPLY', 'PAYMENT_PROOF_RESPONSE'])
             .lte('scheduled_at', now)
             .limit(10);
 
@@ -320,6 +320,13 @@ export class AgentOrchestrator {
                     const salesAgent = new SalesmanAgent(this.supabase);
                     await salesAgent.executeTask(task.id);
                     continue; // executeTask handles its own status update
+                }
+
+                // ─── PAYMENT_PROOF_RESPONSE: User acted on payment proof notification ──
+                if (task.task_type === 'PAYMENT_PROOF_RESPONSE') {
+                    const salesAgent = new SalesmanAgent(this.supabase);
+                    await salesAgent.executePaymentProofResponse(task.id, task);
+                    continue;
                 }
 
                 // ─── GMAPS_OUTREACH ───────────────────────────────────────────────────────

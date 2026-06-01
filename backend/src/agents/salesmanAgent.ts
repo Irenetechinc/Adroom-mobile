@@ -600,6 +600,19 @@ Return JSON:
         }
         // ────────────────────────────────────────────────────────────────────
 
+        // Check if lead is sending payment proof — pause for user confirm/reject
+        const isPaymentProof = await this.detectPaymentProof(inbound_message);
+        if (isPaymentProof) {
+            await this.handlePaymentProofReceived(lead, task.user_id, inbound_message, taskId, task, product);
+            await this.supabase.from('agent_tasks').update({
+                status: 'done',
+                executed_at: new Date().toISOString(),
+                result: { action: 'payment_proof_pending_user_confirm', lead_username: lead.platform_username },
+            }).eq('id', taskId);
+            this.log(`INBOUND_REPLY ${taskId}: payment proof detected — user notified to confirm/reject`);
+            return;
+        }
+
         // Check if lead is requesting a discount — only approval flow the AI must pause for
         const isDiscount = await this.detectDiscountRequest(inbound_message);
         if (isDiscount && product) {
@@ -729,6 +742,184 @@ Return JSON: { "is_discount_request": true|false }`);
         } catch {
             return false;
         }
+    }
+
+    /**
+     * Detect whether the lead is sending a payment proof or confirming they've paid.
+     * AI Brain analyses — no keyword matching.
+     */
+    private async detectPaymentProof(message: string): Promise<boolean> {
+        try {
+            const res = await this.ai.generateStrategyEconomy({}, `
+Analyze this message from a potential customer in a DM conversation.
+Message: "${message.slice(0, 300)}"
+
+Has this person: sent payment proof, confirmed they paid, shared a payment receipt, said they've transferred money, or described completing a payment?
+Examples that ARE payment proof: "I've sent the money", "I just transferred", "here's my receipt", "done, I paid", "please confirm you received", sharing payment screenshot descriptions.
+Examples that are NOT: asking about price, asking how to pay, saying they want to buy.
+
+Return JSON: { "is_payment_proof": true|false, "confidence": 0.0-1.0 }`);
+            return res.parsedJson?.is_payment_proof === true && (res.parsedJson?.confidence || 0) >= 0.7;
+        } catch {
+            return false;
+        }
+    }
+
+    /**
+     * Handle payment proof from a lead:
+     * 1. Store the proof request in the database
+     * 2. Send a push notification to the User with Confirm/Reject/Not Seen options
+     * 3. Pause the conversation until the User responds
+     */
+    private async handlePaymentProofReceived(
+        lead: any, userId: string, inboundMessage: string,
+        taskId: string, task: any, product: any
+    ): Promise<void> {
+        try {
+            // Store the payment proof request
+            const { data: ppr } = await this.supabase.from('payment_proof_requests').insert({
+                user_id: userId,
+                lead_id: lead.id,
+                strategy_id: task.strategy_id,
+                inbound_message: inboundMessage,
+                platform: lead.platform,
+                platform_username: lead.platform_username,
+                product_name: product?.product_name || product?.name || null,
+                action: null,
+            }).select('id').single().then(r => r, () => ({ data: null }));
+
+            // AI Brain writes the notification dynamically
+            const notifRes = await this.ai.generateStrategyEconomy({}, `
+A potential customer has just sent payment proof for a product purchase.
+Customer: ${lead.platform_username}
+Their message: "${inboundMessage.slice(0, 200)}"
+Product: ${product?.product_name || 'your product'} (Price: ${product?.price || 'unknown'})
+
+Write a short push notification for the business owner to confirm or reject this payment.
+Return JSON: { "title": "short title (max 6 words)", "body": "1 sentence body saying what to do" }`).then(r => r, () => ({ parsedJson: null }));
+
+            const notif = notifRes.parsedJson;
+
+            // Send notification with actionable data so the app knows to show buttons
+            const notifId = await this.supabase.from('user_notifications').insert({
+                user_id: userId,
+                title: notif?.title || `Payment Proof from ${lead.platform_username}`,
+                body: notif?.body || `${lead.platform_username} says they've sent payment. Tap to confirm or reject.`,
+                data: {
+                    type: 'payment_proof',
+                    action_type: 'payment_proof',
+                    proof_id: ppr?.id || null,
+                    lead_id: lead.id,
+                    platform_username: lead.platform_username,
+                    product_name: product?.product_name || null,
+                    inbound_preview: inboundMessage.slice(0, 150),
+                    screen: 'Notifications',
+                },
+                sent_by: 'salesman_agent',
+            }).select('id').single().then(r => r.data?.id, () => null);
+
+            // Update the payment proof request with the notification id
+            if (ppr?.id && notifId) {
+                await this.supabase.from('payment_proof_requests')
+                    .update({ notification_id: notifId })
+                    .eq('id', ppr.id).then(null, () => {});
+            }
+
+            // Push notification
+            await pushService.send(userId, {
+                title: notif?.title || `Payment Proof from ${lead.platform_username}`,
+                body: notif?.body || `${lead.platform_username} says they've sent payment. Confirm or reject.`,
+                data: {
+                    type: 'payment_proof',
+                    proof_id: ppr?.id || null,
+                    lead_id: lead.id,
+                    notification_id: notifId,
+                    screen: 'Notifications',
+                },
+            });
+
+            this.log(`Payment proof from ${lead.platform_username} — User notified (proof_id: ${ppr?.id})`);
+        } catch (e: any) {
+            this.log(`handlePaymentProofReceived error: ${e.message}`);
+        }
+    }
+
+    /**
+     * Respond to a lead after the User has confirmed/rejected/ignored payment proof.
+     * AI Brain writes the reply based on user's decision.
+     */
+    async executePaymentProofResponse(taskId: string, task: any): Promise<void> {
+        const { lead_id, proof_id, user_action } = task.content || {};
+        if (!lead_id || !user_action) {
+            await this.failTask(taskId, 'PAYMENT_PROOF_RESPONSE missing lead_id or user_action');
+            return;
+        }
+
+        const [leadRes, strategyRes] = await Promise.all([
+            this.supabase.from('agent_leads').select('*').eq('id', lead_id).single(),
+            this.supabase.from('strategies').select('product_id, goal').eq('id', task.strategy_id).single(),
+        ]);
+
+        const lead = leadRes.data;
+        if (!lead) { await this.failTask(taskId, `Lead ${lead_id} not found`); return; }
+        const product = strategyRes.data?.product_id ? await this.getProductDetails(strategyRes.data.product_id) : null;
+        const tokens = await this.getTokens(task.user_id);
+
+        const replyPrompt = `You are closing a real sale. The buyer just sent payment proof and the business owner has responded.
+
+BUYER: ${lead.platform_username}
+PRODUCT: ${product?.product_name || 'the product'} (Price: ${product?.price || 'on request'})
+PAYMENT BANK DETAILS: ${product?.bank_account_details || 'provided separately'}
+OWNER'S DECISION: "${user_action}"
+
+Based on the decision:
+- "confirm": Write a warm, professional message confirming the payment, give next steps (delivery timeline, what happens now)
+- "reject": Write a polite message explaining payment not confirmed yet, ask them to check and resend proof
+- "not_seen": Write a professional message saying the payment is under review and you will confirm shortly
+
+Keep it under 3 sentences. Natural human tone. No jargon.
+Return JSON: { "message": "the reply" }`;
+
+        const response = await this.ai.generateStrategy({}, replyPrompt);
+        const reply = response.parsedJson?.message;
+        if (!reply) { await this.failTask(taskId, 'AI Brain could not generate payment response'); return; }
+
+        let sent = false;
+        try {
+            if ((lead.platform === 'facebook' || lead.platform === 'instagram') && tokens.facebook && lead.platform_user_id) {
+                await this.sendFacebookDM(tokens.facebook, lead.platform_user_id, reply);
+                sent = true;
+            }
+        } catch (e: any) { this.log(`Payment response send failed: ${e.message}`); }
+
+        await this.supabase.from('lead_dm_messages').insert({
+            lead_id, user_id: task.user_id,
+            direction: 'outbound', message: reply,
+            platform: lead.platform,
+            meta: { triggered_by: 'PAYMENT_PROOF_RESPONSE', user_action },
+        }).then(null, () => {});
+
+        // If confirmed, create a deal record
+        if (user_action === 'confirm' && product) {
+            await this.supabase.from('agent_deals').insert({
+                strategy_id: task.strategy_id, user_id: task.user_id,
+                lead_id: lead.id, platform: lead.platform,
+                buyer_name: lead.platform_username, buyer_contact: lead.platform_user_id,
+                product_name: product.product_name || product.name,
+                product_id: strategyRes.data?.product_id,
+                deal_value: parseFloat(product.price) || 0,
+                currency: 'USD',
+                payment_details: { bank: product.bank_account_details, proof_id },
+                status: 'pending_delivery',
+            }).then(null, () => {});
+        }
+
+        await this.supabase.from('agent_tasks').update({
+            status: 'done', executed_at: new Date().toISOString(),
+            result: { sent, user_action, reply_preview: reply.slice(0, 100) },
+        }).eq('id', taskId);
+
+        this.log(`PAYMENT_PROOF_RESPONSE sent to ${lead.platform_username} (action: ${user_action})`);
     }
 
     /**

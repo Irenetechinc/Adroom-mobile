@@ -48,7 +48,12 @@ export const ProductService = {
         delivery_type: productData.deliveryType || productData.delivery_type || null,
         delivery_address: productData.deliveryAddress || productData.delivery_address || null,
         contact_phone: productData.phone || productData.contact_phone || null,
-        bank_account_details: productData.bankAccount || productData.bank_account_details || null,
+        bank_account_details: (() => {
+          if (productData.bankName && productData.accountName && productData.accountNumber) {
+            return `Bank: ${productData.bankName} | Account Name: ${productData.accountName} | Account Number: ${productData.accountNumber}`;
+          }
+          return productData.bankAccount || productData.bank_account_details || null;
+        })(),
         video_url: productData.videoUrl || productData.video_url || null,
         color: productData.color || null,
         available_sizes: productData.sizes || productData.available_sizes || null,

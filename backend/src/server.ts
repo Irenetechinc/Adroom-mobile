@@ -3241,6 +3241,75 @@ app.put('/api/notifications/inbox/:id/read', async (req, res) => {
   }
 });
 
+// ─── PAYMENT PROOF ACTION (confirm / reject / not_seen) ───────────────────────
+app.post('/api/notifications/payment-action/:proofId', async (req, res) => {
+  try {
+    const supabase = getSupabaseClient(req as any);
+    const { data: { user }, error: authErr } = await supabase.auth.getUser();
+    if (authErr || !user) return res.status(401).json({ error: 'Unauthorized' });
+
+    const { proofId } = req.params;
+    const { action } = req.body; // 'confirm' | 'reject' | 'not_seen'
+    if (!['confirm', 'reject', 'not_seen'].includes(action)) {
+      return res.status(400).json({ error: 'action must be confirm, reject, or not_seen' });
+    }
+
+    const svc = getServiceSupabaseClient();
+
+    // Fetch the payment proof request
+    const { data: ppr, error: pprErr } = await svc
+      .from('payment_proof_requests')
+      .select('*')
+      .eq('id', proofId)
+      .eq('user_id', user.id)
+      .single();
+
+    if (pprErr || !ppr) return res.status(404).json({ error: 'Payment proof request not found' });
+    if (ppr.action) return res.json({ success: true, already_acted: true, action: ppr.action });
+
+    // Record the action on the proof request
+    await svc.from('payment_proof_requests')
+      .update({ action, acted_at: new Date().toISOString() })
+      .eq('id', proofId);
+
+    // Mark the notification as actioned
+    if (ppr.notification_id) {
+      await svc.from('user_notifications')
+        .update({ is_read: true })
+        .eq('id', ppr.notification_id)
+        .then(null, () => {});
+    }
+
+    // Schedule a PAYMENT_PROOF_RESPONSE task for the Salesman Agent to reply to the lead
+    const { data: strategy } = await svc
+      .from('agent_leads')
+      .select('strategy_id')
+      .eq('id', ppr.lead_id)
+      .single()
+      .then(r => r, () => ({ data: null }));
+
+    await svc.from('agent_tasks').insert({
+      strategy_id: ppr.strategy_id || strategy?.strategy_id,
+      user_id: user.id,
+      agent_type: 'SALESMAN',
+      task_type: 'PAYMENT_PROOF_RESPONSE',
+      platform: ppr.platform,
+      scheduled_at: new Date().toISOString(),
+      status: 'pending',
+      content: {
+        lead_id: ppr.lead_id,
+        proof_id: proofId,
+        user_action: action,
+        inbound_message: ppr.inbound_message,
+      },
+    });
+
+    res.json({ success: true, action });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 /**
  * POST /api/auth/register — create a new user via the service-role admin client
  * so that trigger failures never block signup. Manually provisions wallet +

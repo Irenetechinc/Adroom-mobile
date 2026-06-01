@@ -700,7 +700,9 @@ const ProductManualIntakeCard = ({ onSubmit, onBack, onStepBack, disabled }: { o
   const [deliveryType, setDeliveryType] = useState('payment_on_delivery');
   const [deliveryAddress, setDeliveryAddress] = useState('');
   const [phone, setPhone] = useState('');
-  const [bankAccount, setBankAccount] = useState('');
+  const [bankName, setBankName] = useState('');
+  const [accountName, setAccountName] = useState('');
+  const [accountNumber, setAccountNumber] = useState('');
 
   const toggleSize = (size: string) =>
     setSelectedSizes((prev) => prev.includes(size) ? prev.filter(s => s !== size) : [...prev, size]);
@@ -791,29 +793,49 @@ const ProductManualIntakeCard = ({ onSubmit, onBack, onStepBack, disabled }: { o
             />
 
             {deliveryType === 'pay_before_delivery' && (
-              <>
-                <TextInput
-                  placeholder="Contact Phone *"
-                  placeholderTextColor="#475569"
-                  keyboardType="phone-pad"
-                  style={[styles.input, { marginBottom: 10 }]}
-                  value={phone}
-                  onChangeText={setPhone}
-                  editable={!disabled}
-                />
-                <TextInput
-                  placeholder="Bank Account / Payment Details *"
-                  placeholderTextColor="#475569"
-                  multiline
-                  style={[styles.input, { height: 60, marginBottom: 10 }]}
-                  value={bankAccount}
-                  onChangeText={setBankAccount}
-                  editable={!disabled}
-                />
-              </>
+              <TextInput
+                placeholder="Contact Phone *"
+                placeholderTextColor="#475569"
+                keyboardType="phone-pad"
+                style={[styles.input, { marginBottom: 10 }]}
+                value={phone}
+                onChangeText={setPhone}
+                editable={!disabled}
+              />
             )}
           </>
         )}
+
+        {/* ─── HOW WOULD YOU LIKE TO RECEIVE PAYMENT? ──────────────────────── */}
+        <Text style={[styles.fieldLabel, { marginBottom: 4, marginTop: 6, color: '#00F0FF' }]}>HOW WOULD YOU LIKE TO RECEIVE PAYMENT?</Text>
+        <Text style={{ color: '#64748B', fontSize: 11, marginBottom: 10 }}>
+          Your Salesman AI will use these details when closing deals with buyers.
+        </Text>
+        <TextInput
+          placeholder="Bank Name (e.g. Access Bank, GTBank, First Bank)"
+          placeholderTextColor="#475569"
+          style={[styles.input, { marginBottom: 10 }]}
+          value={bankName}
+          onChangeText={setBankName}
+          editable={!disabled}
+        />
+        <TextInput
+          placeholder="Account Name"
+          placeholderTextColor="#475569"
+          style={[styles.input, { marginBottom: 10 }]}
+          value={accountName}
+          onChangeText={setAccountName}
+          editable={!disabled}
+        />
+        <TextInput
+          placeholder="Account Number"
+          placeholderTextColor="#475569"
+          keyboardType="numeric"
+          style={[styles.input, { marginBottom: 14 }]}
+          value={accountNumber}
+          onChangeText={setAccountNumber}
+          editable={!disabled}
+        />
 
         {!disabled && <ImageUploadComponent onImagesSelected={setImages} maxImages={5} />}
         {!disabled && (
@@ -830,11 +852,13 @@ const ProductManualIntakeCard = ({ onSubmit, onBack, onStepBack, disabled }: { o
               ...(productType === 'physical' ? {
                 deliveryType, deliveryAddress,
                 phone: phone || undefined,
-                bankAccount: bankAccount || undefined,
               } : {}),
+              bankName: bankName || undefined,
+              accountName: accountName || undefined,
+              accountNumber: accountNumber || undefined,
             })}
             style={[styles.primaryBtn, { marginTop: 12 }]}
-            disabled={!name.trim() || (productType === 'physical' && deliveryType === 'pay_before_delivery' && (!phone.trim() || !bankAccount.trim()))}
+            disabled={!name.trim() || (productType === 'physical' && deliveryType === 'pay_before_delivery' && !phone.trim())}
           >
             <Text style={styles.primaryBtnText}>Save Product</Text>
           </TouchableOpacity>
@@ -854,6 +878,9 @@ const ServiceIntakeCard = ({ onSubmit, onBack, onStepBack, disabled }: { onSubmi
   const [portfolioUrl, setPortfolioUrl] = useState('');
   const [images, setImages] = useState<{ uri: string; base64: string | null }[]>([]);
   const [video, setVideo] = useState<VideoAsset | null>(null);
+  const [bankName, setBankName] = useState('');
+  const [accountName, setAccountName] = useState('');
+  const [accountNumber, setAccountNumber] = useState('');
 
   const currencySymbol = CURRENCIES.find(c => c.code === currency)?.symbol || '$';
 
@@ -879,13 +906,54 @@ const ServiceIntakeCard = ({ onSubmit, onBack, onStepBack, disabled }: { onSubmi
           onChangeText={setPortfolioUrl}
           editable={!disabled}
         />
+
+        {/* ─── HOW WOULD YOU LIKE TO RECEIVE PAYMENT? ──────────────────────── */}
+        <Text style={[styles.fieldLabel, { marginBottom: 4, marginTop: 6, color: '#00F0FF' }]}>HOW WOULD YOU LIKE TO RECEIVE PAYMENT?</Text>
+        <Text style={{ color: '#64748B', fontSize: 11, marginBottom: 10 }}>
+          Your Salesman AI will use these details when closing service deals.
+        </Text>
+        <TextInput
+          placeholder="Bank Name (e.g. Access Bank, GTBank, First Bank)"
+          placeholderTextColor="#475569"
+          style={[styles.input, { marginBottom: 10 }]}
+          value={bankName}
+          onChangeText={setBankName}
+          editable={!disabled}
+        />
+        <TextInput
+          placeholder="Account Name"
+          placeholderTextColor="#475569"
+          style={[styles.input, { marginBottom: 10 }]}
+          value={accountName}
+          onChangeText={setAccountName}
+          editable={!disabled}
+        />
+        <TextInput
+          placeholder="Account Number"
+          placeholderTextColor="#475569"
+          keyboardType="numeric"
+          style={[styles.input, { marginBottom: 14 }]}
+          value={accountNumber}
+          onChangeText={setAccountNumber}
+          editable={!disabled}
+        />
+
         {!disabled && <ImageUploadComponent onImagesSelected={setImages} maxImages={5} />}
         {!disabled && (
           <VideoUploadComponent onVideoSelected={setVideo} selectedVideo={video} disabled={disabled} />
         )}
         {!disabled && (
           <TouchableOpacity
-            onPress={() => onSubmit({ name, category, price: `${currencySymbol}${price}`, currency, description, portfolioUrl: portfolioUrl.trim() || null, images, video })}
+            onPress={() => onSubmit({
+              name, category,
+              price: `${currencySymbol}${price}`,
+              currency, description,
+              portfolioUrl: portfolioUrl.trim() || null,
+              images, video,
+              bankName: bankName || undefined,
+              accountName: accountName || undefined,
+              accountNumber: accountNumber || undefined,
+            })}
             style={[styles.primaryBtn, { marginTop: 12 }]}
             disabled={!name.trim()}
           >
