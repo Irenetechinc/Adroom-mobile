@@ -270,8 +270,8 @@ export default function LeadsScreen() {
   const navigation = useNavigation<any>();
   const { session } = useAuthStore();
 
-  const openConversation = (lead: Lead) => {
-    navigation.navigate('LeadConversation', { lead });
+  const openConversation = (_lead: Lead) => {
+    navigation.navigate('Interactions' as any);
   };
 
   const [leads, setLeads] = useState<Lead[]>([]);

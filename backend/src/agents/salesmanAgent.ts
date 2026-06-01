@@ -541,12 +541,21 @@ Return JSON: { "intent_score": 0.0 }
                     continue;
                 }
 
-                const HUMANIZED_PERSONAS = [
-                    { name: 'Alex', tone: 'casual and friendly', opener: 'Hey' },
-                    { name: 'Sam', tone: 'warm and curious', opener: 'Hi' },
-                    { name: 'Jordan', tone: 'direct but personable', opener: 'Hey there' },
-                ];
-                const persona = HUMANIZED_PERSONAS[Math.floor(Math.random() * HUMANIZED_PERSONAS.length)];
+                // Generate a dynamic, context-aware persona using the AI Brain
+                let persona = { name: 'Alex', tone: 'casual and friendly', opener: 'Hey' };
+                try {
+                    const personaPrompt = `Generate a unique human persona to write a DM on ${lead.platform}.
+Lead context: intent score ${lead.intent_score}, first interaction: "${(lead.first_interaction || '').slice(0, 120)}"
+Platform tone norms: ${lead.platform === 'linkedin' ? 'professional, warm' : lead.platform === 'twitter' ? 'concise, witty' : 'friendly, conversational'}
+Current step: ${lead.dm_sequence_step} of 3
+
+Generate a persona that feels realistic for someone in this industry/platform niche.
+Return JSON only: { "name": "common first name", "tone": "one short phrase", "opener": "casual greeting word or phrase" }`;
+                    const personaRes = await this.ai.generateStrategyEconomy({}, personaPrompt);
+                    if (personaRes.parsedJson?.name) {
+                        persona = personaRes.parsedJson;
+                    }
+                } catch { /* keep default */ }
 
                 const stepContexts = [
                     `This is your FIRST message — make it feel like a genuine reaction to their comment, not a sales pitch. Open with something specific you noticed about their interest.`,

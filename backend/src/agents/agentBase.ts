@@ -1168,29 +1168,76 @@ Return ONLY the reply text, nothing else.
 
         if (!comments.length) return { replied: 0, leads: 0 };
 
-        // Use AI to classify each comment and generate smart replies
+        // ── Step 1: Pull interaction history for each commenter from social_conversations ──
+        const authorIds = comments.map(c => c.authorId || c.username).filter(Boolean);
+        let historyByAuthor: Record<string, string> = {};
+        try {
+            if (authorIds.length > 0) {
+                const { data: histRows } = await this.supabase
+                    .from('social_conversations')
+                    .select('author, content, intent, sentiment, collected_at')
+                    .eq('source', params.platform)
+                    .in('author', authorIds)
+                    .order('collected_at', { ascending: false })
+                    .limit(40);
+                for (const row of (histRows || [])) {
+                    if (!historyByAuthor[row.author]) {
+                        historyByAuthor[row.author] = `Previous (${new Date(row.collected_at).toLocaleDateString()}): "${(row.content || '').slice(0, 80)}" [intent: ${row.intent || 'unknown'}, sentiment: ${row.sentiment?.toFixed(2) ?? 'n/a'}]`;
+                    }
+                }
+            }
+        } catch { /* history fetch failure must never block replies */ }
+
+        // ── Step 2: Use AI Brain to classify each comment and generate smart replies ──
+        // History context is injected per-commenter so the AI can personalize replies
         const classifyPrompt = `
 You are the AdRoom ${this.agentType} Agent analyzing comments on a ${params.platform} post.
 
 PRODUCT: ${JSON.stringify(params.product)}
 GOAL: ${params.goal}
 COMMENTS (max 20):
-${comments.slice(0, 20).map((c, i) => `${i + 1}. "${c.text}" — ${c.username || c.authorId || 'user'}`).join('\n')}
+${comments.slice(0, 20).map((c, i) => {
+    const authorKey = c.authorId || c.username || '';
+    const history = historyByAuthor[authorKey] ? `\n   [History: ${historyByAuthor[authorKey]}]` : '';
+    return `${i + 1}. "${c.text}" — ${c.username || c.authorId || 'user'}${history}`;
+}).join('\n')}
 
-For EACH comment, decide:
-1. Is this a HIGH-INTENT lead? (asking price, where to buy, "interested", want to order) → reply + mark as lead
-2. Is this a positive engagement? (compliment, share, love it) → reply warmly to amplify
-3. Is this a question? → answer helpfully to build trust
-4. Is this negative/spam? → skip
+For EACH comment, analyze:
+- intent: what does this person actually want? (question, praise, complaint, buying_intent, price_inquiry, spam)
+- sentiment: positive / neutral / negative
+- urgency: does this need a fast reply?
+- relationship: are they a returning commenter? (check history if available)
+
+Then decide:
+1. HIGH-INTENT lead (asking price, where to buy, "interested", want to order) → reply + mark as lead
+2. Positive engagement (compliment, share, love it) → reply warmly to amplify
+3. Question → answer helpfully to build trust and authority
+4. Negative but genuine → acknowledge and resolve, do NOT skip
+5. Spam / irrelevant → skip
+
+REPLY RULES:
+- Natural, human, max 120 chars — sounds like a real person, not a brand account
+- Never say "I noticed you commented", "As an AI", or generic marketing phrases
+- If history shows this person has engaged before, acknowledge the relationship naturally
+- Match the tone and energy of their comment
 
 Return JSON:
 {
   "replies": [
-    { "comment_index": 0, "should_reply": true, "is_lead": true, "reply": "reply text (natural, human, max 120 chars, no bot disclosure)", "lead_intent": "buying_intent|curiosity|price_inquiry|general_interest" }
+    {
+      "comment_index": 0,
+      "should_reply": true,
+      "is_lead": true,
+      "intent": "buying_intent",
+      "sentiment": "positive",
+      "reply": "reply text (natural, human, max 120 chars)",
+      "lead_intent": "buying_intent|curiosity|price_inquiry|general_interest",
+      "is_returning": false
+    }
   ]
 }
-Only include comments that should be replied to. Keep replies natural and authentic.
-`;
+Only include comments that should be replied to.`;
+
         let replyPlan: any[] = [];
         try {
             const aiResult = await this.ai.generateStrategy({}, classifyPrompt);
@@ -1199,6 +1246,7 @@ Only include comments that should be replied to. Keep replies natural and authen
 
         let replied = 0;
         let leads = 0;
+        const now = new Date().toISOString();
 
         for (const plan of replyPlan.slice(0, 8)) {
             if (!plan.should_reply) continue;
@@ -1206,6 +1254,7 @@ Only include comments that should be replied to. Keep replies natural and authen
             if (!comment) continue;
 
             try {
+                // ── Step 3: Post the reply on the platform ──
                 switch (params.platform.toLowerCase()) {
                     case 'facebook':
                         if (params.tokens.facebook) {
@@ -1236,7 +1285,36 @@ Only include comments that should be replied to. Keep replies natural and authen
                 }
                 replied++;
 
-                // Register as lead if high intent
+                // ── Step 4: Store interaction in social_conversations for future learning ──
+                // This enables history-aware replies on subsequent encounters with the same user
+                const authorKey = comment.authorId || comment.username || 'unknown';
+                (async () => {
+                    try {
+                        await this.supabase.from('social_conversations').upsert({
+                            id: `${params.platform}-${comment.id}`,
+                            source: params.platform,
+                            source_id: comment.id,
+                            content: comment.text,
+                            author: authorKey,
+                            posted_at: now,
+                            collected_at: now,
+                            category: params.product?.category || 'general',
+                            intent: plan.intent || plan.lead_intent || 'general_interest',
+                            sentiment: plan.sentiment === 'positive' ? 0.8 : plan.sentiment === 'negative' ? 0.2 : 0.5,
+                            topics: [params.platform, params.goal, plan.intent].filter(Boolean),
+                            entities: {
+                                reply_sent: plan.reply,
+                                is_lead: plan.is_lead,
+                                is_returning: plan.is_returning || false,
+                                strategy_id: params.strategyId,
+                                post_id: params.postId,
+                                agent_type: this.agentType,
+                            },
+                        }, { onConflict: 'id' });
+                    } catch { /* non-blocking */ }
+                })();
+
+                // ── Step 5: Register as lead if high intent ──
                 if (plan.is_lead && comment.authorId) {
                     await this.supabase.from('agent_leads').upsert({
                         user_id: params.userId,
@@ -1246,8 +1324,9 @@ Only include comments that should be replied to. Keep replies natural and authen
                         platform_username: comment.username || comment.authorId,
                         lead_type: 'COMMENT_LEAD',
                         intent: plan.lead_intent || 'general_interest',
-                        status: 'warm',
-                        notes: `Comment: "${comment.text.substring(0, 200)}"`,
+                        stage: plan.is_returning ? 'warm' : 'new',
+                        intent_score: plan.intent === 'buying_intent' ? 0.85 : plan.intent === 'price_inquiry' ? 0.75 : 0.55,
+                        first_interaction: comment.text.substring(0, 300),
                         dm_sequence_step: 0,
                         created_at: new Date().toISOString(),
                     }, { onConflict: 'platform,platform_user_id,user_id' });
@@ -1258,7 +1337,7 @@ Only include comments that should be replied to. Keep replies natural and authen
             }
         }
 
-        this.log(`Comment scan complete on ${params.platform}: ${replied} replies sent, ${leads} new leads`);
+        this.log(`Comment scan complete on ${params.platform}: ${replied} replies sent, ${leads} new leads (history-aware)`);
         return { replied, leads };
     }
 
