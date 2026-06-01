@@ -2613,6 +2613,153 @@ app.delete('/api/chat/history/range', async (req, res) => {
 });
 
 /**
+ * GET /api/admin/errors — Dynamic error log for Developer/Admin dashboard.
+ * Shows all system errors classified by the DynamicProblemSolver.
+ * NEVER exposed to Users — admin only.
+ */
+app.get('/api/admin/errors', async (req, res) => {
+  try {
+    const supabase = getServiceSupabaseClient();
+    const limit = Math.min(parseInt(String(req.query.limit ?? '50')), 200);
+    const status = req.query.status as string | undefined;
+    const errorType = req.query.type as string | undefined;
+
+    let query = supabase
+      .from('dynamic_error_log')
+      .select('*')
+      .order('occurred_at', { ascending: false })
+      .limit(limit);
+
+    if (status) query = query.eq('status', status);
+    if (errorType) query = query.eq('error_type', errorType);
+
+    const { data, error } = await query;
+    if (error) return res.status(500).json({ error: error.message });
+
+    res.json({
+      ok: true,
+      count: data?.length || 0,
+      errors: data || [],
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * GET /api/admin/lead-discovery/stats — Multi-source lead discovery stats.
+ */
+app.get('/api/admin/lead-discovery/stats', async (req, res) => {
+  try {
+    const supabase = getServiceSupabaseClient();
+    const { data, error } = await supabase
+      .from('lead_discovery_log')
+      .select('source, confidence, discovered_at')
+      .order('discovered_at', { ascending: false })
+      .limit(500);
+
+    if (error) return res.status(500).json({ error: error.message });
+
+    const bySource: Record<string, { count: number; avgConfidence: number }> = {};
+    for (const row of (data || [])) {
+      if (!bySource[row.source]) bySource[row.source] = { count: 0, avgConfidence: 0 };
+      bySource[row.source].count++;
+      bySource[row.source].avgConfidence += row.confidence || 0;
+    }
+    for (const src of Object.keys(bySource)) {
+      bySource[src].avgConfidence = bySource[src].avgConfidence / bySource[src].count;
+    }
+
+    res.json({ ok: true, total: data?.length || 0, bySource });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * GET /api/leads/:leadId/messages — DM conversation thread for a lead.
+ * Used by LeadConversationScreen to display the full thread.
+ */
+app.get('/api/leads/:leadId/messages', async (req, res) => {
+  try {
+    const supabase = getSupabaseClient(req);
+    const { data: { user }, error: authErr } = await supabase.auth.getUser();
+    if (authErr || !user) return res.status(401).json({ error: 'Unauthorized' });
+
+    const { leadId } = req.params;
+
+    // Verify lead belongs to this user
+    const { data: lead } = await supabase
+      .from('agent_leads')
+      .select('id, user_id')
+      .eq('id', leadId)
+      .eq('user_id', user.id)
+      .single();
+
+    if (!lead) return res.status(404).json({ error: 'Lead not found' });
+
+    const { data: messages, error } = await supabase
+      .from('lead_dm_messages')
+      .select('*')
+      .eq('lead_id', leadId)
+      .order('sent_at', { ascending: true })
+      .limit(200);
+
+    if (error) return res.status(500).json({ error: error.message });
+    res.json({ ok: true, messages: messages || [] });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * POST /api/notifications/:notificationId/approve — Approve a pending agent intervention
+ * (e.g. price change approval from ProductManagerAgent)
+ */
+app.post('/api/notifications/:notificationId/approve', async (req, res) => {
+  try {
+    const supabase = getSupabaseClient(req);
+    const { data: { user }, error: authErr } = await supabase.auth.getUser();
+    if (authErr || !user) return res.status(401).json({ error: 'Unauthorized' });
+
+    const { notificationId } = req.params;
+
+    // Find the pending intervention referenced by this notification
+    const { data: intervention } = await supabase
+      .from('agent_interventions')
+      .select('*')
+      .eq('id', notificationId)
+      .eq('user_id', user.id)
+      .eq('status', 'pending')
+      .single();
+
+    if (!intervention) return res.status(404).json({ error: 'No pending approval found' });
+
+    const ctx = intervention.context || {};
+
+    // Apply the approved change
+    if (intervention.intervention_type === 'price_approval' && ctx.product_id) {
+      await supabase
+        .from('product_memory')
+        .update({ price: ctx.suggested_price, updated_at: new Date().toISOString() })
+        .eq('id', ctx.product_id)
+        .eq('user_id', user.id);
+
+      await supabase
+        .from('agent_interventions')
+        .update({ status: 'approved', resolved_at: new Date().toISOString() })
+        .eq('id', notificationId);
+
+      res.json({ ok: true, message: 'Price change approved and applied.' });
+    } else {
+      res.status(400).json({ error: 'Unknown intervention type' });
+    }
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
  * Credit Management Agent — Stats endpoint (admin-level)
  * Returns total credits saved, USD saved, and per-operation breakdown.
  */
