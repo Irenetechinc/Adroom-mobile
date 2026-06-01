@@ -6,7 +6,7 @@ import { useAuthStore } from '../store/authStore';
 import { useProfileStore } from '../store/profileStore';
 import {
   Bot, LayoutDashboard, Settings, LogOut, X, History,
-  ChevronRight, Users, MessageSquare, Zap,
+  ChevronRight, Users, MessageSquare, Zap, Target,
 } from 'lucide-react-native';
 import Animated, { FadeInLeft } from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -126,8 +126,40 @@ export default function SideMenu(props: DrawerContentComponentProps) {
             );
           })}
 
-          {/* Energy — navigates to Subscription screen */}
+          {/* Leads Inbox — navigates to root stack LeadsScreen */}
           <Animated.View entering={FadeInLeft.delay(menuItems.length * 60).springify()}>
+            <TouchableOpacity
+              onPress={() => navigation.navigate('Leads')}
+              style={{
+                flexDirection: 'row', alignItems: 'center',
+                paddingHorizontal: 14, paddingVertical: 13,
+                borderRadius: 14, marginBottom: 4,
+                backgroundColor: 'rgba(16,185,129,0.04)',
+                borderWidth: 1, borderColor: 'rgba(16,185,129,0.12)',
+              }}
+              activeOpacity={0.7}
+            >
+              <View style={{
+                width: 36, height: 36, borderRadius: 10,
+                backgroundColor: 'rgba(16,185,129,0.12)',
+                alignItems: 'center', justifyContent: 'center',
+              }}>
+                <Target color="#10B981" size={18} strokeWidth={2} />
+              </View>
+              <View style={{ flex: 1, marginLeft: 12 }}>
+                <Text style={{ color: '#10B981', fontWeight: '700', fontSize: 15 }}>
+                  Leads Inbox
+                </Text>
+                <Text style={{ color: '#475569', fontSize: 11, marginTop: 1 }}>
+                  All Captured Leads & Pipeline
+                </Text>
+              </View>
+              <ChevronRight color="#10B981" size={14} />
+            </TouchableOpacity>
+          </Animated.View>
+
+          {/* Energy — navigates to Subscription screen */}
+          <Animated.View entering={FadeInLeft.delay((menuItems.length + 1) * 60).springify()}>
             <TouchableOpacity
               onPress={() => navigation.navigate('Subscription')}
               style={{
