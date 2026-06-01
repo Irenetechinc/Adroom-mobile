@@ -392,6 +392,36 @@ app.get('/auth/whatsapp/callback', (req, res) => {
 });
 
 /**
+ * Retries a fetch call up to maxAttempts on network errors or 5xx responses.
+ * 4xx errors are NOT retried — they indicate a deterministic auth/client problem.
+ * Delays: attempt 1 → baseDelayMs, attempt 2 → 2×baseDelayMs, …
+ */
+async function fetchWithRetry(
+  url: string,
+  options?: RequestInit,
+  maxAttempts = 3,
+  baseDelayMs = 500,
+): Promise<Response> {
+  let lastError: unknown;
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      const res = await fetch(url, options);
+      if (res.status >= 500 && attempt < maxAttempts) {
+        await new Promise(r => setTimeout(r, baseDelayMs * attempt));
+        continue;
+      }
+      return res;
+    } catch (e) {
+      lastError = e;
+      if (attempt < maxAttempts) {
+        await new Promise(r => setTimeout(r, baseDelayMs * attempt));
+      }
+    }
+  }
+  throw lastError;
+}
+
+/**
  * POST /api/auth/whatsapp/exchange
  * Exchanges an OAuth code for a WhatsApp Business access token.
  * Uses the same Facebook OAuth infrastructure — no manual credentials needed.
@@ -409,7 +439,7 @@ app.post('/api/auth/whatsapp/exchange', async (req, res) => {
       client_secret: FB_APP_SECRET,
       code,
     });
-    const exchangeRes = await fetch(`https://graph.facebook.com/v18.0/oauth/access_token?${params.toString()}`);
+    const exchangeRes = await fetchWithRetry(`https://graph.facebook.com/v18.0/oauth/access_token?${params.toString()}`);
     const data: any = await exchangeRes.json();
     if (!exchangeRes.ok) return res.status(exchangeRes.status).json(data);
     return res.status(200).json({ access_token: data.access_token });
@@ -479,7 +509,7 @@ app.post('/api/auth/facebook/exchange', async (req, res) => {
       client_secret: FB_APP_SECRET,
       code,
     });
-    const exchangeRes = await fetch(`https://graph.facebook.com/v18.0/oauth/access_token?${params.toString()}`);
+    const exchangeRes = await fetchWithRetry(`https://graph.facebook.com/v18.0/oauth/access_token?${params.toString()}`);
     const data: any = await exchangeRes.json();
     if (!exchangeRes.ok) return res.status(exchangeRes.status).json(data);
     return res.status(200).json(data);
@@ -505,7 +535,7 @@ app.post('/api/auth/linkedin/exchange', async (req, res) => {
       client_secret: LINKEDIN_CLIENT_SECRET,
     });
 
-    const exchangeRes = await fetch('https://www.linkedin.com/oauth/v2/accessToken', {
+    const exchangeRes = await fetchWithRetry('https://www.linkedin.com/oauth/v2/accessToken', {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       body: body.toString(),
@@ -539,7 +569,7 @@ app.post('/api/auth/twitter/exchange', async (req, res) => {
       code_verifier: codeVerifier,
     });
 
-    const exchangeRes = await fetch('https://api.twitter.com/2/oauth2/token', {
+    const exchangeRes = await fetchWithRetry('https://api.twitter.com/2/oauth2/token', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/x-www-form-urlencoded',
@@ -572,7 +602,7 @@ app.post('/api/auth/tiktok/exchange', async (req, res) => {
       grant_type: 'authorization_code',
       redirect_uri: redirectUri,
     });
-    const exchangeRes = await fetch('https://open.tiktokapis.com/v2/oauth/token/', {
+    const exchangeRes = await fetchWithRetry('https://open.tiktokapis.com/v2/oauth/token/', {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       body: body.toString(),
