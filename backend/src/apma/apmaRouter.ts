@@ -571,6 +571,83 @@ apmaClientRouter.get('/blogs', async (req: any, res) => {
   res.json({ blogs: data ?? [] });
 });
 
+// ─── Strategies with live performance metrics ──────────────────────────────
+apmaClientRouter.get('/strategies', async (req: any, res) => {
+  const sb = getServiceSupabaseClient();
+
+  const { data: campaign } = await sb
+    .from('apma_campaigns')
+    .select('id')
+    .eq('client_id', req.apmaClientId)
+    .eq('status', 'active')
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .single();
+
+  if (!campaign) return res.json({ strategies: [] });
+
+  const limit = Math.min(30, Math.max(1, parseInt(String(req.query.limit ?? '14'), 10)));
+
+  const { data: strategies } = await sb
+    .from('political_strategies')
+    .select('id, plan_date, status, actions_total, actions_done, effectiveness, created_at')
+    .eq('campaign_id', campaign.id)
+    .order('plan_date', { ascending: false })
+    .limit(limit);
+
+  if (!strategies?.length) return res.json({ strategies: [] });
+
+  const strategyIds = strategies.map((s: any) => s.id);
+
+  const { data: perfRows } = await sb
+    .from('agent_performance')
+    .select('strategy_id, platform, agent_type, impressions, reach, likes, comments, shares, paid_equivalent_usd')
+    .in('strategy_id', strategyIds);
+
+  type PerfAgg = {
+    impressions: number; reach: number; likes: number;
+    comments: number; shares: number; paid_equivalent_usd: number;
+    post_count: number;
+    by_platform: Record<string, { impressions: number; likes: number; comments: number; shares: number }>;
+    by_agent: Record<string, number>;
+  };
+
+  const perfMap: Record<string, PerfAgg> = {};
+  for (const sid of strategyIds) {
+    perfMap[sid] = { impressions: 0, reach: 0, likes: 0, comments: 0, shares: 0, paid_equivalent_usd: 0, post_count: 0, by_platform: {}, by_agent: {} };
+  }
+
+  for (const row of (perfRows ?? []) as any[]) {
+    const agg = perfMap[row.strategy_id];
+    if (!agg) continue;
+    agg.impressions        += row.impressions        ?? 0;
+    agg.reach              += row.reach              ?? 0;
+    agg.likes              += row.likes              ?? 0;
+    agg.comments           += row.comments           ?? 0;
+    agg.shares             += row.shares             ?? 0;
+    agg.paid_equivalent_usd += row.paid_equivalent_usd ?? 0;
+    agg.post_count         += 1;
+
+    const p = row.platform ?? 'unknown';
+    if (!agg.by_platform[p]) agg.by_platform[p] = { impressions: 0, likes: 0, comments: 0, shares: 0 };
+    agg.by_platform[p].impressions += row.impressions ?? 0;
+    agg.by_platform[p].likes       += row.likes       ?? 0;
+    agg.by_platform[p].comments    += row.comments    ?? 0;
+    agg.by_platform[p].shares      += row.shares      ?? 0;
+
+    const at = row.agent_type ?? 'unknown';
+    agg.by_agent[at] = (agg.by_agent[at] ?? 0) + 1;
+  }
+
+  const result = (strategies as any[]).map((s) => ({
+    ...s,
+    performance: perfMap[s.id] ?? null,
+    has_performance: (perfMap[s.id]?.post_count ?? 0) > 0,
+  }));
+
+  res.json({ strategies: result, campaign_id: campaign.id });
+});
+
 // ─── Client intelligence profile ──────────────────────────────────────────
 apmaClientRouter.get('/profile', async (req: any, res) => {
   const sb = getServiceSupabaseClient();
