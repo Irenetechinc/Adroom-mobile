@@ -22,7 +22,7 @@ export type RootStackParamList = {
   PrivacySecurity: undefined;
   Notifications: undefined;
   About: undefined;
-  Leads: undefined;
+  Leads: { strategyId?: string; platform?: string } | undefined;
   
   // Strategy Creation Wizard
   StrategyWizard_ProductIntake: undefined;
