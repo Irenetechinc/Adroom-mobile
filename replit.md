@@ -61,6 +61,8 @@ AdRoom is a **React Native (Expo) mobile app** with a Node.js/Express backend. I
 | `POST /api/referrals/apply-code` | Link a referral code to a new user |
 | `GET /api/app/version` | Force-update / changelog check (public) |
 | `POST /api/auth/facebook/exchange` | Facebook OAuth token exchange |
+| `GET /api/admin/tokens/status` | Token expiry status for all connected platforms |
+| `POST /api/admin/tokens/refresh` | Manually trigger OAuth token refresh sweep |
 
 ## Referral System (May 2026)
 - Each user has a unique 8-char code in `profiles.referral_code`
@@ -114,9 +116,10 @@ Run in this order:
 2. `backend/subscriptions_migration.sql` — subscriptions ALL columns (cancel_at_period_end, trial_charged, renewal_next_retry_at, status_detail, past_due status) + energy_accounts.on_demand_top_up_retry_at
 3. `backend/referral_migration.sql` — profiles table (creates if missing) + referrals table + referral_code
 4. `backend/ad_configs_migration.sql` — ad_configs missing columns (open_id, refresh_token, page_name, person_urn, org_urn, instagram_account_id)
-5. `supabase/migrations/20260429000000_app_releases.sql` — force-update / changelog
-6. `backend/apma_migration.sql` — APMA core tables
-7. `backend/apma_oauth_migration.sql` — adds refresh_token, token_expires_at columns + unique constraint on apma_social_accounts(client_id, platform, account_id)
+5. `backend/token_refresh_migration.sql` — ad_configs.token_expires_at column + index
+6. `supabase/migrations/20260429000000_app_releases.sql` — force-update / changelog
+7. `backend/apma_migration.sql` — APMA core tables
+8. `backend/apma_oauth_migration.sql` — adds refresh_token, token_expires_at columns + unique constraint on apma_social_accounts(client_id, platform, account_id)
 
 ## APMA OAuth — Required Redirect URIs
 Register these redirect URIs in each platform's developer app settings (use `PUBLIC_BASE_URL`):

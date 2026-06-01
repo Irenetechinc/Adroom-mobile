@@ -13,6 +13,7 @@ import { creditManagementAgent } from './creditManagementAgent';
 import { DailySummaryService } from './dailySummaryService';
 import { RadarAgent } from '../agents/radarAgent';
 import { apmaOrchestrator } from '../apma/apmaOrchestrator';
+import { tokenRefreshService } from './tokenRefreshService';
 
 async function hasActiveStrategies(): Promise<boolean> {
     const supabase = getServiceSupabaseClient();
@@ -45,6 +46,7 @@ const SCHED_VIDEO_EDIT_CRON   = process.env.SCHED_VIDEO_EDIT_CRON    || '*/30 * 
 const SCHED_TRIAL_BILLING_CRON= process.env.SCHED_TRIAL_BILLING_CRON || '0 * * * *';     // Trial auto-charge sweep every hour
 const SCHED_RENEWAL_CRON      = process.env.SCHED_RENEWAL_CRON       || '15 * * * *';    // Subscription auto-renewal sweep every hour (offset 15m from trial)
 const SCHED_RENEWAL_RETRY_CRON= process.env.SCHED_RENEWAL_RETRY_CRON || '30 * * * *';   // Retry failed renewals every hour (offset 30m)
+const SCHED_TOKEN_REFRESH_CRON= process.env.SCHED_TOKEN_REFRESH_CRON || '0 */6 * * *';   // Proactive OAuth token refresh every 6 hours
 
 export class SchedulerService {
     private ipe: PlatformIntelligenceEngine;
@@ -423,6 +425,19 @@ export class SchedulerService {
             }
         });
 
+        // ─── PROACTIVE OAUTH TOKEN REFRESH ───────────────────────────────────
+        // Every 6 hours: refresh expiring access tokens for all connected
+        // platforms (Facebook/Instagram/WhatsApp/LinkedIn/Twitter/TikTok)
+        // so the agents never hit a 401 mid-campaign.
+        cron.schedule(SCHED_TOKEN_REFRESH_CRON, async () => {
+            console.log('[Scheduler] Running OAuth token refresh sweep...');
+            try {
+                await tokenRefreshService.refreshExpiring();
+            } catch (e: any) {
+                console.error('[Scheduler] Token refresh sweep error:', e.message);
+            }
+        });
+
         console.log('[Scheduler] ✓ All loops started:');
         console.log('[Scheduler]   Intelligence: IPE, Social, Emotional, GEO — every 15 min');
         console.log('[Scheduler]   Agent Execution: Content posts — every 5 min');
@@ -435,6 +450,7 @@ export class SchedulerService {
         console.log('[Scheduler]   Subscription Renewal: Auto-renew active subs — hourly');
         console.log('[Scheduler]   Renewal Retry: Retry failed past_due subs — hourly');
         console.log('[Scheduler]   APMA Political Marketing — every 15 min');
+        console.log('[Scheduler]   OAuth Token Refresh: All platforms — every 6 hours');
     }
 
     private async runEmotionalCycle() {
