@@ -391,6 +391,15 @@ Return JSON:
                 for (const comment of comments) {
                     const intentScore = await this.scoreIntent(comment.message);
                     if (intentScore >= 0.6) {
+                        // Detect new vs returning lead before upserting
+                        const { count: existingCount } = await this.supabase
+                            .from('agent_leads')
+                            .select('id', { count: 'exact', head: true })
+                            .eq('user_id', params.userId)
+                            .eq('platform', params.platform)
+                            .eq('platform_user_id', comment.from?.id);
+                        const isNewLead = !existingCount || existingCount === 0;
+
                         await this.supabase.from('agent_leads').upsert({
                             strategy_id: params.strategyId,
                             user_id: params.userId,
@@ -405,6 +414,15 @@ Return JSON:
                         }, { onConflict: 'user_id,platform,platform_user_id' });
 
                         this.log(`High-intent lead identified: ${comment.from?.name} (score: ${intentScore})`);
+
+                        if (isNewLead && comment.from?.name) {
+                            pushService.notifyNewLead(params.userId, {
+                                leadName: comment.from.name,
+                                platform: params.platform,
+                                intentScore,
+                                firstInteraction: comment.message,
+                            }).catch(() => {});
+                        }
                     }
                 }
             } catch (err: any) {
@@ -420,6 +438,15 @@ Return JSON:
                 for (const lead of leads) {
                     const bioScore = await this.scoreIntent(lead.bio_description || '');
                     const intentScore = Math.max(0.4, bioScore); // commenters are warm by default
+
+                    const { count: existingCount } = await this.supabase
+                        .from('agent_leads')
+                        .select('id', { count: 'exact', head: true })
+                        .eq('user_id', params.userId)
+                        .eq('platform', 'tiktok')
+                        .eq('platform_user_id', lead.open_id);
+                    const isNewLead = !existingCount || existingCount === 0;
+
                     await this.supabase.from('agent_leads').upsert({
                         strategy_id: params.strategyId,
                         user_id: params.userId,
@@ -434,6 +461,15 @@ Return JSON:
                     }, { onConflict: 'user_id,platform,platform_user_id' });
 
                     this.log(`TikTok lead identified: ${lead.display_name}`);
+
+                    if (isNewLead && lead.display_name) {
+                        pushService.notifyNewLead(params.userId, {
+                            leadName: lead.display_name,
+                            platform: 'tiktok',
+                            intentScore,
+                            firstInteraction: lead.bio_description || undefined,
+                        }).catch(() => {});
+                    }
                 }
             } catch (err: any) {
                 this.log(`TikTok lead scan failed: ${err.message}`);
