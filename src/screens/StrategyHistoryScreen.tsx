@@ -1,14 +1,65 @@
-import React, { useEffect, useState } from 'react';
-import { View, Text, FlatList, Image, TouchableOpacity, RefreshControl, StyleSheet, ScrollView, Alert, ActivityIndicator } from 'react-native';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import {
+  ActivityIndicator, FlatList, Image, RefreshControl,
+  ScrollView, StyleSheet, Text, TouchableOpacity, Alert, View,
+} from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Menu, Play, Clock, CheckCircle2, Image as ImageIcon, Video, History, Zap, Pause } from 'lucide-react-native';
+import {
+  Menu, Play, Clock, CheckCircle2, Image as ImageIcon, Video, History,
+  Pause, ChevronDown, ChevronUp, Users, TrendingUp, Target, Globe,
+  Zap, BarChart2, AlertCircle, RefreshCw,
+} from 'lucide-react-native';
 import { DrawerActions } from '@react-navigation/native';
 import { supabase } from '../services/supabase';
 import Animated, { FadeInDown } from 'react-native-reanimated';
 import { Skeleton } from '../components/Skeleton';
 
 const BACKEND_URL = process.env.EXPO_PUBLIC_API_URL;
+
+// ─── Types ────────────────────────────────────────────────────────────────────
+
+interface StrategyHistoryItem {
+  id: string;
+  title: string;
+  description: string;
+  status: string;
+  is_active?: boolean;
+  created_at: string;
+  type: 'FREE' | 'PAID';
+  assets: any[];
+}
+
+interface DemoSegment {
+  name: string;
+  ageRange: string;
+  gender: string;
+  location: string;
+  income: string;
+  interests: string[];
+  painPoints: string[];
+  buyingBehavior: string;
+  confidenceLevel: 'high' | 'medium' | 'low';
+}
+
+interface DemographicIntel {
+  primaryAudience: string;
+  segments: DemoSegment[];
+  marketSize: string;
+  marketGrowth: string;
+  geographicFocus: string;
+  languagesTone: string[];
+  culturalConsiderations: string[];
+  bestChannels: string[];
+  worstChannels: string[];
+  priceSensitivity: string;
+  purchaseDrivers: string[];
+  improvementSuggestions: string[];
+  dataConfidence: 'real_data' | 'proxy_data' | 'general_knowledge';
+  dataSource: string;
+}
+
+// ─── Skeleton ─────────────────────────────────────────────────────────────────
 
 function HistorySkeleton() {
   return (
@@ -35,16 +86,274 @@ function HistorySkeleton() {
   );
 }
 
-interface StrategyHistoryItem {
-  id: string;
-  title: string;
-  description: string;
-  status: string;
-  is_active?: boolean;
-  created_at: string;
-  type: 'FREE' | 'PAID';
-  assets: any[];
+// ─── Confidence badge ─────────────────────────────────────────────────────────
+
+function ConfidenceBadge({ level }: { level: string }) {
+  const map: Record<string, { label: string; color: string; bg: string }> = {
+    real_data:        { label: 'Real Data',        color: '#10B981', bg: 'rgba(16,185,129,0.1)' },
+    proxy_data:       { label: 'Estimated',        color: '#F59E0B', bg: 'rgba(245,158,11,0.1)' },
+    general_knowledge:{ label: 'AI Projected',     color: '#818CF8', bg: 'rgba(129,140,248,0.1)' },
+  };
+  const b = map[level] || map.general_knowledge;
+  return (
+    <View style={[styles.badge, { backgroundColor: b.bg }]}>
+      <Text style={[styles.badgeText, { color: b.color }]}>{b.label}</Text>
+    </View>
+  );
 }
+
+// ─── Segment card ─────────────────────────────────────────────────────────────
+
+function SegmentCard({ seg }: { seg: DemoSegment }) {
+  const confColor = seg.confidenceLevel === 'high' ? '#10B981' : seg.confidenceLevel === 'medium' ? '#F59E0B' : '#818CF8';
+  return (
+    <View style={styles.segCard}>
+      <View style={styles.segHeader}>
+        <Text style={styles.segName}>{seg.name}</Text>
+        <View style={[styles.confDot, { backgroundColor: confColor }]} />
+      </View>
+      <View style={styles.segMeta}>
+        <Text style={styles.segMetaItem}>🎂 {seg.ageRange}</Text>
+        <Text style={styles.segMetaItem}>👤 {seg.gender}</Text>
+        <Text style={styles.segMetaItem}>📍 {seg.location}</Text>
+        <Text style={styles.segMetaItem}>💰 {seg.income}</Text>
+      </View>
+      <Text style={styles.segBehavior}>{seg.buyingBehavior}</Text>
+      {seg.painPoints?.length > 0 && (
+        <View style={styles.chipRow}>
+          {seg.painPoints.slice(0, 3).map((p, i) => (
+            <View key={i} style={styles.chipPain}>
+              <Text style={styles.chipPainText}>⚡ {p}</Text>
+            </View>
+          ))}
+        </View>
+      )}
+    </View>
+  );
+}
+
+// ─── Chip row helper ──────────────────────────────────────────────────────────
+
+function ChipRow({ items, color = '#00F0FF', bg = 'rgba(0,240,255,0.08)' }: { items: string[]; color?: string; bg?: string }) {
+  if (!items?.length) return null;
+  return (
+    <View style={styles.chipRow}>
+      {items.map((item, i) => (
+        <View key={i} style={[styles.chip, { backgroundColor: bg }]}>
+          <Text style={[styles.chipText, { color }]}>{item}</Text>
+        </View>
+      ))}
+    </View>
+  );
+}
+
+// ─── Demographic Intelligence Panel ───────────────────────────────────────────
+
+function DemographicPanel({ strategyId }: { strategyId: string }) {
+  const [intel, setIntel] = useState<DemographicIntel | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [generating, setGenerating] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [activeSegIdx, setActiveSegIdx] = useState(0);
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const fetch = useCallback(async (isPolling = false) => {
+    if (!isPolling) setLoading(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.access_token || !BACKEND_URL) return;
+      const res = await fetch(`${BACKEND_URL}/api/strategy/${strategyId}/intelligence/demographics`, {
+        headers: { Authorization: `Bearer ${session.access_token}` },
+      });
+      if (res.status === 202) {
+        setGenerating(true);
+        if (!pollRef.current) {
+          pollRef.current = setInterval(() => fetch(true), 8000);
+        }
+        return;
+      }
+      const data = await res.json();
+      if (data.intel) {
+        setIntel(data.intel);
+        setGenerating(false);
+        if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
+      }
+    } catch {
+      setError('Could not load audience intelligence.');
+    } finally {
+      if (!isPolling) setLoading(false);
+    }
+  }, [strategyId]);
+
+  useEffect(() => {
+    fetch();
+    return () => { if (pollRef.current) clearInterval(pollRef.current); };
+  }, [fetch]);
+
+  if (loading) {
+    return (
+      <View style={styles.intelLoading}>
+        <ActivityIndicator size="small" color="#00F0FF" />
+        <Text style={styles.intelLoadingText}>Loading audience intelligence…</Text>
+      </View>
+    );
+  }
+
+  if (generating) {
+    return (
+      <View style={styles.intelLoading}>
+        <ActivityIndicator size="small" color="#818CF8" />
+        <Text style={styles.intelLoadingText}>AI Brain is analysing your audience… this takes ~30s</Text>
+      </View>
+    );
+  }
+
+  if (error) {
+    return (
+      <View style={styles.intelError}>
+        <AlertCircle size={16} color="#F87171" />
+        <Text style={styles.intelErrorText}>{error}</Text>
+        <TouchableOpacity onPress={() => { setError(null); fetch(); }} style={styles.retryBtn}>
+          <RefreshCw size={12} color="#00F0FF" />
+          <Text style={styles.retryText}>Retry</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
+
+  if (!intel) return null;
+
+  return (
+    <View style={styles.intelPanel}>
+      {/* Header */}
+      <View style={styles.intelPanelHeader}>
+        <Users size={14} color="#00F0FF" />
+        <Text style={styles.intelPanelTitle}>Audience Intelligence</Text>
+        <ConfidenceBadge level={intel.dataConfidence} />
+      </View>
+
+      {/* Primary Audience */}
+      <View style={styles.intelSection}>
+        <Text style={styles.intelSectionLabel}>PRIMARY AUDIENCE</Text>
+        <Text style={styles.intelPrimaryText}>{intel.primaryAudience}</Text>
+      </View>
+
+      {/* Market stats row */}
+      <View style={styles.intelStatsRow}>
+        <View style={styles.intelStat}>
+          <Globe size={12} color="#A78BFA" />
+          <Text style={styles.intelStatLabel}>Market</Text>
+          <Text style={styles.intelStatValue}>{intel.marketSize || '—'}</Text>
+        </View>
+        <View style={styles.intelStatDivider} />
+        <View style={styles.intelStat}>
+          <TrendingUp size={12} color="#34D399" />
+          <Text style={styles.intelStatLabel}>Growth</Text>
+          <Text style={styles.intelStatValue}>{intel.marketGrowth || '—'}</Text>
+        </View>
+        <View style={styles.intelStatDivider} />
+        <View style={styles.intelStat}>
+          <Target size={12} color="#F59E0B" />
+          <Text style={styles.intelStatLabel}>Geography</Text>
+          <Text style={styles.intelStatValue} numberOfLines={1}>{intel.geographicFocus || '—'}</Text>
+        </View>
+      </View>
+
+      {/* Audience Segments */}
+      {intel.segments?.length > 0 && (
+        <View style={styles.intelSection}>
+          <Text style={styles.intelSectionLabel}>AUDIENCE SEGMENTS</Text>
+          {/* Segment tabs */}
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 10 }}>
+            <View style={{ flexDirection: 'row', gap: 6 }}>
+              {intel.segments.map((s, i) => (
+                <TouchableOpacity
+                  key={i}
+                  onPress={() => setActiveSegIdx(i)}
+                  style={[styles.segTab, activeSegIdx === i && styles.segTabActive]}
+                  activeOpacity={0.75}
+                >
+                  <Text style={[styles.segTabText, activeSegIdx === i && styles.segTabTextActive]}>
+                    {s.name.split(' ').slice(0, 2).join(' ')}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          </ScrollView>
+          <SegmentCard seg={intel.segments[activeSegIdx]} />
+        </View>
+      )}
+
+      {/* Best channels */}
+      {intel.bestChannels?.length > 0 && (
+        <View style={styles.intelSection}>
+          <Text style={styles.intelSectionLabel}>BEST CHANNELS</Text>
+          <ChipRow items={intel.bestChannels} color="#10B981" bg="rgba(16,185,129,0.08)" />
+        </View>
+      )}
+
+      {/* Channels to avoid */}
+      {intel.worstChannels?.length > 0 && (
+        <View style={styles.intelSection}>
+          <Text style={styles.intelSectionLabel}>CHANNELS TO AVOID</Text>
+          <ChipRow items={intel.worstChannels} color="#F87171" bg="rgba(248,113,113,0.08)" />
+        </View>
+      )}
+
+      {/* Price sensitivity */}
+      {intel.priceSensitivity && (
+        <View style={styles.intelSection}>
+          <Text style={styles.intelSectionLabel}>PRICE SENSITIVITY</Text>
+          <Text style={styles.intelBodyText}>{intel.priceSensitivity}</Text>
+        </View>
+      )}
+
+      {/* Purchase drivers */}
+      {intel.purchaseDrivers?.length > 0 && (
+        <View style={styles.intelSection}>
+          <Text style={styles.intelSectionLabel}>WHAT DRIVES PURCHASES</Text>
+          <ChipRow items={intel.purchaseDrivers} color="#FBBF24" bg="rgba(251,191,36,0.08)" />
+        </View>
+      )}
+
+      {/* Communication tone */}
+      {intel.languagesTone?.length > 0 && (
+        <View style={styles.intelSection}>
+          <Text style={styles.intelSectionLabel}>COMMUNICATION TONE</Text>
+          <ChipRow items={intel.languagesTone} color="#A78BFA" bg="rgba(167,139,250,0.08)" />
+        </View>
+      )}
+
+      {/* Cultural considerations */}
+      {intel.culturalConsiderations?.length > 0 && (
+        <View style={styles.intelSection}>
+          <Text style={styles.intelSectionLabel}>CULTURAL NOTES</Text>
+          {intel.culturalConsiderations.map((c, i) => (
+            <Text key={i} style={styles.intelBullet}>• {c}</Text>
+          ))}
+        </View>
+      )}
+
+      {/* AI suggestions */}
+      {intel.improvementSuggestions?.length > 0 && (
+        <View style={[styles.intelSection, styles.suggestionsBox]}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 8 }}>
+            <Zap size={13} color="#FBBF24" />
+            <Text style={[styles.intelSectionLabel, { color: '#FBBF24', marginBottom: 0 }]}>AI RECOMMENDATIONS</Text>
+          </View>
+          {intel.improvementSuggestions.map((s, i) => (
+            <Text key={i} style={styles.suggestionItem}>→ {s}</Text>
+          ))}
+        </View>
+      )}
+
+      {/* Data source note */}
+      <Text style={styles.intelDataSource}>Source: {intel.dataSource}</Text>
+    </View>
+  );
+}
+
+// ─── Main Screen ──────────────────────────────────────────────────────────────
 
 export default function StrategyHistoryScreen() {
   const navigation = useNavigation();
@@ -52,6 +361,7 @@ export default function StrategyHistoryScreen() {
   const [loading, setLoading] = useState(true);
   const [initialLoad, setInitialLoad] = useState(true);
   const [pausingId, setPausingId] = useState<string | null>(null);
+  const [expandedId, setExpandedId] = useState<string | null>(null);
 
   const fetchHistory = async () => {
     setLoading(true);
@@ -89,16 +399,11 @@ export default function StrategyHistoryScreen() {
                 method: 'PATCH',
                 headers: { Authorization: `Bearer ${session.access_token}` },
               });
-              if (!res.ok) {
-                const d = await res.json();
-                throw new Error(d.error || 'Failed to pause strategy.');
-              }
+              if (!res.ok) { const d = await res.json(); throw new Error(d.error || 'Failed to pause.'); }
               setHistory(prev => prev.map(s => s.id === item.id ? { ...s, status: 'paused', is_active: false } : s));
             } catch (e: any) {
               Alert.alert('Error', e.message || 'Could not pause strategy. Please try again.');
-            } finally {
-              setPausingId(null);
-            }
+            } finally { setPausingId(null); }
           },
         },
       ],
@@ -114,16 +419,11 @@ export default function StrategyHistoryScreen() {
         method: 'PATCH',
         headers: { Authorization: `Bearer ${session.access_token}` },
       });
-      if (!res.ok) {
-        const d = await res.json();
-        throw new Error(d.error || 'Failed to resume strategy.');
-      }
+      if (!res.ok) { const d = await res.json(); throw new Error(d.error || 'Failed to resume.'); }
       setHistory(prev => prev.map(s => s.id === item.id ? { ...s, status: 'active', is_active: true } : s));
     } catch (e: any) {
       Alert.alert('Error', e.message || 'Could not resume strategy. Please try again.');
-    } finally {
-      setPausingId(null);
-    }
+    } finally { setPausingId(null); }
   };
 
   const renderAssets = (assets: any[]) => {
@@ -134,9 +434,7 @@ export default function StrategyHistoryScreen() {
           <View key={idx} style={styles.assetThumb}>
             <Image source={{ uri: asset.url }} style={styles.assetImage} resizeMode="cover" />
             <View style={styles.assetBadge}>
-              {asset.type === 'VIDEO'
-                ? <Video size={8} color="white" />
-                : <ImageIcon size={8} color="white" />}
+              {asset.type === 'VIDEO' ? <Video size={8} color="white" /> : <ImageIcon size={8} color="white" />}
             </View>
           </View>
         ))}
@@ -153,19 +451,12 @@ export default function StrategyHistoryScreen() {
     const isActive = item.status === 'active' || item.is_active;
     const isPaused = item.status === 'paused';
     const isPaid = item.type === 'PAID';
-    const isLoading = pausingId === item.id;
+    const isLoadingAction = pausingId === item.id;
+    const isExpanded = expandedId === item.id;
 
     const statusColor = isActive ? '#00F0FF' : isPaused ? '#F59E0B' : '#64748B';
-    const statusBg = isActive
-      ? 'rgba(0,240,255,0.08)'
-      : isPaused
-      ? 'rgba(245,158,11,0.08)'
-      : 'rgba(100,116,139,0.08)';
-    const statusBorder = isActive
-      ? 'rgba(0,240,255,0.2)'
-      : isPaused
-      ? 'rgba(245,158,11,0.2)'
-      : 'rgba(100,116,139,0.15)';
+    const statusBg    = isActive ? 'rgba(0,240,255,0.08)' : isPaused ? 'rgba(245,158,11,0.08)' : 'rgba(100,116,139,0.08)';
+    const statusBorder = isActive ? 'rgba(0,240,255,0.2)' : isPaused ? 'rgba(245,158,11,0.2)' : 'rgba(100,116,139,0.15)';
 
     return (
       <Animated.View entering={FadeInDown.delay(index * 70).springify()}>
@@ -173,9 +464,7 @@ export default function StrategyHistoryScreen() {
           {/* Card Header */}
           <View style={styles.cardHeader}>
             <View style={[styles.typeTag, { backgroundColor: isPaid ? 'rgba(112,0,255,0.12)' : 'rgba(16,185,129,0.12)' }]}>
-              <Text style={[styles.typeTagText, { color: isPaid ? '#A78BFA' : '#34D399' }]}>
-                {item.type}
-              </Text>
+              <Text style={[styles.typeTagText, { color: isPaid ? '#A78BFA' : '#34D399' }]}>{item.type}</Text>
             </View>
             <View style={[styles.statusTag, { backgroundColor: statusBg, borderColor: statusBorder }]}>
               {isActive
@@ -202,48 +491,47 @@ export default function StrategyHistoryScreen() {
               <Clock size={12} color="#475569" style={{ marginRight: 5 }} />
               <Text style={styles.dateText}>{new Date(item.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</Text>
             </View>
-
-            {(isActive || isPaused) && (
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                {isActive && (
-                  <View style={styles.aiMonitor}>
-                    <View style={styles.aiMonitorDot} />
-                    <Text style={styles.aiMonitorText}>AI Monitoring</Text>
-                  </View>
-                )}
-                {isActive && (
-                  <TouchableOpacity
-                    onPress={() => handlePause(item)}
-                    disabled={isLoading}
-                    style={styles.pauseBtn}
-                    activeOpacity={0.75}
-                  >
-                    {isLoading
-                      ? <ActivityIndicator size="small" color="#F59E0B" />
-                      : <>
-                          <Pause size={11} color="#F59E0B" />
-                          <Text style={styles.pauseBtnText}>Pause</Text>
-                        </>}
-                  </TouchableOpacity>
-                )}
-                {isPaused && (
-                  <TouchableOpacity
-                    onPress={() => handleResume(item)}
-                    disabled={isLoading}
-                    style={styles.resumeBtn}
-                    activeOpacity={0.75}
-                  >
-                    {isLoading
-                      ? <ActivityIndicator size="small" color="#10B981" />
-                      : <>
-                          <Play size={11} color="#10B981" />
-                          <Text style={styles.resumeBtnText}>Resume</Text>
-                        </>}
-                  </TouchableOpacity>
-                )}
-              </View>
-            )}
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+              {isActive && (
+                <View style={styles.aiMonitor}>
+                  <View style={styles.aiMonitorDot} />
+                  <Text style={styles.aiMonitorText}>AI Monitoring</Text>
+                </View>
+              )}
+              {isActive && (
+                <TouchableOpacity onPress={() => handlePause(item)} disabled={isLoadingAction} style={styles.pauseBtn} activeOpacity={0.75}>
+                  {isLoadingAction
+                    ? <ActivityIndicator size="small" color="#F59E0B" />
+                    : <><Pause size={11} color="#F59E0B" /><Text style={styles.pauseBtnText}>Pause</Text></>}
+                </TouchableOpacity>
+              )}
+              {isPaused && (
+                <TouchableOpacity onPress={() => handleResume(item)} disabled={isLoadingAction} style={styles.resumeBtn} activeOpacity={0.75}>
+                  {isLoadingAction
+                    ? <ActivityIndicator size="small" color="#10B981" />
+                    : <><Play size={11} color="#10B981" /><Text style={styles.resumeBtnText}>Resume</Text></>}
+                </TouchableOpacity>
+              )}
+            </View>
           </View>
+
+          {/* Audience Intelligence Toggle */}
+          <TouchableOpacity
+            onPress={() => setExpandedId(isExpanded ? null : item.id)}
+            style={styles.intelToggle}
+            activeOpacity={0.75}
+          >
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 7 }}>
+              <BarChart2 size={13} color="#818CF8" />
+              <Text style={styles.intelToggleText}>Audience Intelligence</Text>
+            </View>
+            {isExpanded
+              ? <ChevronUp size={14} color="#818CF8" />
+              : <ChevronDown size={14} color="#818CF8" />}
+          </TouchableOpacity>
+
+          {/* Demographic Intelligence Panel (lazy-loaded on expand) */}
+          {isExpanded && <DemographicPanel strategyId={item.id} />}
         </View>
       </Animated.View>
     );
@@ -275,9 +563,7 @@ export default function StrategyHistoryScreen() {
           keyExtractor={item => item.id}
           contentContainerStyle={styles.list}
           showsVerticalScrollIndicator={false}
-          refreshControl={
-            <RefreshControl refreshing={loading} onRefresh={fetchHistory} tintColor="#00F0FF" />
-          }
+          refreshControl={<RefreshControl refreshing={loading} onRefresh={fetchHistory} tintColor="#00F0FF" />}
           ListEmptyComponent={
             <View style={styles.emptyWrap}>
               <View style={styles.emptyIcon}>
@@ -292,6 +578,8 @@ export default function StrategyHistoryScreen() {
     </SafeAreaView>
   );
 }
+
+// ─── Styles ───────────────────────────────────────────────────────────────────
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: '#0B0F19' },
@@ -310,11 +598,14 @@ const styles = StyleSheet.create({
   },
   countText: { color: '#00F0FF', fontWeight: '700', fontSize: 13 },
   list: { padding: 16, paddingBottom: 40 },
+
+  // ── Strategy card ──────────────────────────────────────────────────────────
   card: {
     backgroundColor: '#151B2B', borderRadius: 18,
-    borderWidth: 1, borderColor: '#1E293B', padding: 16, marginBottom: 12,
+    borderWidth: 1, borderColor: '#1E293B',
+    marginBottom: 12, overflow: 'hidden',
   },
-  cardHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 12, gap: 8 },
+  cardHeader: { flexDirection: 'row', alignItems: 'center', padding: 16, paddingBottom: 0, gap: 8 },
   typeTag: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 20 },
   typeTagText: { fontSize: 11, fontWeight: '700', letterSpacing: 0.3 },
   statusTag: {
@@ -322,9 +613,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 9, paddingVertical: 4, borderRadius: 20, borderWidth: 1,
   },
   statusTagText: { fontSize: 11, fontWeight: '600' },
-  cardTitle: { color: '#FFFFFF', fontWeight: '700', fontSize: 15, marginBottom: 5 },
-  cardDesc: { color: '#64748B', fontSize: 12, lineHeight: 18, marginBottom: 12 },
-  assetsRow: { flexDirection: 'row', marginBottom: 12, gap: 8 },
+  cardTitle: { color: '#FFFFFF', fontWeight: '700', fontSize: 15, marginTop: 10, paddingHorizontal: 16 },
+  cardDesc: { color: '#64748B', fontSize: 12, lineHeight: 18, marginTop: 4, marginBottom: 12, paddingHorizontal: 16 },
+  assetsRow: { flexDirection: 'row', marginBottom: 12, paddingHorizontal: 16, gap: 8 },
   assetThumb: { position: 'relative', width: 60, height: 60, borderRadius: 10, overflow: 'hidden', borderWidth: 1, borderColor: 'rgba(0,240,255,0.15)' },
   assetImage: { width: '100%', height: '100%' },
   assetBadge: {
@@ -339,7 +630,8 @@ const styles = StyleSheet.create({
   moreAssetsText: { color: '#94A3B8', fontWeight: '700', fontSize: 13 },
   cardFooter: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    paddingTop: 12, borderTopWidth: 1, borderTopColor: '#1E293B',
+    paddingHorizontal: 16, paddingVertical: 12,
+    borderTopWidth: 1, borderTopColor: '#1E293B',
   },
   dateRow: { flexDirection: 'row', alignItems: 'center' },
   dateText: { color: '#475569', fontSize: 12 },
@@ -366,4 +658,93 @@ const styles = StyleSheet.create({
   },
   emptyTitle: { color: '#FFFFFF', fontWeight: '700', fontSize: 17, marginBottom: 8 },
   emptySubtitle: { color: '#64748B', fontSize: 13, textAlign: 'center', lineHeight: 20 },
+
+  // ── Intelligence toggle ────────────────────────────────────────────────────
+  intelToggle: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    paddingHorizontal: 16, paddingVertical: 11,
+    borderTopWidth: 1, borderTopColor: 'rgba(129,140,248,0.12)',
+    backgroundColor: 'rgba(129,140,248,0.04)',
+  },
+  intelToggleText: { color: '#818CF8', fontSize: 12, fontWeight: '700', letterSpacing: 0.3 },
+
+  // ── Intel panel ────────────────────────────────────────────────────────────
+  intelPanel: {
+    padding: 16,
+    borderTopWidth: 1, borderTopColor: 'rgba(129,140,248,0.1)',
+  },
+  intelPanelHeader: {
+    flexDirection: 'row', alignItems: 'center', gap: 7, marginBottom: 14,
+  },
+  intelPanelTitle: { color: '#E2E8F0', fontSize: 13, fontWeight: '700', flex: 1 },
+  intelLoading: {
+    flexDirection: 'row', alignItems: 'center', gap: 10,
+    padding: 16, borderTopWidth: 1, borderTopColor: 'rgba(129,140,248,0.1)',
+  },
+  intelLoadingText: { color: '#64748B', fontSize: 12 },
+  intelError: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    padding: 16, borderTopWidth: 1, borderTopColor: 'rgba(248,113,113,0.1)',
+  },
+  intelErrorText: { color: '#F87171', fontSize: 12, flex: 1 },
+  retryBtn: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  retryText: { color: '#00F0FF', fontSize: 12, fontWeight: '600' },
+  intelSection: { marginBottom: 14 },
+  intelSectionLabel: {
+    color: '#475569', fontSize: 9, fontWeight: '800', letterSpacing: 1.2,
+    textTransform: 'uppercase', marginBottom: 6,
+  },
+  intelPrimaryText: { color: '#E2E8F0', fontSize: 13, lineHeight: 19 },
+  intelBodyText: { color: '#94A3B8', fontSize: 12, lineHeight: 18 },
+  intelBullet: { color: '#94A3B8', fontSize: 12, lineHeight: 18, marginBottom: 2 },
+  intelDataSource: { color: '#334155', fontSize: 10, marginTop: 4, fontStyle: 'italic' },
+
+  // ── Market stats row ───────────────────────────────────────────────────────
+  intelStatsRow: {
+    flexDirection: 'row', alignItems: 'center',
+    backgroundColor: 'rgba(255,255,255,0.03)', borderRadius: 12,
+    borderWidth: 1, borderColor: '#1E293B',
+    marginBottom: 14, padding: 12,
+  },
+  intelStat: { flex: 1, alignItems: 'center', gap: 4 },
+  intelStatLabel: { color: '#475569', fontSize: 10, fontWeight: '600' },
+  intelStatValue: { color: '#E2E8F0', fontSize: 12, fontWeight: '700', textAlign: 'center' },
+  intelStatDivider: { width: 1, height: 28, backgroundColor: '#1E293B' },
+
+  // ── Segment ────────────────────────────────────────────────────────────────
+  segTab: {
+    paddingHorizontal: 12, paddingVertical: 6, borderRadius: 20,
+    backgroundColor: 'rgba(255,255,255,0.04)', borderWidth: 1, borderColor: '#1E293B',
+  },
+  segTabActive: { backgroundColor: 'rgba(0,240,255,0.1)', borderColor: 'rgba(0,240,255,0.3)' },
+  segTabText: { color: '#64748B', fontSize: 11, fontWeight: '600' },
+  segTabTextActive: { color: '#00F0FF' },
+  segCard: {
+    backgroundColor: 'rgba(255,255,255,0.02)', borderRadius: 12,
+    borderWidth: 1, borderColor: '#1E293B', padding: 12,
+  },
+  segHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 },
+  segName: { color: '#FFFFFF', fontSize: 13, fontWeight: '700', flex: 1 },
+  confDot: { width: 7, height: 7, borderRadius: 4 },
+  segMeta: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 8 },
+  segMetaItem: { color: '#94A3B8', fontSize: 11 },
+  segBehavior: { color: '#64748B', fontSize: 11, lineHeight: 16, marginBottom: 8 },
+
+  // ── Chips ──────────────────────────────────────────────────────────────────
+  chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
+  chip: { paddingHorizontal: 9, paddingVertical: 4, borderRadius: 20 },
+  chipText: { fontSize: 11, fontWeight: '600' },
+  chipPain: { backgroundColor: 'rgba(248,113,113,0.08)', paddingHorizontal: 9, paddingVertical: 4, borderRadius: 20 },
+  chipPainText: { color: '#F87171', fontSize: 11, fontWeight: '600' },
+
+  // ── Confidence badge ───────────────────────────────────────────────────────
+  badge: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 20 },
+  badgeText: { fontSize: 10, fontWeight: '700', letterSpacing: 0.3 },
+
+  // ── Suggestions box ────────────────────────────────────────────────────────
+  suggestionsBox: {
+    backgroundColor: 'rgba(251,191,36,0.04)', borderRadius: 12,
+    borderWidth: 1, borderColor: 'rgba(251,191,36,0.15)', padding: 12,
+  },
+  suggestionItem: { color: '#FBBF24', fontSize: 12, lineHeight: 19, marginBottom: 4 },
 });

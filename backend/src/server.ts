@@ -4075,6 +4075,54 @@ app.get('/api/radar/intel/:strategyId', async (req, res) => {
 
 // ─── Daily Strategy Reports ──────────────────────────────────────────────────
 
+/**
+ * GET /api/strategy/:id/intelligence/demographics
+ * Returns the latest demographic & market intelligence for a strategy.
+ * If none exists yet, triggers a fresh analysis and returns a 202.
+ */
+app.get('/api/strategy/:id/intelligence/demographics', async (req, res) => {
+  try {
+    const supabase = getSupabaseClient(req as any);
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return res.status(401).json({ error: 'Unauthorized.' });
+
+    const strategyId = req.params.id;
+
+    // Verify ownership
+    const { data: strategy } = await supabase
+      .from('strategies')
+      .select('id, user_id')
+      .eq('id', strategyId)
+      .eq('user_id', user.id)
+      .single();
+    if (!strategy) return res.status(404).json({ error: 'Strategy not found.' });
+
+    // Fetch stored demographic analysis
+    const { data: intel } = await supabase
+      .from('platform_intelligence')
+      .select('data, confidence, generated_at')
+      .eq('strategy_id', strategyId)
+      .eq('user_id', user.id)
+      .eq('intel_type', 'demographic_analysis')
+      .order('generated_at', { ascending: false })
+      .limit(1)
+      .single();
+
+    if (intel?.data) {
+      return res.json({ ok: true, intel: intel.data, confidence: intel.confidence, generatedAt: intel.generated_at });
+    }
+
+    // No data yet — trigger async analysis and return 202
+    const { RadarAgent } = await import('./agents/radarAgent');
+    const radar = new RadarAgent();
+    radar.runDemographicAnalysis(user.id, strategyId).catch(() => {});
+
+    return res.status(202).json({ ok: false, generating: true, message: 'Analysis started. Check back in ~30 seconds.' });
+  } catch (e: any) {
+    return res.status(500).json({ error: e.message });
+  }
+});
+
 app.get('/api/strategy/:id/daily-reports', async (req, res) => {
   try {
     const supabase = getSupabaseClient(req as any);
