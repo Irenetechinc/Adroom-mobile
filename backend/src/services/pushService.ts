@@ -283,6 +283,56 @@ export const pushService = {
   },
 
   /**
+   * Notifies a user that their Salesman Agent has identified a new high-intent
+   * lead from a platform comment or Google Maps outreach.
+   *
+   * 4-hour dedup per platform_user so rapid rescans don't spam.
+   */
+  async notifyNewLead(
+    userId: string,
+    params: {
+      leadName: string;
+      platform: string;
+      intentScore: number;
+      firstInteraction?: string;
+    },
+  ): Promise<void> {
+    const supabase = getServiceSupabaseClient();
+
+    // ── Dedup: one notification per lead name per 4 hours ──
+    const cutoff = new Date(Date.now() - 4 * 60 * 60 * 1000).toISOString();
+    const { data: recent } = await supabase
+      .from('user_notifications')
+      .select('id')
+      .eq('user_id', userId)
+      .eq('sent_by', 'system')
+      .gte('created_at', cutoff)
+      .filter('data->>type', 'eq', 'new_lead')
+      .filter('data->>leadName', 'eq', params.leadName)
+      .limit(1)
+      .maybeSingle();
+
+    if (recent) return; // already notified for this lead recently
+
+    const displayPlatform = params.platform.charAt(0).toUpperCase() + params.platform.slice(1);
+    const score = Math.round(params.intentScore * 100);
+    const preview = params.firstInteraction
+      ? ` "${params.firstInteraction.slice(0, 60)}${params.firstInteraction.length > 60 ? '…' : ''}"`
+      : '';
+
+    const title = `New Lead on ${displayPlatform}`;
+    const body  = `${params.leadName} is interested (${score}% intent).${preview} Salesman AI is working on them.`;
+    const data  = { type: 'new_lead', platform: params.platform, leadName: params.leadName, intentScore: params.intentScore };
+
+    const tokens = await getUserTokens(userId);
+    await Promise.all([
+      sendExpoPush(tokens, { title, body, data, channelId: 'alerts' }),
+      insertNotification(userId, title, body, data),
+    ]);
+    console.log(`[PushService] New lead notification — ${params.leadName} on ${params.platform} for user ${userId}`);
+  },
+
+  /**
    * Notifies a user that one of their platform connections has expired and
    * needs to be reconnected — sent when the background token refresh fails.
    *

@@ -14,6 +14,7 @@ import {
   Zap, AlertTriangle, TrendingUp, Plus, Activity,
   Target, Eye, MousePointer, Menu, RefreshCw, Crown, Bot, Wifi,
   Trophy, Star, CheckCircle, DollarSign, MapPin, Phone, Mail, Building2,
+  Heart, MessageCircle, Share2, Users, BarChart2, Truck, Award, ShoppingBag,
 } from 'lucide-react-native';
 import { useEnergyStore, PLAN_DETAILS } from '../store/energyStore';
 
@@ -170,6 +171,10 @@ interface ClosedDeal {
   deal_value: number;
   currency: string;
   platform: string;
+  status: string;
+  delivery_address?: string;
+  delivery_type?: string;
+  contact_phone?: string;
   created_at: string;
 }
 
@@ -179,6 +184,26 @@ interface GoalCompletion {
   strategy_name: string;
   completed_at: string;
   goal: string;
+}
+
+interface AgentAchievement {
+  id: string;
+  agent_type: string;
+  task_type: string;
+  platform?: string;
+  result?: any;
+  executed_at: string;
+}
+
+interface PerfSummary {
+  reach: number;
+  likes: number;
+  comments: number;
+  shares: number;
+  dms_sent: number;
+  leads_captured: number;
+  clicks: number;
+  conversions: number;
 }
 
 interface GmapsLead {
@@ -209,6 +234,11 @@ export default function DashboardScreen() {
   const [closedDeals, setClosedDeals] = useState<ClosedDeal[]>([]);
   const [goalCompletions, setGoalCompletions] = useState<GoalCompletion[]>([]);
   const [gmapsLeads, setGmapsLeads] = useState<GmapsLead[]>([]);
+  const [agentAchievements, setAgentAchievements] = useState<AgentAchievement[]>([]);
+  const [totalRevenue, setTotalRevenue] = useState(0);
+  const [revenueCurrency, setRevenueCurrency] = useState('USD');
+  const [perfSummary, setPerfSummary] = useState<PerfSummary>({ reach: 0, likes: 0, comments: 0, shares: 0, dms_sent: 0, leads_captured: 0, clicks: 0, conversions: 0 });
+  const [allLeadsCount, setAllLeadsCount] = useState(0);
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const agentSubRef = useRef<any>(null);
@@ -219,7 +249,11 @@ export default function DashboardScreen() {
     if (!session?.user) return;
     setLoading(true);
     try {
-      const [strategiesRes, logsRes, tasksRes, dealsRes, completedStratsRes, gmapsRes] = await Promise.all([
+      const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+      const [
+        strategiesRes, logsRes, tasksRes, dealsRes, completedStratsRes,
+        gmapsRes, achievementsRes, perfRes, leadsCountRes,
+      ] = await Promise.all([
         supabase
           .from('strategy_memory')
           .select('*')
@@ -241,11 +275,11 @@ export default function DashboardScreen() {
           .limit(8),
         supabase
           .from('agent_deals')
-          .select('id, buyer_name, product_name, deal_value, currency, platform, created_at')
+          .select('id, buyer_name, product_name, deal_value, currency, platform, status, delivery_address, delivery_type, contact_phone, created_at')
           .eq('user_id', session.user.id)
-          .eq('status', 'closed_won')
+          .in('status', ['closed_won', 'closing_attempted', 'pending_delivery'])
           .order('created_at', { ascending: false })
-          .limit(5),
+          .limit(10),
         supabase
           .from('strategies')
           .select('id, agent_type, goal, current_execution_plan, updated_at')
@@ -261,12 +295,40 @@ export default function DashboardScreen() {
           .in('platform', ['whatsapp', 'email'])
           .order('created_at', { ascending: false })
           .limit(8),
+        // Campaign wins: completed agent tasks from all agents (last 30 days)
+        supabase
+          .from('agent_tasks')
+          .select('id, agent_type, task_type, platform, result, executed_at')
+          .eq('user_id', session.user.id)
+          .eq('status', 'done')
+          .in('task_type', ['POST', 'HASHTAG_CAMPAIGN', 'URGENCY_POST', 'TEASER', 'GMAPS_OUTREACH'])
+          .gte('executed_at', thirtyDaysAgo)
+          .order('executed_at', { ascending: false })
+          .limit(20),
+        // Aggregate performance metrics across all strategies
+        supabase
+          .from('agent_performance')
+          .select('reach, likes, comments, shares, dms_sent, leads_captured, clicks, conversions')
+          .eq('user_id', session.user.id),
+        // Total leads count
+        supabase
+          .from('agent_leads')
+          .select('id', { count: 'exact', head: true })
+          .eq('user_id', session.user.id),
       ]);
 
       setActiveStrategies(strategiesRes.data || []);
       setAlerts(logsRes.data || []);
-      setClosedDeals((dealsRes.data as ClosedDeal[]) || []);
       setGmapsLeads((gmapsRes.data as GmapsLead[]) || []);
+
+      // Deals + revenue total
+      const deals = (dealsRes.data as ClosedDeal[]) || [];
+      setClosedDeals(deals);
+      const rev = deals
+        .filter(d => d.status === 'closed_won')
+        .reduce((sum, d) => sum + (Number(d.deal_value) || 0), 0);
+      setTotalRevenue(rev);
+      if (deals.length > 0 && deals[0].currency) setRevenueCurrency(deals[0].currency);
 
       const completions: GoalCompletion[] = (completedStratsRes.data || []).map((s: any) => ({
         id: s.id,
@@ -282,6 +344,25 @@ export default function DashboardScreen() {
         strategy_name: strategiesRes.data?.find((s: any) => s.strategy_id === t.strategy_id)?.strategy_name ?? null,
       }));
       setActiveAgentTasks(tasks);
+
+      // Agent campaign wins
+      setAgentAchievements((achievementsRes.data as AgentAchievement[]) || []);
+
+      // Aggregate performance
+      const perfRows = perfRes.data || [];
+      const agg: PerfSummary = { reach: 0, likes: 0, comments: 0, shares: 0, dms_sent: 0, leads_captured: 0, clicks: 0, conversions: 0 };
+      for (const row of perfRows as any[]) {
+        agg.reach           += row.reach           || 0;
+        agg.likes           += row.likes           || 0;
+        agg.comments        += row.comments        || 0;
+        agg.shares          += row.shares          || 0;
+        agg.dms_sent        += row.dms_sent        || 0;
+        agg.leads_captured  += row.leads_captured  || 0;
+        agg.clicks          += row.clicks          || 0;
+        agg.conversions     += row.conversions     || 0;
+      }
+      setPerfSummary(agg);
+      setAllLeadsCount(leadsCountRes.count ?? 0);
     } catch (e) {
       console.error('Dashboard error:', e);
     } finally {
@@ -362,8 +443,30 @@ export default function DashboardScreen() {
       sales: 'Sales Agent', content: 'Content Agent',
       engagement: 'Engagement Agent', analytics: 'Analytics Agent',
       optimization: 'Optimization Agent',
+      SALESMAN: 'Salesman Agent', AWARENESS: 'Awareness Agent',
+      PROMOTION: 'Promotion Agent', LAUNCH: 'Launch Agent',
     };
-    return map[type?.toLowerCase()] ?? `${type} Agent`;
+    return map[type] ?? map[type?.toLowerCase()] ?? `${type} Agent`;
+  };
+
+  const agentWinLabel = (task: AgentAchievement): string => {
+    const p = task.platform ? ` on ${task.platform.charAt(0).toUpperCase() + task.platform.slice(1)}` : '';
+    switch (task.task_type) {
+      case 'POST': return `Published campaign post${p}`;
+      case 'HASHTAG_CAMPAIGN': return `Launched hashtag campaign${p}`;
+      case 'URGENCY_POST': return `Published urgency/FOMO post${p}`;
+      case 'TEASER': return `Published product teaser${p}`;
+      case 'GMAPS_OUTREACH': {
+        const n = task.result?.gmaps_reached || task.result?.leads;
+        return n ? `Contacted ${n} local businesses` : `Local business outreach`;
+      }
+      default: return `Completed ${task.task_type.toLowerCase().replace(/_/g, ' ')}${p}`;
+    }
+  };
+
+  const agentColors: Record<string, string> = {
+    SALESMAN: '#10B981', AWARENESS: '#00F0FF',
+    PROMOTION: '#F59E0B', LAUNCH: '#A78BFA',
   };
 
   return (
@@ -490,24 +593,46 @@ export default function DashboardScreen() {
           );
         })()}
 
-        {/* Stats Row */}
-        <Animated.View entering={FadeInDown.delay(150).springify()} style={styles.statsRow}>
-          {[
-            { label: 'Impressions', value: totalImpressions.toLocaleString(), icon: Eye, color: '#00F0FF' },
-            { label: 'Clicks', value: totalClicks.toLocaleString(), icon: MousePointer, color: '#7000FF' },
-            { label: 'Conversions', value: totalConversions.toLocaleString(), icon: Target, color: '#10B981' },
-          ].map((stat, i) => {
-            const Icon = stat.icon;
+        {/* ── Marketing Metrics Grid ── */}
+        <Animated.View entering={FadeInDown.delay(150).springify()} style={styles.metricsSection}>
+          <View style={styles.metricsHeader}>
+            <BarChart2 size={16} color="#00F0FF" />
+            <Text style={styles.metricsSectionTitle}>Campaign Metrics</Text>
+          </View>
+          {(() => {
+            const totalEngagement = perfSummary.likes + perfSummary.comments + perfSummary.shares;
+            const engRate = perfSummary.reach > 0 ? ((totalEngagement / perfSummary.reach) * 100).toFixed(1) : '0.0';
+            const revenueDisplay = totalRevenue >= 1000
+              ? `${(totalRevenue / 1000).toFixed(1)}K`
+              : totalRevenue.toLocaleString();
+            const metrics = [
+              { label: 'Reach',        value: perfSummary.reach > 0 ? perfSummary.reach.toLocaleString() : totalImpressions.toLocaleString(), icon: Activity,      color: '#00F0FF' },
+              { label: 'Impressions',  value: totalImpressions.toLocaleString(),                                                              icon: Eye,            color: '#A78BFA' },
+              { label: 'Eng. Rate',    value: `${engRate}%`,                                                                                  icon: TrendingUp,     color: '#F59E0B' },
+              { label: 'Likes',        value: perfSummary.likes.toLocaleString(),                                                             icon: Heart,          color: '#F87171' },
+              { label: 'Comments',     value: perfSummary.comments.toLocaleString(),                                                          icon: MessageCircle,  color: '#60A5FA' },
+              { label: 'Shares',       value: perfSummary.shares.toLocaleString(),                                                            icon: Share2,         color: '#34D399' },
+              { label: 'DMs Sent',     value: perfSummary.dms_sent.toLocaleString(),                                                          icon: Users,          color: '#818CF8' },
+              { label: 'Leads',        value: allLeadsCount.toLocaleString(),                                                                 icon: Target,         color: '#10B981' },
+              { label: 'Revenue',      value: revenueDisplay,                                                                                 icon: DollarSign,     color: '#FBBF24' },
+            ];
             return (
-              <View key={i} style={styles.statCard}>
-                <View style={[styles.statIcon, { backgroundColor: `${stat.color}15` }]}>
-                  <Icon size={16} color={stat.color} />
-                </View>
-                <Text style={styles.statValue}>{stat.value}</Text>
-                <Text style={styles.statLabel}>{stat.label}</Text>
+              <View style={styles.metricsGrid}>
+                {metrics.map((m, i) => {
+                  const Icon = m.icon;
+                  return (
+                    <View key={i} style={styles.metricCell}>
+                      <View style={[styles.metricIconWrap, { backgroundColor: `${m.color}15` }]}>
+                        <Icon size={14} color={m.color} />
+                      </View>
+                      <Text style={styles.metricValue}>{m.value}</Text>
+                      <Text style={styles.metricLabel}>{m.label}</Text>
+                    </View>
+                  );
+                })}
               </View>
             );
-          })}
+          })()}
         </Animated.View>
 
         {/* New Strategy CTA */}
@@ -604,101 +729,173 @@ export default function DashboardScreen() {
           )}
         </Animated.View>
 
-        {/* Achievement Section */}
-        {(closedDeals.length > 0 || goalCompletions.length > 0) && (
-          <Animated.View entering={FadeInDown.delay(310).springify()} style={styles.section}>
-            <View style={styles.sectionHeader}>
-              <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                <Trophy size={18} color="#F59E0B" />
-                <Text style={styles.sectionTitle}>Achievements</Text>
-              </View>
-              <View style={[styles.sectionCount, { backgroundColor: 'rgba(245,158,11,0.12)', paddingHorizontal: 10, paddingVertical: 3, borderRadius: 20 }]}>
-                <Text style={{ color: '#F59E0B', fontWeight: '700', fontSize: 13 }}>
-                  {closedDeals.length + goalCompletions.length}
+        {/* ── Achievements Section (always visible) ── */}
+        <Animated.View entering={FadeInDown.delay(310).springify()} style={styles.section}>
+          <View style={styles.sectionHeader}>
+            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+              <Trophy size={18} color="#F59E0B" />
+              <Text style={styles.sectionTitle}>Achievements</Text>
+            </View>
+            {(closedDeals.length + agentAchievements.length + goalCompletions.length) > 0 ? (
+              <View style={styles.achCountBadge}>
+                <Text style={styles.achCountText}>
+                  {closedDeals.length + agentAchievements.length + goalCompletions.length}
                 </Text>
               </View>
+            ) : null}
+          </View>
+
+          {/* Revenue summary banner */}
+          <View style={styles.revenueBanner}>
+            <View style={styles.revenueIconWrap}>
+              <DollarSign size={16} color="#FBBF24" />
             </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.revenueLabel}>Total Revenue Generated by AI</Text>
+              <Text style={styles.revenueValue}>
+                {revenueCurrency} {totalRevenue.toLocaleString()}
+              </Text>
+            </View>
+            <ShoppingBag size={18} color="rgba(251,191,36,0.3)" />
+          </View>
 
-            {/* Closed Deals */}
-            {closedDeals.length > 0 && (
-              <View style={styles.achievementCard}>
-                <View style={styles.achievementHeader}>
-                  <DollarSign size={13} color="#10B981" />
-                  <Text style={styles.achievementLabel}>DEALS CLOSED BY AI</Text>
-                  <View style={styles.achievementLiveDot} />
-                </View>
-                {closedDeals.map((deal, i) => {
-                  const timeAgo = (() => {
-                    const diff = Date.now() - new Date(deal.created_at).getTime();
-                    const mins = Math.floor(diff / 60000);
-                    if (mins < 60) return `${mins}m ago`;
-                    const hrs = Math.floor(mins / 60);
-                    if (hrs < 24) return `${hrs}h ago`;
-                    return `${Math.floor(hrs / 24)}d ago`;
-                  })();
-                  return (
-                    <View
-                      key={deal.id}
-                      style={[styles.achievementRow, i < closedDeals.length - 1 && styles.achievementBorder]}
-                    >
-                      <View style={styles.dealIconWrap}>
-                        <CheckCircle size={14} color="#10B981" />
-                      </View>
-                      <View style={{ flex: 1 }}>
+          {/* ── Deals Closed ── */}
+          <View style={styles.achievementCard}>
+            <View style={styles.achievementHeader}>
+              <DollarSign size={13} color="#10B981" />
+              <Text style={styles.achievementLabel}>DEALS CLOSED BY AI</Text>
+              <View style={styles.achievementLiveDot} />
+            </View>
+            {closedDeals.length === 0 ? (
+              <View style={styles.achEmpty}>
+                <CheckCircle size={20} color="#1E293B" />
+                <Text style={styles.achEmptyText}>No deals yet — Salesman AI is prospecting</Text>
+              </View>
+            ) : (
+              closedDeals.map((deal, i) => {
+                const timeAgo = (() => {
+                  const diff = Date.now() - new Date(deal.created_at).getTime();
+                  const mins = Math.floor(diff / 60000);
+                  if (mins < 60) return `${mins}m ago`;
+                  const hrs = Math.floor(mins / 60);
+                  if (hrs < 24) return `${hrs}h ago`;
+                  return `${Math.floor(hrs / 24)}d ago`;
+                })();
+                const statusColor = deal.status === 'closed_won' ? '#10B981' : deal.status === 'pending_delivery' ? '#FBBF24' : '#818CF8';
+                const statusLabel = deal.status === 'closed_won' ? 'Won' : deal.status === 'pending_delivery' ? 'Delivery' : 'Closing';
+                return (
+                  <View
+                    key={deal.id}
+                    style={[styles.dealRow, i < closedDeals.length - 1 && styles.dealRowBorder]}
+                  >
+                    <View style={styles.dealIconWrap}>
+                      <CheckCircle size={14} color="#10B981" />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
                         <Text style={styles.dealBuyerName}>{deal.buyer_name}</Text>
-                        <Text style={styles.dealMeta}>
-                          {deal.product_name} · {deal.platform}
-                        </Text>
+                        <View style={[styles.dealStatusBadge, { backgroundColor: `${statusColor}20` }]}>
+                          <Text style={[styles.dealStatusText, { color: statusColor }]}>{statusLabel}</Text>
+                        </View>
                       </View>
-                      <View style={{ alignItems: 'flex-end' }}>
-                        <Text style={styles.dealValue}>
-                          {deal.currency} {Number(deal.deal_value).toLocaleString()}
-                        </Text>
-                        <Text style={styles.dealTime}>{timeAgo}</Text>
-                      </View>
+                      <Text style={styles.dealMeta}>{deal.product_name} · {deal.platform}</Text>
+                      {deal.delivery_address ? (
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 2 }}>
+                          <Truck size={10} color="#475569" />
+                          <Text style={styles.dealDelivery} numberOfLines={1}>{deal.delivery_address}</Text>
+                        </View>
+                      ) : null}
+                      {deal.contact_phone ? (
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 1 }}>
+                          <Phone size={10} color="#475569" />
+                          <Text style={styles.dealDelivery}>{deal.contact_phone}</Text>
+                        </View>
+                      ) : null}
                     </View>
-                  );
-                })}
-              </View>
+                    <View style={{ alignItems: 'flex-end' }}>
+                      <Text style={styles.dealValue}>
+                        {deal.currency} {Number(deal.deal_value).toLocaleString()}
+                      </Text>
+                      <Text style={styles.dealTime}>{timeAgo}</Text>
+                    </View>
+                  </View>
+                );
+              })
             )}
+          </View>
 
-            {/* Goal Completions */}
-            {goalCompletions.length > 0 && (
-              <View style={[styles.achievementCard, { marginTop: 8 }]}>
-                <View style={styles.achievementHeader}>
-                  <Star size={13} color="#A78BFA" />
-                  <Text style={[styles.achievementLabel, { color: '#A78BFA' }]}>GOALS COMPLETED</Text>
-                </View>
-                {goalCompletions.map((comp, i) => {
-                  const agentColors: Record<string, string> = {
-                    SALESMAN: '#10B981', AWARENESS: '#00F0FF',
-                    PROMOTION: '#F59E0B', LAUNCH: '#A78BFA',
-                  };
-                  const color = agentColors[comp.agent_type] || '#64748B';
-                  return (
-                    <View
-                      key={comp.id}
-                      style={[styles.achievementRow, i < goalCompletions.length - 1 && styles.achievementBorder]}
-                    >
-                      <View style={[styles.dealIconWrap, { backgroundColor: `${color}18` }]}>
-                        <CheckCircle size={14} color={color} />
-                      </View>
-                      <View style={{ flex: 1 }}>
-                        <Text style={styles.dealBuyerName}>{comp.strategy_name}</Text>
-                        <Text style={styles.dealMeta}>
-                          {comp.agent_type} Agent · {comp.goal}
-                        </Text>
-                      </View>
-                      <View style={[styles.agentStatusBadge, { backgroundColor: `${color}18` }]}>
-                        <Text style={{ color, fontSize: 10, fontWeight: '700' }}>Done</Text>
-                      </View>
-                    </View>
-                  );
-                })}
+          {/* ── Campaign Wins (all agent task completions) ── */}
+          <View style={[styles.achievementCard, { marginTop: 8 }]}>
+            <View style={styles.achievementHeader}>
+              <Award size={13} color="#00F0FF" />
+              <Text style={[styles.achievementLabel, { color: '#00F0FF' }]}>CAMPAIGN WINS</Text>
+            </View>
+            {agentAchievements.length === 0 ? (
+              <View style={styles.achEmpty}>
+                <Zap size={20} color="#1E293B" />
+                <Text style={styles.achEmptyText}>AI agents are working — wins appear here</Text>
               </View>
+            ) : (
+              agentAchievements.map((ach, i) => {
+                const color = agentColors[ach.agent_type] || '#64748B';
+                const timeAgo = (() => {
+                  if (!ach.executed_at) return '';
+                  const diff = Date.now() - new Date(ach.executed_at).getTime();
+                  const mins = Math.floor(diff / 60000);
+                  if (mins < 60) return `${mins}m ago`;
+                  const hrs = Math.floor(mins / 60);
+                  if (hrs < 24) return `${hrs}h ago`;
+                  return `${Math.floor(hrs / 24)}d ago`;
+                })();
+                return (
+                  <View
+                    key={ach.id}
+                    style={[styles.dealRow, i < agentAchievements.length - 1 && styles.dealRowBorder]}
+                  >
+                    <View style={[styles.dealIconWrap, { backgroundColor: `${color}18` }]}>
+                      <Zap size={13} color={color} />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.dealBuyerName}>{agentWinLabel(ach)}</Text>
+                      <Text style={styles.dealMeta}>{agentLabel(ach.agent_type)}</Text>
+                    </View>
+                    <Text style={styles.dealTime}>{timeAgo}</Text>
+                  </View>
+                );
+              })
             )}
-          </Animated.View>
-        )}
+          </View>
+
+          {/* ── Goals Reached ── */}
+          {goalCompletions.length > 0 && (
+            <View style={[styles.achievementCard, { marginTop: 8 }]}>
+              <View style={styles.achievementHeader}>
+                <Star size={13} color="#A78BFA" />
+                <Text style={[styles.achievementLabel, { color: '#A78BFA' }]}>GOALS REACHED</Text>
+              </View>
+              {goalCompletions.map((comp, i) => {
+                const color = agentColors[comp.agent_type] || '#64748B';
+                return (
+                  <View
+                    key={comp.id}
+                    style={[styles.dealRow, i < goalCompletions.length - 1 && styles.dealRowBorder]}
+                  >
+                    <View style={[styles.dealIconWrap, { backgroundColor: `${color}18` }]}>
+                      <CheckCircle size={14} color={color} />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.dealBuyerName}>{comp.strategy_name}</Text>
+                      <Text style={styles.dealMeta}>{comp.agent_type} Agent · {comp.goal}</Text>
+                    </View>
+                    <View style={[styles.dealStatusBadge, { backgroundColor: `${color}18` }]}>
+                      <Text style={[styles.dealStatusText, { color }]}>Done</Text>
+                    </View>
+                  </View>
+                );
+              })}
+            </View>
+          )}
+        </Animated.View>
 
         {/* GMaps Leads Section */}
         {gmapsLeads.length > 0 && (
@@ -908,14 +1105,53 @@ const styles = StyleSheet.create({
     backgroundColor: '#151B2B', borderRadius: 14, borderWidth: 1, borderColor: '#1E293B',
     padding: 14, marginBottom: 12,
   },
-  statsRow: { flexDirection: 'row', gap: 8, marginBottom: 16 },
-  statCard: {
-    flex: 1, backgroundColor: '#151B2B', borderRadius: 14,
-    borderWidth: 1, borderColor: '#1E293B', padding: 14, alignItems: 'center',
+  // ─── Metrics Grid ─────────────────────────────────────────────────────────
+  metricsSection: {
+    backgroundColor: '#151B2B', borderRadius: 16,
+    borderWidth: 1, borderColor: '#1E293B', marginBottom: 16, overflow: 'hidden',
   },
-  statIcon: { width: 32, height: 32, borderRadius: 8, alignItems: 'center', justifyContent: 'center', marginBottom: 8 },
-  statValue: { color: '#FFFFFF', fontSize: 18, fontWeight: '800', marginBottom: 2 },
-  statLabel: { color: '#64748B', fontSize: 10, fontWeight: '500', textAlign: 'center' },
+  metricsHeader: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    paddingHorizontal: 14, paddingTop: 12, paddingBottom: 10,
+    borderBottomWidth: 1, borderBottomColor: '#1E2130',
+  },
+  metricsSectionTitle: { color: '#FFFFFF', fontWeight: '700', fontSize: 14 },
+  metricsGrid: {
+    flexDirection: 'row', flexWrap: 'wrap',
+  },
+  metricCell: {
+    width: '33.33%', alignItems: 'center', paddingVertical: 14,
+    borderRightWidth: 1, borderBottomWidth: 1, borderColor: '#1E2130',
+  },
+  metricIconWrap: { width: 28, height: 28, borderRadius: 7, alignItems: 'center', justifyContent: 'center', marginBottom: 6 },
+  metricValue: { color: '#FFFFFF', fontSize: 15, fontWeight: '800', marginBottom: 2 },
+  metricLabel: { color: '#64748B', fontSize: 9, fontWeight: '500', textAlign: 'center', textTransform: 'uppercase', letterSpacing: 0.5 },
+
+  // ─── Achievements ──────────────────────────────────────────────────────────
+  achCountBadge: {
+    backgroundColor: 'rgba(245,158,11,0.12)', paddingHorizontal: 10, paddingVertical: 3, borderRadius: 20,
+  },
+  achCountText: { color: '#F59E0B', fontWeight: '700', fontSize: 13 },
+  revenueBanner: {
+    backgroundColor: 'rgba(251,191,36,0.07)', borderRadius: 14,
+    borderWidth: 1, borderColor: 'rgba(251,191,36,0.2)',
+    flexDirection: 'row', alignItems: 'center', gap: 12,
+    padding: 14, marginBottom: 10,
+  },
+  revenueIconWrap: {
+    width: 36, height: 36, borderRadius: 10,
+    backgroundColor: 'rgba(251,191,36,0.12)',
+    alignItems: 'center', justifyContent: 'center',
+  },
+  revenueLabel: { color: '#94A3B8', fontSize: 11, marginBottom: 2 },
+  revenueValue: { color: '#FBBF24', fontSize: 20, fontWeight: '800' },
+  dealRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 10, paddingHorizontal: 14, paddingVertical: 12 },
+  dealRowBorder: { borderBottomWidth: 1, borderBottomColor: '#1A2035' },
+  dealStatusBadge: { paddingHorizontal: 7, paddingVertical: 2, borderRadius: 20 },
+  dealStatusText: { fontSize: 9, fontWeight: '800', letterSpacing: 0.5 },
+  dealDelivery: { color: '#475569', fontSize: 10 },
+  achEmpty: { alignItems: 'center', paddingVertical: 18, gap: 6 },
+  achEmptyText: { color: '#334155', fontSize: 12 },
   ctaBtn: {
     backgroundColor: '#00F0FF', borderRadius: 14, height: 52,
     flexDirection: 'row', alignItems: 'center',
