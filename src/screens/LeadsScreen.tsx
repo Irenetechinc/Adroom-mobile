@@ -5,15 +5,17 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
+import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import Animated, { FadeInDown, FadeInRight } from 'react-native-reanimated';
 import {
   ArrowLeft, RefreshCw, Search, Target, Users, Zap,
   ChevronDown, ChevronUp, MessageCircle, Clock,
-  TrendingUp, Circle, CheckCircle2, Star, AlertCircle,
+  TrendingUp, Circle, CheckCircle2, Star, AlertCircle, X,
 } from 'lucide-react-native';
 import { supabase } from '../services/supabase';
 import { useAuthStore } from '../store/authStore';
 import { useFocusEffect } from '@react-navigation/native';
+import { RootStackParamList } from '../types';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 interface Lead {
@@ -266,9 +268,25 @@ const FILTERS: { key: FilterKey; label: string }[] = [
   { key: 'won',    label: 'Won' },
 ];
 
-export default function LeadsScreen() {
+const PLATFORM_COLORS_LS: Record<string, string> = {
+  facebook:  '#1877F2',
+  instagram: '#E1306C',
+  tiktok:    '#FE2C55',
+  twitter:   '#1DA1F2',
+  linkedin:  '#0A66C2',
+  whatsapp:  '#25D366',
+  email:     '#10B981',
+};
+
+type Props = NativeStackScreenProps<RootStackParamList, 'Leads'>;
+
+export default function LeadsScreen({ route }: Props) {
   const navigation = useNavigation<any>();
   const { session } = useAuthStore();
+
+  // Optional deep-link filters from ConversionTrackerPanel
+  const strategyId = route?.params?.strategyId ?? null;
+  const platformFilter = route?.params?.platform ?? null;
 
   const openConversation = (_lead: Lead) => {
     navigation.navigate('Interactions' as any);
@@ -280,32 +298,34 @@ export default function LeadsScreen() {
   const [filter, setFilter] = useState<FilterKey>('all');
   const [search, setSearch] = useState('');
 
-  const fetchLeads = async () => {
+  const fetchLeads = useCallback(async () => {
     if (!session?.user) return;
     try {
-      const { data, error } = await supabase
+      let query = supabase
         .from('agent_leads')
         .select('id, platform, platform_user_id, platform_username, first_interaction, intent_score, intent_signals, stage, dm_sequence_step, last_contacted_at, next_followup_at, created_at')
         .eq('user_id', session.user.id)
         .order('intent_score', { ascending: false })
         .order('created_at', { ascending: false })
-        .limit(100);
+        .limit(200);
 
-      if (!error && data) {
-        setLeads(data as Lead[]);
-      }
+      if (strategyId) query = query.eq('strategy_id', strategyId);
+      if (platformFilter) query = query.eq('platform', platformFilter);
+
+      const { data, error } = await query;
+      if (!error && data) setLeads(data as Lead[]);
     } catch (e) {
       console.error('LeadsScreen error:', e);
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
-  };
+  }, [session?.user?.id, strategyId, platformFilter]);
 
   useFocusEffect(useCallback(() => {
     setLoading(true);
     fetchLeads();
-  }, [session?.user?.id]));
+  }, [fetchLeads]));
 
   const onRefresh = () => {
     setRefreshing(true);
@@ -339,6 +359,9 @@ export default function LeadsScreen() {
   ).length;
   const wonLeads   = leads.filter(l => l.stage === 'closed' || l.stage === 'closed_won').length;
 
+  const isFiltered = !!(strategyId || platformFilter);
+  const platColor  = platformFilter ? (PLATFORM_COLORS_LS[platformFilter.toLowerCase()] ?? '#00F0FF') : '#00F0FF';
+
   return (
     <View style={styles.container}>
       <SafeAreaView style={{ flex: 1 }}>
@@ -355,6 +378,29 @@ export default function LeadsScreen() {
             <RefreshCw size={17} color="#64748B" />
           </TouchableOpacity>
         </Animated.View>
+
+        {/* ── Active filter banner ── */}
+        {isFiltered && (
+          <Animated.View entering={FadeInDown.delay(20).springify()} style={styles.filterBanner}>
+            <View style={styles.filterBannerLeft}>
+              <View style={[styles.filterBannerDot, { backgroundColor: platColor }]} />
+              <Text style={styles.filterBannerText} numberOfLines={1}>
+                {[
+                  platformFilter && (platformFilter.charAt(0).toUpperCase() + platformFilter.slice(1)),
+                  strategyId && 'this strategy',
+                ].filter(Boolean).join(' · ')}
+              </Text>
+            </View>
+            <TouchableOpacity
+              onPress={() => navigation.navigate('Leads')}
+              style={styles.filterBannerClear}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            >
+              <X size={12} color="#64748B" />
+              <Text style={styles.filterBannerClearText}>Clear filter</Text>
+            </TouchableOpacity>
+          </Animated.View>
+        )}
 
         {/* ── Search ── */}
         <Animated.View entering={FadeInDown.delay(60).springify()} style={styles.searchRow}>
@@ -465,6 +511,20 @@ const styles = StyleSheet.create({
   headerTitle: { color: '#FFFFFF', fontWeight: '800', fontSize: 18 },
   headerSub: { color: '#64748B', fontSize: 12, marginTop: 1 },
   refreshBtn: { padding: 8 },
+
+  // ── Active filter banner ────────────────────────────────────────────────────
+  filterBanner: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    marginHorizontal: 16, marginTop: 8, marginBottom: 2,
+    paddingHorizontal: 12, paddingVertical: 8,
+    backgroundColor: 'rgba(0,240,255,0.05)',
+    borderRadius: 10, borderWidth: 1, borderColor: 'rgba(0,240,255,0.15)',
+  },
+  filterBannerLeft: { flexDirection: 'row', alignItems: 'center', gap: 8, flex: 1 },
+  filterBannerDot: { width: 8, height: 8, borderRadius: 4 },
+  filterBannerText: { color: '#E2E8F0', fontSize: 12, fontWeight: '600', flex: 1 },
+  filterBannerClear: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingLeft: 8 },
+  filterBannerClearText: { color: '#64748B', fontSize: 11, fontWeight: '600' },
 
   searchRow: {
     flexDirection: 'row', alignItems: 'center', gap: 10,

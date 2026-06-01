@@ -537,7 +537,8 @@ const PLATFORM_COLORS_CT: Record<string, string> = {
 
 type FunnelCounts = { contacted: number; replied: number; converted: number };
 
-function ConversionTrackerPanel({ strategyId }: { strategyId: string }) {
+function ConversionTrackerPanel({ strategyId, strategyTitle }: { strategyId: string; strategyTitle: string }) {
+  const navigation = useNavigation<any>();
   const [byPlatform, setByPlatform] = useState<Record<string, FunnelCounts>>({});
   const [totalLeads, setTotalLeads] = useState(0);
   const [loading, setLoading] = useState(false);
@@ -677,19 +678,28 @@ function ConversionTrackerPanel({ strategyId }: { strategyId: string }) {
           const counts = byPlatform[plat];
           const platColor = PLATFORM_COLORS_CT[plat] ?? '#64748B';
           const emoji = PLATFORM_EMOJI[plat] ?? '🌐';
-          const convertedPct = counts.contacted > 0
-            ? Math.round((counts.converted / (counts.contacted + counts.replied + counts.converted)) * 100)
+          const total = counts.contacted + counts.replied + counts.converted;
+          const convertedPct = total > 0
+            ? Math.round((counts.converted / total) * 100)
             : 0;
           return (
-            <View key={plat} style={styles.convPlatRow}>
+            <TouchableOpacity
+              key={plat}
+              style={styles.convPlatRow}
+              activeOpacity={0.75}
+              onPress={() => navigation.navigate('Leads', { strategyId, platform: plat })}
+            >
               <View style={styles.convPlatHeader}>
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 7 }}>
                   <View style={[styles.convPlatDot, { backgroundColor: platColor }]} />
                   <Text style={styles.convPlatName}>{emoji} {plat.charAt(0).toUpperCase() + plat.slice(1)}</Text>
                 </View>
-                {convertedPct > 0 && (
-                  <Text style={styles.convPlatRate}>{convertedPct}% converted</Text>
-                )}
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                  {convertedPct > 0 && (
+                    <Text style={styles.convPlatRate}>{convertedPct}% converted</Text>
+                  )}
+                  <ArrowRight size={12} color="#334155" />
+                </View>
               </View>
               {/* Mini funnel bar */}
               <View style={styles.convFunnelRow}>
@@ -713,7 +723,6 @@ function ConversionTrackerPanel({ strategyId }: { strategyId: string }) {
                 {/* Progress bar */}
                 <View style={styles.convProgressBar}>
                   {(() => {
-                    const total = counts.contacted + counts.replied + counts.converted;
                     if (total === 0) return <View style={[styles.convProgressFill, { width: '0%', backgroundColor: '#1E293B' }]} />;
                     return (
                       <>
@@ -725,7 +734,7 @@ function ConversionTrackerPanel({ strategyId }: { strategyId: string }) {
                   })()}
                 </View>
               </View>
-            </View>
+            </TouchableOpacity>
           );
         })}
       </View>
@@ -933,7 +942,7 @@ export default function StrategyHistoryScreen() {
           </TouchableOpacity>
 
           {/* Conversion Tracker Panel (lazy-loaded on expand) */}
-          {isConvExpanded && <ConversionTrackerPanel strategyId={item.id} />}
+          {isConvExpanded && <ConversionTrackerPanel strategyId={item.id} strategyTitle={item.title} />}
 
           {/* Audience Intelligence Toggle */}
           <TouchableOpacity
