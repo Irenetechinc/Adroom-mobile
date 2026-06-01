@@ -590,6 +590,22 @@ Return JSON: { "message": "string" }
                     next_followup_at: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString()
                 }).eq('id', lead.id);
 
+                // Log the DM to conversation thread (lead_dm_messages) — non-blocking
+                (async () => {
+                    try {
+                        await this.supabase.from('lead_dm_messages').insert({
+                            lead_id: lead.id,
+                            user_id: userId,
+                            direction: 'outbound',
+                            message,
+                            persona_name: persona.name,
+                            sequence_step: lead.dm_sequence_step,
+                            platform: lead.platform,
+                            meta: { tone: persona.tone, step_context: stepCtx.slice(0, 100) },
+                        });
+                    } catch { /* silent — DM log failure must not block the follow-up */ }
+                })();
+
                 this.log(`DM sent to ${lead.platform_username} (step ${lead.dm_sequence_step + 1})`);
             } catch (err: any) {
                 this.log(`Follow-up failed for lead ${lead.id}: ${err.message}`);

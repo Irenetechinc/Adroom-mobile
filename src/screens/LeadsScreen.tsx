@@ -95,7 +95,7 @@ function platformInitial(platform: string): string {
 }
 
 // ─── Lead Card ────────────────────────────────────────────────────────────────
-function LeadCard({ lead, index }: { lead: Lead; index: number }) {
+function LeadCard({ lead, index, onPress }: { lead: Lead; index: number; onPress: () => void }) {
   const [expanded, setExpanded] = useState(false);
   const stageMeta = STAGE_META[lead.stage] || { label: lead.stage, color: '#64748B', filter: 'new' };
   const platformColor = PLATFORM_COLORS[lead.platform] || '#64748B';
@@ -113,7 +113,8 @@ function LeadCard({ lead, index }: { lead: Lead; index: number }) {
     <Animated.View entering={FadeInRight.delay(index * 50).springify()}>
       <TouchableOpacity
         style={styles.card}
-        onPress={() => setExpanded(e => !e)}
+        onPress={onPress}
+        onLongPress={() => setExpanded(e => !e)}
         activeOpacity={0.85}
       >
         {/* ── Top row ── */}
@@ -268,6 +269,10 @@ const FILTERS: { key: FilterKey; label: string }[] = [
 export default function LeadsScreen() {
   const navigation = useNavigation<any>();
   const { session } = useAuthStore();
+
+  const openConversation = (lead: Lead) => {
+    navigation.navigate('LeadConversation', { lead });
+  };
 
   const [leads, setLeads] = useState<Lead[]>([]);
   const [loading, setLoading] = useState(true);
@@ -438,7 +443,7 @@ export default function LeadsScreen() {
             </View>
           ) : (
             filtered.map((lead, i) => (
-              <LeadCard key={lead.id} lead={lead} index={i} />
+              <LeadCard key={lead.id} lead={lead} index={i} onPress={() => openConversation(lead)} />
             ))
           )}
         </ScrollView>

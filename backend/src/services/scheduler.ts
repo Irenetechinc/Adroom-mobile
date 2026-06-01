@@ -46,7 +46,9 @@ const SCHED_VIDEO_EDIT_CRON   = process.env.SCHED_VIDEO_EDIT_CRON    || '*/30 * 
 const SCHED_TRIAL_BILLING_CRON= process.env.SCHED_TRIAL_BILLING_CRON || '0 * * * *';     // Trial auto-charge sweep every hour
 const SCHED_RENEWAL_CRON      = process.env.SCHED_RENEWAL_CRON       || '15 * * * *';    // Subscription auto-renewal sweep every hour (offset 15m from trial)
 const SCHED_RENEWAL_RETRY_CRON= process.env.SCHED_RENEWAL_RETRY_CRON || '30 * * * *';   // Retry failed renewals every hour (offset 30m)
-const SCHED_TOKEN_REFRESH_CRON= process.env.SCHED_TOKEN_REFRESH_CRON || '0 */6 * * *';   // Proactive OAuth token refresh every 6 hours
+const SCHED_TOKEN_REFRESH_CRON    = process.env.SCHED_TOKEN_REFRESH_CRON    || '0 */6 * * *';   // Proactive OAuth token refresh every 6 hours
+const SCHED_LEAD_DISCOVERY_CRON   = process.env.SCHED_LEAD_DISCOVERY_CRON   || '0 */3 * * *';   // Multi-source lead discovery every 3 hours
+const SCHED_PRODUCT_MANAGER_CRON  = process.env.SCHED_PRODUCT_MANAGER_CRON  || '0 */4 * * *';   // Product Manager Agent every 4 hours
 
 export class SchedulerService {
     private ipe: PlatformIntelligenceEngine;
@@ -438,6 +440,18 @@ export class SchedulerService {
             }
         });
 
+        // ─── MULTI-SOURCE LEAD DISCOVERY ────────────────────────────────────────
+        cron.schedule(SCHED_LEAD_DISCOVERY_CRON, async () => {
+            console.log('[Scheduler] Running multi-source lead discovery...');
+            await this.runLeadDiscovery();
+        });
+
+        // ─── PRODUCT MANAGER AGENT ──────────────────────────────────────────────
+        cron.schedule(SCHED_PRODUCT_MANAGER_CRON, async () => {
+            console.log('[Scheduler] Running Product Manager Agent...');
+            await this.runProductManager();
+        });
+
         console.log('[Scheduler] ✓ All loops started:');
         console.log('[Scheduler]   Intelligence: IPE, Social, Emotional, GEO — every 15 min');
         console.log('[Scheduler]   Agent Execution: Content posts — every 5 min');
@@ -451,6 +465,8 @@ export class SchedulerService {
         console.log('[Scheduler]   Renewal Retry: Retry failed past_due subs — hourly');
         console.log('[Scheduler]   APMA Political Marketing — every 15 min');
         console.log('[Scheduler]   OAuth Token Refresh: All platforms — every 6 hours');
+        console.log('[Scheduler]   Lead Discovery: Reddit + Twitter + NewsAPI + Forum — every 3 hours');
+        console.log('[Scheduler]   Product Manager: Autonomous product improvement — every 4 hours');
     }
 
     private async runEmotionalCycle() {
@@ -598,6 +614,26 @@ export class SchedulerService {
 
         if (totalReached > 0) {
             console.log(`[Scheduler] GMaps outreach cycle complete — ${totalReached} total businesses reached across all strategies`);
+        }
+    }
+
+    // ─── MULTI-SOURCE LEAD DISCOVERY ─────────────────────────────────────────
+    private async runLeadDiscovery() {
+        try {
+            const { leadDiscoveryService } = await import('./leadDiscoveryService');
+            await leadDiscoveryService.runDiscoveryCycle();
+        } catch (e: any) {
+            console.error('[Scheduler] Lead discovery error:', e.message);
+        }
+    }
+
+    // ─── PRODUCT MANAGER AGENT ───────────────────────────────────────────────
+    private async runProductManager() {
+        try {
+            const { productManagerAgent } = await import('./productManagerAgent');
+            await productManagerAgent.runCycle();
+        } catch (e: any) {
+            console.error('[Scheduler] Product manager error:', e.message);
         }
     }
 
