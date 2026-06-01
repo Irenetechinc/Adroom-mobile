@@ -8,7 +8,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import {
   Menu, Play, Clock, CheckCircle2, Image as ImageIcon, Video, History,
   Pause, ChevronDown, ChevronUp, Users, TrendingUp, Target, Globe,
-  Zap, BarChart2, AlertCircle, RefreshCw,
+  Zap, BarChart2, AlertCircle, RefreshCw, ArrowRight,
   Eye, Activity, Heart, MessageCircle, Share2, DollarSign,
 } from 'lucide-react-native';
 import { DrawerActions } from '@react-navigation/native';
@@ -507,6 +507,232 @@ function DemographicPanel({ strategyId }: { strategyId: string }) {
   );
 }
 
+// ─── Conversion Tracker Panel ─────────────────────────────────────────────────
+
+/**
+ * Maps the raw `stage` values in agent_leads to the three user-facing funnel
+ * buckets shown in the Conversion Tracker.
+ */
+const FUNNEL_MAP: Record<string, 'contacted' | 'replied' | 'converted'> = {
+  identified:  'contacted',
+  new:         'contacted',
+  engaged:     'contacted',
+  nurturing:   'replied',
+  warm:        'replied',
+  converted:   'converted',
+  closed:      'converted',
+  closed_won:  'converted',
+};
+
+const PLATFORM_COLORS_CT: Record<string, string> = {
+  facebook:  '#1877F2',
+  instagram: '#E1306C',
+  tiktok:    '#FE2C55',
+  twitter:   '#1DA1F2',
+  linkedin:  '#0A66C2',
+  whatsapp:  '#25D366',
+  email:     '#10B981',
+  unknown:   '#64748B',
+};
+
+type FunnelCounts = { contacted: number; replied: number; converted: number };
+
+function ConversionTrackerPanel({ strategyId }: { strategyId: string }) {
+  const [byPlatform, setByPlatform] = useState<Record<string, FunnelCounts>>({});
+  const [totalLeads, setTotalLeads] = useState(0);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const processLeads = useCallback((rows: { platform: string; stage: string }[]) => {
+    const result: Record<string, FunnelCounts> = {};
+    let total = 0;
+    for (const row of rows) {
+      const plat = (row.platform ?? 'unknown').toLowerCase();
+      if (!result[plat]) result[plat] = { contacted: 0, replied: 0, converted: 0 };
+      const bucket = FUNNEL_MAP[(row.stage ?? '').toLowerCase()];
+      if (bucket) { result[plat][bucket]++; total++; }
+    }
+    setByPlatform(result);
+    setTotalLeads(total);
+  }, []);
+
+  const loadLeads = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+      const { data, error: qErr } = await supabase
+        .from('agent_leads')
+        .select('platform, stage')
+        .eq('strategy_id', strategyId)
+        .eq('user_id', user.id);
+      if (qErr) throw qErr;
+      processLeads(data ?? []);
+    } catch {
+      setError('Could not load lead data. Please try again.');
+    } finally {
+      setLoading(false);
+    }
+  }, [strategyId, processLeads]);
+
+  useEffect(() => {
+    loadLeads();
+    // Subscribe to real-time changes on agent_leads for this strategy so the
+    // counts update the moment the SALESMAN / outreach agent moves a lead
+    // forward — no manual refresh needed.
+    const channel = supabase
+      .channel(`conv-tracker-${strategyId}`)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'agent_leads', filter: `strategy_id=eq.${strategyId}` },
+        () => { loadLeads(); },
+      )
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [loadLeads, strategyId]);
+
+  // ── Loading ──────────────────────────────────────────────────────────────────
+  if (loading) {
+    return (
+      <View style={styles.convLoading}>
+        <ActivityIndicator size="small" color="#F59E0B" />
+        <Text style={styles.convLoadingText}>Loading lead data…</Text>
+      </View>
+    );
+  }
+
+  // ── Error ────────────────────────────────────────────────────────────────────
+  if (error) {
+    return (
+      <View style={styles.intelError}>
+        <AlertCircle size={16} color="#F87171" />
+        <Text style={styles.intelErrorText}>{error}</Text>
+        <TouchableOpacity onPress={loadLeads} style={styles.retryBtn}>
+          <RefreshCw size={12} color="#00F0FF" />
+          <Text style={styles.retryText}>Retry</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
+
+  const platforms = Object.keys(byPlatform);
+
+  // ── Empty state ───────────────────────────────────────────────────────────────
+  if (platforms.length === 0) {
+    return (
+      <View style={styles.convEmpty}>
+        <Users size={20} color="#334155" />
+        <Text style={styles.convEmptyTitle}>No leads tracked yet</Text>
+        <Text style={styles.convEmptyBody}>
+          Leads appear here as agents identify and engage prospects for this strategy.
+        </Text>
+      </View>
+    );
+  }
+
+  // ── Total summary ─────────────────────────────────────────────────────────────
+  const totals = Object.values(byPlatform).reduce(
+    (acc, c) => ({ contacted: acc.contacted + c.contacted, replied: acc.replied + c.replied, converted: acc.converted + c.converted }),
+    { contacted: 0, replied: 0, converted: 0 },
+  );
+
+  return (
+    <View style={styles.convPanel}>
+      {/* Header */}
+      <View style={styles.intelPanelHeader}>
+        <TrendingUp size={14} color="#F59E0B" />
+        <Text style={[styles.intelPanelTitle, { color: '#F59E0B' }]}>Conversion Tracker</Text>
+        <View style={styles.convLiveDot}>
+          <View style={styles.convLiveDotInner} />
+          <Text style={styles.convLiveText}>Live</Text>
+        </View>
+      </View>
+
+      {/* Funnel legend */}
+      <View style={styles.funnelLegend}>
+        {(['contacted', 'replied', 'converted'] as const).map((step, idx) => {
+          const colors = { contacted: '#00F0FF', replied: '#F59E0B', converted: '#10B981' };
+          const counts = { contacted: totals.contacted, replied: totals.replied, converted: totals.converted };
+          return (
+            <React.Fragment key={step}>
+              {idx > 0 && <ArrowRight size={12} color="#334155" />}
+              <View style={[styles.funnelStep, { borderColor: colors[step] + '40', backgroundColor: colors[step] + '10' }]}>
+                <Text style={[styles.funnelStepCount, { color: colors[step] }]}>{counts[step]}</Text>
+                <Text style={styles.funnelStepLabel}>{step.charAt(0).toUpperCase() + step.slice(1)}</Text>
+              </View>
+            </React.Fragment>
+          );
+        })}
+        <View style={styles.funnelTotal}>
+          <Text style={styles.funnelTotalCount}>{totalLeads}</Text>
+          <Text style={styles.funnelTotalLabel}>Total</Text>
+        </View>
+      </View>
+
+      {/* Per-platform breakdown */}
+      <Text style={[styles.intelSectionLabel, { marginBottom: 6 }]}>BY PLATFORM</Text>
+      <View style={{ gap: 6 }}>
+        {platforms.map((plat) => {
+          const counts = byPlatform[plat];
+          const platColor = PLATFORM_COLORS_CT[plat] ?? '#64748B';
+          const emoji = PLATFORM_EMOJI[plat] ?? '🌐';
+          const convertedPct = counts.contacted > 0
+            ? Math.round((counts.converted / (counts.contacted + counts.replied + counts.converted)) * 100)
+            : 0;
+          return (
+            <View key={plat} style={styles.convPlatRow}>
+              <View style={styles.convPlatHeader}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 7 }}>
+                  <View style={[styles.convPlatDot, { backgroundColor: platColor }]} />
+                  <Text style={styles.convPlatName}>{emoji} {plat.charAt(0).toUpperCase() + plat.slice(1)}</Text>
+                </View>
+                {convertedPct > 0 && (
+                  <Text style={styles.convPlatRate}>{convertedPct}% converted</Text>
+                )}
+              </View>
+              {/* Mini funnel bar */}
+              <View style={styles.convFunnelRow}>
+                {/* Contacted */}
+                <View style={styles.convFunnelCell}>
+                  <Text style={[styles.convFunnelNum, { color: '#00F0FF' }]}>{counts.contacted}</Text>
+                  <Text style={styles.convFunnelSub}>Contacted</Text>
+                </View>
+                <ArrowRight size={10} color="#334155" />
+                {/* Replied */}
+                <View style={styles.convFunnelCell}>
+                  <Text style={[styles.convFunnelNum, { color: '#F59E0B' }]}>{counts.replied}</Text>
+                  <Text style={styles.convFunnelSub}>Replied</Text>
+                </View>
+                <ArrowRight size={10} color="#334155" />
+                {/* Converted */}
+                <View style={styles.convFunnelCell}>
+                  <Text style={[styles.convFunnelNum, { color: '#10B981' }]}>{counts.converted}</Text>
+                  <Text style={styles.convFunnelSub}>Converted</Text>
+                </View>
+                {/* Progress bar */}
+                <View style={styles.convProgressBar}>
+                  {(() => {
+                    const total = counts.contacted + counts.replied + counts.converted;
+                    if (total === 0) return <View style={[styles.convProgressFill, { width: '0%', backgroundColor: '#1E293B' }]} />;
+                    return (
+                      <>
+                        <View style={[styles.convProgressFill, { flex: counts.contacted / total, backgroundColor: '#00F0FF33' }]} />
+                        <View style={[styles.convProgressFill, { flex: counts.replied / total, backgroundColor: '#F59E0B33' }]} />
+                        <View style={[styles.convProgressFill, { flex: counts.converted / total, backgroundColor: '#10B98133' }]} />
+                      </>
+                    );
+                  })()}
+                </View>
+              </View>
+            </View>
+          );
+        })}
+      </View>
+    </View>
+  );
+}
+
 // ─── Main Screen ──────────────────────────────────────────────────────────────
 
 export default function StrategyHistoryScreen() {
@@ -517,6 +743,7 @@ export default function StrategyHistoryScreen() {
   const [pausingId, setPausingId] = useState<string | null>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [expandedPerfId, setExpandedPerfId] = useState<string | null>(null);
+  const [expandedConvId, setExpandedConvId] = useState<string | null>(null);
 
   const fetchHistory = async () => {
     setLoading(true);
@@ -609,6 +836,7 @@ export default function StrategyHistoryScreen() {
     const isLoadingAction = pausingId === item.id;
     const isExpanded = expandedId === item.id;
     const isPerfExpanded = expandedPerfId === item.id;
+    const isConvExpanded = expandedConvId === item.id;
 
     const statusColor = isActive ? '#00F0FF' : isPaused ? '#F59E0B' : '#64748B';
     const statusBg    = isActive ? 'rgba(0,240,255,0.08)' : isPaused ? 'rgba(245,158,11,0.08)' : 'rgba(100,116,139,0.08)';
@@ -688,6 +916,24 @@ export default function StrategyHistoryScreen() {
 
           {/* Performance Panel (lazy-loaded on expand) */}
           {isPerfExpanded && <PerformancePanel strategyId={item.id} />}
+
+          {/* Conversion Tracker Toggle */}
+          <TouchableOpacity
+            onPress={() => setExpandedConvId(isConvExpanded ? null : item.id)}
+            style={styles.convToggle}
+            activeOpacity={0.75}
+          >
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 7 }}>
+              <TrendingUp size={13} color="#F59E0B" />
+              <Text style={styles.convToggleText}>Conversion Tracker</Text>
+            </View>
+            {isConvExpanded
+              ? <ChevronUp size={14} color="#F59E0B" />
+              : <ChevronDown size={14} color="#F59E0B" />}
+          </TouchableOpacity>
+
+          {/* Conversion Tracker Panel (lazy-loaded on expand) */}
+          {isConvExpanded && <ConversionTrackerPanel strategyId={item.id} />}
 
           {/* Audience Intelligence Toggle */}
           <TouchableOpacity
@@ -973,4 +1219,82 @@ const styles = StyleSheet.create({
     borderWidth: 1, borderColor: 'rgba(251,191,36,0.15)', padding: 12,
   },
   suggestionItem: { color: '#FBBF24', fontSize: 12, lineHeight: 19, marginBottom: 4 },
+
+  // ── Conversion tracker toggle ───────────────────────────────────────────────
+  convToggle: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    paddingHorizontal: 16, paddingVertical: 11,
+    borderTopWidth: 1, borderTopColor: 'rgba(245,158,11,0.12)',
+    backgroundColor: 'rgba(245,158,11,0.04)',
+  },
+  convToggleText: { color: '#F59E0B', fontSize: 12, fontWeight: '700', letterSpacing: 0.3 },
+
+  // ── Conversion tracker panel ────────────────────────────────────────────────
+  convPanel: {
+    padding: 16,
+    borderTopWidth: 1, borderTopColor: 'rgba(245,158,11,0.1)',
+  },
+  convLoading: {
+    flexDirection: 'row', alignItems: 'center', gap: 10,
+    padding: 16, borderTopWidth: 1, borderTopColor: 'rgba(245,158,11,0.1)',
+  },
+  convLoadingText: { color: '#64748B', fontSize: 12 },
+  convEmpty: {
+    alignItems: 'center', gap: 8,
+    padding: 20, borderTopWidth: 1, borderTopColor: 'rgba(245,158,11,0.1)',
+  },
+  convEmptyTitle: { color: '#475569', fontSize: 13, fontWeight: '600' },
+  convEmptyBody: { color: '#334155', fontSize: 11, textAlign: 'center', lineHeight: 16 },
+
+  // ── Live badge ──────────────────────────────────────────────────────────────
+  convLiveDot: {
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    backgroundColor: 'rgba(245,158,11,0.1)', borderWidth: 1, borderColor: 'rgba(245,158,11,0.25)',
+    borderRadius: 20, paddingHorizontal: 7, paddingVertical: 2,
+  },
+  convLiveDotInner: { width: 5, height: 5, borderRadius: 3, backgroundColor: '#F59E0B' },
+  convLiveText: { color: '#F59E0B', fontSize: 9, fontWeight: '700', letterSpacing: 0.5 },
+
+  // ── Funnel summary row ──────────────────────────────────────────────────────
+  funnelLegend: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    marginBottom: 16, flexWrap: 'wrap',
+  },
+  funnelStep: {
+    alignItems: 'center', borderRadius: 10, borderWidth: 1,
+    paddingHorizontal: 10, paddingVertical: 6, minWidth: 60,
+  },
+  funnelStepCount: { fontSize: 18, fontWeight: '800' },
+  funnelStepLabel: { color: '#94A3B8', fontSize: 9, fontWeight: '700', letterSpacing: 0.5, marginTop: 1 },
+  funnelTotal: {
+    marginLeft: 6, alignItems: 'center',
+    backgroundColor: 'rgba(255,255,255,0.03)', borderRadius: 10,
+    borderWidth: 1, borderColor: '#1E293B',
+    paddingHorizontal: 10, paddingVertical: 6, minWidth: 48,
+  },
+  funnelTotalCount: { color: '#E2E8F0', fontSize: 18, fontWeight: '800' },
+  funnelTotalLabel: { color: '#475569', fontSize: 9, fontWeight: '700', letterSpacing: 0.5, marginTop: 1 },
+
+  // ── Per-platform rows ───────────────────────────────────────────────────────
+  convPlatRow: {
+    backgroundColor: 'rgba(255,255,255,0.02)', borderRadius: 12,
+    borderWidth: 1, borderColor: '#1E293B',
+    paddingHorizontal: 12, paddingTop: 10, paddingBottom: 10,
+  },
+  convPlatHeader: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8,
+  },
+  convPlatDot: { width: 7, height: 7, borderRadius: 4 },
+  convPlatName: { color: '#E2E8F0', fontSize: 12, fontWeight: '700' },
+  convPlatRate: { color: '#10B981', fontSize: 10, fontWeight: '700' },
+  convFunnelRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  convFunnelCell: { alignItems: 'center', minWidth: 44 },
+  convFunnelNum: { fontSize: 15, fontWeight: '800' },
+  convFunnelSub: { color: '#475569', fontSize: 9, fontWeight: '600', marginTop: 1 },
+  convProgressBar: {
+    flex: 1, height: 5, borderRadius: 3,
+    flexDirection: 'row', overflow: 'hidden',
+    backgroundColor: '#0B0F19', marginLeft: 4,
+  },
+  convProgressFill: { height: '100%' },
 });
