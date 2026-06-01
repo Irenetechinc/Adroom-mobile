@@ -351,6 +351,16 @@ export class SchedulerService {
             }
         });
 
+        // Inbound DM detection — poll platforms for lead replies every 10 minutes
+        cron.schedule(SCHED_AGENT_SPECIAL_CRON, async () => {
+            try {
+                const { inboundDmService } = await import('./inboundDmService');
+                await inboundDmService.runCycle();
+            } catch (e: any) {
+                console.error('[Scheduler] Inbound DM detection error:', e.message);
+            }
+        });
+
         // Google Maps business discovery + outreach — every 6 hours for all active strategies.
         // Runs for ALL agent types (SALESMAN / AWARENESS / PROMOTION / LAUNCH) because
         // every strategy goal — product, brand, or service — benefits from local client discovery.
@@ -467,6 +477,7 @@ export class SchedulerService {
         console.log('[Scheduler]   OAuth Token Refresh: All platforms — every 6 hours');
         console.log('[Scheduler]   Lead Discovery: Reddit + Twitter + NewsAPI + Forum — every 3 hours');
         console.log('[Scheduler]   Product Manager: Autonomous product improvement — every 4 hours');
+        console.log('[Scheduler]   Inbound DM Detection: Lead reply polling (FB/IG/Twitter) — every 10 min');
     }
 
     private async runEmotionalCycle() {
