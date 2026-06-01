@@ -28,6 +28,7 @@
  */
 
 import { getServiceSupabaseClient } from '../config/supabase';
+import { pushService } from './pushService';
 
 const FB_APP_ID         = process.env.FB_APP_ID;
 const FB_APP_SECRET     = process.env.FB_APP_SECRET;
@@ -176,25 +177,69 @@ export class TokenRefreshService {
   // ── Dispatch ──────────────────────────────────────────────────────────────
 
   private async refresh(row: TokenRow): Promise<RefreshResult> {
+    let result: RefreshResult;
     try {
       switch (row.platform) {
         case 'facebook':
         case 'instagram':
         case 'whatsapp':
-          return await this.refreshFacebook(row);
+          result = await this.refreshFacebook(row);
+          break;
         case 'linkedin':
-          return await this.refreshLinkedIn(row);
+          result = await this.refreshLinkedIn(row);
+          break;
         case 'twitter':
-          return await this.refreshTwitter(row);
+          result = await this.refreshTwitter(row);
+          break;
         case 'tiktok':
-          return await this.refreshTikTok(row);
+          result = await this.refreshTikTok(row);
+          break;
         default:
-          return { platform: row.platform, userId: row.user_id, success: false, error: 'unsupported' };
+          result = { platform: row.platform, userId: row.user_id, success: false, error: 'unsupported' };
       }
     } catch (e: any) {
       console.error(`[TokenRefresh] ${row.platform} user ${row.user_id}: ${e.message}`);
-      return { platform: row.platform, userId: row.user_id, success: false, error: e.message };
+      result = { platform: row.platform, userId: row.user_id, success: false, error: e.message };
     }
+
+    // Notify the user if this is a hard auth failure (token truly invalid /
+    // expired).  Skip config issues and transient network errors so we only
+    // alert when the user actually needs to act.
+    if (!result.success && this.isHardAuthFailure(result.error)) {
+      pushService
+        .notifyTokenRefreshFailed(row.user_id, row.platform)
+        .catch((e: any) =>
+          console.error(`[TokenRefresh] Push notify failed for ${row.platform} user ${row.user_id}:`, e.message));
+    }
+
+    return result;
+  }
+
+  /**
+   * Returns true when the error indicates the token is genuinely
+   * invalid/expired and the user must reconnect — as opposed to transient
+   * network errors, missing config, or "no refresh_token" setup issues.
+   */
+  private isHardAuthFailure(error?: string): boolean {
+    if (!error) return false;
+    const e = error.toLowerCase();
+    // Config / setup problems — user can't fix these by reconnecting
+    if (e.includes('not configured') || e.includes('not set')) return false;
+    if (e.includes('no refresh_token') || e.includes('no access_token')) return false;
+    // Transient errors
+    if (e.includes('network error') || e.includes('http 5')) return false;
+    if (e.includes('unsupported')) return false;
+    // Hard auth errors
+    if (e.includes('invalid_grant'))   return true;
+    if (e.includes('invalid_token'))   return true;
+    if (e.includes('token expired'))   return true;
+    if (e.includes('token_expired'))   return true;
+    if (e.includes('unauthorized'))    return true;
+    if (e.includes('http 400'))        return true;
+    if (e.includes('http 401'))        return true;
+    if (e.includes('invalid refresh')) return true;
+    if (e.includes('refresh token'))   return true;
+    return false;
   }
 
   // ── Platform implementations ──────────────────────────────────────────────
