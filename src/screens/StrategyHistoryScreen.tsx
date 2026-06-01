@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   ActivityIndicator, FlatList, Image, RefreshControl,
   ScrollView, StyleSheet, Text, TouchableOpacity, Alert, View,
@@ -763,6 +764,27 @@ export default function StrategyHistoryScreen() {
   const [expandedPerfId, setExpandedPerfId] = useState<string | null>(null);
   const [expandedConvId, setExpandedConvId] = useState<string | null>(null);
   const [leadCounts, setLeadCounts] = useState<Record<string, number>>({});
+  const [unreadLeads, setUnreadLeads] = useState<Record<string, number>>({});
+
+  const SEEN_KEY = (id: string) => `@adroom_leads_seen_v1_${id}`;
+
+  const computeUnread = useCallback(async (counts: Record<string, number>) => {
+    const ids = Object.keys(counts);
+    if (!ids.length) return;
+    const pairs = await Promise.all(
+      ids.map(async (id) => {
+        const raw = await AsyncStorage.getItem(SEEN_KEY(id));
+        const seen = raw ? parseInt(raw, 10) : 0;
+        return [id, Math.max(0, (counts[id] ?? 0) - seen)] as [string, number];
+      })
+    );
+    setUnreadLeads(Object.fromEntries(pairs));
+  }, []);
+
+  const markLeadsSeen = useCallback(async (strategyId: string, count: number) => {
+    await AsyncStorage.setItem(SEEN_KEY(strategyId), String(count));
+    setUnreadLeads((prev) => ({ ...prev, [strategyId]: 0 }));
+  }, []);
 
   const fetchLeadCounts = useCallback(async (strategyIds: string[]) => {
     if (!strategyIds.length) return;
@@ -774,7 +796,6 @@ export default function StrategyHistoryScreen() {
       .eq('user_id', user.id)
       .in('strategy_id', strategyIds);
     if (!data) return;
-    // Only count funnel-tracked stages (same FUNNEL_MAP as the panel uses)
     const counts: Record<string, number> = {};
     for (const row of data) {
       const sid = row.strategy_id;
@@ -784,7 +805,8 @@ export default function StrategyHistoryScreen() {
       }
     }
     setLeadCounts(counts);
-  }, []);
+    computeUnread(counts);
+  }, [computeUnread]);
 
   const fetchHistory = async () => {
     setLoading(true);
@@ -963,7 +985,13 @@ export default function StrategyHistoryScreen() {
 
           {/* Conversion Tracker Toggle */}
           <TouchableOpacity
-            onPress={() => setExpandedConvId(isConvExpanded ? null : item.id)}
+            onPress={() => {
+              const opening = !isConvExpanded;
+              setExpandedConvId(opening ? item.id : null);
+              if (opening && (leadCounts[item.id] ?? 0) > 0) {
+                markLeadsSeen(item.id, leadCounts[item.id]);
+              }
+            }}
             style={styles.convToggle}
             activeOpacity={0.75}
           >
@@ -973,6 +1001,11 @@ export default function StrategyHistoryScreen() {
               {(leadCounts[item.id] ?? 0) > 0 && (
                 <View style={styles.convCountBadge}>
                   <Text style={styles.convCountBadgeText}>{leadCounts[item.id]}</Text>
+                </View>
+              )}
+              {(unreadLeads[item.id] ?? 0) > 0 && (
+                <View style={styles.convNewBadge}>
+                  <Text style={styles.convNewBadgeText}>+{unreadLeads[item.id]} new</Text>
                 </View>
               )}
             </View>
@@ -986,9 +1019,11 @@ export default function StrategyHistoryScreen() {
             <ConversionTrackerPanel
               strategyId={item.id}
               strategyTitle={item.title}
-              onCountChange={(n) =>
-                setLeadCounts((prev) => ({ ...prev, [item.id]: n }))
-              }
+              onCountChange={(n) => {
+                setLeadCounts((prev) => ({ ...prev, [item.id]: n }));
+                // Panel is open → user is watching, mark as seen immediately
+                markLeadsSeen(item.id, n);
+              }}
             />
           )}
 
@@ -1292,6 +1327,13 @@ const styles = StyleSheet.create({
     minWidth: 22, alignItems: 'center',
   },
   convCountBadgeText: { color: '#F59E0B', fontSize: 10, fontWeight: '800' },
+  convNewBadge: {
+    backgroundColor: 'rgba(16,185,129,0.15)',
+    borderRadius: 8, paddingHorizontal: 6, paddingVertical: 2,
+    borderWidth: 1, borderColor: 'rgba(16,185,129,0.4)',
+    minWidth: 36, alignItems: 'center',
+  },
+  convNewBadgeText: { color: '#10B981', fontSize: 10, fontWeight: '800' },
 
   // ── Conversion tracker panel ────────────────────────────────────────────────
   convPanel: {
