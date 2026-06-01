@@ -314,13 +314,18 @@ const ConversationThread = ({
   onBack: () => void;
 }) => {
   const scrollRef = useRef<ScrollView>(null);
+  const isFirstLoad = useRef(true);
   const insets = useSafeAreaInsets();
   const pColor = PLATFORM_COLORS[lead.platform?.toLowerCase()] || '#64748B';
   const sColor = intentColor(lead.intent_score);
 
   useEffect(() => {
     if (!loading && messages.length > 0) {
-      setTimeout(() => scrollRef.current?.scrollToEnd({ animated: false }), 120);
+      // First load: instant snap to bottom (no animation flash)
+      // Subsequent real-time appends: smooth animated scroll
+      const animated = !isFirstLoad.current;
+      if (isFirstLoad.current) isFirstLoad.current = false;
+      setTimeout(() => scrollRef.current?.scrollToEnd({ animated }), animated ? 60 : 120);
     }
   }, [loading, messages.length]);
 
@@ -508,6 +513,10 @@ export default function InteractionsScreen() {
   const [messagesLoading, setMessagesLoading] = useState(false);
   const [messagesRefreshing, setMessagesRefreshing] = useState(false);
 
+  // Ref so realtime callbacks always see the latest selectedLead without stale closure
+  const selectedLeadRef = useRef<Lead | null>(null);
+  useEffect(() => { selectedLeadRef.current = selectedLead; }, [selectedLead]);
+
   // ── Map helpers ───────────────────────────────────────────────────────────
 
   const mapComment = (row: any): Interaction => ({
@@ -614,13 +623,70 @@ export default function InteractionsScreen() {
   const subscribeRealtime = useCallback(() => {
     if (!isSupabaseConfigured || !user) return;
     if (channelRef.current) supabase.removeChannel(channelRef.current);
-    const channel = supabase.channel(`interactions-${user.id}`)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'comments', filter: `user_id=eq.${user.id}` }, () => loadInteractions())
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'messages', filter: `user_id=eq.${user.id}` }, () => loadInteractions())
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'agent_leads', filter: `user_id=eq.${user.id}` }, () => loadLeads())
+
+    const channel = supabase
+      .channel(`interactions-${user.id}`)
+
+      // ── Interactions tab: comments + messages ──────────────────────────────
+      .on('postgres_changes',
+        { event: '*', schema: 'public', table: 'comments', filter: `user_id=eq.${user.id}` },
+        () => loadInteractions()
+      )
+      .on('postgres_changes',
+        { event: '*', schema: 'public', table: 'messages', filter: `user_id=eq.${user.id}` },
+        () => loadInteractions()
+      )
+
+      // ── Lead DMs tab: agent_leads list ─────────────────────────────────────
+      // Refreshes the lead list whenever a lead is created, updated, or deleted.
+      .on('postgres_changes',
+        { event: '*', schema: 'public', table: 'agent_leads', filter: `user_id=eq.${user.id}` },
+        (payload: any) => {
+          loadLeads();
+          // If the updated lead is the one currently being viewed, update it
+          const current = selectedLeadRef.current;
+          if (current && payload.new && payload.new.id === current.id) {
+            setSelectedLead((prev) => prev ? { ...prev, ...payload.new } : prev);
+          }
+        }
+      )
+
+      // ── Lead DMs tab: lead_dm_messages (new outbound/inbound DMs) ──────────
+      // When the AI sends a DM or an inbound reply arrives, update the thread
+      // instantly without requiring a manual pull-to-refresh.
+      .on('postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'lead_dm_messages', filter: `user_id=eq.${user.id}` },
+        (payload: any) => {
+          const incoming = payload.new as DmMessage & { lead_id: string };
+          // Always refresh the lead list so "last contacted" times update
+          loadLeads();
+          // If this message belongs to the currently open conversation, append it
+          const current = selectedLeadRef.current;
+          if (current && incoming.lead_id === current.id) {
+            setLeadMessages((prev) => {
+              // Avoid duplicates in case a full refresh already added it
+              if (prev.some((m) => m.id === incoming.id)) return prev;
+              return [...prev, incoming];
+            });
+          }
+        }
+      )
+
+      // ── Lead DMs tab: scheduled task changes ──────────────────────────────
+      // Keeps the "Next Scheduled Message" preview up to date when the scheduler
+      // creates or completes a follow-up task for a lead on the current platform.
+      .on('postgres_changes',
+        { event: '*', schema: 'public', table: 'agent_tasks', filter: `user_id=eq.${user.id}` },
+        () => {
+          const current = selectedLeadRef.current;
+          if (current) loadLeadMessages(current);
+        }
+      )
+
       .subscribe((status: string) => setConnected(status === 'SUBSCRIBED'));
+
     channelRef.current = channel;
-  }, [user, loadInteractions, loadLeads]);
+  }, [user, loadInteractions, loadLeads, loadLeadMessages]);
 
   useEffect(() => {
     loadInteractions();
