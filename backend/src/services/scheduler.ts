@@ -396,6 +396,25 @@ export class SchedulerService {
             }
         });
 
+        // Demographic & Market Intelligence — every 12 hours (runs after radar scan)
+        cron.schedule('0 */12 * * *', async () => {
+            console.log('[Scheduler] Running Demographic & Market Intelligence analysis...');
+            try {
+                if (!(await hasActiveStrategies())) return;
+                const supabase = getServiceSupabaseClient();
+                const { data: activeStrategies } = await supabase
+                    .from('strategy_memory')
+                    .select('strategy_id, user_id')
+                    .eq('status', 'active');
+                for (const s of (activeStrategies || [])) {
+                    try { await this.radar.runDemographicAnalysis(s.user_id, s.strategy_id); } catch {}
+                }
+                console.log(`[Scheduler] Demographic analysis done for ${activeStrategies?.length || 0} strategies`);
+            } catch (e: any) {
+                console.error('[Scheduler] Demographic analysis error:', e.message);
+            }
+        });
+
         // Daily Strategy Summary — every day at 8am UTC
         cron.schedule(SCHED_DAILY_SUMMARY_CRON, async () => {
             console.log('[Scheduler] Running Daily Summary generation...');
