@@ -2628,6 +2628,73 @@ app.get('/api/admin/cma/stats', async (req, res) => {
 });
 
 /**
+ * Token Refresh — Admin: view token expiry status for all connected platforms
+ * GET /api/admin/tokens/status
+ */
+app.get('/api/admin/tokens/status', async (req, res) => {
+  try {
+    const supabase = getServiceSupabaseClient();
+    const now = new Date();
+
+    const { data: configs, error } = await supabase
+      .from('ad_configs')
+      .select('user_id, platform, token_expires_at, updated_at')
+      .not('access_token', 'is', null)
+      .order('platform');
+
+    if (error) return res.status(500).json({ error: error.message });
+
+    const rows = (configs ?? []).map((c: any) => {
+      const expiresAt  = c.token_expires_at ? new Date(c.token_expires_at) : null;
+      const updatedAt  = c.updated_at       ? new Date(c.updated_at)       : null;
+      const msLeft     = expiresAt ? expiresAt.getTime() - now.getTime() : null;
+      const daysLeft   = msLeft !== null ? Math.round(msLeft / 86_400_000) : null;
+      const ageHours   = updatedAt ? Math.round((now.getTime() - updatedAt.getTime()) / 3_600_000) : null;
+
+      return {
+        user_id:          c.user_id,
+        platform:         c.platform,
+        token_expires_at: c.token_expires_at ?? null,
+        updated_at:       c.updated_at ?? null,
+        days_remaining:   daysLeft,
+        age_hours:        ageHours,
+        status: expiresAt
+          ? (msLeft! < 0 ? 'expired' : msLeft! < 7 * 86_400_000 ? 'expiring_soon' : 'ok')
+          : 'unknown',
+      };
+    });
+
+    const summary = {
+      total:         rows.length,
+      ok:            rows.filter((r: any) => r.status === 'ok').length,
+      expiring_soon: rows.filter((r: any) => r.status === 'expiring_soon').length,
+      expired:       rows.filter((r: any) => r.status === 'expired').length,
+      unknown:       rows.filter((r: any) => r.status === 'unknown').length,
+    };
+
+    return res.json({ ok: true, summary, tokens: rows });
+  } catch (e: any) {
+    return res.status(500).json({ error: e.message });
+  }
+});
+
+/**
+ * Token Refresh — Admin: manually trigger the refresh sweep immediately
+ * POST /api/admin/tokens/refresh
+ */
+app.post('/api/admin/tokens/refresh', async (req, res) => {
+  try {
+    const { tokenRefreshService: trs } = await import('./services/tokenRefreshService');
+    res.json({ ok: true, message: 'Token refresh sweep started' });
+    // Run after responding so HTTP doesn't time out for large user bases
+    trs.refreshExpiring().catch((e: any) =>
+      console.error('[Admin] Manual token refresh error:', e.message));
+  } catch (e: any) {
+    return res.status(500).json({ error: e.message });
+  }
+});
+
+/**
  * Remote Logging — receives logs from the Expo app and prints them to Railway terminal
  */
 app.post('/api/logs', (req, res) => {
