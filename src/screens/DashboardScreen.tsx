@@ -606,28 +606,29 @@ export default function DashboardScreen() {
               ? `${(totalRevenue / 1000).toFixed(1)}K`
               : totalRevenue.toLocaleString();
             const metrics = [
-              { label: 'Reach',        value: perfSummary.reach > 0 ? perfSummary.reach.toLocaleString() : totalImpressions.toLocaleString(), icon: Activity,      color: '#00F0FF' },
-              { label: 'Impressions',  value: totalImpressions.toLocaleString(),                                                              icon: Eye,            color: '#A78BFA' },
-              { label: 'Eng. Rate',    value: `${engRate}%`,                                                                                  icon: TrendingUp,     color: '#F59E0B' },
-              { label: 'Likes',        value: perfSummary.likes.toLocaleString(),                                                             icon: Heart,          color: '#F87171' },
-              { label: 'Comments',     value: perfSummary.comments.toLocaleString(),                                                          icon: MessageCircle,  color: '#60A5FA' },
-              { label: 'Shares',       value: perfSummary.shares.toLocaleString(),                                                            icon: Share2,         color: '#34D399' },
-              { label: 'DMs Sent',     value: perfSummary.dms_sent.toLocaleString(),                                                          icon: Users,          color: '#818CF8' },
-              { label: 'Leads',        value: allLeadsCount.toLocaleString(),                                                                 icon: Target,         color: '#10B981' },
-              { label: 'Revenue',      value: revenueDisplay,                                                                                 icon: DollarSign,     color: '#FBBF24' },
+              { label: 'Reach',       value: perfSummary.reach > 0 ? perfSummary.reach.toLocaleString() : totalImpressions.toLocaleString(), icon: Activity,     color: '#00F0FF', onPress: undefined },
+              { label: 'Impressions', value: totalImpressions.toLocaleString(),                                                              icon: Eye,           color: '#A78BFA', onPress: undefined },
+              { label: 'Eng. Rate',   value: `${engRate}%`,                                                                                  icon: TrendingUp,    color: '#F59E0B', onPress: undefined },
+              { label: 'Likes',       value: perfSummary.likes.toLocaleString(),                                                             icon: Heart,         color: '#F87171', onPress: undefined },
+              { label: 'Comments',    value: perfSummary.comments.toLocaleString(),                                                          icon: MessageCircle, color: '#60A5FA', onPress: undefined },
+              { label: 'Shares',      value: perfSummary.shares.toLocaleString(),                                                            icon: Share2,        color: '#34D399', onPress: undefined },
+              { label: 'DMs Sent',    value: perfSummary.dms_sent.toLocaleString(),                                                          icon: Users,         color: '#818CF8', onPress: undefined },
+              { label: 'Leads',       value: allLeadsCount.toLocaleString(),                                                                 icon: Target,        color: '#10B981', onPress: () => navigation.navigate('Leads') },
+              { label: 'Revenue',     value: revenueDisplay,                                                                                 icon: DollarSign,    color: '#FBBF24', onPress: undefined },
             ];
             return (
               <View style={styles.metricsGrid}>
                 {metrics.map((m, i) => {
                   const Icon = m.icon;
+                  const CellWrapper: any = m.onPress ? TouchableOpacity : View;
                   return (
-                    <View key={i} style={styles.metricCell}>
+                    <CellWrapper key={i} style={styles.metricCell} onPress={m.onPress} activeOpacity={0.75}>
                       <View style={[styles.metricIconWrap, { backgroundColor: `${m.color}15` }]}>
                         <Icon size={14} color={m.color} />
                       </View>
                       <Text style={styles.metricValue}>{m.value}</Text>
                       <Text style={styles.metricLabel}>{m.label}</Text>
-                    </View>
+                    </CellWrapper>
                   );
                 })}
               </View>
