@@ -23,11 +23,6 @@ export type RootStackParamList = {
   Notifications: undefined;
   About: undefined;
   Leads: undefined;
-  LeadConversation: { lead: {
-    id: string; platform: string; platform_username: string; platform_user_id: string;
-    intent_score: number; stage: string; dm_sequence_step: number;
-    first_interaction?: string; last_contacted_at?: string; next_followup_at?: string; created_at: string;
-  }};
   
   // Strategy Creation Wizard
   StrategyWizard_ProductIntake: undefined;

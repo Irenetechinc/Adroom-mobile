@@ -30,7 +30,6 @@ import NotificationsScreen from '../screens/NotificationsScreen';
 import AboutScreen from '../screens/AboutScreen';
 import ReferralScreen from '../screens/ReferralScreen';
 import LeadsScreen from '../screens/LeadsScreen';
-import LeadConversationScreen from '../screens/LeadConversationScreen';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
@@ -178,11 +177,6 @@ export default function AppNavigator() {
             <Stack.Screen
               name="Leads"
               component={LeadsScreen}
-              options={{ headerShown: false }}
-            />
-            <Stack.Screen
-              name="LeadConversation"
-              component={LeadConversationScreen}
               options={{ headerShown: false }}
             />
           </>
