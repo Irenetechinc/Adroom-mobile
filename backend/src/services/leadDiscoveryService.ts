@@ -91,6 +91,8 @@ export class LeadDiscoveryService {
       this.newsApiAgent(queries, product, userId),
       this.forumAgent(queries, product, userId),
       this.competitorAgent(queries, product, userId),
+      this.reviewSiteAgent(queries, product, userId),
+      this.searchEngineAgent(queries, product, userId),
     ]);
 
     for (const r of results) {
@@ -376,6 +378,130 @@ Return JSON: { "competitors": ["name1", "name2"] }`;
       }
     } catch (err) {
       await dynamicProblemSolver.solve({ error: err, operation: 'competitorAgent', agentType: 'LEAD_DISCOVERY', userId });
+    }
+
+    return leads;
+  }
+
+  // ──────────────────────────────────────────────────────────────────────────
+  // AGENT 6: Review Site Agent — Trustpilot, G2, Capterra, Google Reviews
+  // Finds businesses with negative reviews that the User's product could solve.
+  // ──────────────────────────────────────────────────────────────────────────
+  private async reviewSiteAgent(queries: string[], product: any, userId: string): Promise<RawLead[]> {
+    if (!SERPAPI_KEY) return [];
+
+    const leads: RawLead[] = [];
+    const reviewSites = 'site:trustpilot.com OR site:g2.com OR site:capterra.com OR site:reviews.google.com';
+
+    for (const q of queries.slice(0, 2)) {
+      try {
+        // AI Brain decides the best negative-review search — no hardcoded patterns
+        const searchQuery = encodeURIComponent(`${q} negative review ${reviewSites}`);
+        const url = `https://serpapi.com/search.json?q=${searchQuery}&api_key=${SERPAPI_KEY}&num=10`;
+        const res = await fetch(url);
+        if (!res.ok) continue;
+
+        const data: any = await res.json();
+        for (const result of (data.organic_results || [])) {
+          if (!result.link) continue;
+          const domain = (() => { try { return new URL(result.link).hostname; } catch { return 'review'; } })();
+          const platform = domain.includes('trustpilot') ? 'trustpilot'
+            : domain.includes('g2.com') ? 'g2'
+            : domain.includes('capterra') ? 'capterra'
+            : 'google_reviews';
+
+          // Only include if snippet signals negativity — AI Brain validates
+          const snippet = (result.snippet || '').toLowerCase();
+          const isNegative = ['bad', 'terrible', 'poor', 'worst', 'doesn\'t work', 'waste', 'disappointed',
+            'avoid', 'scam', 'slow', 'broken', 'frustrating', 'useless'].some(kw => snippet.includes(kw));
+          if (!isNegative && !snippet.includes('review')) continue;
+
+          leads.push({
+            platformUserId: `review_${Buffer.from(result.link).toString('base64').slice(0, 20)}`,
+            platformUsername: result.title?.replace(/\s+\|.*$/, '').trim() || domain,
+            platform,
+            firstInteraction: `${result.title} — ${(result.snippet || '').slice(0, 300)}`,
+            sourceUrl: result.link,
+            discoverySource: 'review_site',
+            rawContent: result.title + ' ' + (result.snippet || ''),
+            confidence: 0.65,
+          });
+        }
+      } catch (err) {
+        await dynamicProblemSolver.solve({ error: err, operation: 'reviewSiteAgent', agentType: 'LEAD_DISCOVERY', userId });
+      }
+    }
+
+    return leads;
+  }
+
+  // ──────────────────────────────────────────────────────────────────────────
+  // AGENT 7: Search Engine Agent — people actively searching for solutions
+  // Finds intent-rich queries like "[problem] solution" or "[industry] help"
+  // ──────────────────────────────────────────────────────────────────────────
+  private async searchEngineAgent(queries: string[], product: any, userId: string): Promise<RawLead[]> {
+    if (!SERPAPI_KEY) return [];
+
+    const leads: RawLead[] = [];
+
+    // AI Brain generates problem-centric search queries — not product-centric
+    let problemQueries: string[] = [];
+    try {
+      const problemPrompt = `Product: "${product.name}" (${product.category}).
+Generate 3 Google search queries that someone would type when they have the PROBLEM this product solves.
+Format: "[problem] solution" or "[pain point] how to fix" or "[industry] best tool"
+Return JSON: { "queries": ["query1", "query2", "query3"] }`;
+      const res = await this.ai.generateStrategyEconomy({}, problemPrompt);
+      problemQueries = res.parsedJson?.queries || queries.slice(0, 2).map(q => `${q} solution`);
+    } catch {
+      problemQueries = queries.slice(0, 2).map(q => `${q} solution help`);
+    }
+
+    for (const pq of problemQueries.slice(0, 2)) {
+      try {
+        const url = `https://serpapi.com/search.json?q=${encodeURIComponent(pq)}&api_key=${SERPAPI_KEY}&num=10`;
+        const res = await fetch(url);
+        if (!res.ok) continue;
+
+        const data: any = await res.json();
+
+        // Extract People Also Ask — high-intent signal
+        for (const paa of (data.related_questions || []).slice(0, 3)) {
+          if (!paa.question) continue;
+          leads.push({
+            platformUserId: `search_paa_${Buffer.from(paa.question).toString('base64').slice(0, 20)}`,
+            platformUsername: paa.source?.link ? new URL(paa.source.link).hostname : 'search_user',
+            platform: 'search',
+            firstInteraction: `Actively searching: "${paa.question}" — ${(paa.snippet || '').slice(0, 200)}`,
+            sourceUrl: paa.source?.link || '',
+            discoverySource: 'search_engine',
+            rawContent: paa.question + ' ' + (paa.snippet || ''),
+            confidence: 0.7, // People asking questions = high intent
+          });
+        }
+
+        // Extract organic results from forums / community sites
+        for (const result of (data.organic_results || [])) {
+          if (!result.link) continue;
+          const domain = (() => { try { return new URL(result.link).hostname; } catch { return ''; } })();
+          const isCommunity = ['reddit', 'quora', 'stackoverflow', 'community', 'forum', 'answers']
+            .some(kw => domain.includes(kw));
+          if (!isCommunity) continue;
+
+          leads.push({
+            platformUserId: `search_${Buffer.from(result.link).toString('base64').slice(0, 20)}`,
+            platformUsername: domain,
+            platform: domain.includes('reddit') ? 'reddit' : domain.includes('quora') ? 'quora' : 'forum',
+            firstInteraction: `${result.title} — ${(result.snippet || '').slice(0, 300)}`,
+            sourceUrl: result.link,
+            discoverySource: 'search_engine',
+            rawContent: result.title + ' ' + (result.snippet || ''),
+            confidence: 0.6,
+          });
+        }
+      } catch (err) {
+        await dynamicProblemSolver.solve({ error: err, operation: 'searchEngineAgent', agentType: 'LEAD_DISCOVERY', userId });
+      }
     }
 
     return leads;

@@ -215,7 +215,7 @@ export class AgentOrchestrator {
             .from('agent_tasks')
             .select('*')
             .eq('status', 'pending')
-            .in('task_type', ['LEAD_SCAN', 'PERFORMANCE_CHECK', 'GMAPS_OUTREACH', 'COMMENT_SCAN', 'MENTION_SCAN'])
+            .in('task_type', ['LEAD_SCAN', 'PERFORMANCE_CHECK', 'GMAPS_OUTREACH', 'COMMENT_SCAN', 'MENTION_SCAN', 'INBOUND_REPLY'])
             .lte('scheduled_at', now)
             .limit(10);
 
@@ -313,6 +313,13 @@ export class AgentOrchestrator {
                         result: { comment_scan: { replied: totalReplied, leads: totalLeads } },
                     }).eq('id', task.id);
                     continue;
+                }
+
+                // ─── INBOUND_REPLY: Lead replied — AI Brain crafts context-aware response ───
+                if (task.task_type === 'INBOUND_REPLY') {
+                    const salesAgent = new SalesmanAgent(this.supabase);
+                    await salesAgent.executeTask(task.id);
+                    continue; // executeTask handles its own status update
                 }
 
                 // ─── GMAPS_OUTREACH ───────────────────────────────────────────────────────
