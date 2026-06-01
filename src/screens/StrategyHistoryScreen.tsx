@@ -537,7 +537,15 @@ const PLATFORM_COLORS_CT: Record<string, string> = {
 
 type FunnelCounts = { contacted: number; replied: number; converted: number };
 
-function ConversionTrackerPanel({ strategyId, strategyTitle }: { strategyId: string; strategyTitle: string }) {
+function ConversionTrackerPanel({
+  strategyId,
+  strategyTitle,
+  onCountChange,
+}: {
+  strategyId: string;
+  strategyTitle: string;
+  onCountChange?: (total: number) => void;
+}) {
   const navigation = useNavigation<any>();
   const [byPlatform, setByPlatform] = useState<Record<string, FunnelCounts>>({});
   const [totalLeads, setTotalLeads] = useState(0);
@@ -555,7 +563,8 @@ function ConversionTrackerPanel({ strategyId, strategyTitle }: { strategyId: str
     }
     setByPlatform(result);
     setTotalLeads(total);
-  }, []);
+    onCountChange?.(total);
+  }, [onCountChange]);
 
   const loadLeads = useCallback(async () => {
     setLoading(true);
@@ -753,6 +762,29 @@ export default function StrategyHistoryScreen() {
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [expandedPerfId, setExpandedPerfId] = useState<string | null>(null);
   const [expandedConvId, setExpandedConvId] = useState<string | null>(null);
+  const [leadCounts, setLeadCounts] = useState<Record<string, number>>({});
+
+  const fetchLeadCounts = useCallback(async (strategyIds: string[]) => {
+    if (!strategyIds.length) return;
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+    const { data } = await supabase
+      .from('agent_leads')
+      .select('strategy_id, stage')
+      .eq('user_id', user.id)
+      .in('strategy_id', strategyIds);
+    if (!data) return;
+    // Only count funnel-tracked stages (same FUNNEL_MAP as the panel uses)
+    const counts: Record<string, number> = {};
+    for (const row of data) {
+      const sid = row.strategy_id;
+      if (!sid) continue;
+      if (FUNNEL_MAP[(row.stage ?? '').toLowerCase()]) {
+        counts[sid] = (counts[sid] ?? 0) + 1;
+      }
+    }
+    setLeadCounts(counts);
+  }, []);
 
   const fetchHistory = async () => {
     setLoading(true);
@@ -765,7 +797,10 @@ export default function StrategyHistoryScreen() {
       .eq('user_id', user.id)
       .order('created_at', { ascending: false });
 
-    if (!error && data) setHistory(data as any);
+    if (!error && data) {
+      setHistory(data as any);
+      fetchLeadCounts((data as any[]).map((s) => s.id));
+    }
     setLoading(false);
     setInitialLoad(false);
   };
@@ -935,6 +970,11 @@ export default function StrategyHistoryScreen() {
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 7 }}>
               <TrendingUp size={13} color="#F59E0B" />
               <Text style={styles.convToggleText}>Conversion Tracker</Text>
+              {(leadCounts[item.id] ?? 0) > 0 && (
+                <View style={styles.convCountBadge}>
+                  <Text style={styles.convCountBadgeText}>{leadCounts[item.id]}</Text>
+                </View>
+              )}
             </View>
             {isConvExpanded
               ? <ChevronUp size={14} color="#F59E0B" />
@@ -942,7 +982,15 @@ export default function StrategyHistoryScreen() {
           </TouchableOpacity>
 
           {/* Conversion Tracker Panel (lazy-loaded on expand) */}
-          {isConvExpanded && <ConversionTrackerPanel strategyId={item.id} strategyTitle={item.title} />}
+          {isConvExpanded && (
+            <ConversionTrackerPanel
+              strategyId={item.id}
+              strategyTitle={item.title}
+              onCountChange={(n) =>
+                setLeadCounts((prev) => ({ ...prev, [item.id]: n }))
+              }
+            />
+          )}
 
           {/* Audience Intelligence Toggle */}
           <TouchableOpacity
@@ -1237,6 +1285,13 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(245,158,11,0.04)',
   },
   convToggleText: { color: '#F59E0B', fontSize: 12, fontWeight: '700', letterSpacing: 0.3 },
+  convCountBadge: {
+    backgroundColor: 'rgba(245,158,11,0.18)',
+    borderRadius: 8, paddingHorizontal: 6, paddingVertical: 2,
+    borderWidth: 1, borderColor: 'rgba(245,158,11,0.35)',
+    minWidth: 22, alignItems: 'center',
+  },
+  convCountBadgeText: { color: '#F59E0B', fontSize: 10, fontWeight: '800' },
 
   // ── Conversion tracker panel ────────────────────────────────────────────────
   convPanel: {
