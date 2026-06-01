@@ -381,6 +381,74 @@ export const pushService = {
    * client can show exactly why a push isn't being delivered (FCM not
    * configured, token invalid, MismatchSenderId, etc.).
    */
+  /**
+   * Fires when a lead crosses a funnel bucket boundary (contacted → replied).
+   * Bucket map: contacted=[identified,new,engaged], replied=[nurturing,warm],
+   *             converted=[converted,closed,closed_won].
+   * Deal-close notifications are already handled by notifyDealClosed, so
+   * we only act on the contacted→replied crossing here.
+   * Deduped to once per lead × new stage per 24 hours.
+   */
+  async notifyLeadStageAdvanced(
+    userId: string,
+    params: {
+      leadId: string;
+      leadName: string;
+      platform: string;
+      oldStage: string;
+      newStage: string;
+      strategyId?: string;
+    },
+  ): Promise<void> {
+    const BUCKET: Record<string, 'contacted' | 'replied' | 'converted'> = {
+      identified: 'contacted', new: 'contacted', engaged: 'contacted',
+      nurturing: 'replied', warm: 'replied',
+      converted: 'converted', closed: 'converted', closed_won: 'converted',
+    };
+    const oldBucket = BUCKET[params.oldStage] ?? 'contacted';
+    const newBucket = BUCKET[params.newStage] ?? 'contacted';
+
+    // Only notify on contacted → replied crossing; converted is handled by notifyDealClosed
+    if (!(oldBucket === 'contacted' && newBucket === 'replied')) return;
+
+    // Dedup: one notification per lead × new stage per 24 h
+    const supabase = getServiceSupabaseClient();
+    const cutoff = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+    const { data: recent } = await supabase
+      .from('user_notifications')
+      .select('id')
+      .eq('user_id', userId)
+      .eq('sent_by', 'system')
+      .gte('created_at', cutoff)
+      .filter('data->>type', 'eq', 'lead_stage_advanced')
+      .filter('data->>leadId', 'eq', params.leadId)
+      .filter('data->>newStage', 'eq', params.newStage)
+      .limit(1)
+      .maybeSingle();
+
+    if (recent) return;
+
+    const displayPlatform = params.platform.charAt(0).toUpperCase() + params.platform.slice(1);
+    const title = `Lead Warming Up on ${displayPlatform}`;
+    const body = `${params.leadName} is engaging with your outreach and moving deeper into your funnel.`;
+    const data = {
+      type: 'lead_stage_advanced',
+      leadId: params.leadId,
+      leadName: params.leadName,
+      platform: params.platform,
+      oldStage: params.oldStage,
+      newStage: params.newStage,
+      strategyId: params.strategyId,
+    };
+
+    const tokens = await getUserTokens(userId);
+    await Promise.all([
+      sendExpoPush(tokens, { title, body, data, channelId: 'alerts' }),
+      insertNotification(userId, title, body, data),
+    ]);
+    console.log(`[PushService] Lead stage advanced: ${params.leadName} ${params.oldStage}→${params.newStage} for user ${userId}`);
+  },
+
   async sendTest(userId: string): Promise<{
     tokensFound: number;
     result: ExpoSendResult;

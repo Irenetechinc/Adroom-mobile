@@ -897,12 +897,24 @@ Return JSON: { "message": "string" }
                     await this.sendFacebookDM(tokens.facebook, lead.platform_user_id, message);
                 }
 
+                const nextLeadStage = lead.dm_sequence_step >= 2 ? 'nurturing' : 'engaged';
+
                 await this.supabase.from('agent_leads').update({
-                    stage: lead.dm_sequence_step >= 2 ? 'nurturing' : 'engaged',
+                    stage: nextLeadStage,
                     dm_sequence_step: lead.dm_sequence_step + 1,
                     last_contacted_at: now,
                     next_followup_at: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString()
                 }).eq('id', lead.id);
+
+                // Fire-and-forget: notify if this advance crosses a funnel bucket
+                pushService.notifyLeadStageAdvanced(userId, {
+                    leadId: lead.id,
+                    leadName: lead.platform_username || 'A lead',
+                    platform: lead.platform,
+                    oldStage: lead.stage,
+                    newStage: nextLeadStage,
+                    strategyId: lead.strategy_id,
+                }).catch(() => { /* best-effort */ });
 
                 // Log the DM to conversation thread (lead_dm_messages) — non-blocking
                 (async () => {
