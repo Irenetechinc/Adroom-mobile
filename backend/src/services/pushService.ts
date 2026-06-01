@@ -382,6 +382,59 @@ export const pushService = {
    * configured, token invalid, MismatchSenderId, etc.).
    */
   /**
+   * Fires the moment a lead sends an inbound reply to the AI's outreach DM.
+   * Deduped to once per lead per 1 hour so rapid-fire messages don't spam.
+   * The reply preview (first 100 chars) is included in the notification body
+   * so the user immediately sees what the lead said from the lock screen.
+   */
+  async notifyLeadReplied(
+    userId: string,
+    params: {
+      leadId: string;
+      leadName: string;
+      platform: string;
+      replyPreview: string;
+      strategyId?: string;
+    },
+  ): Promise<void> {
+    // Dedup: one notification per lead per 1 hour
+    const supabase = getServiceSupabaseClient();
+    const cutoff = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+    const { data: recent } = await supabase
+      .from('user_notifications')
+      .select('id')
+      .eq('user_id', userId)
+      .eq('sent_by', 'system')
+      .gte('created_at', cutoff)
+      .filter('data->>type', 'eq', 'lead_replied')
+      .filter('data->>leadId', 'eq', params.leadId)
+      .limit(1)
+      .maybeSingle();
+
+    if (recent) return;
+
+    const displayPlatform = params.platform.charAt(0).toUpperCase() + params.platform.slice(1);
+    const preview = params.replyPreview.trim().slice(0, 100);
+    const ellipsis = params.replyPreview.trim().length > 100 ? '…' : '';
+    const title = `${params.leadName} replied on ${displayPlatform}`;
+    const body = `"${preview}${ellipsis}"`;
+    const data = {
+      type: 'lead_replied',
+      leadId: params.leadId,
+      leadName: params.leadName,
+      platform: params.platform,
+      strategyId: params.strategyId,
+    };
+
+    const tokens = await getUserTokens(userId);
+    await Promise.all([
+      sendExpoPush(tokens, { title, body, data, channelId: 'alerts', sound: 'default' }),
+      insertNotification(userId, title, body, data),
+    ]);
+    console.log(`[PushService] Lead replied: ${params.leadName} on ${params.platform} for user ${userId}`);
+  },
+
+  /**
    * Fires when a lead crosses a funnel bucket boundary (contacted → replied).
    * Bucket map: contacted=[identified,new,engaged], replied=[nurturing,warm],
    *             converted=[converted,closed,closed_won].

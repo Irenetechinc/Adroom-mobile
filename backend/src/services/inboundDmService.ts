@@ -34,6 +34,7 @@ interface LeadRow {
   platform_user_id: string;
   platform_username: string;
   user_id: string;
+  strategy_id: string;
   intent_score: number;
   stage: string;
   dm_sequence_step: number;
@@ -78,7 +79,7 @@ class InboundDmService {
     // Get leads that have had at least one outbound message sent
     const { data: leads } = await this.supabase
       .from('agent_leads')
-      .select('id, platform, platform_user_id, platform_username, user_id, intent_score, stage, dm_sequence_step, last_contacted_at, created_at')
+      .select('id, platform, platform_user_id, platform_username, user_id, strategy_id, intent_score, stage, dm_sequence_step, last_contacted_at, created_at')
       .eq('user_id', userId)
       .gt('dm_sequence_step', 0)
       .not('stage', 'eq', 'lost')
@@ -297,6 +298,15 @@ class InboundDmService {
     if (existing?.length) return; // Already processed
 
     console.log(`[InboundDM] New reply from @${lead.platform_username} (${lead.platform}): "${msg.text.slice(0, 60)}..."`);
+
+    // ── Push notification: lead replied ───────────────────────────────────────
+    pushService.notifyLeadReplied(userId, {
+      leadId: lead.id,
+      leadName: lead.platform_username || 'A lead',
+      platform: lead.platform,
+      replyPreview: msg.text,
+      strategyId: lead.strategy_id,
+    }).catch(() => { /* best-effort */ });
 
     // ── Store inbound message ─────────────────────────────────────────────────
     await this.supabase.from('lead_dm_messages').insert({
