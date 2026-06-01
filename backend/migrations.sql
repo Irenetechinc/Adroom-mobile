@@ -22,6 +22,32 @@ CREATE INDEX IF NOT EXISTS idx_deletion_requests_email ON account_deletion_reque
 -- ALTER TABLE account_deletion_requests ADD COLUMN IF NOT EXISTS source TEXT DEFAULT 'app';
 -- ALTER TABLE account_deletion_requests ALTER COLUMN user_id DROP NOT NULL;
 
+-- ─── Payment Proof Requests ───────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS payment_proof_requests (
+  id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id       UUID NOT NULL,
+  lead_id       UUID NOT NULL,
+  strategy_id   UUID,
+  notification_id UUID,
+  inbound_message TEXT NOT NULL,
+  action        TEXT DEFAULT NULL,          -- confirm | reject | not_seen | NULL (pending)
+  acted_at      TIMESTAMPTZ,
+  platform      TEXT,
+  platform_username TEXT,
+  product_name  TEXT,
+  created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_ppr_user_id ON payment_proof_requests(user_id);
+CREATE INDEX IF NOT EXISTS idx_ppr_lead_id ON payment_proof_requests(lead_id);
+CREATE INDEX IF NOT EXISTS idx_ppr_action ON payment_proof_requests(action);
+
+-- Add action columns to user_notifications for actionable notifications
+-- ALTER TABLE user_notifications ADD COLUMN IF NOT EXISTS action_type TEXT DEFAULT NULL;
+-- ALTER TABLE user_notifications ADD COLUMN IF NOT EXISTS action_taken TEXT DEFAULT NULL;
+-- ALTER TABLE user_notifications ADD COLUMN IF NOT EXISTS action_at TIMESTAMPTZ DEFAULT NULL;
+-- ALTER TABLE user_notifications ADD COLUMN IF NOT EXISTS action_ref_id UUID DEFAULT NULL;
+
 -- ─── User Notifications Inbox ─────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS user_notifications (
   id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),

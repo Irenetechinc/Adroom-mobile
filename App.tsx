@@ -3,6 +3,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { Platform, AppState, AppStateStatus, Text, TextInput } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import AppNavigator from './src/navigation/AppNavigator';
+import { navigate } from './src/navigation/navigationRef';
 import {
   registerPushToken,
   setupNotificationListeners,
@@ -101,8 +102,24 @@ export default function App() {
         console.log('[App] Notification received:', notification.request.content.title);
       },
       (response) => {
-        const data = response.notification.request.content.data;
+        const data = (response.notification.request.content.data || {}) as any;
         console.log('[App] Notification tapped:', data);
+        try {
+          const screen = (data.screen || '') as string;
+          const leadId = data.lead_id as string | undefined;
+          const type = (data.type || '') as string;
+          if (screen === 'Leads' || (leadId && !['payment_proof', 'discount_approval'].includes(type))) {
+            navigate('Leads', leadId ? { leadId } : undefined);
+          } else if (
+            screen === 'Notifications' ||
+            type === 'payment_proof' ||
+            type === 'discount_approval'
+          ) {
+            navigate('Notifications');
+          } else if (screen === 'AgentChat') {
+            navigate('AgentChat', {});
+          }
+        } catch {}
       },
     );
 
