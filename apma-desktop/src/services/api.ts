@@ -73,7 +73,6 @@ export const apmaApi = {
   toggleSocialAccount: (id: string, active: boolean) => apiFetch<{ account: any }>(`/social-accounts/${id}`, { method: 'PATCH', body: JSON.stringify({ active }) }),
   clientProfile:       ()                   => apiFetch<{ profile: any }>('/profile'),
   refreshProfile:      ()                   => apiFetch<{ profile: any }>('/profile/refresh', { method: 'POST' }),
-  strategies:          (limit = 14)         => apiFetch<{ strategies: any[]; campaign_id?: string }>(`/strategies?limit=${limit}`),
   selfImprovementLogs: ()                   => apiFetch<{ logs: any[] }>('/self-improvement'),
   deployImprovement:   (id: string)         => apiFetch<{ ok: boolean }>(`/self-improvement/${id}/deploy`, { method: 'POST' }),
   opposition:          ()                   => apiFetch<any>('/opposition'),

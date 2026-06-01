@@ -13,10 +13,9 @@ import InsightsPanel from '../components/InsightsPanel';
 import SocialAccountsPanel from '../components/SocialAccountsPanel';
 import OppositionPanel from '../components/OppositionPanel';
 import CampaignAnalytics from '../components/CampaignAnalytics';
-import StrategiesPanel from '../components/StrategiesPanel';
 import { SkeletonStats, SkeletonCard } from '../components/SkeletonLoader';
 
-type Tab = 'overview' | 'analytics' | 'opposition' | 'actions' | 'recommendations' | 'blogs' | 'calendar' | 'insights' | 'accounts' | 'monitor' | 'strategies';
+type Tab = 'overview' | 'analytics' | 'opposition' | 'actions' | 'recommendations' | 'blogs' | 'calendar' | 'insights' | 'accounts' | 'monitor';
 
 const EVENT_COLOURS: Record<string, string> = {
   start:           '#818CF8',
@@ -118,7 +117,6 @@ export default function DashboardScreen() {
     { id: 'actions',         label: 'Actions'         },
     { id: 'recommendations', label: 'Recommendations' },
     { id: 'blogs',           label: 'Blogs'           },
-    { id: 'strategies',      label: '📈 Strategies'   },
     { id: 'calendar',        label: '📅 Calendar'     },
     { id: 'monitor',         label: '⬤ Monitor'       },
   ];
@@ -273,16 +271,6 @@ export default function DashboardScreen() {
               <span style={{ fontSize:11, color:'#64748b' }}>Deep analysis of counter-narratives and threats</span>
             </div>
             <OppositionPanel />
-          </div>
-        )}
-
-        {tab === 'strategies' && (
-          <div className="card">
-            <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:18 }}>
-              <h3 style={{ fontWeight:600, color:'#f1f5f9', fontSize:14, margin:0 }}>Strategy Performance</h3>
-              <span style={{ fontSize:11, color:'#64748b' }}>Daily strategy plans with live impressions, engagement & media value from agent_performance</span>
-            </div>
-            <StrategiesPanel />
           </div>
         )}
 
