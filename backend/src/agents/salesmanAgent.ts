@@ -161,6 +161,13 @@ Return JSON:
 
         await this.supabase.from('agent_tasks').update({ status: 'executing' }).eq('id', taskId);
 
+        // ─── INBOUND_REPLY: Lead sent a message back — read full history, craft real reply ──
+        if (task.task_type === 'INBOUND_REPLY') {
+            await this.executeInboundReply(taskId, task);
+            return;
+        }
+        // ────────────────────────────────────────────────────────────────────────
+
         // ─── GMAPS_OUTREACH: Discover + contact local businesses ────────────────
         if (task.task_type === 'GMAPS_OUTREACH') {
             try {
@@ -478,6 +485,252 @@ Return JSON:
         }
 
         this.log(`Lead scan skipped — unsupported platform: ${params.platform}`);
+    }
+
+    /**
+     * INBOUND_REPLY: A lead has replied to a DM.
+     * Read their full conversation history and craft a direct, context-aware response.
+     * Nothing is hard-coded — AI Brain reads the entire thread and writes its own reply.
+     */
+    private async executeInboundReply(taskId: string, task: any): Promise<void> {
+        const { lead_id, inbound_message, platform_user_id } = task.content || {};
+
+        if (!lead_id || !inbound_message) {
+            await this.failTask(taskId, 'INBOUND_REPLY task missing lead_id or inbound_message');
+            return;
+        }
+
+        // Fetch full conversation history + lead profile in parallel
+        const [historyRes, leadRes, strategyRes] = await Promise.all([
+            this.supabase
+                .from('lead_dm_messages')
+                .select('direction, message, persona_name, created_at')
+                .eq('lead_id', lead_id)
+                .order('created_at', { ascending: true })
+                .limit(30),
+            this.supabase
+                .from('agent_leads')
+                .select('*')
+                .eq('id', lead_id)
+                .single(),
+            this.supabase
+                .from('strategies')
+                .select('product_id, goal')
+                .eq('id', task.strategy_id)
+                .single(),
+        ]);
+
+        const lead = leadRes.data;
+        if (!lead) {
+            await this.failTask(taskId, `Lead ${lead_id} not found`);
+            return;
+        }
+
+        const history = historyRes.data || [];
+        const product = strategyRes.data?.product_id
+            ? await this.getProductDetails(strategyRes.data.product_id)
+            : null;
+        const tokens = await this.getTokens(task.user_id);
+
+        // Log the inbound message first (so the thread is complete before AI reads it)
+        try {
+            await this.supabase.from('lead_dm_messages').insert({
+                lead_id,
+                user_id: task.user_id,
+                direction: 'inbound',
+                message: inbound_message,
+                platform: lead.platform,
+                meta: { auto_detected: true, task_id: taskId },
+            });
+        } catch { /* best-effort log */ }
+
+        const conversationThread = history
+            .map(m => `[${m.direction === 'outbound' ? 'Agent' : 'Lead'}]: ${m.message}`)
+            .join('\n');
+
+        // Check if lead is requesting a discount — only approval flow the AI must pause for
+        const isDiscount = await this.detectDiscountRequest(inbound_message);
+        if (isDiscount && product) {
+            await this.requestDiscountApproval(lead, task.user_id, product, inbound_message, task);
+            await this.supabase.from('agent_tasks').update({
+                status: 'done',
+                executed_at: new Date().toISOString(),
+                result: { action: 'discount_approval_requested', lead_username: lead.platform_username },
+            }).eq('id', taskId);
+            this.log(`INBOUND_REPLY ${taskId}: discount request detected — paused for user approval`);
+            return;
+        }
+
+        // AI Brain generates a fresh persona scoped to this specific conversation
+        let persona = { name: 'Sam', tone: 'direct and warm' };
+        try {
+            const pRes = await this.ai.generateStrategyEconomy({}, `
+Assign a persona to respond to this DM.
+Platform: ${lead.platform}
+Lead's message: "${inbound_message.slice(0, 120)}"
+Conversation length: ${history.length} prior exchanges
+Lead's intent score: ${lead.intent_score}
+
+Return JSON only: { "name": "common first name", "tone": "2-4 word style descriptor" }`);
+            if (pRes.parsedJson?.name) persona = pRes.parsedJson;
+        } catch {}
+
+        // AI Brain reads the full thread and writes a direct, context-aware reply
+        const replyPrompt = `You are ${persona.name}. Your communication style: ${persona.tone}.
+
+WHAT THE LEAD JUST SAID:
+"${inbound_message}"
+
+FULL CONVERSATION HISTORY (most recent context):
+${conversationThread || '(this is the first exchange)'}
+
+PRODUCT:
+Name: ${product?.product_name || product?.name || 'the product'}
+Price: ${product?.price || 'available on request'}
+Core benefit: ${product?.description ? product.description.slice(0, 120) : ''}
+
+YOUR TASK:
+Respond DIRECTLY to what they said. This is a real conversation with a real person — not a DM blast.
+Read what they actually wrote. Address it. Move the conversation forward.
+
+Rules you MUST follow:
+- Reply to their specific message — do not pivot to a generic sales script
+- If they asked a question, answer it precisely and completely
+- If they showed buying interest, provide the one detail that would close them
+- If they are hesitant, acknowledge it briefly and offer one concrete reassurance
+- Keep it under 3 sentences — natural text, not marketing copy
+- Write exactly like a confident human would text, not a customer service rep
+- Never say "I'm here to help" or any variant — you are a closer, not a helper
+- No emojis unless they used them first
+
+Return JSON: { "message": "the reply text", "reasoning": "why this reply" }`;
+
+        const response = await this.ai.generateStrategy({}, replyPrompt);
+        const reply = response.parsedJson?.message;
+
+        if (!reply) {
+            await this.failTask(taskId, 'AI Brain could not generate INBOUND_REPLY response');
+            return;
+        }
+
+        // Send the reply via the correct platform
+        let sent = false;
+        try {
+            const pid = platform_user_id || lead.platform_user_id;
+            if ((lead.platform === 'facebook' || lead.platform === 'instagram') && tokens.facebook && pid) {
+                await this.sendFacebookDM(tokens.facebook, pid, reply);
+                sent = true;
+            }
+            // Additional platforms as they gain DM API support
+        } catch (e: any) {
+            this.log(`INBOUND_REPLY send failed: ${e.message}`);
+        }
+
+        // Log the outbound reply to the conversation thread
+        try {
+            await this.supabase.from('lead_dm_messages').insert({
+                lead_id,
+                user_id: task.user_id,
+                direction: 'outbound',
+                message: reply,
+                persona_name: persona.name,
+                platform: lead.platform,
+                meta: {
+                    triggered_by: 'INBOUND_REPLY',
+                    inbound_preview: inbound_message.slice(0, 100),
+                    reasoning: response.parsedJson?.reasoning?.slice(0, 200),
+                },
+            });
+        } catch { /* best-effort log */ }
+
+        // Advance lead stage if they're actively replying
+        const newStage = lead.intent_score >= 0.85
+            ? 'engaged'
+            : lead.stage === 'identified' ? 'engaged' : lead.stage;
+
+        await this.supabase.from('agent_leads').update({
+            stage: newStage,
+            last_contacted_at: new Date().toISOString(),
+            next_followup_at: new Date(Date.now() + 6 * 60 * 60 * 1000).toISOString(),
+        }).eq('id', lead.id);
+
+        await this.supabase.from('agent_tasks').update({
+            status: 'done',
+            executed_at: new Date().toISOString(),
+            result: { sent, reply_preview: reply.slice(0, 120), lead_username: lead.platform_username },
+        }).eq('id', taskId);
+
+        this.log(`INBOUND_REPLY sent to ${lead.platform_username} — "${reply.slice(0, 70)}..."`);
+    }
+
+    /**
+     * Detect whether the lead is asking for a discount or price negotiation.
+     * AI Brain analyses — no keyword matching.
+     */
+    private async detectDiscountRequest(message: string): Promise<boolean> {
+        try {
+            const res = await this.ai.generateStrategyEconomy({}, `
+Is this message a discount or price negotiation request?
+Message: "${message.slice(0, 200)}"
+Return JSON: { "is_discount_request": true|false }`);
+            return res.parsedJson?.is_discount_request === true;
+        } catch {
+            return false;
+        }
+    }
+
+    /**
+     * Pause conversation and notify the User for discount approval.
+     * AI Brain writes the notification message dynamically.
+     */
+    private async requestDiscountApproval(
+        lead: any, userId: string, product: any, inboundMessage: string, task: any
+    ): Promise<void> {
+        try {
+            const notifRes = await this.ai.generateStrategyEconomy({}, `
+A potential customer is asking about pricing or a discount.
+Customer: ${lead.platform_username}
+Their message: "${inboundMessage.slice(0, 200)}"
+Product: ${product?.product_name || 'the product'} (Price: ${product?.price || 'unknown'})
+
+Write a short, clear push notification for the business owner asking them to approve/deny the discount.
+Return JSON: { "title": "short title", "body": "1 sentence notification body" }`);
+
+            const notif = notifRes.parsedJson;
+
+            await pushService.send(userId, {
+                title: notif?.title || 'Discount Request',
+                body: notif?.body || `${lead.platform_username} is asking about pricing. Tap to respond.`,
+                data: {
+                    type: 'discount_approval',
+                    lead_id: lead.id,
+                    task_id: task.id,
+                    strategy_id: task.strategy_id,
+                    screen: 'Leads',
+                },
+            });
+
+            // Schedule a 4-hour follow-up to the lead if user hasn't responded
+            await this.supabase.from('agent_tasks').insert({
+                strategy_id: task.strategy_id,
+                user_id: userId,
+                agent_type: 'SALESMAN',
+                task_type: 'INBOUND_REPLY',
+                platform: lead.platform,
+                scheduled_at: new Date(Date.now() + 4 * 60 * 60 * 1000).toISOString(),
+                status: 'pending',
+                content: {
+                    lead_id: lead.id,
+                    platform_user_id: lead.platform_user_id,
+                    inbound_message: 'They asked for a discount and are waiting for a response.',
+                    context: 'discount_followup',
+                },
+            });
+
+            this.log(`Discount approval requested for lead ${lead.platform_username} — User notified`);
+        } catch (e: any) {
+            this.log(`Discount approval notification failed: ${e.message}`);
+        }
     }
 
     private async scoreIntent(text: string): Promise<number> {

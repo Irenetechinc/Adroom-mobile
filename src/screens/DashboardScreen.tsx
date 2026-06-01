@@ -602,19 +602,39 @@ export default function DashboardScreen() {
           {(() => {
             const totalEngagement = perfSummary.likes + perfSummary.comments + perfSummary.shares;
             const engRate = perfSummary.reach > 0 ? ((totalEngagement / perfSummary.reach) * 100).toFixed(1) : '0.0';
+            const ctr = perfSummary.reach > 0 && perfSummary.clicks > 0
+              ? ((perfSummary.clicks / perfSummary.reach) * 100).toFixed(2) : '0.00';
+            const convRate = perfSummary.clicks > 0 && perfSummary.conversions > 0
+              ? ((perfSummary.conversions / perfSummary.clicks) * 100).toFixed(1) : '0.0';
+            const closedCount = closedDeals.filter(d => d.status === 'closed_won').length;
+            const closeRate = allLeadsCount > 0 && closedCount > 0
+              ? ((closedCount / allLeadsCount) * 100).toFixed(1) : '0.0';
+            const avgDealValue = closedCount > 0
+              ? Math.round(totalRevenue / closedCount) : 0;
+            // Paid media equivalent: industry avg $3 CPM
+            const paidEquiv = Math.round((perfSummary.reach / 1000) * 3);
             const revenueDisplay = totalRevenue >= 1000
               ? `${(totalRevenue / 1000).toFixed(1)}K`
               : totalRevenue.toLocaleString();
+            const paidDisplay = paidEquiv >= 1000
+              ? `$${(paidEquiv / 1000).toFixed(1)}K`
+              : `$${paidEquiv}`;
             const metrics = [
-              { label: 'Reach',       value: perfSummary.reach > 0 ? perfSummary.reach.toLocaleString() : totalImpressions.toLocaleString(), icon: Activity,     color: '#00F0FF', onPress: undefined },
-              { label: 'Impressions', value: totalImpressions.toLocaleString(),                                                              icon: Eye,           color: '#A78BFA', onPress: undefined },
-              { label: 'Eng. Rate',   value: `${engRate}%`,                                                                                  icon: TrendingUp,    color: '#F59E0B', onPress: undefined },
-              { label: 'Likes',       value: perfSummary.likes.toLocaleString(),                                                             icon: Heart,         color: '#F87171', onPress: undefined },
-              { label: 'Comments',    value: perfSummary.comments.toLocaleString(),                                                          icon: MessageCircle, color: '#60A5FA', onPress: undefined },
-              { label: 'Shares',      value: perfSummary.shares.toLocaleString(),                                                            icon: Share2,        color: '#34D399', onPress: undefined },
-              { label: 'DMs Sent',    value: perfSummary.dms_sent.toLocaleString(),                                                          icon: Users,         color: '#818CF8', onPress: undefined },
-              { label: 'Leads',       value: allLeadsCount.toLocaleString(),                                                                 icon: Target,        color: '#10B981', onPress: () => navigation.navigate('Leads') },
-              { label: 'Revenue',     value: revenueDisplay,                                                                                 icon: DollarSign,    color: '#FBBF24', onPress: undefined },
+              { label: 'Reach',        value: perfSummary.reach > 0 ? perfSummary.reach.toLocaleString() : totalImpressions.toLocaleString(), icon: Activity,     color: '#00F0FF', onPress: undefined },
+              { label: 'Impressions',  value: totalImpressions.toLocaleString(),                                                               icon: Eye,           color: '#A78BFA', onPress: undefined },
+              { label: 'Eng. Rate',    value: `${engRate}%`,                                                                                   icon: TrendingUp,    color: '#F59E0B', onPress: undefined },
+              { label: 'CTR',          value: `${ctr}%`,                                                                                       icon: MousePointer,  color: '#38BDF8', onPress: undefined },
+              { label: 'Likes',        value: perfSummary.likes.toLocaleString(),                                                              icon: Heart,         color: '#F87171', onPress: undefined },
+              { label: 'Comments',     value: perfSummary.comments.toLocaleString(),                                                           icon: MessageCircle, color: '#60A5FA', onPress: undefined },
+              { label: 'Shares',       value: perfSummary.shares.toLocaleString(),                                                             icon: Share2,        color: '#34D399', onPress: undefined },
+              { label: 'DMs Sent',     value: perfSummary.dms_sent.toLocaleString(),                                                           icon: Users,         color: '#818CF8', onPress: undefined },
+              { label: 'Leads',        value: allLeadsCount.toLocaleString(),                                                                  icon: Target,        color: '#10B981', onPress: () => navigation.navigate('Leads') },
+              { label: 'Conv. Rate',   value: `${convRate}%`,                                                                                  icon: CheckCircle,   color: '#4ADE80', onPress: undefined },
+              { label: 'Close Rate',   value: `${closeRate}%`,                                                                                 icon: Trophy,        color: '#FBBF24', onPress: undefined },
+              { label: 'Avg Deal',     value: avgDealValue > 0 ? `${revenueCurrency} ${avgDealValue.toLocaleString()}` : '—',                  icon: DollarSign,    color: '#F59E0B', onPress: undefined },
+              { label: 'Revenue',      value: revenueDisplay,                                                                                  icon: DollarSign,    color: '#FBBF24', onPress: undefined },
+              { label: 'Media Value',  value: paidDisplay,                                                                                     icon: BarChart2,     color: '#C084FC', onPress: undefined },
+              { label: 'Deals Won',    value: closedCount.toLocaleString(),                                                                    icon: Award,         color: '#10B981', onPress: undefined },
             ];
             return (
               <View style={styles.metricsGrid}>
