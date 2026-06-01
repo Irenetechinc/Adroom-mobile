@@ -1520,6 +1520,36 @@ export default function AgentChatScreen({ navigation, route }: Props) {
     } catch {}
   }, []);
 
+  // ── Pending User Task Detection ─────────────────────────────────────────────
+  // When the chat screen opens, check if there are any unresolved user_error
+  // interventions from the backend. If so, inject an AI-generated opening message
+  // that explains the situation and prompts the user to complete the required task.
+  const checkPendingUserTasks = useCallback(async () => {
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.access_token || !BACKEND_URL) return;
+
+      const res = await fetch(`${BACKEND_URL}/api/user/pending-tasks`, {
+        headers: { Authorization: `Bearer ${session.access_token}` },
+      });
+      if (!res.ok) return;
+
+      const data = await res.json();
+      if (!data.hasPending) return;
+
+      // Only inject if the chat has no messages (fresh session) or hasn't been
+      // interrupted by this same pending task already in the current session
+      const topError = data.errors?.[0] || data.interventions?.[0];
+      const description = topError?.description || topError?.context?.message || 'a required setup step';
+
+      addMessage(
+        `Your campaign is currently paused — there's something that needs your attention before I can continue.\n\n${description}\n\nLet's get this sorted so your agents can get back to work.`,
+        'agent'
+      );
+    } catch { /* silent — this is a best-effort enhancement */ }
+  }, [addMessage]);
+  // ────────────────────────────────────────────────────────────────────────────
+
   useEffect(() => {
     const skipLoad = !!(route.params?.fromStrategyApproval || route.params?.connectFacebook ||
       route.params?.connectInstagram || route.params?.connectTikTok ||
@@ -1527,7 +1557,14 @@ export default function AgentChatScreen({ navigation, route }: Props) {
       route.params?.connectWhatsApp);
 
     if (!skipLoad) {
-      loadMessages().then(() => setHistoryLoaded(true));
+      loadMessages().then((result: any) => {
+        setHistoryLoaded(true);
+        // Only check for pending tasks if there's no active conversation
+        const loadedMsgs = result?.messages ?? [];
+        if (loadedMsgs.length === 0) {
+          checkPendingUserTasks();
+        }
+      });
     } else {
       setHistoryLoaded(true);
     }

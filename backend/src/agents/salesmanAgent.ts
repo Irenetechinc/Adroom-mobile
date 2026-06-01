@@ -548,6 +548,58 @@ Return JSON:
             .map(m => `[${m.direction === 'outbound' ? 'Agent' : 'Lead'}]: ${m.message}`)
             .join('\n');
 
+        // ── Guardrail check before anything else ──────────────────────────────
+        const { analyzeIncomingMessage } = await import('../services/guardrailService');
+        const guard = await analyzeIncomingMessage(
+            inbound_message,
+            conversationThread,
+            0,
+            {
+                platform: lead.platform,
+                productName: product?.product_name || product?.name,
+                leadCountry: lead.country,
+            }
+        );
+        if (!guard.isSafe) {
+            if (guard.dynamicRedirect) {
+                // Send the AI-generated redirect — log it as outbound
+                let sent = false;
+                try {
+                    const pid = platform_user_id || lead.platform_user_id;
+                    const tok = await this.getTokens(task.user_id);
+                    if ((lead.platform === 'facebook' || lead.platform === 'instagram') && tok.facebook && pid) {
+                        await this.sendFacebookDM(tok.facebook, pid, guard.dynamicRedirect);
+                        sent = true;
+                    }
+                } catch {}
+                try {
+                    await this.supabase.from('lead_dm_messages').insert({
+                        lead_id,
+                        user_id: task.user_id,
+                        direction: 'outbound',
+                        message: guard.dynamicRedirect,
+                        platform: lead.platform,
+                        meta: { triggered_by: 'GUARDRAIL', threat_type: guard.threatType },
+                    });
+                } catch {}
+                await this.supabase.from('agent_tasks').update({
+                    status: 'done',
+                    executed_at: new Date().toISOString(),
+                    result: { action: 'guardrail_redirect', threat_type: guard.threatType, sent },
+                }).eq('id', taskId);
+            } else {
+                // Threat but no redirect generated — mark done, do not respond
+                await this.supabase.from('agent_tasks').update({
+                    status: 'done',
+                    executed_at: new Date().toISOString(),
+                    result: { action: 'guardrail_blocked', threat_type: guard.threatType },
+                }).eq('id', taskId);
+            }
+            this.log(`INBOUND_REPLY ${taskId}: guardrail triggered (${guard.threatType}) for ${lead.platform_username}`);
+            return;
+        }
+        // ────────────────────────────────────────────────────────────────────
+
         // Check if lead is requesting a discount — only approval flow the AI must pause for
         const isDiscount = await this.detectDiscountRequest(inbound_message);
         if (isDiscount && product) {

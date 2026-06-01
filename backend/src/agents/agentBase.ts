@@ -1082,8 +1082,20 @@ Return JSON:
      * Generate a quick, contextual reply to a comment or mention.
      * Natural, human-sounding, goal-aligned.
      */
-    async generateQuickReply(commentText: string, goal: string, product: any): Promise<string | null> {
+    async generateQuickReply(commentText: string, goal: string, product: any, platform = 'social'): Promise<string | null> {
         try {
+            // ── Guardrail check before generating any reply ──────────────────
+            const { analyzeIncomingMessage } = await import('../services/guardrailService');
+            const guard = await analyzeIncomingMessage(commentText, '', 0, {
+                platform,
+                productName: product?.name || product?.product_name,
+            });
+            if (!guard.isSafe && guard.dynamicRedirect) {
+                this.log(`Guardrail triggered (${guard.threatType}) — sending dynamic redirect`);
+                return guard.dynamicRedirect.substring(0, 120);
+            }
+            // ────────────────────────────────────────────────────────────────
+
             const result = await this.ai.generateStrategy({}, `
 You are the AdRoom ${this.agentType} Agent replying to a social media comment.
 
@@ -1248,12 +1260,35 @@ Only include comments that should be replied to.`;
         let leads = 0;
         const now = new Date().toISOString();
 
+        // Track per-author guardrail attempt counts for this scan run
+        const guardrailAttempts: Record<string, number> = {};
+        const { analyzeIncomingMessage } = await import('../services/guardrailService');
+
         for (const plan of replyPlan.slice(0, 8)) {
             if (!plan.should_reply) continue;
             const comment = comments[plan.comment_index];
             if (!comment) continue;
 
             try {
+                // ── Guardrail check: run before posting any reply ────────────
+                const authorKey = comment.authorId || comment.username || comment.id;
+                const priorAttempts = guardrailAttempts[authorKey] || 0;
+                const guard = await analyzeIncomingMessage(
+                    comment.text,
+                    historyByAuthor[authorKey] || '',
+                    priorAttempts,
+                    { platform: params.platform, productName: params.product?.name || params.product?.product_name }
+                );
+                if (!guard.isSafe) {
+                    guardrailAttempts[authorKey] = guard.attemptCount;
+                    if (guard.dynamicRedirect) {
+                        plan.reply = guard.dynamicRedirect.substring(0, 120);
+                    } else {
+                        continue; // no redirect available — skip this comment silently
+                    }
+                }
+                // ────────────────────────────────────────────────────────────
+
                 // ── Step 3: Post the reply on the platform ──
                 switch (params.platform.toLowerCase()) {
                     case 'facebook':
@@ -1287,7 +1322,7 @@ Only include comments that should be replied to.`;
 
                 // ── Step 4: Store interaction in social_conversations for future learning ──
                 // This enables history-aware replies on subsequent encounters with the same user
-                const authorKey = comment.authorId || comment.username || 'unknown';
+                const authorKeyLog = comment.authorId || comment.username || 'unknown';
                 (async () => {
                     try {
                         await this.supabase.from('social_conversations').upsert({
@@ -1295,7 +1330,7 @@ Only include comments that should be replied to.`;
                             source: params.platform,
                             source_id: comment.id,
                             content: comment.text,
-                            author: authorKey,
+                            author: authorKeyLog,
                             posted_at: now,
                             collected_at: now,
                             category: params.product?.category || 'general',

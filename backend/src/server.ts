@@ -2751,9 +2751,200 @@ app.post('/api/notifications/:notificationId/approve', async (req, res) => {
         .eq('id', notificationId);
 
       res.json({ ok: true, message: 'Price change approved and applied.' });
+    } else if (intervention.intervention_type === 'discount_approval' && ctx.lead_id) {
+      // ── Discount approved: AI Brain writes a response to the lead and sends it ──
+      const { AIEngine } = await import('./config/ai-models');
+      const ai = AIEngine.getInstance();
+      const { SalesmanAgent } = await import('./agents/salesmanAgent');
+      const agent = new SalesmanAgent(getServiceSupabaseClient());
+
+      // Fetch the lead + conversation history
+      const [leadRes, historyRes, productRes] = await Promise.all([
+        getServiceSupabaseClient().from('agent_leads').select('*').eq('id', ctx.lead_id).single(),
+        getServiceSupabaseClient().from('lead_dm_messages').select('direction, message').eq('lead_id', ctx.lead_id).order('created_at', { ascending: true }).limit(20),
+        ctx.product_id ? getServiceSupabaseClient().from('product_memory').select('*').eq('id', ctx.product_id).single() : Promise.resolve({ data: null }),
+      ]);
+
+      const lead = leadRes.data;
+      const history = (historyRes.data || []).map((m: any) => `[${m.direction === 'outbound' ? 'Agent' : 'Lead'}]: ${m.message}`).join('\n');
+      const product = productRes.data;
+
+      if (lead) {
+        const replyPrompt = `The business owner has approved a discount for this customer.
+
+CONVERSATION HISTORY:
+${history || '(no prior history)'}
+
+LEAD'S DISCOUNT REQUEST: "${ctx.inbound_message || 'requesting a discount'}"
+PRODUCT: ${product?.product_name || 'the product'} (Original price: ${product?.price || 'ask'})
+DISCOUNT APPROVED: Yes
+
+Write a message to the customer confirming the discount was approved.
+- Be direct and specific — tell them what the discount is (if amount is in ctx, use it; otherwise confirm the discount is in play)
+- Sound human and appreciative without being sycophantic
+- Move them toward the next step (payment, order, etc.)
+- Under 3 sentences
+- Never say "I'm here to help"
+
+Return JSON: { "message": "the reply" }`;
+
+        try {
+          const aiRes = await ai.generateStrategy({}, replyPrompt);
+          const reply = aiRes.parsedJson?.message;
+          if (reply && lead.platform_user_id) {
+            const tokens = await agent.getTokens(user.id);
+            if ((lead.platform === 'facebook' || lead.platform === 'instagram') && tokens.facebook) {
+              await agent.sendFacebookDM(tokens.facebook, lead.platform_user_id, reply);
+            }
+            await getServiceSupabaseClient().from('lead_dm_messages').insert({
+              lead_id: ctx.lead_id,
+              user_id: user.id,
+              direction: 'outbound',
+              message: reply,
+              platform: lead.platform,
+              meta: { triggered_by: 'DISCOUNT_APPROVED' },
+            });
+          }
+        } catch {}
+      }
+
+      await supabase.from('agent_interventions').update({ status: 'approved', resolved_at: new Date().toISOString() }).eq('id', notificationId);
+      res.json({ ok: true, message: 'Discount approved and response sent to lead.' });
     } else {
       res.status(400).json({ error: 'Unknown intervention type' });
     }
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * POST /api/notifications/:notificationId/deny — Deny a pending agent intervention
+ * Handles: discount_approval (AI Brain writes a polite refusal to the lead)
+ */
+app.post('/api/notifications/:notificationId/deny', async (req, res) => {
+  try {
+    const supabase = getSupabaseClient(req);
+    const { data: { user }, error: authErr } = await supabase.auth.getUser();
+    if (authErr || !user) return res.status(401).json({ error: 'Unauthorized' });
+
+    const { notificationId } = req.params;
+
+    const { data: intervention } = await supabase
+      .from('agent_interventions')
+      .select('*')
+      .eq('id', notificationId)
+      .eq('user_id', user.id)
+      .eq('status', 'pending')
+      .single();
+
+    if (!intervention) return res.status(404).json({ error: 'No pending approval found' });
+
+    const ctx = intervention.context || {};
+
+    if (intervention.intervention_type === 'discount_approval' && ctx.lead_id) {
+      const { AIEngine } = await import('./config/ai-models');
+      const ai = AIEngine.getInstance();
+      const { SalesmanAgent } = await import('./agents/salesmanAgent');
+      const agent = new SalesmanAgent(getServiceSupabaseClient());
+
+      const [leadRes, historyRes] = await Promise.all([
+        getServiceSupabaseClient().from('agent_leads').select('*').eq('id', ctx.lead_id).single(),
+        getServiceSupabaseClient().from('lead_dm_messages').select('direction, message').eq('lead_id', ctx.lead_id).order('created_at', { ascending: true }).limit(20),
+      ]);
+
+      const lead = leadRes.data;
+      const history = (historyRes.data || []).map((m: any) => `[${m.direction === 'outbound' ? 'Agent' : 'Lead'}]: ${m.message}`).join('\n');
+
+      if (lead) {
+        const denyPrompt = `The business owner has declined a discount request.
+
+CONVERSATION HISTORY:
+${history || '(no prior history)'}
+
+LEAD'S REQUEST: "${ctx.inbound_message || 'requesting a discount'}"
+
+Write a message declining the discount while keeping the customer engaged.
+- Do NOT be rude or apologetic
+- Keep the door open for a purchase at full price
+- Optionally highlight the value they're getting
+- Under 2 sentences, human tone, conversational
+- Never say "I'm here to help"
+
+Return JSON: { "message": "the reply" }`;
+
+        try {
+          const aiRes = await ai.generateStrategy({}, denyPrompt);
+          const reply = aiRes.parsedJson?.message;
+          if (reply && lead.platform_user_id) {
+            const tokens = await agent.getTokens(user.id);
+            if ((lead.platform === 'facebook' || lead.platform === 'instagram') && tokens.facebook) {
+              await agent.sendFacebookDM(tokens.facebook, lead.platform_user_id, reply);
+            }
+            await getServiceSupabaseClient().from('lead_dm_messages').insert({
+              lead_id: ctx.lead_id,
+              user_id: user.id,
+              direction: 'outbound',
+              message: reply,
+              platform: lead.platform,
+              meta: { triggered_by: 'DISCOUNT_DENIED' },
+            });
+          }
+        } catch {}
+      }
+
+      await supabase.from('agent_interventions').update({ status: 'denied', resolved_at: new Date().toISOString() }).eq('id', notificationId);
+      res.json({ ok: true, message: 'Discount denied and response sent to lead.' });
+    } else if (intervention.intervention_type === 'price_approval') {
+      await supabase.from('agent_interventions').update({ status: 'denied', resolved_at: new Date().toISOString() }).eq('id', notificationId);
+      res.json({ ok: true, message: 'Price change denied.' });
+    } else {
+      res.status(400).json({ error: 'Unknown intervention type' });
+    }
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * GET /api/user/pending-tasks — Returns any unresolved user_error interventions
+ * Used by the mobile app to detect pending required tasks when AgentChat opens.
+ */
+app.get('/api/user/pending-tasks', async (req, res) => {
+  try {
+    const supabase = getSupabaseClient(req);
+    const { data: { user }, error: authErr } = await supabase.auth.getUser();
+    if (authErr || !user) return res.status(401).json({ error: 'Unauthorized' });
+
+    // Find any pending user_error interventions from the dynamic problem solver
+    const { data: interventions } = await supabase
+      .from('agent_interventions')
+      .select('id, intervention_type, context, created_at')
+      .eq('user_id', user.id)
+      .eq('status', 'pending')
+      .in('intervention_type', ['user_error', 'user_setup_required', 'missing_config'])
+      .order('created_at', { ascending: false })
+      .limit(5);
+
+    // Also check dynamic_error_log for user_error type
+    const { data: errorLogs } = await supabase
+      .from('dynamic_error_log')
+      .select('id, error_type, description, context, created_at')
+      .eq('user_id', user.id)
+      .eq('error_type', 'user_error')
+      .eq('status', 'open')
+      .order('created_at', { ascending: false })
+      .limit(5);
+
+    const hasPending = (interventions?.length || 0) + (errorLogs?.length || 0) > 0;
+
+    res.json({
+      ok: true,
+      hasPending,
+      count: (interventions?.length || 0) + (errorLogs?.length || 0),
+      interventions: interventions || [],
+      errors: errorLogs || [],
+    });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
