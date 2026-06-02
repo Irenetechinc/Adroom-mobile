@@ -1,2 +1,1 @@
-- [OAuth deep-link redirect requirement](oauth-deep-link-redirect.md) — Facebook/Instagram callbacks must redirect to adroom:// scheme; WhatsApp callback must NOT use window.close().
-- [OAuth Token Refresh Service](token-refresh-service.md) — platform-specific refresh quirks, updated_at heuristic, admin endpoints.
+- [Android OAuth browser function](oauth-android-browser.md) — use openAuthSessionAsync (not openBrowserAsync) for OAuth; ignore return value, use server-side polling instead.
