@@ -2,7 +2,6 @@ import { supabase } from './supabase';
 import { FacebookConfig } from '../types/facebook';
 import * as WebBrowser from 'expo-web-browser';
 
-// maybeCompleteAuthSession() is a no-op on native; kept for web compatibility.
 WebBrowser.maybeCompleteAuthSession();
 
 const FB_APP_ID = process.env.EXPO_PUBLIC_FACEBOOK_APP_ID;
@@ -19,14 +18,23 @@ export const FacebookService = {
   /**
    * Initiate Facebook Login Flow.
    *
-   * Uses the polling pattern (openBrowserAsync + /auth/poll) instead of
-   * openAuthSessionAsync. On Expo SDK 50+ / Android, openAuthSessionAsync
-   * returns { type: 'cancel' } when the backend redirects to the adroom://
-   * custom scheme because Android's Intent system intercepts the redirect
-   * outside the Chrome Custom Tab before the Tab can return it to the JS
-   * layer. The polling approach is immune to this — the code is stored by
-   * the backend callback and retrieved by the app independently of browser
-   * redirect detection.
+   * Strategy: openBrowserAsync (fire-and-forget) + /auth/poll.
+   *
+   * WHY not openAuthSessionAsync:
+   *   On Expo SDK 50+ / Android, openAuthSessionAsync returns { type: 'cancel' }
+   *   when the backend redirects to the adroom:// custom scheme because Android's
+   *   Intent system intercepts it outside the Chrome Custom Tab session.
+   *
+   * WHY not setInterval-only polling:
+   *   When Chrome Custom Tabs opens, Android pauses the host Activity and React
+   *   Native throttles JS timers. setInterval may barely fire while the browser
+   *   is open, causing the typing indicator to appear frozen.
+   *
+   * SOLUTION: Open the browser fire-and-forget. When openBrowserAsync resolves
+   *   (browser dismissed — triggered by the backend's adroom:// redirect or the
+   *   user pressing back), the app is in the foreground and timers are reliable.
+   *   We immediately poll 5 times in rapid succession. A background setInterval
+   *   is kept as a safety net for the uncommon case where the browser stays open.
    */
   async login(): Promise<string | null> {
     const BACKEND_URL = process.env.EXPO_PUBLIC_API_URL;
@@ -44,79 +52,83 @@ export const FacebookService = {
       `&scope=pages_show_list,pages_read_engagement,pages_manage_posts,pages_messaging,public_profile` +
       `&state=${state}`;
 
-    console.log('[FacebookService] Opening browser for OAuth (polling mode)…');
+    console.log('[FacebookService] Opening browser (polling mode)…');
 
     return new Promise((resolve) => {
-      const POLL_MS               = 2000;
-      const TIMEOUT_MS            = 3 * 60 * 1000; // 3 min
-      const BROWSER_CLOSE_GRACE   = 8000;           // 8 s after browser closes
-      const start                 = Date.now();
-      let codeReceived            = false;
-      let browserClosedAt: number | null = null;
+      const TIMEOUT_MS = 2 * 60 * 1000; // 2 min hard cap
+      const start      = Date.now();
+      let done         = false;
 
-      // Fire-and-forget — we do NOT await the redirect URL.
-      // The backend callback stores the code; we fetch it via polling.
-      WebBrowser.openBrowserAsync(authUrl)
-        .then(() => { if (!codeReceived) browserClosedAt = Date.now(); })
-        .catch(() => { if (!codeReceived) browserClosedAt = Date.now(); });
-
+      // Single-use guard — prevents resolve() being called more than once.
       const finish = (result: string | null) => {
-        if (codeReceived && result === null) return; // already resolved with a token
-        codeReceived = true;
-        clearInterval(poll);
+        if (done) return;
+        done = true;
+        clearInterval(bgPoll);
         WebBrowser.dismissBrowser().catch(() => {});
         resolve(result);
       };
 
-      const poll = setInterval(async () => {
-        // Hard timeout
-        if (Date.now() - start > TIMEOUT_MS) { finish(null); return; }
-        // Browser closed but no code found within grace period → user cancelled
-        if (browserClosedAt !== null && !codeReceived && Date.now() - browserClosedAt > BROWSER_CLOSE_GRACE) {
-          finish(null); return;
-        }
+      // Tries /auth/poll once. Returns true if the flow is complete (code found
+      // or error), false if still pending.
+      const trySinglePoll = async (): Promise<boolean> => {
         try {
           const res = await fetch(`${BACKEND_URL}/auth/poll?state=${state}`);
-          if (!res.ok) return;
+          if (!res.ok) return false;
           const data = await res.json();
-          if (data.error) { finish(null); return; }
+          if (data.error) { finish(null); return true; }
           if (data.code) {
-            codeReceived = true;
-            clearInterval(poll);
-            WebBrowser.dismissBrowser().catch(() => {});
             try {
-              const exchangeRes = await fetch(`${BACKEND_URL}/api/auth/facebook/exchange`, {
+              const ex     = await fetch(`${BACKEND_URL}/api/auth/facebook/exchange`, {
                 method:  'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body:    JSON.stringify({ code: data.code, redirectUri: callbackUrl }),
               });
-              const exchangeData = await exchangeRes.json();
-              if (exchangeData.access_token) {
-                resolve(exchangeData.access_token);
-              } else {
-                throw new Error(exchangeData.error || 'Token exchange failed');
-              }
-            } catch (e: any) {
-              console.error('[FacebookService] Token exchange error:', e.message);
-              resolve(null);
-            }
+              const exData = await ex.json();
+              finish(exData.access_token || null);
+            } catch { finish(null); }
+            return true;
           }
-        } catch { /* keep polling */ }
-      }, POLL_MS);
+        } catch { /* ignore, keep trying */ }
+        return false;
+      };
+
+      // PRIMARY path ─────────────────────────────────────────────────────────
+      // When the browser closes (backend redirected to adroom://, or user
+      // pressed back), the app is in the foreground. Poll 5 times, 1 s apart.
+      // This is fast and reliable because JS timers run normally in foreground.
+      WebBrowser.openBrowserAsync(authUrl)
+        .then(async () => {
+          for (let i = 0; i < 5 && !done; i++) {
+            await new Promise<void>(r => setTimeout(r, i === 0 ? 300 : 1000));
+            const found = await trySinglePoll();
+            if (found) return;
+          }
+          // Browser closed, 5 polls yielded nothing → user cancelled.
+          finish(null);
+        })
+        .catch(() => finish(null));
+
+      // FALLBACK path ─────────────────────────────────────────────────────────
+      // Polls every 2 s while the browser is open. May be throttled by Android
+      // when the Activity is paused, but handles edge cases where the browser
+      // closes without triggering openBrowserAsync.then() (e.g. task-switch).
+      const bgPoll = setInterval(async () => {
+        if (done) { clearInterval(bgPoll); return; }
+        if (Date.now() - start > TIMEOUT_MS) { finish(null); return; }
+        await trySinglePoll();
+      }, 2000);
     });
   },
 
   async getConfig(): Promise<FacebookConfig | null> {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return null;
-
     const { data, error } = await supabase
       .from('ad_configs')
       .select('*')
       .eq('user_id', user.id)
       .eq('platform', 'facebook')
       .maybeSingle();
-
     if (error) throw error;
     return data;
   },
@@ -135,80 +147,51 @@ export const FacebookService = {
     try {
       const meRes = await fetch(`https://graph.facebook.com/v18.0/me?access_token=${input.access_token}`);
       return meRes.ok;
-    } catch (e) {
-      console.error('Token validation failed:', e);
-      return false;
-    }
+    } catch { return false; }
   },
 
-  async saveConfig(
-    pageId: string,
-    pageName: string,
-    accessToken: string
-  ): Promise<FacebookConfig> {
+  async saveConfig(pageId: string, pageName: string, accessToken: string): Promise<FacebookConfig> {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) throw new Error('User not authenticated');
-
-    const configData: any = {
-      user_id:      user.id,
-      platform:     'facebook',
-      page_id:      pageId,
-      page_name:    pageName,
-      access_token: accessToken,
-      updated_at:   new Date().toISOString(),
-    };
-
     const { data, error } = await supabase
       .from('ad_configs')
-      .upsert(configData, { onConflict: 'user_id,platform' })
-      .select()
-      .single();
-
+      .upsert({
+        user_id: user.id, platform: 'facebook',
+        page_id: pageId, page_name: pageName,
+        access_token: accessToken, updated_at: new Date().toISOString(),
+      }, { onConflict: 'user_id,platform' })
+      .select().single();
     if (error) throw error;
     return data;
   },
 
   async postComment(objectId: string, message: string, accessToken: string): Promise<string> {
-    const response = await fetch(
-      `https://graph.facebook.com/v18.0/${objectId}/comments`,
-      {
-        method:  'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({ message, access_token: accessToken }),
-      }
-    );
+    const response = await fetch(`https://graph.facebook.com/v18.0/${objectId}/comments`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message, access_token: accessToken }),
+    });
     const data = await response.json();
     if (data.error) throw new Error(data.error.message);
     return data.id;
   },
 
   async likeObject(objectId: string, accessToken: string): Promise<boolean> {
-    const response = await fetch(
-      `https://graph.facebook.com/v18.0/${objectId}/likes`,
-      {
-        method:  'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({ access_token: accessToken }),
-      }
-    );
+    const response = await fetch(`https://graph.facebook.com/v18.0/${objectId}/likes`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ access_token: accessToken }),
+    });
     const data = await response.json();
     if (data.error) throw new Error(data.error.message);
     return data.success;
   },
 
   async postMessage(recipientId: string, message: string, accessToken: string): Promise<string> {
-    const response = await fetch(
-      `https://graph.facebook.com/v18.0/me/messages`,
-      {
-        method:  'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({
-          recipient:    { id: recipientId },
-          message:      { text: message },
-          access_token: accessToken,
-        }),
-      }
-    );
+    const response = await fetch(`https://graph.facebook.com/v18.0/me/messages`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        recipient: { id: recipientId }, message: { text: message }, access_token: accessToken,
+      }),
+    });
     const data = await response.json();
     if (data.error) throw new Error(data.error.message);
     return data.message_id || data.recipient_id;
@@ -218,15 +201,10 @@ export const FacebookService = {
     const body: any = { message, access_token: accessToken, published: true };
     const endpoint  = imageUrl ? 'photos' : 'feed';
     if (imageUrl) body.url = imageUrl;
-
-    const response = await fetch(
-      `https://graph.facebook.com/v18.0/${pageId}/${endpoint}`,
-      {
-        method:  'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify(body),
-      }
-    );
+    const response = await fetch(`https://graph.facebook.com/v18.0/${pageId}/${endpoint}`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
     const data = await response.json();
     if (data.error) throw new Error(data.error.message);
     return data.id || data.post_id;
