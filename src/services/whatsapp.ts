@@ -1,14 +1,11 @@
 import { supabase } from './supabase';
 import * as WebBrowser from 'expo-web-browser';
 
-// WhatsApp uses Facebook's OAuth dialog.
-// Same polling strategy as FacebookService — see facebook.ts for full explanation.
+// Same openAuthSessionAsync + server-side polling strategy as FacebookService.
+// See facebook.ts for full explanation.
 //
-// The backend /auth/whatsapp/callback now redirects to adroom:// on success
-// (same as Facebook/Instagram), so the browser closes automatically and
-// openBrowserAsync.then() fires immediately, triggering rapid post-close polls.
-// AppState listener is intentionally NOT used — it caused app crashes on some
-// Android devices due to lifecycle timing edge cases.
+// The backend /auth/whatsapp/callback redirects to adroom:// on success, which
+// causes openAuthSessionAsync to close the Custom Tab automatically.
 
 const FB_APP_ID = process.env.EXPO_PUBLIC_FACEBOOK_APP_ID;
 
@@ -37,65 +34,31 @@ export const WhatsAppService = {
       `&scope=${scopes}` +
       `&state=${state}`;
 
-    console.log('[WhatsAppService] Opening browser (polling mode)…');
+    console.log('[WhatsAppService] Opening auth session…');
 
-    return new Promise((resolve) => {
-      const TIMEOUT_MS = 2 * 60 * 1000;
-      const start      = Date.now();
-      let done         = false;
+    await WebBrowser.openAuthSessionAsync(authUrl, 'adroom://');
 
-      const finish = (result: string | null) => {
-        if (done) return;
-        done = true;
-        clearInterval(bgPoll);
-        WebBrowser.dismissBrowser().catch(() => {});
-        resolve(result);
-      };
+    console.log('[WhatsAppService] Auth session closed, polling for code…');
 
-      const trySinglePoll = async (): Promise<boolean> => {
-        try {
-          const res = await fetch(`${BACKEND_URL}/auth/poll?state=${state}`);
-          if (!res.ok) return false;
-          const data = await res.json();
-          if (data.error) { finish(null); return true; }
-          if (data.code) {
-            try {
-              const ex     = await fetch(`${BACKEND_URL}/api/auth/whatsapp/exchange`, {
-                method:  'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body:    JSON.stringify({ code: data.code, redirectUri: callbackUrl }),
-              });
-              const exData = await ex.json();
-              finish(exData.access_token || null);
-            } catch { finish(null); }
-            return true;
-          }
-        } catch {}
-        return false;
-      };
-
-      // Primary: poll immediately when browser closes.
-      // The backend now redirects to adroom:// on success, which closes the
-      // browser automatically — so this fires right after successful auth.
-      WebBrowser.openBrowserAsync(authUrl)
-        .then(async () => {
-          for (let i = 0; i < 5 && !done; i++) {
-            await new Promise<void>(r => setTimeout(r, i === 0 ? 300 : 1000));
-            const found = await trySinglePoll();
-            if (found) return;
-          }
-          finish(null);
-        })
-        .catch(() => finish(null));
-
-      // Fallback: background polling (may be throttled by Android when app is
-      // paused, but catches edge cases where the browser never closes).
-      const bgPoll = setInterval(async () => {
-        if (done) { clearInterval(bgPoll); return; }
-        if (Date.now() - start > TIMEOUT_MS) { finish(null); return; }
-        await trySinglePoll();
-      }, 2000);
-    });
+    for (let i = 0; i < 5; i++) {
+      if (i > 0) await new Promise<void>(r => setTimeout(r, 1000));
+      try {
+        const res  = await fetch(`${BACKEND_URL}/auth/poll?state=${state}`);
+        if (!res.ok) continue;
+        const data = await res.json();
+        if (data.error) return null;
+        if (data.code) {
+          const ex     = await fetch(`${BACKEND_URL}/api/auth/whatsapp/exchange`, {
+            method:  'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body:    JSON.stringify({ code: data.code, redirectUri: callbackUrl }),
+          });
+          const exData = await ex.json();
+          return exData.access_token || null;
+        }
+      } catch { /* retry */ }
+    }
+    return null;
   },
 
   async getPhoneAccounts(accessToken: string): Promise<WhatsAppPhoneAccount[]> {

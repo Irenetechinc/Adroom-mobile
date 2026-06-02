@@ -16,25 +16,21 @@ export interface FacebookPage {
 export const FacebookService = {
 
   /**
-   * Initiate Facebook Login Flow.
+   * Facebook OAuth login using server-side polling.
    *
-   * Strategy: openBrowserAsync (fire-and-forget) + /auth/poll.
+   * WHY openAuthSessionAsync (not openBrowserAsync):
+   *   openAuthSessionAsync(url, 'adroom://') configures the Chrome Custom Tab
+   *   to monitor for the adroom:// scheme and close automatically when the
+   *   backend redirects there. openBrowserAsync does NOT do this — on some
+   *   Android versions it shows "Can't open link" and the tab stays open
+   *   indefinitely, which is why the typing indicator appeared frozen.
    *
-   * WHY not openAuthSessionAsync:
-   *   On Expo SDK 50+ / Android, openAuthSessionAsync returns { type: 'cancel' }
-   *   when the backend redirects to the adroom:// custom scheme because Android's
-   *   Intent system intercepts it outside the Chrome Custom Tab session.
-   *
-   * WHY not setInterval-only polling:
-   *   When Chrome Custom Tabs opens, Android pauses the host Activity and React
-   *   Native throttles JS timers. setInterval may barely fire while the browser
-   *   is open, causing the typing indicator to appear frozen.
-   *
-   * SOLUTION: Open the browser fire-and-forget. When openBrowserAsync resolves
-   *   (browser dismissed — triggered by the backend's adroom:// redirect or the
-   *   user pressing back), the app is in the foreground and timers are reliable.
-   *   We immediately poll 5 times in rapid succession. A background setInterval
-   *   is kept as a safety net for the uncommon case where the browser stays open.
+   * WHY we IGNORE the return value (success / cancel):
+   *   On newer Android + Expo SDK, openAuthSessionAsync may return
+   *   { type: 'cancel' } even on successful auth (the OS hands the adroom://
+   *   link to the app separately from the Custom Tab session). Since we store
+   *   the code server-side via /auth/poll, we don't need the code from the URL.
+   *   We just wait for the Custom Tab to close, then poll immediately.
    */
   async login(): Promise<string | null> {
     const BACKEND_URL = process.env.EXPO_PUBLIC_API_URL;
@@ -52,72 +48,37 @@ export const FacebookService = {
       `&scope=pages_show_list,pages_read_engagement,pages_manage_posts,pages_messaging,public_profile` +
       `&state=${state}`;
 
-    console.log('[FacebookService] Opening browser (polling mode)…');
+    console.log('[FacebookService] Opening auth session…');
 
-    return new Promise((resolve) => {
-      const TIMEOUT_MS = 2 * 60 * 1000; // 2 min hard cap
-      const start      = Date.now();
-      let done         = false;
+    // This resolves once the Custom Tab closes — either the user pressed back
+    // OR the backend redirected to adroom:// (which automatically closes the tab).
+    await WebBrowser.openAuthSessionAsync(authUrl, 'adroom://');
 
-      // Single-use guard — prevents resolve() being called more than once.
-      const finish = (result: string | null) => {
-        if (done) return;
-        done = true;
-        clearInterval(bgPoll);
-        WebBrowser.dismissBrowser().catch(() => {});
-        resolve(result);
-      };
+    console.log('[FacebookService] Auth session closed, polling for code…');
 
-      // Tries /auth/poll once. Returns true if the flow is complete (code found
-      // or error), false if still pending.
-      const trySinglePoll = async (): Promise<boolean> => {
-        try {
-          const res = await fetch(`${BACKEND_URL}/auth/poll?state=${state}`);
-          if (!res.ok) return false;
-          const data = await res.json();
-          if (data.error) { finish(null); return true; }
-          if (data.code) {
-            try {
-              const ex     = await fetch(`${BACKEND_URL}/api/auth/facebook/exchange`, {
-                method:  'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body:    JSON.stringify({ code: data.code, redirectUri: callbackUrl }),
-              });
-              const exData = await ex.json();
-              finish(exData.access_token || null);
-            } catch { finish(null); }
-            return true;
-          }
-        } catch { /* ignore, keep trying */ }
-        return false;
-      };
+    // Poll up to 5 times (≈5 s). The app is in the foreground now so timers
+    // are fully reliable. The first poll usually succeeds on attempt 1.
+    for (let i = 0; i < 5; i++) {
+      if (i > 0) await new Promise<void>(r => setTimeout(r, 1000));
+      try {
+        const res  = await fetch(`${BACKEND_URL}/auth/poll?state=${state}`);
+        if (!res.ok) continue;
+        const data = await res.json();
+        if (data.error) return null;
+        if (data.code) {
+          const ex     = await fetch(`${BACKEND_URL}/api/auth/facebook/exchange`, {
+            method:  'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body:    JSON.stringify({ code: data.code, redirectUri: callbackUrl }),
+          });
+          const exData = await ex.json();
+          return exData.access_token || null;
+        }
+      } catch { /* network hiccup — retry */ }
+    }
 
-      // PRIMARY path ─────────────────────────────────────────────────────────
-      // When the browser closes (backend redirected to adroom://, or user
-      // pressed back), the app is in the foreground. Poll 5 times, 1 s apart.
-      // This is fast and reliable because JS timers run normally in foreground.
-      WebBrowser.openBrowserAsync(authUrl)
-        .then(async () => {
-          for (let i = 0; i < 5 && !done; i++) {
-            await new Promise<void>(r => setTimeout(r, i === 0 ? 300 : 1000));
-            const found = await trySinglePoll();
-            if (found) return;
-          }
-          // Browser closed, 5 polls yielded nothing → user cancelled.
-          finish(null);
-        })
-        .catch(() => finish(null));
-
-      // FALLBACK path ─────────────────────────────────────────────────────────
-      // Polls every 2 s while the browser is open. May be throttled by Android
-      // when the Activity is paused, but handles edge cases where the browser
-      // closes without triggering openBrowserAsync.then() (e.g. task-switch).
-      const bgPoll = setInterval(async () => {
-        if (done) { clearInterval(bgPoll); return; }
-        if (Date.now() - start > TIMEOUT_MS) { finish(null); return; }
-        await trySinglePoll();
-      }, 2000);
-    });
+    // Custom Tab closed but no code found → user cancelled or auth failed.
+    return null;
   },
 
   async getConfig(): Promise<FacebookConfig | null> {
