@@ -1,10 +1,8 @@
 import * as WebBrowser from 'expo-web-browser';
 import { supabase } from './supabase';
 
-// Instagram Graph API is accessed via Facebook Login.
-// Uses the same polling pattern as FacebookService (openBrowserAsync + /auth/poll)
-// to avoid the Expo SDK 50+ Android bug where openAuthSessionAsync returns
-// { type: 'cancel' } when the backend redirects to the adroom:// custom scheme.
+// Same polling strategy as FacebookService — see facebook.ts for full explanation.
+// openBrowserAsync + immediate post-close polls (primary) + bgPoll setInterval (fallback).
 
 const FB_APP_ID = process.env.EXPO_PUBLIC_FACEBOOK_APP_ID;
 
@@ -17,8 +15,8 @@ export const InstagramService = {
 
     const state       = Math.random().toString(36).substring(2) + Date.now().toString(36);
     const callbackUrl = `${BACKEND_URL}/auth/instagram/callback`;
+    const scopes      = 'instagram_basic,instagram_content_publish,instagram_manage_comments,instagram_manage_insights,pages_show_list,ads_management';
 
-    const scopes  = 'instagram_basic,instagram_content_publish,instagram_manage_comments,instagram_manage_insights,pages_show_list,ads_management';
     const authUrl =
       `https://www.facebook.com/v18.0/dialog/oauth` +
       `?client_id=${FB_APP_ID}` +
@@ -27,67 +25,67 @@ export const InstagramService = {
       `&scope=${scopes}` +
       `&state=${state}`;
 
-    console.log('[InstagramService] Opening browser for OAuth (polling mode)…');
+    console.log('[InstagramService] Opening browser (polling mode)…');
 
     return new Promise((resolve) => {
-      const POLL_MS             = 2000;
-      const TIMEOUT_MS          = 3 * 60 * 1000;
-      const BROWSER_CLOSE_GRACE = 8000;
-      const start               = Date.now();
-      let codeReceived          = false;
-      let browserClosedAt: number | null = null;
-
-      WebBrowser.openBrowserAsync(authUrl)
-        .then(() => { if (!codeReceived) browserClosedAt = Date.now(); })
-        .catch(() => { if (!codeReceived) browserClosedAt = Date.now(); });
+      const TIMEOUT_MS = 2 * 60 * 1000;
+      const start      = Date.now();
+      let done         = false;
 
       const finish = (result: string | null) => {
-        if (codeReceived && result === null) return;
-        codeReceived = true;
-        clearInterval(poll);
+        if (done) return;
+        done = true;
+        clearInterval(bgPoll);
         WebBrowser.dismissBrowser().catch(() => {});
         resolve(result);
       };
 
-      const poll = setInterval(async () => {
-        if (Date.now() - start > TIMEOUT_MS) { finish(null); return; }
-        if (browserClosedAt !== null && !codeReceived && Date.now() - browserClosedAt > BROWSER_CLOSE_GRACE) {
-          finish(null); return;
-        }
+      const trySinglePoll = async (): Promise<boolean> => {
         try {
           const res = await fetch(`${BACKEND_URL}/auth/poll?state=${state}`);
-          if (!res.ok) return;
+          if (!res.ok) return false;
           const data = await res.json();
-          if (data.error) { finish(null); return; }
+          if (data.error) { finish(null); return true; }
           if (data.code) {
-            codeReceived = true;
-            clearInterval(poll);
-            WebBrowser.dismissBrowser().catch(() => {});
             try {
-              const exchangeRes = await fetch(`${BACKEND_URL}/api/auth/facebook/exchange`, {
+              const ex     = await fetch(`${BACKEND_URL}/api/auth/facebook/exchange`, {
                 method:  'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body:    JSON.stringify({ code: data.code, redirectUri: callbackUrl }),
               });
-              const exchangeData = await exchangeRes.json();
-              if (exchangeData.access_token) {
-                resolve(exchangeData.access_token);
-              } else {
-                throw new Error(exchangeData.error || 'Instagram token exchange failed');
-              }
-            } catch (e: any) {
-              console.error('[InstagramService] Token exchange error:', e.message);
-              resolve(null);
-            }
+              const exData = await ex.json();
+              finish(exData.access_token || null);
+            } catch { finish(null); }
+            return true;
           }
-        } catch { /* keep polling */ }
-      }, POLL_MS);
+        } catch {}
+        return false;
+      };
+
+      // Primary: poll immediately when browser closes (app is foregrounded).
+      WebBrowser.openBrowserAsync(authUrl)
+        .then(async () => {
+          for (let i = 0; i < 5 && !done; i++) {
+            await new Promise<void>(r => setTimeout(r, i === 0 ? 300 : 1000));
+            const found = await trySinglePoll();
+            if (found) return;
+          }
+          finish(null);
+        })
+        .catch(() => finish(null));
+
+      // Fallback: background polling while browser is open.
+      const bgPoll = setInterval(async () => {
+        if (done) { clearInterval(bgPoll); return; }
+        if (Date.now() - start > TIMEOUT_MS) { finish(null); return; }
+        await trySinglePoll();
+      }, 2000);
     });
   },
 
   async getInstagramAccounts(accessToken: string): Promise<any[]> {
     try {
-      const pagesRes = await fetch(
+      const pagesRes  = await fetch(
         `https://graph.facebook.com/v18.0/me/accounts?access_token=${accessToken}&fields=instagram_business_account,name,id`
       );
       const pagesData = await pagesRes.json();
@@ -96,15 +94,15 @@ export const InstagramService = {
       const igAccounts = [];
       for (const page of pagesData.data || []) {
         if (page.instagram_business_account) {
-          const igRes = await fetch(
+          const igRes  = await fetch(
             `https://graph.facebook.com/v18.0/${page.instagram_business_account.id}?fields=username,name,profile_picture_url&access_token=${accessToken}`
           );
           const igData = await igRes.json();
           igAccounts.push({
-            id:      page.instagram_business_account.id,
+            id:       page.instagram_business_account.id,
             username: igData.username,
-            name:    igData.name,
-            page_id: page.id,
+            name:     igData.name,
+            page_id:  page.id,
           });
         }
       }
@@ -116,14 +114,14 @@ export const InstagramService = {
   },
 
   async publishMedia(igUserId: string, accessToken: string, imageUrl: string, caption: string): Promise<string> {
-    const containerRes = await fetch(
+    const containerRes  = await fetch(
       `https://graph.facebook.com/v18.0/${igUserId}/media?image_url=${encodeURIComponent(imageUrl)}&caption=${encodeURIComponent(caption)}&access_token=${accessToken}`,
       { method: 'POST' }
     );
     const containerData = await containerRes.json();
     if (containerData.error) throw new Error(containerData.error.message);
 
-    const publishRes = await fetch(
+    const publishRes  = await fetch(
       `https://graph.facebook.com/v18.0/${igUserId}/media_publish?creation_id=${containerData.id}&access_token=${accessToken}`,
       { method: 'POST' }
     );
@@ -135,7 +133,6 @@ export const InstagramService = {
   async saveConfig(igAccountId: string, accessToken: string, username: string): Promise<void> {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) throw new Error('User not authenticated');
-
     const { error } = await supabase.from('ad_configs').upsert({
       user_id:       user.id,
       platform:      'instagram',
@@ -145,7 +142,6 @@ export const InstagramService = {
       access_token:  accessToken,
       updated_at:    new Date().toISOString(),
     }, { onConflict: 'user_id,platform' });
-
     if (error) throw error;
   },
 };

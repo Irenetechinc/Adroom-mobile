@@ -1,13 +1,14 @@
 import { supabase } from './supabase';
 import * as WebBrowser from 'expo-web-browser';
-import { AppState, AppStateStatus } from 'react-native';
 
 // WhatsApp uses Facebook's OAuth dialog.
-// On Android, Chrome Custom Tabs may not call the openBrowserAsync completion
-// handler when the user presses the back button (changed behaviour in newer
-// Android/Expo SDK versions). We use an AppState listener as a reliable
-// fallback to detect when the app comes back to the foreground (browser
-// dismissed) and resolve quickly instead of waiting for the full timeout.
+// Same polling strategy as FacebookService — see facebook.ts for full explanation.
+//
+// The backend /auth/whatsapp/callback now redirects to adroom:// on success
+// (same as Facebook/Instagram), so the browser closes automatically and
+// openBrowserAsync.then() fires immediately, triggering rapid post-close polls.
+// AppState listener is intentionally NOT used — it caused app crashes on some
+// Android devices due to lifecycle timing edge cases.
 
 const FB_APP_ID = process.env.EXPO_PUBLIC_FACEBOOK_APP_ID;
 
@@ -27,7 +28,8 @@ export const WhatsAppService = {
     const state       = Math.random().toString(36).substring(2) + Date.now().toString(36);
     const callbackUrl = `${BACKEND_URL}/auth/whatsapp/callback`;
     const scopes      = 'whatsapp_business_management,whatsapp_business_messaging,business_management,public_profile';
-    const authUrl     =
+
+    const authUrl =
       `https://www.facebook.com/v18.0/dialog/oauth` +
       `?client_id=${FB_APP_ID}` +
       `&redirect_uri=${encodeURIComponent(callbackUrl)}` +
@@ -35,87 +37,64 @@ export const WhatsAppService = {
       `&scope=${scopes}` +
       `&state=${state}`;
 
-    console.log('[WhatsAppService] Opening browser for OAuth…');
+    console.log('[WhatsAppService] Opening browser (polling mode)…');
 
     return new Promise((resolve) => {
-      const POLL_MS             = 2000;
-      const TIMEOUT_MS          = 3 * 60 * 1000; // 3 min max (was 5 min)
-      const BROWSER_CLOSE_GRACE = 8000;           // 8 s after browser closes
-      const start               = Date.now();
-      let codeReceived          = false;
-      let browserClosedAt: number | null = null;
-      let foregroundGraceTimer: ReturnType<typeof setTimeout> | null = null;
+      const TIMEOUT_MS = 2 * 60 * 1000;
+      const start      = Date.now();
+      let done         = false;
 
       const finish = (result: string | null) => {
-        if (codeReceived && result === null) return;
-        codeReceived = true;
-        clearInterval(poll);
-        if (foregroundGraceTimer) clearTimeout(foregroundGraceTimer);
-        appStateSub.remove();
+        if (done) return;
+        done = true;
+        clearInterval(bgPoll);
         WebBrowser.dismissBrowser().catch(() => {});
         resolve(result);
       };
 
-      // AppState listener: when the app comes back to the foreground the
-      // browser has been dismissed (back button, task switch, etc.).
-      // Give the poll 8 more seconds to find the code, then give up.
-      // This is the primary fix for the "stuck forever" symptom — previously
-      // the only exit was the 5-minute TIMEOUT_MS if openBrowserAsync never
-      // resolved its Promise (which happens on newer Android).
-      const appStateSub = AppState.addEventListener('change', (nextState: AppStateStatus) => {
-        if (nextState === 'active' && !codeReceived) {
-          if (!browserClosedAt) browserClosedAt = Date.now();
-          // Allow the pending poll iteration(s) to run, then close out.
-          if (foregroundGraceTimer) clearTimeout(foregroundGraceTimer);
-          foregroundGraceTimer = setTimeout(() => {
-            if (!codeReceived) finish(null);
-          }, BROWSER_CLOSE_GRACE);
-        }
-      });
-
-      WebBrowser.openBrowserAsync(authUrl)
-        .then(() => {
-          if (!codeReceived) {
-            browserClosedAt = Date.now();
-          }
-        })
-        .catch(() => {
-          if (!codeReceived) finish(null);
-        });
-
-      const poll = setInterval(async () => {
-        if (codeReceived) { clearInterval(poll); return; }
-        if (Date.now() - start > TIMEOUT_MS) { finish(null); return; }
-        if (
-          browserClosedAt !== null &&
-          !codeReceived &&
-          Date.now() - browserClosedAt > BROWSER_CLOSE_GRACE
-        ) {
-          finish(null); return;
-        }
+      const trySinglePoll = async (): Promise<boolean> => {
         try {
           const res = await fetch(`${BACKEND_URL}/auth/poll?state=${state}`);
-          if (!res.ok) return;
+          if (!res.ok) return false;
           const data = await res.json();
-          if (data.error) { finish(null); return; }
+          if (data.error) { finish(null); return true; }
           if (data.code) {
-            codeReceived = true;
-            clearInterval(poll);
-            if (foregroundGraceTimer) clearTimeout(foregroundGraceTimer);
-            appStateSub.remove();
-            WebBrowser.dismissBrowser().catch(() => {});
             try {
-              const exchangeRes = await fetch(`${BACKEND_URL}/api/auth/whatsapp/exchange`, {
+              const ex     = await fetch(`${BACKEND_URL}/api/auth/whatsapp/exchange`, {
                 method:  'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body:    JSON.stringify({ code: data.code, redirectUri: callbackUrl }),
               });
-              const exchangeData = await exchangeRes.json();
-              resolve(exchangeData.access_token || null);
-            } catch { resolve(null); }
+              const exData = await ex.json();
+              finish(exData.access_token || null);
+            } catch { finish(null); }
+            return true;
           }
-        } catch { /* keep polling */ }
-      }, POLL_MS);
+        } catch {}
+        return false;
+      };
+
+      // Primary: poll immediately when browser closes.
+      // The backend now redirects to adroom:// on success, which closes the
+      // browser automatically — so this fires right after successful auth.
+      WebBrowser.openBrowserAsync(authUrl)
+        .then(async () => {
+          for (let i = 0; i < 5 && !done; i++) {
+            await new Promise<void>(r => setTimeout(r, i === 0 ? 300 : 1000));
+            const found = await trySinglePoll();
+            if (found) return;
+          }
+          finish(null);
+        })
+        .catch(() => finish(null));
+
+      // Fallback: background polling (may be throttled by Android when app is
+      // paused, but catches edge cases where the browser never closes).
+      const bgPoll = setInterval(async () => {
+        if (done) { clearInterval(bgPoll); return; }
+        if (Date.now() - start > TIMEOUT_MS) { finish(null); return; }
+        await trySinglePoll();
+      }, 2000);
     });
   },
 
@@ -123,7 +102,7 @@ export const WhatsAppService = {
     try {
       const BACKEND_URL = process.env.EXPO_PUBLIC_API_URL;
       if (!BACKEND_URL) return [];
-      const res = await fetch(`${BACKEND_URL}/api/auth/whatsapp/phone-numbers`, {
+      const res  = await fetch(`${BACKEND_URL}/api/auth/whatsapp/phone-numbers`, {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
         body:    JSON.stringify({ access_token: accessToken }),
@@ -139,7 +118,6 @@ export const WhatsAppService = {
   async saveConfig(phoneNumberId: string, accessToken: string, displayName: string): Promise<void> {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) throw new Error('User not authenticated');
-
     const { error } = await supabase.from('ad_configs').upsert({
       user_id:      user.id,
       platform:     'whatsapp',
@@ -148,7 +126,6 @@ export const WhatsAppService = {
       access_token: accessToken,
       updated_at:   new Date().toISOString(),
     }, { onConflict: 'user_id,platform' });
-
     if (error) throw error;
   },
 
