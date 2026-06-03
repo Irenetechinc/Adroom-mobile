@@ -1,10 +1,8 @@
-import { ExpoConfig, ConfigContext } from 'expo/config';
-
-export default ({ config }: ConfigContext): ExpoConfig => {
+module.exports = ({ config }) => {
   return {
     ...config,
-    name: config.name || "AdRoom AI",
-    slug: config.slug || "adroom-mobile",
+    name: config.name || 'AdRoom AI',
+    slug: config.slug || 'adroom-mobile',
     extra: {
       ...config.extra,
       supabaseUrl: process.env.EXPO_PUBLIC_SUPABASE_URL,
