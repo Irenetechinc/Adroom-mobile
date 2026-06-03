@@ -34,31 +34,50 @@ export const WhatsAppService = {
       `&scope=${scopes}` +
       `&state=${state}`;
 
-    console.log('[WhatsAppService] Opening auth session…');
+    console.log('[WhatsAppService] Opening browser…');
 
-    await WebBrowser.openAuthSessionAsync(authUrl, 'adroom://');
+    // openBrowserAsync + background polling — see facebook.ts for full explanation.
+    // openAuthSessionAsync with adroom:// was returning cancel immediately on Android.
+    let browserClosed = false;
+    WebBrowser.openBrowserAsync(authUrl, { showInRecents: false })
+      .then(() => { browserClosed = true; })
+      .catch(() => { browserClosed = true; });
 
-    console.log('[WhatsAppService] Auth session closed, polling for code…');
+    let foundCode: string | null = null;
 
-    for (let i = 0; i < 5; i++) {
-      if (i > 0) await new Promise<void>(r => setTimeout(r, 1000));
+    for (let i = 0; i < 120 && !browserClosed; i++) {
+      await new Promise<void>(r => setTimeout(r, 1000));
+      if (browserClosed) break;
       try {
         const res  = await fetch(`${BACKEND_URL}/auth/poll?state=${state}`);
         if (!res.ok) continue;
         const data = await res.json();
-        if (data.error) return null;
-        if (data.code) {
-          const ex     = await fetch(`${BACKEND_URL}/api/auth/whatsapp/exchange`, {
-            method:  'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body:    JSON.stringify({ code: data.code, redirectUri: callbackUrl }),
-          });
-          const exData = await ex.json();
-          return exData.access_token || null;
-        }
+        if (data.error) break;
+        if (data.code) { foundCode = data.code; break; }
       } catch { /* retry */ }
     }
-    return null;
+
+    if (!foundCode && browserClosed) {
+      await new Promise<void>(r => setTimeout(r, 2000));
+      try {
+        const res = await fetch(`${BACKEND_URL}/auth/poll?state=${state}`);
+        if (res.ok) { const data = await res.json(); if (data.code) foundCode = data.code; }
+      } catch { /* ignore */ }
+    }
+
+    try { await WebBrowser.dismissBrowser(); } catch { /* already closed */ }
+
+    if (!foundCode) return null;
+
+    try {
+      const ex     = await fetch(`${BACKEND_URL}/api/auth/whatsapp/exchange`, {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ code: foundCode, redirectUri: callbackUrl }),
+      });
+      const exData = await ex.json();
+      return exData.access_token || null;
+    } catch { return null; }
   },
 
   async getPhoneAccounts(accessToken: string): Promise<WhatsAppPhoneAccount[]> {

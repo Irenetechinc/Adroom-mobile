@@ -1,21 +1,29 @@
 ---
 name: Android OAuth browser function
-description: Which WebBrowser function to use for OAuth on Android + Expo SDK 54, and why openBrowserAsync fails.
+description: Which WebBrowser function to use for OAuth on Android by platform, and the root cause of the instant-cancel bug.
 ---
 
-## Rule
-Always use `WebBrowser.openAuthSessionAsync(authUrl, 'adroom://')` for OAuth on Android.
-Never use `openBrowserAsync` for OAuth flows.
+## Rule — Facebook / Instagram / WhatsApp
+Use `WebBrowser.openBrowserAsync(authUrl, { showInRecents: false })` (fire-and-forget) + background polling loop.
+**Never use `openAuthSessionAsync` for these three platforms.**
 
-**Why:** `openAuthSessionAsync` configures Chrome Custom Tab to monitor for the `adroom://` scheme and close automatically when the backend redirects there. `openBrowserAsync` does NOT do this — on Android it may show "Can't open link" inside the Custom Tab, leaving the browser open indefinitely, which makes the typing indicator appear frozen.
+**Why:** `openAuthSessionAsync(url, 'adroom://')` returns `{ type: 'cancel' }` immediately on Android when:
+- the app runs in Expo Go (the `adroom://` scheme is not registered there), OR
+- the Facebook app is installed (it intercepts the OAuth URL before Chrome Custom Tab can monitor it).
+This caused the "connection was cancelled" message with no browser ever opening — the 5-poll loop ran against a server that hadn't received the callback yet.
 
-**Why return value is ignored:** On newer Android + Expo SDK 54, `openAuthSessionAsync` may return `{ type: 'cancel' }` even on successful auth (the OS handles the `adroom://` deep link separately). We store the code server-side via `/auth/poll?state=...` so we don't need the code from the URL. We just wait for the tab to close, then poll immediately.
+**How to apply (FB / IG / WA):**
+1. `openBrowserAsync(authUrl, { showInRecents: false })` — sets `browserClosed = true` in `.then()/.catch()`
+2. Poll `/auth/poll?state=...` every 1 s for up to 120 s, stopping if `browserClosed`
+3. If browser closed without code: wait 2 s grace period, poll once more
+4. `await WebBrowser.dismissBrowser()` — closes browser after code found (no-op if already closed)
+5. Exchange code → return token
+Backend success callbacks show the `buildOAuthClosePage` HTML instead of `adroom://` redirect.
 
-**How to apply:** 
-1. `await WebBrowser.openAuthSessionAsync(authUrl, 'adroom://')` — waits for tab to close
-2. Poll `/auth/poll?state=...` up to 5 times (1 s apart) — app is foregrounded now, timers are reliable
-3. On code found: exchange with backend → return token
-4. Backend OAuth callbacks MUST redirect to `adroom://auth/<platform>/callback` on success
+## Rule — Twitter / LinkedIn / TikTok
+These platforms already work correctly. Leave them using `openAuthSessionAsync` + URL parsing — **do not change**.
 
-## Platforms confirmed
-Facebook, Instagram, WhatsApp — all use Facebook's OAuth dialog with `adroom://` redirect.
+## Platforms changed
+Facebook (`facebook.ts`), Instagram (`instagram.ts`), WhatsApp (`whatsapp.ts`) — all rewritten.
+Backend callbacks changed: facebook, instagram, whatsapp → show success HTML (no `adroom://` redirect).
+Twitter, LinkedIn, TikTok callbacks — left unchanged, still redirect to `adroom://`.

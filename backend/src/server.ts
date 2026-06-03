@@ -313,7 +313,12 @@ app.get('/auth/facebook/callback', (req, res) => {
     else if (error) setOAuthError(state, error_description || error || 'oauth_error');
   }
   if (error || !code) return res.send(buildOAuthClosePage('Facebook', false, error_description));
-  return res.redirect(`adroom://auth/facebook/callback?code=${encodeURIComponent(code)}`);
+  // Show success page — the mobile app polls /auth/poll and dismisses the browser
+  // programmatically once the code is detected. No adroom:// deep link redirect
+  // is used because Custom Tab deep-link handling is unreliable on Android
+  // (returns cancel immediately if the scheme isn't registered or the Facebook
+  // app intercepts the OAuth flow).
+  return res.send(buildOAuthClosePage('Facebook', true));
 });
 
 app.get('/auth/instagram/callback', (req, res) => {
@@ -326,7 +331,7 @@ app.get('/auth/instagram/callback', (req, res) => {
     else if (error) setOAuthError(state, error_description || error || 'oauth_error');
   }
   if (error || !code) return res.send(buildOAuthClosePage('Instagram', false, error_description));
-  return res.redirect(`adroom://auth/instagram/callback?code=${encodeURIComponent(code)}`);
+  return res.send(buildOAuthClosePage('Instagram', true));
 });
 
 app.get('/auth/twitter/callback', (req, res) => {
@@ -381,12 +386,10 @@ app.get('/auth/whatsapp/callback', (req, res) => {
     if (code) setOAuthCode(state, code);
     else if (error) setOAuthError(state, error_description || error || 'oauth_error');
   }
-  // On error: show an HTML page (no app to redirect to).
   if (error || !code) return res.send(buildOAuthClosePage('WhatsApp Business', false, error_description));
-  // On success: redirect to app deep link (same as Facebook/Instagram).
-  // This closes the browser automatically on Android, which triggers
-  // openBrowserAsync.then() and starts the rapid post-close polling.
-  return res.redirect(`adroom://auth/whatsapp/callback?code=${encodeURIComponent(code)}`);
+  // Show success page — the mobile app polls /auth/poll and dismisses the browser
+  // programmatically. No adroom:// redirect (unreliable on Android).
+  return res.send(buildOAuthClosePage('WhatsApp Business', true));
 });
 
 /**
