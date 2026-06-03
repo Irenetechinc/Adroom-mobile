@@ -1,11 +1,10 @@
 import { supabase } from './supabase';
 import * as WebBrowser from 'expo-web-browser';
 
-// Same openAuthSessionAsync + server-side polling strategy as FacebookService.
-// See facebook.ts for full explanation.
-//
-// The backend /auth/whatsapp/callback redirects to adroom:// on success, which
-// causes openAuthSessionAsync to close the Custom Tab automatically.
+// openBrowserAsync + background polling — same approach as FacebookService.
+// See facebook.ts for the full explanation of why openAuthSessionAsync was
+// replaced: it returned { type: 'cancel' } immediately on Android without
+// ever opening a browser, causing an instant "connection cancelled" message.
 
 const FB_APP_ID = process.env.EXPO_PUBLIC_FACEBOOK_APP_ID;
 
