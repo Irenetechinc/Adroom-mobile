@@ -652,6 +652,12 @@ export class SchedulerService {
         try {
             const { leadDiscoveryService } = await import('./leadDiscoveryService');
             await leadDiscoveryService.runDiscoveryCycle();
+            // After each discovery cycle, run the self-evolution engine to analyse
+            // which sources performed best and permanently adopt winning strategies.
+            // This runs in background — errors don't affect the main discovery cycle.
+            leadDiscoveryService.evolveDiscoverySources().catch((e: any) =>
+                console.error('[Scheduler] Self-evolution error:', e.message)
+            );
         } catch (e: any) {
             console.error('[Scheduler] Lead discovery error:', e.message);
         }

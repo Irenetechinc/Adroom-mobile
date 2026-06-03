@@ -1,1 +1,3 @@
 - [Android OAuth browser function](oauth-android-browser.md) — use openAuthSessionAsync (not openBrowserAsync) for OAuth; ignore return value, use server-side polling instead.
+- [Agent skill storage pattern](agent-skill-pattern.md) — execution_prompt must be prose description, never a {{placeholder}} template; useSkill() writes a fresh AI prompt each time from description + live variables.
+- [Follow-up evolution tables](follow-up-evolution-tables.md) — follow_up_evolution_log, self_evolution_log, lead_evolution_queries, ai_prompt_log added in autonomous_intelligence_migration.sql (migration #9).

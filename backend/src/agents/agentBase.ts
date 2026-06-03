@@ -781,23 +781,24 @@ Return STRICT JSON only (no markdown, no explanation):
 
     async buildSkill(params: { problem: string; context: string; strategyId: string }): Promise<string> {
         this.log(`Building new skill for: ${params.problem}`);
-        const prompt = `
-You are the AdRoom ${this.agentType} Agent. You encountered a gap and need to CREATE A NEW REUSABLE SKILL.
+        // The AI Brain designs the skill as a pure description — NO templates,
+        // NO placeholders, NO fixed strings. When the skill is USED, the AI Brain
+        // writes a completely fresh prompt from the description and live variables.
+        const prompt = `You are the AdRoom ${this.agentType} Agent. You encountered a gap and must create a reusable autonomous marketing skill.
 
-PROBLEM: ${params.problem}
-CONTEXT: ${params.context}
+PROBLEM ENCOUNTERED: ${params.problem}
+EXECUTION CONTEXT: ${params.context}
 
-Design a new autonomous marketing skill.
-Return JSON:
+Design a skill that the AI Brain can invoke autonomously in the future.
+Return JSON — all fields must be prose descriptions, NOT templates with placeholders:
 {
-  "skill_name": "snake_case_unique_name",
-  "skill_description": "What this skill does",
-  "trigger_condition": "Exactly when this skill should auto-activate",
-  "execution_prompt": "GPT-4o prompt template. Use {{product}}, {{platform}}, {{goal}} as variables.",
-  "parameters": { "required_inputs": ["list", "of", "keys"] },
-  "success_metric": "How to measure if this skill worked"
-}
-`;
+  "skill_name": "snake_case_unique_name_max_60_chars",
+  "skill_description": "What this skill does in plain prose — describe the goal, the approach, and the expected output in 2-3 sentences",
+  "trigger_condition": "Describe the exact situation that should activate this skill in one sentence",
+  "what_data_to_use": "List the data the AI Brain should gather before executing — e.g. product name, lead message, platform performance. This guides fresh prompt construction at runtime.",
+  "what_to_produce": "Describe in prose what the AI Brain should output when using this skill — e.g. a direct sales reply, a content post, an analysis report",
+  "success_metric": "How to measure whether the skill execution was successful"
+}`;
         const response = await this.ai.generateStrategy({}, prompt);
         const skill = response.parsedJson;
         if (!skill?.skill_name) { this.log('Skill builder returned invalid response'); return ''; }
@@ -807,8 +808,10 @@ Return JSON:
             skill_name: skill.skill_name,
             skill_description: skill.skill_description,
             trigger_condition: skill.trigger_condition,
-            execution_prompt: skill.execution_prompt,
-            parameters: skill.parameters || {},
+            // execution_prompt now stores a prose description — NOT a template.
+            // useSkill() will have the AI Brain write a fresh prompt from this each time.
+            execution_prompt: `SKILL GOAL: ${skill.skill_description}\n\nDATA TO USE: ${skill.what_data_to_use}\n\nOUTPUT EXPECTED: ${skill.what_to_produce}`,
+            parameters: { what_data_to_use: skill.what_data_to_use, what_to_produce: skill.what_to_produce },
             success_metric: skill.success_metric,
             created_by_agent_run: params.strategyId,
         }, { onConflict: 'skill_name' });
@@ -822,11 +825,20 @@ Return JSON:
         const { data: skill } = await this.supabase.from('agent_skills').select('*').eq('skill_name', skillName).single();
         if (!skill) { this.log(`Skill not found: ${skillName}`); return null; }
 
-        let prompt = skill.execution_prompt;
-        for (const [key, value] of Object.entries(variables)) {
-            prompt = prompt.replace(new RegExp(`\\{\\{${key}\\}\\}`, 'g'), typeof value === 'object' ? JSON.stringify(value) : String(value));
-        }
-        const response = await this.ai.generateStrategy({}, prompt);
+        // The AI Brain writes a completely fresh prompt each time — never reuses or
+        // substitutes into a stored template. The stored description tells it what to
+        // do and what data matters; the live variables provide the actual content.
+        const freshPromptBuilder = `You are the AdRoom ${this.agentType} AI Brain executing a learned skill.
+
+SKILL DESCRIPTION:
+${skill.execution_prompt}
+
+LIVE DATA AVAILABLE FOR THIS EXECUTION:
+${Object.entries(variables).map(([k, v]) => `${k}: ${typeof v === 'object' ? JSON.stringify(v).slice(0, 300) : String(v).slice(0, 300)}`).join('\n')}
+
+Based only on the skill description and the live data above, produce the output now. Write a response that directly executes the skill goal. Be specific, use the live data, and produce immediately actionable output. Do not reference the skill name or description in your response.`;
+
+        const response = await this.ai.generateStrategy({}, freshPromptBuilder);
         await this.supabase.from('agent_skills').update({ used_count: (skill.used_count || 0) + 1, last_used_at: new Date().toISOString() }).eq('skill_name', skillName);
         return response.parsedJson || response.text;
     }
@@ -1671,7 +1683,7 @@ Return JSON ONLY:
   "avoid_tactic": "What to stop doing based on low performance",
   "skill_name": "snake_case_skill_name (max 40 chars)",
   "skill_description": "Short description of the learned skill",
-  "execution_prompt": "GPT-4o prompt template using {{product}}, {{platform}}, {{goal}} for future use",
+  "learning_description": "In plain prose (NO placeholders, NO templates): describe exactly what worked, what data drove the result, and what the AI Brain should do in the same situation in the future",
   "confidence": 0.0
 }
 `;
@@ -1683,13 +1695,16 @@ Return JSON ONLY:
                 return;
             }
 
-            // Upsert the learned skill into agent_skills
+            // Upsert the learned skill into agent_skills.
+            // execution_prompt is stored as a prose description — no templates or
+            // placeholders — so useSkill() can write a fresh prompt from it each time.
+            const skillDesc = learning.learning_description || learning.skill_description || learning.best_tactic || '';
             await this.supabase.from('agent_skills').upsert({
                 agent_type: this.agentType,
                 skill_name: `${this.agentType.toLowerCase()}_${learning.skill_name}`.slice(0, 80),
                 skill_description: learning.skill_description,
                 trigger_condition: `Use when: ${learning.key_insight}`,
-                execution_prompt: learning.execution_prompt,
+                execution_prompt: `SKILL GOAL: ${learning.skill_description}\n\nWHAT WORKED: ${skillDesc}\n\nAVOID: ${learning.avoid_tactic || 'nothing flagged'}`,
                 parameters: { best_platform: bestPlatform, confidence: learning.confidence },
                 success_metric: `Reach >${totalReach}, Engagement >${totalEngagement}`,
                 created_by_agent_run: strategyId,

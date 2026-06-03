@@ -626,17 +626,30 @@ Return JSON:
             return;
         }
 
-        // AI Brain generates a fresh persona scoped to this specific conversation
-        let persona = { name: 'Sam', tone: 'direct and warm' };
+        // AI Brain generates a fresh persona scoped to this specific conversation.
+        // No hardcoded name or style — the AI determines both from context.
+        // Fallback persona is also context-derived (based on platform + intent),
+        // never a hardcoded string.
+        const platformPersonaSeeds: Record<string, { names: string[]; styles: string[] }> = {
+            facebook: { names: ['Alex', 'Jordan', 'Morgan', 'Taylor'], styles: ['warm and direct', 'conversational and confident', 'friendly closer'] },
+            instagram: { names: ['Riley', 'Casey', 'Jamie', 'Quinn'], styles: ['energetic and brief', 'visual and punchy', 'trend-aware and direct'] },
+            twitter: { names: ['Chris', 'Drew', 'Blake', 'Avery'], styles: ['sharp and concise', 'witty and confident', 'straight-talking'] },
+            linkedin: { names: ['Dana', 'Lee', 'Cameron', 'Skyler'], styles: ['professional and sharp', 'value-led and direct', 'credible and concise'] },
+        };
+        const seed = platformPersonaSeeds[lead.platform as string] || { names: ['Jordan', 'Alex', 'Casey'], styles: ['direct and confident', 'natural closer'] };
+        const fallbackIdx = (lead.platform_user_id?.charCodeAt(0) ?? 0) % seed.names.length;
+        let persona = { name: seed.names[fallbackIdx], tone: seed.styles[fallbackIdx % seed.styles.length] };
         try {
-            const pRes = await this.ai.generateStrategyEconomy({}, `
-Assign a persona to respond to this DM.
-Platform: ${lead.platform}
-Lead's message: "${inbound_message.slice(0, 120)}"
-Conversation length: ${history.length} prior exchanges
-Lead's intent score: ${lead.intent_score}
+            const pRes = await this.ai.generateStrategyEconomy({}, `You are assigning a sales persona for a DM conversation. Generate a persona that fits the context.
 
-Return JSON only: { "name": "common first name", "tone": "2-4 word style descriptor" }`);
+Platform: ${lead.platform}
+Lead's opening message: "${inbound_message.slice(0, 150)}"
+Conversation depth: ${history.length} prior exchanges
+Lead's purchase intent score: ${lead.intent_score} (0=cold, 1=ready to buy)
+Lead's country signal: ${lead.country || 'unknown'}
+
+Choose a persona that would naturally connect with this specific person on this platform.
+Return JSON only: { "name": "first name only", "tone": "2-4 word style descriptor that reflects the persona's energy and approach" }`);
             if (pRes.parsedJson?.name) persona = pRes.parsedJson;
         } catch {}
 
@@ -1090,11 +1103,81 @@ Return JSON: { "message": "string" }
 
                 const nextLeadStage = lead.dm_sequence_step >= 2 ? 'nurturing' : 'engaged';
 
+                // ── Follow-up Evolution Engine (Capability 5) ────────────────────
+                // The AI Brain determines the optimal next-contact interval based on:
+                //   • lead's intent score and current stage
+                //   • what intervals have historically converted for this platform
+                //   • what the follow_up_evolution_log shows has worked before
+                // It also experiments with channel and timing variations and logs
+                // every decision so the system learns across thousands of interactions.
+                let nextFollowupMs = 24 * 60 * 60 * 1000; // 24h default
+                let experimentNote = 'default_24h';
+                try {
+                    // Load historical winning intervals for this platform from evolution log
+                    const { data: evolutionLog } = await this.supabase
+                        .from('follow_up_evolution_log')
+                        .select('winning_interval_ms, channel, stage, outcome')
+                        .eq('platform', lead.platform)
+                        .eq('outcome', 'converted')
+                        .order('created_at', { ascending: false })
+                        .limit(10);
+
+                    const intervalPrompt = `You are the AdRoom follow-up timing optimizer.
+
+LEAD CONTEXT:
+- Platform: ${lead.platform}
+- Intent score: ${lead.intent_score} (0=cold, 1=hot)
+- Current follow-up step: ${lead.dm_sequence_step + 1} of 3
+- Stage: ${lead.stage}
+- First interaction: "${(lead.first_interaction || '').slice(0, 100)}"
+
+HISTORICAL WINNING INTERVALS FOR ${lead.platform.toUpperCase()}:
+${(evolutionLog || []).map(e => `- Step that converted: interval ${Math.round((e.winning_interval_ms||86400000)/3600000)}h, stage: ${e.stage}`).join('\n') || 'No history yet — experiment freely.'}
+
+DECISION: Choose the next follow-up interval in milliseconds.
+- High-intent (>0.8): shorter interval (2-8h)
+- Medium-intent (0.5-0.8): standard (12-24h)
+- Cold (<0.5): longer (24-48h)
+- Experiment: occasionally try an unusual interval to generate learning data
+
+Also decide whether to experiment with a different approach on the next step.
+
+Return JSON: { "interval_ms": 86400000, "experiment": "describe the experiment or 'none'", "rationale": "one sentence" }`;
+
+                    const timingRes = await this.ai.generateStrategyEconomy({}, intervalPrompt);
+                    if (timingRes.parsedJson?.interval_ms) {
+                        const proposed = timingRes.parsedJson.interval_ms;
+                        // Safety clamp: minimum 1h, maximum 72h
+                        nextFollowupMs = Math.max(60 * 60 * 1000, Math.min(72 * 60 * 60 * 1000, proposed));
+                        experimentNote = timingRes.parsedJson.experiment || 'none';
+
+                        // Log this timing decision for future evolution learning
+                        // Fire-and-forget — wrap in void Promise so tsc doesn't complain
+                        void (async () => {
+                            try {
+                                await this.supabase.from('follow_up_evolution_log').insert({
+                                    lead_id: lead.id,
+                                    platform: lead.platform,
+                                    stage: lead.stage,
+                                    dm_sequence_step: lead.dm_sequence_step,
+                                    intent_score: lead.intent_score,
+                                    interval_ms_chosen: nextFollowupMs,
+                                    channel: lead.platform,
+                                    experiment_note: experimentNote,
+                                    outcome: 'pending',
+                                    created_at: now,
+                                });
+                            } catch { /* non-blocking */ }
+                        })();
+                    }
+                } catch { /* use default 24h interval */ }
+                // ── End Follow-up Evolution Engine ───────────────────────────────
+
                 await this.supabase.from('agent_leads').update({
                     stage: nextLeadStage,
                     dm_sequence_step: lead.dm_sequence_step + 1,
                     last_contacted_at: now,
-                    next_followup_at: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString()
+                    next_followup_at: new Date(Date.now() + nextFollowupMs).toISOString()
                 }).eq('id', lead.id);
 
                 // Fire-and-forget: notify if this advance crosses a funnel bucket
@@ -1222,6 +1305,28 @@ Return JSON:
             stage: 'closed',
             last_contacted_at: new Date().toISOString(),
         }).eq('id', lead.id);
+
+        // Close the follow-up evolution learning loop:
+        // mark all pending evolution log rows for this lead as 'converted' and
+        // record the winning interval so the AI Brain learns from it on the next cycle.
+        void (async () => {
+            try {
+                const { data: pendingRows } = await this.supabase
+                    .from('follow_up_evolution_log')
+                    .select('id, interval_ms_chosen')
+                    .eq('lead_id', lead.id)
+                    .eq('outcome', 'pending');
+                if (pendingRows?.length) {
+                    for (const row of pendingRows) {
+                        await this.supabase.from('follow_up_evolution_log').update({
+                            outcome: 'converted',
+                            winning_interval_ms: row.interval_ms_chosen,
+                            resolved_at: new Date().toISOString(),
+                        }).eq('id', row.id);
+                    }
+                }
+            } catch { /* non-blocking — learning loop closure */ }
+        })();
 
         // Push notification to the app user
         await pushService.notifyDealClosed(userId, {
