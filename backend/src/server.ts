@@ -111,15 +111,6 @@ if (!VERIFY_TOKEN) {
   console.warn('[Server] WARNING: FB_VERIFY_TOKEN not set — Facebook webhook verification disabled.');
 }
 
-type OAuthPlatform = 'facebook' | 'instagram' | 'twitter' | 'linkedin' | 'tiktok' | 'whatsapp';
-function buildDeepLink(platform: OAuthPlatform, query: Record<string, string | undefined>) {
-  const url = new URL(`adroom://auth/${platform}/callback`);
-  for (const [k, v] of Object.entries(query)) {
-    if (typeof v === 'string' && v.length > 0) url.searchParams.set(k, v);
-  }
-  return url.toString();
-}
-
 // Middleware to parse JSON bodies
 app.use(bodyParser.json({ limit: '10mb' }));
 
@@ -303,36 +294,9 @@ function buildOAuthClosePage(platform: string, success: boolean, message?: strin
 </div></body></html>`;
 }
 
-app.get('/auth/facebook/callback', (req, res) => {
-  const code = typeof req.query.code === 'string' ? req.query.code : undefined;
-  const state = typeof req.query.state === 'string' ? req.query.state : undefined;
-  const error = typeof req.query.error === 'string' ? req.query.error : undefined;
-  const error_description = typeof req.query.error_description === 'string' ? req.query.error_description : undefined;
-  if (state) {
-    if (code) setOAuthCode(state, code);
-    else if (error) setOAuthError(state, error_description || error || 'oauth_error');
-  }
-  if (error || !code) return res.send(buildOAuthClosePage('Facebook', false, error_description));
-  // Show success page — the mobile app polls /auth/poll and dismisses the browser
-  // programmatically once the code is detected. No adroom:// deep link redirect
-  // is used because Custom Tab deep-link handling is unreliable on Android
-  // (returns cancel immediately if the scheme isn't registered or the Facebook
-  // app intercepts the OAuth flow).
-  return res.send(buildOAuthClosePage('Facebook', true));
-});
-
-app.get('/auth/instagram/callback', (req, res) => {
-  const code = typeof req.query.code === 'string' ? req.query.code : undefined;
-  const state = typeof req.query.state === 'string' ? req.query.state : undefined;
-  const error = typeof req.query.error === 'string' ? req.query.error : undefined;
-  const error_description = typeof req.query.error_description === 'string' ? req.query.error_description : undefined;
-  if (state) {
-    if (code) setOAuthCode(state, code);
-    else if (error) setOAuthError(state, error_description || error || 'oauth_error');
-  }
-  if (error || !code) return res.send(buildOAuthClosePage('Instagram', false, error_description));
-  return res.send(buildOAuthClosePage('Instagram', true));
-});
+// /auth/facebook/callback and /auth/instagram/callback are handled by authPagesRouter
+// (mounted at app.use(authPagesRouter) above). They must NOT be re-registered here
+// because Express would never reach these duplicate handlers.
 
 app.get('/auth/twitter/callback', (req, res) => {
   const code = typeof req.query.code === 'string' ? req.query.code : undefined;
@@ -344,8 +308,9 @@ app.get('/auth/twitter/callback', (req, res) => {
     else if (error) setOAuthError(state, error_description || error || 'oauth_error');
   }
   if (error || !code) return res.send(buildOAuthClosePage('Twitter / X', false, error_description));
-  const qs = `code=${encodeURIComponent(code)}${state ? `&state=${encodeURIComponent(state)}` : ''}`;
-  return res.redirect(`adroom://auth/twitter/callback?${qs}`);
+  // Show success page — the mobile app polls /auth/poll and dismisses the browser
+  // programmatically. No adroom:// redirect (unreliable on Android).
+  return res.send(buildOAuthClosePage('Twitter / X', true));
 });
 
 app.get('/auth/linkedin/callback', (req, res) => {
@@ -358,8 +323,9 @@ app.get('/auth/linkedin/callback', (req, res) => {
     else if (error) setOAuthError(state, error_description || error || 'oauth_error');
   }
   if (error || !code) return res.send(buildOAuthClosePage('LinkedIn', false, error_description));
-  const qs = `code=${encodeURIComponent(code)}${state ? `&state=${encodeURIComponent(state)}` : ''}`;
-  return res.redirect(`adroom://auth/linkedin/callback?${qs}`);
+  // Show success page — the mobile app polls /auth/poll and dismisses the browser
+  // programmatically. No adroom:// redirect (unreliable on Android).
+  return res.send(buildOAuthClosePage('LinkedIn', true));
 });
 
 app.get('/auth/tiktok/callback', (req, res) => {
@@ -374,23 +340,12 @@ app.get('/auth/tiktok/callback', (req, res) => {
     else if (error) setOAuthError(state, error_description || error || 'oauth_error');
   }
   if (error || !finalCode) return res.send(buildOAuthClosePage('TikTok', false, error_description));
-  return res.redirect(`adroom://auth/tiktok/callback?code=${encodeURIComponent(finalCode)}`);
-});
-
-app.get('/auth/whatsapp/callback', (req, res) => {
-  const code = typeof req.query.code === 'string' ? req.query.code : undefined;
-  const state = typeof req.query.state === 'string' ? req.query.state : undefined;
-  const error = typeof req.query.error === 'string' ? req.query.error : undefined;
-  const error_description = typeof req.query.error_description === 'string' ? req.query.error_description : undefined;
-  if (state) {
-    if (code) setOAuthCode(state, code);
-    else if (error) setOAuthError(state, error_description || error || 'oauth_error');
-  }
-  if (error || !code) return res.send(buildOAuthClosePage('WhatsApp Business', false, error_description));
   // Show success page — the mobile app polls /auth/poll and dismisses the browser
   // programmatically. No adroom:// redirect (unreliable on Android).
-  return res.send(buildOAuthClosePage('WhatsApp Business', true));
+  return res.send(buildOAuthClosePage('TikTok', true));
 });
+
+// /auth/whatsapp/callback is handled by authPagesRouter (mounted above).
 
 /**
  * Retries a fetch call up to maxAttempts on network errors or 5xx responses.
