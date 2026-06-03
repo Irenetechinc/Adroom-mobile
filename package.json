@@ -35,8 +35,8 @@
     "lucide-react-native": "^0.577.0",
     "nativewind": "^4.2.2",
     "pdf-parse": "^2.4.5",
-    "react": "19.2.7",
-    "react-dom": "19.2.7",
+    "react": "19.2.3",
+    "react-dom": "19.2.3",
     "react-native": "0.85.3",
     "react-native-gesture-handler": "~2.31.1",
     "react-native-reanimated": "4.3.1",
@@ -66,6 +66,7 @@
     "node": ">=20.0.0"
   },
   "overrides": {
-    "expo-application": "~6.0.2"
+    "expo-application": "~6.0.2",
+    "react-test-renderer": "19.2.3"
   }
 }
