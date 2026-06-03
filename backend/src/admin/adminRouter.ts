@@ -636,6 +636,31 @@ router.get('/api/action-logs', auth, async (req, res) => {
   }
 });
 
+// ─── SELF-EVOLUTION LOG ───────────────────────────────────────────────────────
+// Returns entries from self_evolution_log (latest first) so the admin dashboard
+// can show the AI's autonomous self-improvement decisions in real time.
+router.get('/api/evolution/log', auth, async (req, res) => {
+  try {
+    const sb = getServiceSupabaseClient();
+    const limit = Math.min(parseInt(String(req.query.limit || '100')), 500);
+    const type  = typeof req.query.type === 'string' ? req.query.type : undefined;
+
+    let query = sb
+      .from('self_evolution_log')
+      .select('id, user_id, agent_type, evolution_type, old_value, new_value, reason, performance_delta, created_at')
+      .order('created_at', { ascending: false })
+      .limit(limit);
+
+    if (type) query = query.eq('evolution_type', type);
+
+    const { data, error } = await query;
+    if (error) throw error;
+    res.json({ entries: data || [], count: (data || []).length });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ─── AGENT NETWORK STATUS ────────────────────────────────────────────────────
 router.get('/api/agent-network', auth, async (_req, res) => {
   try {

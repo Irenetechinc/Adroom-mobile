@@ -16,21 +16,24 @@ export interface FacebookPage {
 export const FacebookService = {
 
   /**
-   * Facebook OAuth login using server-side polling.
+   * Facebook OAuth login — openBrowserAsync + background polling.
    *
-   * WHY openAuthSessionAsync (not openBrowserAsync):
-   *   openAuthSessionAsync(url, 'adroom://') configures the Chrome Custom Tab
-   *   to monitor for the adroom:// scheme and close automatically when the
-   *   backend redirects there. openBrowserAsync does NOT do this — on some
-   *   Android versions it shows "Can't open link" and the tab stays open
-   *   indefinitely, which is why the typing indicator appeared frozen.
+   * openAuthSessionAsync(url, 'adroom://') was the previous approach but it
+   * returns { type: 'cancel' } immediately on Android when the adroom:// scheme
+   * is not registered as an Android intent filter (Expo Go) or when the Facebook
+   * app intercepts the OAuth URL. The 5-poll loop that followed would start
+   * before the user even saw a browser, find no code, and return null —
+   * producing the "connection was cancelled" message with no browser ever opening.
    *
-   * WHY we IGNORE the return value (success / cancel):
-   *   On newer Android + Expo SDK, openAuthSessionAsync may return
-   *   { type: 'cancel' } even on successful auth (the OS hands the adroom://
-   *   link to the app separately from the Custom Tab session). Since we store
-   *   the code server-side via /auth/poll, we don't need the code from the URL.
-   *   We just wait for the Custom Tab to close, then poll immediately.
+   * The new approach:
+   *  1. Open the system browser with openBrowserAsync (works everywhere, no
+   *     deep-link scheme required).
+   *  2. Poll /auth/poll every 1 s in the background for up to 120 s.
+   *  3. When the code arrives, dismiss the browser programmatically.
+   *  4. If the user closes the browser early we give a 2 s grace window for
+   *     late-arriving codes before giving up.
+   * The backend now shows a "Connected! Return to AdRoom" page instead of
+   * redirecting to adroom://, so the browser stays visible until we dismiss it.
    */
   async login(): Promise<string | null> {
     const BACKEND_URL = process.env.EXPO_PUBLIC_API_URL;
@@ -48,37 +51,63 @@ export const FacebookService = {
       `&scope=pages_show_list,pages_read_engagement,pages_manage_posts,pages_messaging,public_profile` +
       `&state=${state}`;
 
-    console.log('[FacebookService] Opening auth session…');
+    console.log('[FacebookService] Opening browser…');
 
-    // This resolves once the Custom Tab closes — either the user pressed back
-    // OR the backend redirected to adroom:// (which automatically closes the tab).
-    await WebBrowser.openAuthSessionAsync(authUrl, 'adroom://');
+    // browserClosed is set true when the user presses back / closes the tab.
+    // We also set it true when we call dismissBrowser() after finding the code.
+    let browserClosed = false;
+    WebBrowser.openBrowserAsync(authUrl, { showInRecents: false })
+      .then(() => { browserClosed = true; })
+      .catch(() => { browserClosed = true; });
 
-    console.log('[FacebookService] Auth session closed, polling for code…');
+    let foundCode: string | null = null;
 
-    // Poll up to 5 times (≈5 s). The app is in the foreground now so timers
-    // are fully reliable. The first poll usually succeeds on attempt 1.
-    for (let i = 0; i < 5; i++) {
-      if (i > 0) await new Promise<void>(r => setTimeout(r, 1000));
+    // Poll every 1 s for up to 120 s (2 min) or until the browser is closed.
+    for (let i = 0; i < 120 && !browserClosed; i++) {
+      await new Promise<void>(r => setTimeout(r, 1000));
+      if (browserClosed) break;
       try {
         const res  = await fetch(`${BACKEND_URL}/auth/poll?state=${state}`);
         if (!res.ok) continue;
         const data = await res.json();
-        if (data.error) return null;
-        if (data.code) {
-          const ex     = await fetch(`${BACKEND_URL}/api/auth/facebook/exchange`, {
-            method:  'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body:    JSON.stringify({ code: data.code, redirectUri: callbackUrl }),
-          });
-          const exData = await ex.json();
-          return exData.access_token || null;
-        }
+        if (data.error) break;
+        if (data.code) { foundCode = data.code; break; }
       } catch { /* network hiccup — retry */ }
     }
 
-    // Custom Tab closed but no code found → user cancelled or auth failed.
-    return null;
+    // If the browser was closed by the user before we found the code, give a
+    // brief grace period in case the callback arrived just as they pressed back.
+    if (!foundCode && browserClosed) {
+      await new Promise<void>(r => setTimeout(r, 2000));
+      try {
+        const res  = await fetch(`${BACKEND_URL}/auth/poll?state=${state}`);
+        if (res.ok) {
+          const data = await res.json();
+          if (data.code) foundCode = data.code;
+        }
+      } catch { /* ignore */ }
+    }
+
+    // Close the browser (no-op if the user already closed it).
+    try { await WebBrowser.dismissBrowser(); } catch { /* already closed */ }
+
+    if (!foundCode) {
+      console.log('[FacebookService] No code received — user cancelled or timed out.');
+      return null;
+    }
+
+    console.log('[FacebookService] Code received, exchanging for token…');
+    try {
+      const ex     = await fetch(`${BACKEND_URL}/api/auth/facebook/exchange`, {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ code: foundCode, redirectUri: callbackUrl }),
+      });
+      const exData = await ex.json();
+      return exData.access_token || null;
+    } catch {
+      return null;
+    }
   },
 
   async getConfig(): Promise<FacebookConfig | null> {

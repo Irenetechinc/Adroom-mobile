@@ -1,9 +1,10 @@
 import * as WebBrowser from 'expo-web-browser';
 import { supabase } from './supabase';
 
-// Same openAuthSessionAsync + server-side polling strategy as FacebookService.
-// See facebook.ts for full explanation of why openAuthSessionAsync is used
-// instead of openBrowserAsync.
+// openBrowserAsync + background polling — same approach as FacebookService.
+// See facebook.ts for the full explanation of why openAuthSessionAsync was
+// replaced: it returned { type: 'cancel' } immediately on Android, preventing
+// any browser from opening and causing instant "connection cancelled" errors.
 
 const FB_APP_ID = process.env.EXPO_PUBLIC_FACEBOOK_APP_ID;
 
@@ -26,31 +27,48 @@ export const InstagramService = {
       `&scope=${scopes}` +
       `&state=${state}`;
 
-    console.log('[InstagramService] Opening auth session…');
+    console.log('[InstagramService] Opening browser…');
 
-    await WebBrowser.openAuthSessionAsync(authUrl, 'adroom://');
+    let browserClosed = false;
+    WebBrowser.openBrowserAsync(authUrl, { showInRecents: false })
+      .then(() => { browserClosed = true; })
+      .catch(() => { browserClosed = true; });
 
-    console.log('[InstagramService] Auth session closed, polling for code…');
+    let foundCode: string | null = null;
 
-    for (let i = 0; i < 5; i++) {
-      if (i > 0) await new Promise<void>(r => setTimeout(r, 1000));
+    for (let i = 0; i < 120 && !browserClosed; i++) {
+      await new Promise<void>(r => setTimeout(r, 1000));
+      if (browserClosed) break;
       try {
         const res  = await fetch(`${BACKEND_URL}/auth/poll?state=${state}`);
         if (!res.ok) continue;
         const data = await res.json();
-        if (data.error) return null;
-        if (data.code) {
-          const ex     = await fetch(`${BACKEND_URL}/api/auth/facebook/exchange`, {
-            method:  'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body:    JSON.stringify({ code: data.code, redirectUri: callbackUrl }),
-          });
-          const exData = await ex.json();
-          return exData.access_token || null;
-        }
+        if (data.error) break;
+        if (data.code) { foundCode = data.code; break; }
       } catch { /* retry */ }
     }
-    return null;
+
+    if (!foundCode && browserClosed) {
+      await new Promise<void>(r => setTimeout(r, 2000));
+      try {
+        const res = await fetch(`${BACKEND_URL}/auth/poll?state=${state}`);
+        if (res.ok) { const data = await res.json(); if (data.code) foundCode = data.code; }
+      } catch { /* ignore */ }
+    }
+
+    try { await WebBrowser.dismissBrowser(); } catch { /* already closed */ }
+
+    if (!foundCode) return null;
+
+    try {
+      const ex     = await fetch(`${BACKEND_URL}/api/auth/facebook/exchange`, {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ code: foundCode, redirectUri: callbackUrl }),
+      });
+      const exData = await ex.json();
+      return exData.access_token || null;
+    } catch { return null; }
   },
 
   async getInstagramAccounts(accessToken: string): Promise<any[]> {
