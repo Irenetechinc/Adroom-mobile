@@ -7,12 +7,6 @@
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
-    "newArchEnabled": true,
-    "splash": {
-      "image": "./assets/splash-icon.png",
-      "resizeMode": "contain",
-      "backgroundColor": "#0B0F19"
-    },
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.adroom.mobile"
@@ -23,7 +17,6 @@
         "backgroundColor": "#ffffff"
       },
       "package": "com.adroom.mobile",
-      "edgeToEdgeEnabled": true,
       "googleServicesFile": "./google-services.json",
       "permissions": [
         "RECEIVE_BOOT_COMPLETED",
@@ -38,6 +31,14 @@
     "plugins": [
       "expo-secure-store",
       "expo-web-browser",
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/splash-icon.png",
+          "resizeMode": "contain",
+          "backgroundColor": "#0B0F19"
+        }
+      ],
       [
         "expo-notifications",
         {
@@ -57,7 +58,12 @@
         "expo-build-properties",
         {
           "android": {
-            "gradleVersion": "8.10.2"
+            "gradleVersion": "8.10.2",
+            "newArchEnabled": true,
+            "edgeToEdgeEnabled": true
+          },
+          "ios": {
+            "newArchEnabled": true
           }
         }
       ]
