@@ -79,20 +79,41 @@ export class LeadDiscoveryService {
   }
 
   private async discoverForProduct(userId: string, product: any): Promise<void> {
-    // AI Brain generates the search queries — nothing hardcoded
-    const queries = await this.generateSearchQueries(product);
+    // AI Brain generates base queries, then augments with evolved queries from
+    // previous self-evolution cycles — so the system improves with every run.
+    const baseQueries = await this.generateSearchQueries(product);
+
+    // Load adopted query variations per source from past evolution cycles
+    const [evolvedSocial, evolvedReddit, evolvedForum, evolvedSearch, evolvedReview] = await Promise.all([
+      this.loadEvolvedQueries('social_listening'),
+      this.loadEvolvedQueries('reddit'),
+      this.loadEvolvedQueries('forum'),
+      this.loadEvolvedQueries('search_engine'),
+      this.loadEvolvedQueries('review_site'),
+    ]);
+
+    // Merge base queries with evolved ones — deduplicated, capped at 6 per agent
+    const mergeQueries = (base: string[], evolved: string[]) =>
+      [...new Set([...base, ...evolved])].slice(0, 6);
+
+    const queries = baseQueries; // base queries go to all agents
+    const socialQueries  = mergeQueries(baseQueries, evolvedSocial);
+    const redditQueries  = mergeQueries(baseQueries, evolvedReddit);
+    const forumQueries   = mergeQueries(baseQueries, evolvedForum);
+    const searchQueries  = mergeQueries(baseQueries, evolvedSearch);
+    const reviewQueries  = mergeQueries(baseQueries, evolvedReview);
 
     const allLeads: RawLead[] = [];
 
-    // Run all agents in parallel, failures don't stop others
+    // Run all agents in parallel with their evolved query sets; failures don't stop others
     const results = await Promise.allSettled([
-      this.socialListeningAgent(queries, product, userId),
-      this.redditAgent(queries, product, userId),
+      this.socialListeningAgent(socialQueries, product, userId),
+      this.redditAgent(redditQueries, product, userId),
       this.newsApiAgent(queries, product, userId),
-      this.forumAgent(queries, product, userId),
+      this.forumAgent(forumQueries, product, userId),
       this.competitorAgent(queries, product, userId),
-      this.reviewSiteAgent(queries, product, userId),
-      this.searchEngineAgent(queries, product, userId),
+      this.reviewSiteAgent(reviewQueries, product, userId),
+      this.searchEngineAgent(searchQueries, product, userId),
     ]);
 
     for (const r of results) {
@@ -410,11 +431,9 @@ Return JSON: { "competitors": ["name1", "name2"] }`;
             : domain.includes('capterra') ? 'capterra'
             : 'google_reviews';
 
-          // Only include if snippet signals negativity — AI Brain validates
-          const snippet = (result.snippet || '').toLowerCase();
-          const isNegative = ['bad', 'terrible', 'poor', 'worst', 'doesn\'t work', 'waste', 'disappointed',
-            'avoid', 'scam', 'slow', 'broken', 'frustrating', 'useless'].some(kw => snippet.includes(kw));
-          if (!isNegative && !snippet.includes('review')) continue;
+          // All review results are included — hardcoded keyword arrays are forbidden.
+          // The AI Brain scores each lead's relevance during scoreAndUpsertLeads().
+          // Low-scoring results are dropped there (score < 0.35 threshold).
 
           leads.push({
             platformUserId: `review_${Buffer.from(result.link).toString('base64').slice(0, 20)}`,
@@ -609,6 +628,187 @@ Return JSON: { "scores": [0.7, 0.4, ...] } — one score per lead in same order`
     }
 
     console.log(`[LeadDiscovery] Upserted ${newLeads.length} new leads for user ${userId}`);
+  }
+
+  // ──────────────────────────────────────────────────────────────────────────
+  // SELF-EVOLUTION ENGINE (Capability 0)
+  //
+  // After each discovery cycle, the AI Brain:
+  //   1. Analyses which sources produced the most high-intent leads
+  //   2. Identifies under-performing and over-performing sources
+  //   3. Generates new search query variations for high-performing sources
+  //   4. Experiments with new sub-methods in each domain
+  //   5. Permanently adopts effective variations, discards failing ones
+  //   6. Logs every decision to self_evolution_log
+  //
+  // No hardcoded thresholds — the AI Brain decides what "good" means
+  // relative to the overall system performance at runtime.
+  // ──────────────────────────────────────────────────────────────────────────
+  async evolveDiscoverySources(): Promise<void> {
+    console.log('[LeadDiscovery] Running self-evolution cycle...');
+
+    try {
+      // 1. Gather performance data — count leads per source + average intent score
+      const { data: perf } = await this.supabase
+        .from('lead_discovery_log')
+        .select('source, confidence')
+        .gte('created_at', new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString());
+
+      if (!perf?.length) {
+        console.log('[LeadDiscovery] Self-evolution: not enough data yet (need at least 1 week of logs)');
+        return;
+      }
+
+      // Aggregate per source
+      const sourceStats: Record<string, { count: number; totalScore: number }> = {};
+      for (const row of perf) {
+        if (!sourceStats[row.source]) sourceStats[row.source] = { count: 0, totalScore: 0 };
+        sourceStats[row.source].count++;
+        sourceStats[row.source].totalScore += row.confidence ?? 0;
+      }
+      const sourceSummary = Object.entries(sourceStats).map(([source, s]) => ({
+        source,
+        leadCount: s.count,
+        avgScore: s.count > 0 ? (s.totalScore / s.count).toFixed(3) : '0',
+      }));
+
+      // 2. Also get recent conversion signals — leads that progressed beyond 'identified'
+      const { data: engaged } = await this.supabase
+        .from('agent_leads')
+        .select('discovery_source, stage, intent_score')
+        .neq('stage', 'identified')
+        .gte('created_at', new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString());
+
+      const conversionBySource: Record<string, number> = {};
+      for (const l of (engaged || [])) {
+        conversionBySource[l.discovery_source || 'unknown'] = (conversionBySource[l.discovery_source || 'unknown'] || 0) + 1;
+      }
+
+      // 3. AI Brain analyses performance and decides what to do — no hardcoded rules
+      const evolutionPrompt = `You are the AdRoom AI Brain performing a self-evolution analysis of the lead discovery system.
+
+WEEKLY SOURCE PERFORMANCE:
+${JSON.stringify(sourceSummary, null, 2)}
+
+LEAD CONVERSIONS (leads that progressed from 'identified' to active engagement):
+${JSON.stringify(conversionBySource, null, 2)}
+
+AVAILABLE SOURCES: social_listening (Twitter), reddit, newsapi, forum (Quora/Nairaland), competitor_agent, review_site (Trustpilot/G2/Capterra/Google Reviews), search_engine (Google via SerpAPI)
+
+Your task: Analyze this performance data and produce evolution decisions.
+
+For each analysis, consider:
+- Which sources produce the most leads AND have the best conversion rates?
+- Which sources are generating noise (many leads, low conversion)?
+- Which sources are underutilized but likely high-potential for this type of product?
+- What search query variations could improve each source's precision?
+- Are there entirely new sub-methods within any source's domain worth experimenting with?
+
+Decisions must be driven ONLY by the data above, not by assumptions.
+
+Return JSON:
+{
+  "analysis": "2-3 sentence insight on what the data shows",
+  "adopt": [
+    {
+      "source": "source_name",
+      "reason": "why this source is worth scaling",
+      "new_query_variations": ["variation 1", "variation 2"],
+      "sub_method_experiment": "describe a new technique to try within this source domain"
+    }
+  ],
+  "scale_back": [
+    {
+      "source": "source_name",
+      "reason": "why this source is underperforming"
+    }
+  ],
+  "new_source_ideas": [
+    {
+      "name": "descriptive name",
+      "description": "what this new source is and how to access it",
+      "rationale": "why it would produce good leads for products like these"
+    }
+  ],
+  "overall_recommendation": "one sentence on the most impactful evolution step"
+}`;
+
+      const res = await this.ai.generateStrategyEconomy({}, evolutionPrompt);
+      const evolution = res.parsedJson;
+      if (!evolution?.analysis) {
+        console.log('[LeadDiscovery] Self-evolution: AI returned empty analysis');
+        return;
+      }
+
+      console.log('[LeadDiscovery] Self-evolution analysis:', evolution.analysis);
+
+      // 4. Persist evolution decisions to self_evolution_log
+      await this.supabase.from('self_evolution_log').insert({
+        agent: 'LEAD_DISCOVERY',
+        cycle_date: new Date().toISOString(),
+        source_performance: sourceSummary,
+        conversion_by_source: conversionBySource,
+        analysis: evolution.analysis,
+        adopted_sources: evolution.adopt || [],
+        scaled_back_sources: evolution.scale_back || [],
+        new_source_ideas: evolution.new_source_ideas || [],
+        overall_recommendation: evolution.overall_recommendation || '',
+      });
+
+      // 5. Store approved query variations as learned search keywords so the next
+      //    discovery cycle uses them automatically. We insert them into a
+      //    lead_evolution_queries table so generateSearchQueries() can pick them up.
+      for (const adopt of (evolution.adopt || [])) {
+        for (const variation of (adopt.new_query_variations || [])) {
+          await this.supabase.from('lead_evolution_queries').upsert({
+            source: adopt.source,
+            query: variation,
+            rationale: adopt.reason,
+            status: 'active',
+            discovered_at: new Date().toISOString(),
+          }, { onConflict: 'source,query' });
+        }
+      }
+
+      // 6. Log any new source ideas as pending experiments
+      for (const idea of (evolution.new_source_ideas || [])) {
+        await this.supabase.from('self_evolution_log').insert({
+          agent: 'LEAD_DISCOVERY',
+          cycle_date: new Date().toISOString(),
+          source_performance: [],
+          conversion_by_source: {},
+          analysis: `NEW SOURCE IDEA: ${idea.name}`,
+          adopted_sources: [],
+          scaled_back_sources: [],
+          new_source_ideas: [idea],
+          overall_recommendation: idea.rationale,
+        });
+      }
+
+      console.log(`[LeadDiscovery] Self-evolution complete — adopt: ${(evolution.adopt||[]).length}, scale_back: ${(evolution.scale_back||[]).length}, new ideas: ${(evolution.new_source_ideas||[]).length}`);
+    } catch (err) {
+      const { dynamicProblemSolver } = await import('./dynamicProblemSolver');
+      await dynamicProblemSolver.solve({ error: err, agentType: 'LEAD_DISCOVERY', operation: 'evolveDiscoverySources' });
+    }
+  }
+
+  /**
+   * Augment AI-generated queries with any evolved/adopted queries from previous
+   * self-evolution cycles. Called at the start of discoverForProduct().
+   */
+  private async loadEvolvedQueries(source: string): Promise<string[]> {
+    try {
+      const { data } = await this.supabase
+        .from('lead_evolution_queries')
+        .select('query')
+        .eq('source', source)
+        .eq('status', 'active')
+        .order('discovered_at', { ascending: false })
+        .limit(5);
+      return (data || []).map((r: any) => r.query);
+    } catch {
+      return [];
+    }
   }
 }
 

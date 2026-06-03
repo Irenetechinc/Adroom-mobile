@@ -120,6 +120,7 @@ Run in this order:
 6. `supabase/migrations/20260429000000_app_releases.sql` — force-update / changelog
 7. `backend/apma_migration.sql` — APMA core tables
 8. `backend/apma_oauth_migration.sql` — adds refresh_token, token_expires_at columns + unique constraint on apma_social_accounts(client_id, platform, account_id)
+9. `backend/autonomous_intelligence_migration.sql` — self_evolution_log, lead_evolution_queries, follow_up_evolution_log, ai_prompt_log
 
 ## APMA OAuth — Required Redirect URIs
 Register these redirect URIs in each platform's developer app settings (use `PUBLIC_BASE_URL`):
