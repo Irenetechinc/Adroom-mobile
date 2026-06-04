@@ -15,6 +15,7 @@ import { StrategyService, GeneratedStrategy } from '../services/strategy';
 import { VisionService } from '../services/vision';
 import { IntegrityService } from '../services/integrity';
 import { useStrategyCreationStore } from './strategyCreationStore';
+import { navigationRef } from '../navigation/navigationRef';
 
 const BACKEND_URL = process.env.EXPO_PUBLIC_API_URL || '';
 
@@ -1572,6 +1573,15 @@ export const useAgentStore = create<AgentState>()(
           } else {
               addMessage(`Successfully connected to ${platform}!`, 'agent');
               set({ isInputDisabled: false });
+              // Auto-navigate back to ConnectedAccountsScreen (or wherever the
+              // user came from) so they don't have to press back manually.
+              setTimeout(() => {
+                  try {
+                      if (navigationRef.isReady() && navigationRef.canGoBack()) {
+                          navigationRef.goBack();
+                      }
+                  } catch { /* navigation not ready — user can press back */ }
+              }, 1200);
           }
       } catch (error: any) {
           set({ isTyping: false });

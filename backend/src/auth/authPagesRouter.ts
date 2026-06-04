@@ -353,10 +353,11 @@ function buildPollingClosePage(isError: boolean, platform: string): string {
 /**
  * GET /auth/facebook/callback
  *
- * All social platforms now use openBrowserAsync + polling (NOT openAuthSessionAsync).
- * Store the code in the poll store, then show a static success page.
- * The app polls /auth/poll?state=... and calls dismissBrowser() once the code
- * arrives — so we must NOT call window.close() here.
+ * Store the code in the poll store, then redirect to adroom://oauth-done.
+ * The adroom:// redirect is the ONLY reliable way to close the Chrome Custom
+ * Tab on Android — WebBrowser.dismissBrowser() is iOS-only.  Once the tab
+ * closes, openBrowserAsync() resolves in the app and the polling grace period
+ * picks up the code that was stored just before this redirect.
  */
 router.get('/auth/facebook/callback', (req: Request, res: Response) => {
   const code  = req.query.code  as string | undefined;
@@ -367,17 +368,17 @@ router.get('/auth/facebook/callback', (req: Request, res: Response) => {
     if (error || !code) {
       const reason = (req.query.error_reason as string) || error || 'access_denied';
       setOAuthError(state, reason);
-    } else {
-      setOAuthCode(state, code);
+      return res.send(buildPollingClosePage(true, 'Facebook'));
     }
+    setOAuthCode(state, code);
+    return res.redirect('adroom://oauth-done');
   }
 
-  const isError = !!(error || !code);
-  return res.send(buildPollingClosePage(isError, 'Facebook'));
+  return res.send(buildPollingClosePage(true, 'Facebook'));
 });
 
 /**
- * GET /auth/instagram/callback — same polling pattern as Facebook.
+ * GET /auth/instagram/callback — same pattern as Facebook.
  */
 router.get('/auth/instagram/callback', (req: Request, res: Response) => {
   const code  = req.query.code  as string | undefined;
@@ -388,17 +389,17 @@ router.get('/auth/instagram/callback', (req: Request, res: Response) => {
     if (error || !code) {
       const reason = (req.query.error_reason as string) || error || 'access_denied';
       setOAuthError(state, reason);
-    } else {
-      setOAuthCode(state, code);
+      return res.send(buildPollingClosePage(true, 'Instagram'));
     }
+    setOAuthCode(state, code);
+    return res.redirect('adroom://oauth-done');
   }
 
-  const isError = !!(error || !code);
-  return res.send(buildPollingClosePage(isError, 'Instagram'));
+  return res.send(buildPollingClosePage(true, 'Instagram'));
 });
 
 /**
- * GET /auth/whatsapp/callback — same polling pattern.
+ * GET /auth/whatsapp/callback — same pattern as Facebook.
  */
 router.get('/auth/whatsapp/callback', (req: Request, res: Response) => {
   const code  = req.query.code  as string | undefined;
@@ -409,13 +410,13 @@ router.get('/auth/whatsapp/callback', (req: Request, res: Response) => {
     if (error || !code) {
       const reason = (req.query.error_reason as string) || error || 'access_denied';
       setOAuthError(state, reason);
-    } else {
-      setOAuthCode(state, code);
+      return res.send(buildPollingClosePage(true, 'WhatsApp Business'));
     }
+    setOAuthCode(state, code);
+    return res.redirect('adroom://oauth-done');
   }
 
-  const isError = !!(error || !code);
-  return res.send(buildPollingClosePage(isError, 'WhatsApp Business'));
+  return res.send(buildPollingClosePage(true, 'WhatsApp Business'));
 });
 
 export default router;

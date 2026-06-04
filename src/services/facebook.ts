@@ -1,6 +1,7 @@
 import { supabase } from './supabase';
 import { FacebookConfig } from '../types/facebook';
 import * as WebBrowser from 'expo-web-browser';
+import { runOAuthBrowserFlow } from '../utils/oauthBrowser';
 
 WebBrowser.maybeCompleteAuthSession();
 
@@ -16,24 +17,15 @@ export interface FacebookPage {
 export const FacebookService = {
 
   /**
-   * Facebook OAuth login — openBrowserAsync + background polling.
+   * Facebook OAuth login.
    *
-   * openAuthSessionAsync(url, 'adroom://') was the previous approach but it
-   * returns { type: 'cancel' } immediately on Android when the adroom:// scheme
-   * is not registered as an Android intent filter (Expo Go) or when the Facebook
-   * app intercepts the OAuth URL. The 5-poll loop that followed would start
-   * before the user even saw a browser, find no code, and return null —
-   * producing the "connection was cancelled" message with no browser ever opening.
-   *
-   * The new approach:
-   *  1. Open the system browser with openBrowserAsync (works everywhere, no
-   *     deep-link scheme required).
-   *  2. Poll /auth/poll every 1 s in the background for up to 120 s.
-   *  3. When the code arrives, dismiss the browser programmatically.
-   *  4. If the user closes the browser early we give a 2 s grace window for
-   *     late-arriving codes before giving up.
-   * The backend now shows a "Connected! Return to AdRoom" page instead of
-   * redirecting to adroom://, so the browser stays visible until we dismiss it.
+   * Opens the system browser with openBrowserAsync, then delegates to
+   * runOAuthBrowserFlow which polls the backend every second.  The backend
+   * stores the code and redirects to adroom://oauth-done — this closes the
+   * Chrome Custom Tab on Android (dismissBrowser() is iOS-only) and brings
+   * AdRoom back to the foreground.  The 10-second grace period handles the
+   * common Android case where the Facebook app intercepts the OAuth URL before
+   * the Custom Tab even opens.
    */
   async login(): Promise<string | null> {
     const BACKEND_URL = process.env.EXPO_PUBLIC_API_URL;
@@ -53,43 +45,7 @@ export const FacebookService = {
 
     console.log('[FacebookService] Opening browser…');
 
-    // browserClosed is set true when the user presses back / closes the tab.
-    // We also set it true when we call dismissBrowser() after finding the code.
-    let browserClosed = false;
-    WebBrowser.openBrowserAsync(authUrl, { showInRecents: false })
-      .then(() => { browserClosed = true; })
-      .catch(() => { browserClosed = true; });
-
-    let foundCode: string | null = null;
-
-    // Poll every 1 s for up to 120 s (2 min) or until the browser is closed.
-    for (let i = 0; i < 120 && !browserClosed; i++) {
-      await new Promise<void>(r => setTimeout(r, 1000));
-      if (browserClosed) break;
-      try {
-        const res  = await fetch(`${BACKEND_URL}/auth/poll?state=${state}`);
-        if (!res.ok) continue;
-        const data = await res.json();
-        if (data.error) break;
-        if (data.code) { foundCode = data.code; break; }
-      } catch { /* network hiccup — retry */ }
-    }
-
-    // If the browser was closed by the user before we found the code, give a
-    // brief grace period in case the callback arrived just as they pressed back.
-    if (!foundCode && browserClosed) {
-      await new Promise<void>(r => setTimeout(r, 2000));
-      try {
-        const res  = await fetch(`${BACKEND_URL}/auth/poll?state=${state}`);
-        if (res.ok) {
-          const data = await res.json();
-          if (data.code) foundCode = data.code;
-        }
-      } catch { /* ignore */ }
-    }
-
-    // Close the browser (no-op if the user already closed it).
-    try { await WebBrowser.dismissBrowser(); } catch { /* already closed */ }
+    const foundCode = await runOAuthBrowserFlow(authUrl, `${BACKEND_URL}/auth/poll?state=${state}`);
 
     if (!foundCode) {
       console.log('[FacebookService] No code received — user cancelled or timed out.');
