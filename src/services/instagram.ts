@@ -1,10 +1,5 @@
-import * as WebBrowser from 'expo-web-browser';
 import { supabase } from './supabase';
-
-// openBrowserAsync + background polling — same approach as FacebookService.
-// See facebook.ts for the full explanation of why openAuthSessionAsync was
-// replaced: it returned { type: 'cancel' } immediately on Android, preventing
-// any browser from opening and causing instant "connection cancelled" errors.
+import { runOAuthBrowserFlow } from '../utils/oauthBrowser';
 
 const FB_APP_ID = process.env.EXPO_PUBLIC_FACEBOOK_APP_ID;
 
@@ -29,34 +24,7 @@ export const InstagramService = {
 
     console.log('[InstagramService] Opening browser…');
 
-    let browserClosed = false;
-    WebBrowser.openBrowserAsync(authUrl, { showInRecents: false })
-      .then(() => { browserClosed = true; })
-      .catch(() => { browserClosed = true; });
-
-    let foundCode: string | null = null;
-
-    for (let i = 0; i < 120 && !browserClosed; i++) {
-      await new Promise<void>(r => setTimeout(r, 1000));
-      if (browserClosed) break;
-      try {
-        const res  = await fetch(`${BACKEND_URL}/auth/poll?state=${state}`);
-        if (!res.ok) continue;
-        const data = await res.json();
-        if (data.error) break;
-        if (data.code) { foundCode = data.code; break; }
-      } catch { /* retry */ }
-    }
-
-    if (!foundCode && browserClosed) {
-      await new Promise<void>(r => setTimeout(r, 2000));
-      try {
-        const res = await fetch(`${BACKEND_URL}/auth/poll?state=${state}`);
-        if (res.ok) { const data = await res.json(); if (data.code) foundCode = data.code; }
-      } catch { /* ignore */ }
-    }
-
-    try { await WebBrowser.dismissBrowser(); } catch { /* already closed */ }
+    const foundCode = await runOAuthBrowserFlow(authUrl, `${BACKEND_URL}/auth/poll?state=${state}`);
 
     if (!foundCode) return null;
 

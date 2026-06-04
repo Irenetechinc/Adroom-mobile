@@ -1,10 +1,5 @@
-import * as WebBrowser from 'expo-web-browser';
 import { supabase } from './supabase';
-
-// openBrowserAsync + background polling — same approach as FacebookService.
-// openAuthSessionAsync(url, 'adroom://') was the previous approach but it
-// returned { type: 'cancel' } immediately on Android without ever opening a
-// browser, causing an instant "connection cancelled" message.
+import { runOAuthBrowserFlow } from '../utils/oauthBrowser';
 
 const LINKEDIN_CLIENT_ID = process.env.EXPO_PUBLIC_LINKEDIN_CLIENT_ID;
 
@@ -33,37 +28,7 @@ export const LinkedInService = {
 
       console.log('[LinkedInService] Opening browser…');
 
-      let browserClosed = false;
-      WebBrowser.openBrowserAsync(authUrl, { showInRecents: false })
-        .then(() => { browserClosed = true; })
-        .catch(() => { browserClosed = true; });
-
-      let foundCode: string | null = null;
-
-      for (let i = 0; i < 120 && !browserClosed; i++) {
-        await new Promise<void>(r => setTimeout(r, 1000));
-        if (browserClosed) break;
-        try {
-          const res = await fetch(`${BACKEND_URL}/auth/poll?state=${state}`);
-          if (!res.ok) continue;
-          const data = await res.json();
-          if (data.error) break;
-          if (data.code) { foundCode = data.code; break; }
-        } catch { /* network hiccup — retry */ }
-      }
-
-      if (!foundCode && browserClosed) {
-        await new Promise<void>(r => setTimeout(r, 2000));
-        try {
-          const res = await fetch(`${BACKEND_URL}/auth/poll?state=${state}`);
-          if (res.ok) {
-            const data = await res.json();
-            if (data.code) foundCode = data.code;
-          }
-        } catch { /* ignore */ }
-      }
-
-      try { await WebBrowser.dismissBrowser(); } catch { /* already closed */ }
+      const foundCode = await runOAuthBrowserFlow(authUrl, `${BACKEND_URL}/auth/poll?state=${state}`);
 
       if (!foundCode) {
         console.log('[LinkedInService] No code received — user cancelled or timed out.');

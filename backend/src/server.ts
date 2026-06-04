@@ -304,13 +304,14 @@ app.get('/auth/twitter/callback', (req, res) => {
   const error = typeof req.query.error === 'string' ? req.query.error : undefined;
   const error_description = typeof req.query.error_description === 'string' ? req.query.error_description : undefined;
   if (state) {
-    if (code) setOAuthCode(state, code);
-    else if (error) setOAuthError(state, error_description || error || 'oauth_error');
+    if (code) {
+      setOAuthCode(state, code);
+      // adroom:// redirect closes the Chrome Custom Tab on Android (dismissBrowser() is iOS-only).
+      return res.redirect('adroom://oauth-done');
+    }
+    if (error) setOAuthError(state, error_description || error || 'oauth_error');
   }
-  if (error || !code) return res.send(buildOAuthClosePage('Twitter / X', false, error_description));
-  // Show success page — the mobile app polls /auth/poll and dismisses the browser
-  // programmatically. No adroom:// redirect (unreliable on Android).
-  return res.send(buildOAuthClosePage('Twitter / X', true));
+  return res.send(buildOAuthClosePage('Twitter / X', false, error_description));
 });
 
 app.get('/auth/linkedin/callback', (req, res) => {
@@ -319,13 +320,13 @@ app.get('/auth/linkedin/callback', (req, res) => {
   const error = typeof req.query.error === 'string' ? req.query.error : undefined;
   const error_description = typeof req.query.error_description === 'string' ? req.query.error_description : undefined;
   if (state) {
-    if (code) setOAuthCode(state, code);
-    else if (error) setOAuthError(state, error_description || error || 'oauth_error');
+    if (code) {
+      setOAuthCode(state, code);
+      return res.redirect('adroom://oauth-done');
+    }
+    if (error) setOAuthError(state, error_description || error || 'oauth_error');
   }
-  if (error || !code) return res.send(buildOAuthClosePage('LinkedIn', false, error_description));
-  // Show success page — the mobile app polls /auth/poll and dismisses the browser
-  // programmatically. No adroom:// redirect (unreliable on Android).
-  return res.send(buildOAuthClosePage('LinkedIn', true));
+  return res.send(buildOAuthClosePage('LinkedIn', false, error_description));
 });
 
 app.get('/auth/tiktok/callback', (req, res) => {
@@ -336,13 +337,13 @@ app.get('/auth/tiktok/callback', (req, res) => {
   const error_description = typeof req.query.error_description === 'string' ? req.query.error_description : undefined;
   const finalCode = code || auth_code;
   if (state) {
-    if (finalCode) setOAuthCode(state, finalCode);
-    else if (error) setOAuthError(state, error_description || error || 'oauth_error');
+    if (finalCode) {
+      setOAuthCode(state, finalCode);
+      return res.redirect('adroom://oauth-done');
+    }
+    if (error) setOAuthError(state, error_description || error || 'oauth_error');
   }
-  if (error || !finalCode) return res.send(buildOAuthClosePage('TikTok', false, error_description));
-  // Show success page — the mobile app polls /auth/poll and dismisses the browser
-  // programmatically. No adroom:// redirect (unreliable on Android).
-  return res.send(buildOAuthClosePage('TikTok', true));
+  return res.send(buildOAuthClosePage('TikTok', false, error_description));
 });
 
 // /auth/whatsapp/callback is handled by authPagesRouter (mounted above).
