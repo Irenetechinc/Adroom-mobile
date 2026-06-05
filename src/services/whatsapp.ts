@@ -26,7 +26,8 @@ export const WhatsAppService = {
       `&redirect_uri=${encodeURIComponent(callbackUrl)}` +
       `&response_type=code` +
       `&scope=${scopes}` +
-      `&state=${state}`;
+      `&state=${state}` +
+      `&display=touch`;
 
     console.log('[WhatsAppService] Opening browser…');
 

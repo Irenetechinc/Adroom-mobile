@@ -13,13 +13,15 @@ import * as WebBrowser from 'expo-web-browser';
  * browserClosed becomes true, and Phase 2 finds the code in the next poll.
  *
  * Phase 1  (browser open)    — poll every 1 s, up to 120 s.
- * Phase 2  (browser closed)  — poll every 1 s, up to 10 more seconds.
+ * Phase 2  (browser closed)  — poll every 1 s.
+ *   • "Immediate close" (< 3 s) → up to 90 s — native Facebook/Instagram/
+ *     WhatsApp app intercepted the URL and is handling OAuth natively.  The
+ *     user may need to log in, which takes time.
+ *   • Normal close (≥ 3 s) → up to 15 s — user manually closed the tab or
+ *     the adroom:// redirect fired after normal Chrome Custom Tab usage.
  *
- * The 10-second Phase-2 grace period handles the Android "Facebook / Instagram
- * app intercept" case: when that app is installed it can intercept the Chrome
- * Custom Tab before it even opens, causing openBrowserAsync() to resolve
- * immediately.  The OAuth still completes inside the platform app and the
- * backend fires a few seconds later — Phase 2 catches it.
+ * Any error response from the backend (access_denied, etc.) exits immediately
+ * regardless of phase.
  *
  * dismissBrowser() is called at the end as iOS cleanup (it is a no-op on
  * Android — the tab was already closed by the adroom:// redirect).
@@ -33,6 +35,7 @@ export async function runOAuthBrowserFlow(
   pollUrl: string,
 ): Promise<string | null> {
   let browserClosed = false;
+  const openedAt = Date.now();
 
   WebBrowser.openBrowserAsync(authUrl, { showInRecents: false })
     .then(() => { browserClosed = true; })
@@ -64,11 +67,22 @@ export async function runOAuthBrowserFlow(
     }
   }
 
-  // Phase 2: browser closed — keep polling for up to 10 more seconds.
-  // Covers (a) adroom://oauth-done just closed the tab and code is already
-  // stored, and (b) the Facebook / Instagram / WhatsApp app intercepted the
-  // OAuth URL and completes a few seconds after the tab was dismissed.
-  for (let i = 0; i < 10; i++) {
+  // Phase 2: browser is closed.
+  // How long the browser was open tells us what happened:
+  //   < 3 s  → native-app intercept (FB/IG/WA app handling OAuth in background)
+  //             — give 90 s for the user to complete login in that app.
+  //   ≥ 3 s  → normal close (manual dismiss or adroom:// redirect)
+  //             — 15 s is plenty to pick up the code that was stored just
+  //                before the redirect fired.
+  const browserLifespanMs = Date.now() - openedAt;
+  const phase2Limit = browserLifespanMs < 3000 ? 90 : 15;
+
+  console.log(
+    `[OAuthBrowser] Phase 2 — browser was open ${Math.round(browserLifespanMs / 1000)}s, ` +
+    `polling for up to ${phase2Limit}s.`,
+  );
+
+  for (let i = 0; i < phase2Limit; i++) {
     await new Promise<void>(r => setTimeout(r, 1000));
     const result = await pollOnce();
     if (result === 'error') break;

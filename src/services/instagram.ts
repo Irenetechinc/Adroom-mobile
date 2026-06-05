@@ -20,7 +20,8 @@ export const InstagramService = {
       `&redirect_uri=${encodeURIComponent(callbackUrl)}` +
       `&response_type=code` +
       `&scope=${scopes}` +
-      `&state=${state}`;
+      `&state=${state}` +
+      `&display=touch`;
 
     console.log('[InstagramService] Opening browser…');
 

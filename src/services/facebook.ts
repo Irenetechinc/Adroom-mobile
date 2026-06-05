@@ -41,7 +41,8 @@ export const FacebookService = {
       `&redirect_uri=${encodeURIComponent(callbackUrl)}` +
       `&response_type=code` +
       `&scope=pages_show_list,pages_read_engagement,pages_manage_posts,pages_messaging,public_profile` +
-      `&state=${state}`;
+      `&state=${state}` +
+      `&display=touch`;
 
     console.log('[FacebookService] Opening browser…');
 
