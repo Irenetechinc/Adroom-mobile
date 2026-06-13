@@ -1,0 +1,25 @@
+# --- AdRoom AI landing page ---
+# Block public access to private investor data + rate-limit cache.
+# These files live in the same folder as reserve.php so the PHP script
+# can read/write them locally — but they must NEVER be served over HTTP.
+
+<FilesMatch "^(investors\.txt|\.reserve_rate\.json)$">
+    Require all denied
+    # Apache 2.2 fallback
+    <IfModule !mod_authz_core.c>
+        Order allow,deny
+        Deny from all
+    </IfModule>
+</FilesMatch>
+
+# Hide any dotfile that might land here
+<FilesMatch "^\.">
+    Require all denied
+    <IfModule !mod_authz_core.c>
+        Order allow,deny
+        Deny from all
+    </IfModule>
+</FilesMatch>
+
+# Default landing page
+DirectoryIndex index.html

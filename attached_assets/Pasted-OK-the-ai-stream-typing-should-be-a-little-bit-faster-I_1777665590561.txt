@@ -1,0 +1,24 @@
+OK the ai  stream typing should be a little bit  faster. 
+If ai replies has button or Input files like forms they should come after streaming typing is done not before or in the process with good animations.
+
+Do not stream type forms or selections or button text 
+
+The strategy options are also stream typed it should be only the main text that should be stream typed not the text in the strategy type option or labels
+
+Thinking is not going in syc with actual ai activity for example it's still says thinking even after user has been hit with an error, and not  and also steam typing can't be going on and thing king runging at same time stream typing finishes before thinking process 
+
+Stream typing for one reply should finish before another reply comes in
+
+User is not able to change user name imidiatly after changing and I know this is a security reson so return user with a good ui popup that says you just changed your username wait 3 before you can change username again and also ensure that this is enforced 
+
+I also noticed that after cold start most screens don't load till the user end app process entirely and repons app fix this screens include notification screen,  connected accounts screen,  setting screen, and even agant chat screen when user finish filling any form and save and submit the next process is jot initiated adroom ai get stock at a typing indicator investigate and fix this from root couse 
+
+Add option product type to manual product upload form product type selection include either physic product or digital product if it's physically ask user should see the address input, if its digital user address input dosnt show, also add the delevery type select option to the form option include payment on delevery, pay before delevery, payment on develry and pay for delevery, if its payment before delivery user should be required to enter a phical address, phone,  bank account details , if else user can add address but it's optional. Adroom ai is to use this details when required especially when closing a sales deal. 
+
+Also i noticed that the tiktok atonomus capability is only limited to comment fix this tiktok capabilities should same as Facebook and even more if able and if required and where require so impliment accordingly and do se for all there social account autonomous  capability 
+
+Note:
+Do not disrupt any already. Made progress, no dummy or demo implementations, no hard coded data look what been don and update, creat and Impliment where required avoid any form of double implimentation make sure all fix and Implemtations are for realtime and production. All implimentation must align with what already done and work in syc. 
+This is a mobile app not web application. And must run 100% off replit, railway for backend and supabase for database
+ 
+Also verification emails are being send twice on from the inbuilt superbase emailing service the other from resend fix this leave the resend and remove the internal superbase in built but use the email template used for superbase internal emailing for resend

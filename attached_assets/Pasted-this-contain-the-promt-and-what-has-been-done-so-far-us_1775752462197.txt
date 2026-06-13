@@ -1,0 +1,73 @@
+this contain the promt and what has been done so far, using the promt ivistigate and and implemnt whats left and inconpletly implimented, what has not been implimented and make sure thier all production and realtime implimentation for a very large scall and number of user using the app cococurenllt 
+this is a mobile app not web application, no dummy code or demo implimentations, no unreloved todo or comments, no halucinations. railway for backend and supabse for data base, must work 100^ off replit here replit is just an editor 
+
+Promt:
+the problem with the connected accounts not staying connected in front end in the connect accounts screen still peisist after account connection the ui shows connected for a while then it disconnects and gose back to account not connected investigate and fix this remebr account have to remin connected till user disconnects acoount remain connected even tho user leaves the app and comes back. also the restart/new session icon in the top right conner of the agent chat screen when click clrear the chat but no new session is trigerd as it should adroom greats the user and then present user with the strategy type selection modal, the payment gateway working fin now but one problem when user click to suscribe for example 120$ wich is top up after user has been redirected to fluter chackout you find out that the 125$ is now 124N fix this from root couse when user arive at checkout the intend subscription or top up amount currency dosnt be in niaraa insted dollar as the suscription price required , remeber no dommy data or demo implementatio no hard coded demo or dummy data, all implimentation must be for realtime and production impliment in pererell
+
+
+What has been done so far:
+
+Diagnosing connection, session, and payment issues
+Let me investigate all three issues in parallel right now.
+
+
+4 actions
+Spotted several root causes already. Let me dig deeper simultaneously on all three:
+
+
+4 actions
+Now I have all three root causes pinpointed. Let me fix them all in parallel:
+
+Issue 1 — loadConnectedPlatforms has a deletion loop that wipes tokens for any platform not in the backend response (timing/network issue). Also, isConnected reads from tokens instead of connectedPlatforms (the persistent backend truth).
+
+Issue 2 — startNewSession has no try/catch, and doesn't reset isInputDisabled, so if anything in the async chain errors silently the greeting/flow never fires.
+
+Issue 3 — Payment link is hardcoded to currency: 'NGN' but subscription prices are in USD.
+
+
+3 actions
+Now I have complete clarity. Let me fix all three issues simultaneously:
+
+
+2 actions
+Now fix Issue 2 — the startNewSession function. Wrap it in a try/catch, reset isInputDisabled, and guarantee the greeting always fires:
+
+
+2 actions
+Now fix the ConnectedAccountsScreen to read from connectedPlatforms as the persistent source of truth (not just ephemeral tokens):
+
+
+2 actions
+Now check disconnectPlatform also clears connectedPlatforms properly (so the new isConnected check can't show stale data after disconnect):
+
+
+2 actions
+disconnectPlatform already clears both, so that's solid. Now fix Issue 3 — change the currency to USD in the payment link:
+
+
+2 actions
+Now verify the payment verification endpoints also compare against the correct USD price (not NGN):
+
+
+2 actions
+The verification logic already uses price_usd, so it's consistent with the USD fix. Now let me also check the frontend's verifyAndApplyPayment to make sure it sends transaction_id correctly:
+
+
+5 actions
+Let me check how the backend verify endpoint and the flutterwave service handle tx_ref vs transaction_id:
+
+
+3 actions
+The real problem with verification is clear: when Flutterwave redirects back to adroom://payment-callback?status=successful&tx_ref=xxx&transaction_id=yyy, the WebView captures it but the code passes 'manual' as the transaction_id. We need to extract the real transaction_id from the redirect URL. Let me fix all of this:
+
+
+7 actions
+The fix is clear — the WebView needs to extract the real transaction_id from the Flutterwave redirect URL and pass it to handlePaymentComplete. Let me also update the backend to support tx_ref-based lookup as a fallback:
+
+
+2 actions
+Now update the WebView handler to extract the real transaction_id from the redirect URL:
+
+
+2 actions
+Now update the backend verify-subscription and verify-topup endpoints to handle the case where transaction_id may be empty (fall back to tx_ref lookup):

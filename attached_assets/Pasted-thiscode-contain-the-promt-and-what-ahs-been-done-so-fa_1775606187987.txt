@@ -1,0 +1,120 @@
+thiscode contain the promt and what ahs been done so far, using the promt ivistigate and and implemnt whats left and inconplet ly implimented and make sure thier all production and realtime 
+ and pleas CMA has to be dynamic flexible and be able to monitor think and implement were nessary in realtime to achive its primary goal
+
+promt:
+Impliment an agent that will mange my actual ai credits usage and spend  to avoid adroom using unessaary ai crdicts and ensure management, this agent should be able to prioritise ai credit use by tire, how their used the best model to use, cost efficient and still a hive se result and still work with other tools already in implimented so before implimentimg this look at all activities adroom ai dose and make sure none is left put the goal of this ai is save money internerly for the company across all user while meeting standerds and not rowing down on quality or effectiveness of out put comes etc
+all implimentations and fix must be for reatrime and production, i use railway for backend and supabse for dtabse also this is a mibile app not web app 
+Mean whole fix this error that is cpizing my build to fail
+
+Running "expo doctor"
+Running 17 checks on your project...
+15/17 checks passed. 2 checks failed. Possible issues detected:
+Use the --verbose flag to see more details about passed checks.
+
+✖ Check that no duplicate dependencies are installed
+Your project contains duplicate native module dependencies, which should be de-duplicated.
+Native builds may only contain one version of any given native module, and having multiple versions of a single Native module installed may lead to unexpected build errors.
+Found duplicates for expo-constants:
+  ├─ expo-constants@18.0.13 (at: node_modules/expo-constants)
+  └─ expo-constants@17.0.8 (at: node_modules/expo-notifications/node_modules/expo-constants)
+Found duplicates for expo-application:
+  ├─ expo-application@6.0.2 (at: node_modules/expo-application)
+  └─ expo-application@7.0.8 (at: node_modules/expo-auth-session/node_modules/expo-application)
+Advice:
+Resolve your dependency issues and deduplicate your dependencies. Learn more: https://expo.fyi/resolving-dependency-issues
+
+✖ Check that packages match versions required by installed Expo SDK
+
+❗ Major version mismatches
+package             expected  found    
+expo-location       ~19.0.8   18.0.10  
+
+⚠️ Minor version mismatches
+package             expected  found    
+expo-notifications  ~0.32.16  0.29.14  
+
+Changelogs:
+- expo-location → https://github.com/expo/expo/blob/sdk-54/packages/expo-location/CHANGELOG.md
+- expo-notifications → https://github.com/expo/expo/blob/sdk-54/packages/expo-notifications/CHANGELOG.md
+
+2 packages out of date.
+Advice:
+Use 'npx expo install --check' to review and upgrade your dependencies.
+To ignore specific packages, add them to "expo.install.exclude" in package.json. Learn more: https://expo.fyi/dependency-validation
+2 checks failed, indicating possible issues with the project.
+Command "expo doctor" failed.
+
+
+what has been done:
+Let me tackle both in parallel — fix the package versions and explore the existing AI activity codebase to understand what the Credit Management Agent needs to cover:
+
+
+6 actions
+Now I have a complete picture of all AI operations. Let me read the key files before building the Credit Management Agent:
+
+
+6 actions
+Now I have the complete picture. Let me build the Credit Management Agent. I'll create it as a new service and wire it into all AI touchpoints:
+
+
+3 actions
+Now I have everything I need. Let me build the Credit Management Agent:
+
+
+2 actions
+Now wire the CMA into the AI engine and energy service:
+
+
+2 actions
+Now add the CMA-powered deductEnergyWithRouting to energyService, and update the scheduler to use CMA cooldowns:
+
+
+4 actions
+Now update the scheduler to check CMA before running intelligence cycles, and find where deductEnergy is called for strategies to upgrade to deductEnergyWithRouting:
+
+
+3 actions
+Now update the scheduler intelligence cycles to use CMA cooldowns, and update the energy middleware to route through CMA:
+
+
+2 actions
+Now update the energy middleware and the strategy generation endpoint to fully use CMA routing:
+
+
+3 actions
+Now update the strategy generation to use CMA routing (picks cheap model for non-Pro users) and upgrade deductEnergyForUser to go through CMA:
+
+
+2 actions
+Good — now let me update DecisionEngine.generateStrategy to accept an economy model flag, update the server strategy endpoint to use CMA routing end-to-end, and add the /api/cma/stats endpoint:
+
+
+8 actions
+Now update the strategy route in server.ts to use CMA routing, and update the energy middleware:
+
+
+4 actions
+Now update the strategy endpoint in server.ts to use the CMA economy mode, and add the /api/cma/stats admin endpoint:
+
+
+2 actions
+Now add the CMA stats admin endpoint to server.ts and the DB migration:
+
+
+5 actions
+Now create the DB migration for the cma_savings_log table and run the build:
+
+
+3 actions
+Build is clean. Let me create the Supabase migration for the new table and restart the backend:
+
+
+4 actions
+Now add the CMA savings panel to the admin HTML and restart the backend:
+
+
+5 actions
+Let me find where to add the CMA panel in the admin HTML and also add it to the admin JavaScript:
+
+
+5 actions

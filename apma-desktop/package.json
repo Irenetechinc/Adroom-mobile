@@ -1,0 +1,124 @@
+{
+  "name": "apma-desktop",
+  "version": "1.0.0",
+  "description": "APMA — Autonomous Political Marketing Agent — Desktop Client",
+  "author": {
+    "name": "AdRoom AI",
+    "email": "hello@adroom.ai"
+  },
+  "main": "dist-electron/main.js",
+  "homepage": "./",
+  "private": true,
+  "scripts": {
+    "dev": "concurrently \"npx vite\" \"electron .\"",
+    "build": "npx vite build && node scripts/build-electron.js",
+    "build:electron": "node scripts/build-electron.js",
+    "icons": "node scripts/generate-icons.js",
+    "setup": "npm install --include=dev --legacy-peer-deps --prefix . && node scripts/generate-icons.js",
+    "predist:win": "npm run setup && npm run build",
+    "predist:mac": "npm run setup && npm run build",
+    "predist:linux": "npm run setup && npm run build",
+    "predist:all": "npm run setup && npm run build",
+    "dist:win": "npm run predist:win && npx electron-builder --win",
+    "dist:win:zip": "npm run predist:win && npx electron-builder --win --target zip",
+    "dist:mac": "npm run predist:mac && npx electron-builder --mac",
+    "dist:linux": "npm run predist:linux && npx electron-builder --linux",
+    "dist:all": "npm run predist:all && npx electron-builder --win --mac --linux",
+    "electron": "electron ."
+  },
+  "build": {
+    "appId": "com.adroomai.apma",
+    "productName": "APMA",
+    "copyright": "Copyright © 2026 AdRoom AI",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "dist-electron/**/*",
+      "!node_modules/**/*"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "assets/icon.ico",
+      "requestedExecutionLevel": "asInvoker"
+    },
+    "mac": {
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        }
+      ],
+      "icon": "assets/icon.icns",
+      "category": "public.app-category.business"
+    },
+    "linux": {
+      "target": [
+        {
+          "target": "AppImage",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "deb",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "assets/icon.png",
+      "category": "Office",
+      "synopsis": "APMA — Autonomous Political Marketing Agent"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "APMA",
+      "installerIcon": "assets/icon.ico",
+      "uninstallerIcon": "assets/icon.ico"
+    },
+    "portable": {
+      "artifactName": "${productName}-${version}-portable.exe"
+    },
+    "publish": null
+  },
+  "dependencies": {
+    "electron-store": "^8.2.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "recharts": "^2.12.7",
+    "zustand": "^4.5.4"
+  },
+  "devDependencies": {
+    "@types/react": "^18.3.3",
+    "@types/react-dom": "^18.3.0",
+    "@vitejs/plugin-react": "^4.3.1",
+    "concurrently": "^9.0.1",
+    "electron": "^31.0.0",
+    "electron-builder": "^24.13.3",
+    "esbuild": "^0.28.0",
+    "png-to-ico": "^2.1.8",
+    "typescript": "^5.5.3",
+    "vite": "^5.4.21"
+  }
+}

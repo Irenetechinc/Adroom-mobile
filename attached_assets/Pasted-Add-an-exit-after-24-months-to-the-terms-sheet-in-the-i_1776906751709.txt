@@ -1,0 +1,32 @@
+Add an exit after 24 months to the terms sheet in the investors.html in the lunch folder 
+
+🛡️ Your Protections (Dual Exit)
+
+We have built two ways for you to exit your investment. You are never trapped.
+
+Exit Option 1: Main Round Conversion (6-12 months)
+
+Your investment automatically converts to shares at ₦1 per share when our main pre-seed round closes. You become a正式 shareholder.
+
+Exit Option 2: Buyout Request (After 24 months)
+
+NEW — After 24 months from your investment date, you have the right to request that AdRoom AI buy back your equity at the company's current valuation.
+
+Exit Term Detail
+When Any time after 24 months from your investment date
+What you get The current value of your shares based on the company's most recent valuation
+How it's paid In installments over 6-12 months, or as agreed
+Who decides the valuation An independent third-party valuation if we cannot agree
+
+Example: You invest ₦5,000,000 for 5,000,000 shares. After 24 months, the company is valued at ₦23,250,000,000 (3x growth). Your shares are now worth ₦15,000,000. You can request a buyout for that amount.
+
+This means you are never stuck. You have a clear path to exit if you need your money back.
+
+Add to the index and investor page and on the lich page add an about page too founder name Divine David, fullstake software Engineer. 10years experience in the tech industry and add toehr thing to make founders profile much attractive to investors and only add if and where nessry 
+The Mission
+
+"Every business deserves world-class marketing that actually converts. AdRoom AI exists to make that a reality — not a privilege preserved for those with bigger budgets."
+
+The currntl desing is OK but lack stragicd image placing implement this for all pages also hero section bg image for all pages in the landing page folder is not showing in front end also it's hero-bg.png no .jpg, design looks too aiade make ui  like real high paying front end developer did and qniquie do not touch my animation leav as the are  animations must be recurring as using scroll not just on reload already implimented amle sure you follow throug just make the required changes to the landing pages 
+Also add a 14 days trimmer to the imvsor.html that the time with the Early Investor Window closes 
+Do not disrupt already made progress

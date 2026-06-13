@@ -1,0 +1,77 @@
+modules = ["nodejs-20", "web", "php-8.2"]
+[agent]
+expertMode = true
+integrations = ["javascript_database:1.0.0"]
+stack = "BEST_EFFORT_FALLBACK"
+
+[nix]
+channel = "stable-25_05"
+packages = ["eas-cli", "yakut"]
+
+[workflows]
+runButton = "Project"
+
+[[workflows.workflow]]
+name = "Project"
+mode = "parallel"
+author = "agent"
+
+[[workflows.workflow.tasks]]
+task = "workflow.run"
+args = "Start application"
+
+[[workflows.workflow.tasks]]
+task = "workflow.run"
+args = "Backend API"
+
+[[workflows.workflow]]
+name = "Start application"
+author = "agent"
+
+[workflows.workflow.metadata]
+outputType = "webview"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "node status-server.js"
+waitForPort = 5000
+
+[[workflows.workflow]]
+name = "Backend API"
+author = "agent"
+
+[workflows.workflow.metadata]
+outputType = "console"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "cd backend && npm install --legacy-peer-deps --include=dev && ./node_modules/.bin/ts-node --transpile-only src/server.ts"
+waitForPort = 8000
+
+[deployment]
+deploymentTarget = "static"
+build = ["bash", "-c", "npx expo export --platform web --output-dir web-build"]
+publicDir = "web-build"
+
+[userenv]
+
+[userenv.shared]
+EXPO_PUBLIC_SUPABASE_URL = "https://mrrgjvrntenlkvslfvfh.supabase.co"
+EXPO_PUBLIC_FACEBOOK_APP_ID = "1536532767602012"
+EXPO_PUBLIC_TWITTER_CLIENT_ID = "uFUW0E3WZ5RnUwK4f4RlzRjBn"
+EXPO_PUBLIC_MIN_DEPOSIT = "1000"
+EXPO_PUBLIC_ADROOM_FEE = "45"
+EXPO_PUBLIC_API_URL = "http://localhost:8000"
+PORT = "8000"
+NODE_ENV = "production"
+EXPO_PUBLIC_SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1ycmdqdnJudGVubGt2c2xmdmZoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njk1NzIxMzgsImV4cCI6MjA4NTE0ODEzOH0.wIwrxgBTsYsx1jGSDDgNw3iPPHN0TZ8v7psen51Z9ks"
+SUPABASE_URL = "https://mrrgjvrntenlkvslfvfh.supabase.co"
+SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1ycmdqdnJudGVubGt2c2xmdmZoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njk1NzIxMzgsImV4cCI6MjA4NTE0ODEzOH0.wIwrxgBTsYsx1jGSDDgNw3iPPHN0TZ8v7psen51Z9ks"
+
+[[ports]]
+localPort = 5000
+externalPort = 80
+
+[[ports]]
+localPort = 8000
+externalPort = 8000
