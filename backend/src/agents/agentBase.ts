@@ -36,7 +36,7 @@ export interface PublishResult {
     url?: string;
 }
 
-const FB_GRAPH = 'https://graph.facebook.com/v19.0';
+const FB_GRAPH = 'https://graph.facebook.com/v25.0';
 const TWITTER_API = 'https://api.twitter.com/2';
 const LINKEDIN_API = 'https://api.linkedin.com/v2';
 const TIKTOK_API = 'https://open.tiktokapis.com/v2';

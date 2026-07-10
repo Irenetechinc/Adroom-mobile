@@ -21,7 +21,7 @@ export const WhatsAppService = {
     const scopes      = 'whatsapp_business_management,whatsapp_business_messaging,business_management,public_profile';
 
     const authUrl =
-      `https://www.facebook.com/v18.0/dialog/oauth` +
+      `https://www.facebook.com/dialog/oauth` +
       `?client_id=${FB_APP_ID}` +
       `&redirect_uri=${encodeURIComponent(callbackUrl)}` +
       `&response_type=code` +

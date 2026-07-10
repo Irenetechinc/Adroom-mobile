@@ -264,7 +264,7 @@ export class TokenRefreshService {
       fb_exchange_token: row.access_token,
     });
 
-    const res  = await retryFetch(`https://graph.facebook.com/v18.0/oauth/access_token?${params}`);
+    const res  = await retryFetch(`https://graph.facebook.com/v25.0/oauth/access_token?${params}`);
     const data: any = await res.json();
 
     if (!res.ok || !data.access_token) {
