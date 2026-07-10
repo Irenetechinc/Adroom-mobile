@@ -15,7 +15,7 @@ export const InstagramService = {
     const scopes      = 'instagram_basic,instagram_content_publish,instagram_manage_comments,instagram_manage_insights,pages_show_list,ads_management';
 
     const authUrl =
-      `https://www.facebook.com/v18.0/dialog/oauth` +
+      `https://www.facebook.com/dialog/oauth` +
       `?client_id=${FB_APP_ID}` +
       `&redirect_uri=${encodeURIComponent(callbackUrl)}` +
       `&response_type=code` +
@@ -43,7 +43,7 @@ export const InstagramService = {
   async getInstagramAccounts(accessToken: string): Promise<any[]> {
     try {
       const pagesRes  = await fetch(
-        `https://graph.facebook.com/v18.0/me/accounts?access_token=${accessToken}&fields=instagram_business_account,name,id`
+        `https://graph.facebook.com/v25.0/me/accounts?access_token=${accessToken}&fields=instagram_business_account,name,id`
       );
       const pagesData = await pagesRes.json();
       if (pagesData.error) throw new Error(pagesData.error.message);
@@ -52,7 +52,7 @@ export const InstagramService = {
       for (const page of pagesData.data || []) {
         if (page.instagram_business_account) {
           const igRes  = await fetch(
-            `https://graph.facebook.com/v18.0/${page.instagram_business_account.id}?fields=username,name,profile_picture_url&access_token=${accessToken}`
+            `https://graph.facebook.com/v25.0/${page.instagram_business_account.id}?fields=username,name,profile_picture_url&access_token=${accessToken}`
           );
           const igData = await igRes.json();
           igAccounts.push({
@@ -72,14 +72,14 @@ export const InstagramService = {
 
   async publishMedia(igUserId: string, accessToken: string, imageUrl: string, caption: string): Promise<string> {
     const containerRes  = await fetch(
-      `https://graph.facebook.com/v18.0/${igUserId}/media?image_url=${encodeURIComponent(imageUrl)}&caption=${encodeURIComponent(caption)}&access_token=${accessToken}`,
+      `https://graph.facebook.com/v25.0/${igUserId}/media?image_url=${encodeURIComponent(imageUrl)}&caption=${encodeURIComponent(caption)}&access_token=${accessToken}`,
       { method: 'POST' }
     );
     const containerData = await containerRes.json();
     if (containerData.error) throw new Error(containerData.error.message);
 
     const publishRes  = await fetch(
-      `https://graph.facebook.com/v18.0/${igUserId}/media_publish?creation_id=${containerData.id}&access_token=${accessToken}`,
+      `https://graph.facebook.com/v25.0/${igUserId}/media_publish?creation_id=${containerData.id}&access_token=${accessToken}`,
       { method: 'POST' }
     );
     const publishData = await publishRes.json();

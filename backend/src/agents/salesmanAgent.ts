@@ -388,7 +388,7 @@ Return JSON:
             this.log(`Scanning Facebook post ${params.postId} for sales leads`);
             try {
                 const resp = await fetch(
-                    `https://graph.facebook.com/v19.0/${params.postId}/comments?fields=id,message,from&access_token=${params.tokens.facebook.access_token}`
+                    `https://graph.facebook.com/v25.0/${params.postId}/comments?fields=id,message,from&access_token=${params.tokens.facebook.access_token}`
                 );
                 if (!resp.ok) return;
 

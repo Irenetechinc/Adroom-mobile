@@ -396,7 +396,7 @@ app.post('/api/auth/whatsapp/exchange', async (req, res) => {
       client_secret: FB_APP_SECRET,
       code,
     });
-    const exchangeRes = await fetchWithRetry(`https://graph.facebook.com/v18.0/oauth/access_token?${params.toString()}`);
+    const exchangeRes = await fetchWithRetry(`https://graph.facebook.com/v25.0/oauth/access_token?${params.toString()}`);
     const data: any = await exchangeRes.json();
     if (!exchangeRes.ok) return res.status(exchangeRes.status).json(data);
     return res.status(200).json({ access_token: data.access_token });
@@ -418,7 +418,7 @@ app.post('/api/auth/whatsapp/phone-numbers', async (req, res) => {
   try {
     // Fetch WhatsApp Business Accounts linked to this user
     const wabaRes = await fetch(
-      `https://graph.facebook.com/v18.0/me/whatsapp_business_accounts?fields=id,name&access_token=${access_token}`
+      `https://graph.facebook.com/v25.0/me/whatsapp_business_accounts?fields=id,name&access_token=${access_token}`
     );
     const wabaData: any = await wabaRes.json();
 
@@ -431,7 +431,7 @@ app.post('/api/auth/whatsapp/phone-numbers', async (req, res) => {
     for (const waba of (wabaData.data as any[]).slice(0, 5)) {
       try {
         const phonesRes = await fetch(
-          `https://graph.facebook.com/v18.0/${waba.id}/phone_numbers?fields=id,display_phone_number,verified_name&access_token=${access_token}`
+          `https://graph.facebook.com/v25.0/${waba.id}/phone_numbers?fields=id,display_phone_number,verified_name&access_token=${access_token}`
         );
         const phonesData: any = await phonesRes.json();
         if (phonesData.data) {
@@ -466,7 +466,7 @@ app.post('/api/auth/facebook/exchange', async (req, res) => {
       client_secret: FB_APP_SECRET,
       code,
     });
-    const exchangeRes = await fetchWithRetry(`https://graph.facebook.com/v18.0/oauth/access_token?${params.toString()}`);
+    const exchangeRes = await fetchWithRetry(`https://graph.facebook.com/v25.0/oauth/access_token?${params.toString()}`);
     const data: any = await exchangeRes.json();
     if (!exchangeRes.ok) return res.status(exchangeRes.status).json(data);
     return res.status(200).json(data);
@@ -854,7 +854,7 @@ CURRENT STAGE: ${stageGuidance[stage] || stageGuidance.intro}`;
           if (!reply) continue;
 
           // Send the reply via WhatsApp Cloud API
-          const sendRes = await fetch(`https://graph.facebook.com/v19.0/${phoneNumberId}/messages`, {
+          const sendRes = await fetch(`https://graph.facebook.com/v25.0/${phoneNumberId}/messages`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${cfg.access_token}` },
             body: JSON.stringify({
@@ -932,7 +932,7 @@ app.post('/api/oauth/whatsapp/connect', async (req, res) => {
     let displayName = business_name || 'WhatsApp Business';
     try {
       const verifyRes = await fetch(
-        `https://graph.facebook.com/v19.0/${phone_number_id}?fields=display_phone_number,verified_name&access_token=${access_token}`
+        `https://graph.facebook.com/v25.0/${phone_number_id}?fields=display_phone_number,verified_name&access_token=${access_token}`
       );
       if (verifyRes.ok) {
         const data: any = await verifyRes.json();
@@ -997,7 +997,7 @@ app.post('/api/oauth/whatsapp/send', async (req, res) => {
     if (!cfg) return res.status(400).json({ error: 'WhatsApp Business account not connected.' });
 
     const phone = to.replace(/\D/g, '');
-    const sendRes = await fetch(`https://graph.facebook.com/v19.0/${cfg.page_id}/messages`, {
+    const sendRes = await fetch(`https://graph.facebook.com/v25.0/${cfg.page_id}/messages`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${cfg.access_token}` },
       body: JSON.stringify({

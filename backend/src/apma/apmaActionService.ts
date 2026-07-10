@@ -312,7 +312,7 @@ Write ONLY the ${action.type} text. No quotes. No label.`;
           formData.append('caption', text);
           formData.append('access_token', pageToken);
 
-          const photoRes = await fetch(`https://graph.facebook.com/v19.0/${pageId}/photos`, {
+          const photoRes = await fetch(`https://graph.facebook.com/v25.0/${pageId}/photos`, {
             method: 'POST',
             body: formData,
           });
@@ -325,7 +325,7 @@ Write ONLY the ${action.type} text. No quotes. No label.`;
       }
 
       // Text-only fallback
-      const res = await fetch(`https://graph.facebook.com/v19.0/${pageId}/feed`, {
+      const res = await fetch(`https://graph.facebook.com/v25.0/${pageId}/feed`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ message: text, access_token: pageToken }),

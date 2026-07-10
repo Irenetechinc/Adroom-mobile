@@ -231,7 +231,7 @@ async function executePlatformReply(platform: string, commentId: string, message
     const accessToken = config.access_token;
     
     if (platform === 'facebook' || platform === 'instagram') {
-        const url = `https://graph.facebook.com/v18.0/${commentId}/comments`;
+        const url = `https://graph.facebook.com/v25.0/${commentId}/comments`;
         const res = await fetch(url, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -274,7 +274,7 @@ async function executePlatformMessage(platform: string, recipientId: string, mes
     const accessToken = config.access_token;
 
     if (platform === 'facebook' || platform === 'instagram') {
-        const url = 'https://graph.facebook.com/v18.0/me/messages';
+        const url = 'https://graph.facebook.com/v25.0/me/messages';
         const res = await fetch(url, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -402,7 +402,7 @@ async function checkAndExecuteDailyPost(config: any, strategy: any, product?: an
   try {
       if (platform === 'facebook' || platform === 'instagram') {
           const feedResponse = await fetch(
-            `https://graph.facebook.com/v18.0/${pageId}/feed?limit=1&access_token=${accessToken}`
+            `https://graph.facebook.com/v25.0/${pageId}/feed?limit=1&access_token=${accessToken}`
           );
           const feedData: any = await feedResponse.json();
           if (feedData.data && feedData.data.length > 0) {
@@ -463,7 +463,7 @@ async function executePlatformPost(platform: string, content: string, config: an
     const pageId = config.page_id || config.ad_account_id;
 
     if (platform === 'facebook' || platform === 'instagram') {
-        const res = await fetch(`https://graph.facebook.com/v18.0/${pageId}/feed`, {
+        const res = await fetch(`https://graph.facebook.com/v25.0/${pageId}/feed`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ message: content, access_token: accessToken })
