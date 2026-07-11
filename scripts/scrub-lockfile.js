@@ -22,7 +22,7 @@ const NPM_URL   = 'https://registry.npmjs.org/';
 
 if (!fs.existsSync(LOCKFILE)) {
   console.log('[scrub-lockfile] package-lock.json not found, skipping.');
-  process.exit(0);
+  return;
 }
 
 const original = fs.readFileSync(LOCKFILE, 'utf-8');
