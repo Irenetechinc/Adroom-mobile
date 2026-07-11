@@ -36,8 +36,8 @@
     "lucide-react-native": "^0.577.0",
     "nativewind": "^4.2.2",
     "pdf-parse": "^2.4.5",
-    "react": "19.0.0",
-    "react-dom": "19.0.0",
+    "react": "19.2.0",
+    "react-dom": "19.2.0",
     "react-native": "0.83.9",
     "react-native-gesture-handler": "~2.31.1",
     "react-native-reanimated": "4.3.1",
@@ -55,7 +55,7 @@
     "@babel/core": "^7.29.0",
     "@testing-library/react-native": "^13.0.1",
     "@types/jest": "^29.5.14",
-    "@types/react": "~19.0.10",
+    "@types/react": "~19.2.0",
     "babel-preset-expo": "~55.0.22",
     "jest": "^29.7.0",
     "jest-expo": "~55.0.18",
@@ -68,6 +68,6 @@
   },
   "overrides": {
     "expo-application": "~55.0.15",
-    "react-test-renderer": "19.0.0"
+    "react-test-renderer": "19.2.0"
   }
 }
