@@ -829,6 +829,123 @@ router.get('/api/cma/model-credits', auth, async (req, res) => {
   }
 });
 
+// ─── CRITIC AGENT: STATS ──────────────────────────────────────────────────────
+router.get('/api/critic/stats', auth, async (_req, res) => {
+  try {
+    const { criticAgentService } = await import('../services/criticAgentService');
+    const stats = await criticAgentService.getStats();
+    res.json(stats);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── CRITIC AGENT: RECENT LOGS ────────────────────────────────────────────────
+router.get('/api/critic/logs', auth, async (req, res) => {
+  try {
+    const { criticAgentService } = await import('../services/criticAgentService');
+    const limit = Math.min(parseInt(String(req.query.limit ?? '50')), 200);
+    const verdict = req.query.verdict as string | undefined;
+    const agentType = req.query.agent_type as string | undefined;
+    const logs = await criticAgentService.getLogs({ limit, verdict, agentType });
+    res.json({ logs });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── MODEL OVERRIDE: STATUS ────────────────────────────────────────────────────
+router.get('/api/models/status', auth, async (_req, res) => {
+  try {
+    const { getModelOverride } = await import('../config/ai-models');
+    const override = getModelOverride();
+    const sb = getServiceSupabaseClient();
+    const { data: cmaStats } = await sb
+      .from('cma_monitor_log')
+      .select('system_burn_rate, dynamic_economy_active')
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .single();
+    res.json({
+      override,
+      cma: {
+        systemBurnRate:        (cmaStats as any)?.system_burn_rate ?? null,
+        dynamicEconomyActive:  (cmaStats as any)?.dynamic_economy_active ?? false,
+      },
+      models: {
+        premium:  process.env.OPENAI_TEXT_MODEL || 'gpt-4o',
+        economy:  'gemini-2.0-flash',
+      },
+      description: {
+        auto:    'CMA decides per-user based on subscription tier and burn rate',
+        economy: 'All AI operations routed to Gemini Flash (cheaper, faster)',
+        premium: 'All AI operations routed to GPT-4o (highest quality)',
+      },
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── MODEL OVERRIDE: SET ───────────────────────────────────────────────────────
+router.post('/api/models/override', auth, async (req, res) => {
+  try {
+    const { mode, reason } = req.body as { mode: string; reason?: string };
+    if (!['auto', 'economy', 'premium'].includes(mode)) {
+      return res.status(400).json({ error: 'mode must be "auto", "economy", or "premium"' });
+    }
+    const { setModelOverride } = await import('../config/ai-models');
+    setModelOverride(mode as 'auto' | 'economy' | 'premium', reason || '');
+
+    // Also persist to DB so override survives server restart if needed
+    const sb = getServiceSupabaseClient();
+    await sb.from('model_override_config').upsert({
+      operation: 'all',
+      forced_model: mode,
+      override_active: mode !== 'auto',
+      reason: reason || '',
+      updated_at: new Date().toISOString(),
+    }, { onConflict: 'operation' });
+
+    res.json({ ok: true, mode, reason: reason || '', message: `Model override set to '${mode}'` });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── MODEL OVERRIDE: RESET ────────────────────────────────────────────────────
+router.delete('/api/models/override', auth, async (_req, res) => {
+  try {
+    const { setModelOverride } = await import('../config/ai-models');
+    setModelOverride('auto', '');
+    const sb = getServiceSupabaseClient();
+    await sb.from('model_override_config').upsert({
+      operation: 'all',
+      forced_model: 'auto',
+      override_active: false,
+      reason: '',
+      updated_at: new Date().toISOString(),
+    }, { onConflict: 'operation' });
+    res.json({ ok: true, mode: 'auto', message: 'Model override cleared — CMA auto-routing restored' });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── GOOGLE DORKS: MANUAL TRIGGER ─────────────────────────────────────────────
+router.post('/api/google-dorks/run', auth, async (req, res) => {
+  try {
+    const { googleDorksService } = await import('../services/googleDorksService');
+    // Run in background
+    googleDorksService.runDiscoveryCycle().catch((e: any) =>
+      console.error('[Admin] Google Dorks manual run error:', e.message)
+    );
+    res.json({ ok: true, message: 'Google Dorks discovery cycle started in background' });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ─── ACCOUNT DELETION REQUESTS ────────────────────────────────────────────────
 router.get('/api/account-deletions', auth, async (req, res) => {
   try {
