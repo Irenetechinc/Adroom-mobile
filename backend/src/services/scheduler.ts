@@ -475,6 +475,12 @@ export class SchedulerService {
             await this.runLeadDiscovery();
         });
 
+        // ─── GOOGLE DORKS LEAD DISCOVERY — every 6 hours (staggered) ───────────
+        cron.schedule('0 1,7,13,19 * * *', async () => {
+            console.log('[Scheduler] Running Google Dorks lead discovery...');
+            await this.runGoogleDorksDiscovery();
+        });
+
         // ─── PRODUCT MANAGER AGENT ──────────────────────────────────────────────
         cron.schedule(SCHED_PRODUCT_MANAGER_CRON, async () => {
             console.log('[Scheduler] Running Product Manager Agent...');
@@ -660,6 +666,16 @@ export class SchedulerService {
             );
         } catch (e: any) {
             console.error('[Scheduler] Lead discovery error:', e.message);
+        }
+    }
+
+    // ─── GOOGLE DORKS LEAD DISCOVERY ─────────────────────────────────────────
+    private async runGoogleDorksDiscovery() {
+        try {
+            const { googleDorksService } = await import('./googleDorksService');
+            await googleDorksService.runDiscoveryCycle();
+        } catch (e: any) {
+            console.error('[Scheduler] Google Dorks discovery error:', e.message);
         }
     }
 

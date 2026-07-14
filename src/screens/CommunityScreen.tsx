@@ -1,11 +1,13 @@
-
 import React from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity, Linking, StyleSheet,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
-import { Menu, Users, MessageCircle, ExternalLink } from 'lucide-react-native';
+import {
+  Menu, Users, ExternalLink, Sparkles, ArrowUpRight,
+  MessageSquare, HeartHandshake,
+} from 'lucide-react-native';
 import { DrawerActions } from '@react-navigation/native';
 import Animated, { FadeInDown } from 'react-native-reanimated';
 
@@ -13,11 +15,13 @@ const CHANNELS = [
   {
     id: 'telegram',
     name: 'Telegram Community',
-    desc: 'Join live discussions, get strategy help, and share wins with other AdRoom users.',
+    desc: 'Live strategy discussions, campaign wins, and real-time peer support.',
     letter: 'T',
     bg: '#2AABEE',
+    accentBorder: 'rgba(42,171,238,0.22)',
     action: 'https://t.me/+WnLXzsoxrSJmNTI8',
-    cta: 'Join Telegram',
+    cta: 'Join Now',
+    members: '2.4K',
   },
   {
     id: 'discord',
@@ -25,27 +29,33 @@ const CHANNELS = [
     desc: 'Real-time chat, feature requests, bug reports, and community challenges.',
     letter: 'D',
     bg: '#5865F2',
+    accentBorder: 'rgba(88,101,242,0.22)',
     action: 'https://discord.gg/KPKMShHEmu',
-    cta: 'Join Discord',
+    cta: 'Join Now',
+    members: '1.8K',
   },
   {
     id: 'twitter',
-    name: 'Follow on X (Twitter)',
-    desc: 'Stay updated on new features, AI tips, and marketing strategies from our team.',
+    name: 'Follow on X',
+    desc: 'AI marketing tips, new feature drops, and behind-the-scenes strategy from the AdRoom team.',
     letter: 'X',
-    bg: '#000000',
+    bg: '#1C1C1C',
+    accentBorder: 'rgba(255,255,255,0.1)',
     action: 'https://twitter.com/adroomai',
-    cta: 'Follow Now',
+    cta: 'Follow',
+    members: null,
   },
   {
     id: 'reddit',
-    name: 'Reddit Community',
-    desc: 'r/AdRoomAI — post campaigns, ask questions, and get community feedback.',
+    name: 'Reddit — r/AdRoomAI',
+    desc: 'Post your campaigns, ask questions, and get brutally honest community feedback.',
     letter: 'r',
     bg: '#FF4500',
+    accentBorder: '#1E293B',
     action: null,
     cta: 'Coming Soon',
     comingSoon: true,
+    members: null,
   },
 ];
 
@@ -59,153 +69,195 @@ const SUPPORT_LINKS = [
 export default function CommunityScreen() {
   const navigation = useNavigation();
   const insets = useSafeAreaInsets();
-
   const open = (url: string) => Linking.openURL(url).catch(() => {});
 
   return (
-    <SafeAreaView style={styles.safe} edges={['top']}>
-      {/* Header */}
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.dispatch(DrawerActions.openDrawer())} style={styles.backBtn}>
+    <SafeAreaView style={s.safe} edges={['top']}>
+      <View style={s.header}>
+        <TouchableOpacity onPress={() => navigation.dispatch(DrawerActions.openDrawer())} style={s.menuBtn}>
           <Menu color="#E2E8F0" size={22} />
         </TouchableOpacity>
         <View style={{ flex: 1 }}>
-          <Text style={styles.headerLabel}>AdRoom AI</Text>
-          <Text style={styles.headerTitle}>Community</Text>
+          <Text style={s.headerEyebrow}>AdRoom AI</Text>
+          <Text style={s.headerTitle}>Community</Text>
         </View>
-        <View style={styles.headerBadge}>
-          <Users size={14} color="#00F0FF" />
-          <Text style={styles.headerBadgeText}>Global</Text>
+        <View style={s.headerPill}>
+          <Users size={13} color="#00F0FF" />
+          <Text style={s.headerPillText}>Global</Text>
         </View>
       </View>
 
       <ScrollView
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={[styles.scroll, { paddingBottom: Math.max(40, insets.bottom + 24) }]}
+        contentContainerStyle={{ padding: 16, paddingBottom: Math.max(40, insets.bottom + 24) }}
       >
-        {/* Banner */}
-        <Animated.View entering={FadeInDown.delay(50).springify()} style={styles.banner}>
-          <View style={styles.bannerIcon}>
-            <MessageCircle size={26} color="#00F0FF" />
+        {/* Hero Banner */}
+        <Animated.View entering={FadeInDown.delay(50).springify()} style={s.heroBanner}>
+          <View style={s.heroIconCircle}>
+            <HeartHandshake size={24} color="#00F0FF" />
           </View>
           <View style={{ flex: 1, marginLeft: 14 }}>
-            <Text style={styles.bannerTitle}>Join the AdRoom Community</Text>
-            <Text style={styles.bannerDesc}>
-              Connect with marketers from 50+ countries sharing campaigns, strategies, and AI insights.
+            <Text style={s.heroTitle}>Join the global AdRoom community</Text>
+            <Text style={s.heroSub}>
+              Marketers from 50+ countries sharing campaigns, wins, and AI insights — in real time.
             </Text>
           </View>
         </Animated.View>
 
-        {/* Channels */}
-        <Text style={styles.sectionLabel}>CHANNELS</Text>
+        {/* Community Channels */}
+        <View style={s.sectionRow}>
+          <Text style={s.sectionLabel}>COMMUNITY CHANNELS</Text>
+          <View style={s.sectionLine} />
+        </View>
+
         {CHANNELS.map((ch, i) => (
-          <Animated.View key={ch.id} entering={FadeInDown.delay(100 + i * 60).springify()}>
+          <Animated.View key={ch.id} entering={FadeInDown.delay(100 + i * 55).springify()}>
             <TouchableOpacity
               onPress={() => !ch.comingSoon && ch.action && open(ch.action)}
-              style={[styles.channelCard, ch.comingSoon && { opacity: 0.7 }]}
-              activeOpacity={ch.comingSoon ? 1 : 0.8}
+              style={[s.channelCard, { borderColor: ch.accentBorder }, ch.comingSoon && { opacity: 0.65 }]}
+              activeOpacity={ch.comingSoon ? 1 : 0.78}
             >
-              <View style={[styles.channelLogo, { backgroundColor: ch.bg }]}>
-                <Text style={styles.channelLogoText}>{ch.letter}</Text>
+              <View style={[s.channelLogo, { backgroundColor: ch.bg }]}>
+                <Text style={s.channelLogoText}>{ch.letter}</Text>
               </View>
               <View style={{ flex: 1, marginLeft: 14 }}>
-                <Text style={styles.channelName}>{ch.name}</Text>
-                <Text style={styles.channelDesc} numberOfLines={2}>{ch.desc}</Text>
+                <View style={s.channelNameRow}>
+                  <Text style={s.channelName}>{ch.name}</Text>
+                  {ch.members && (
+                    <View style={s.membersBadge}>
+                      <Text style={s.membersText}>{ch.members}</Text>
+                    </View>
+                  )}
+                </View>
+                <Text style={s.channelDesc} numberOfLines={2}>{ch.desc}</Text>
               </View>
-              <View style={styles.channelCta}>
-                {ch.comingSoon ? (
-                  <View style={styles.comingSoonBadge}>
-                    <Text style={styles.comingSoonText}>SOON</Text>
-                  </View>
-                ) : (
-                  <>
-                    <Text style={styles.channelCtaText}>{ch.cta}</Text>
-                    <ExternalLink size={12} color="#00F0FF" style={{ marginTop: 2 }} />
-                  </>
-                )}
-              </View>
+              {ch.comingSoon ? (
+                <View style={s.soonBadge}>
+                  <Text style={s.soonText}>SOON</Text>
+                </View>
+              ) : (
+                <View style={s.ctaWrap}>
+                  <Text style={s.ctaText}>{ch.cta}</Text>
+                  <ArrowUpRight size={12} color="#00F0FF" />
+                </View>
+              )}
             </TouchableOpacity>
           </Animated.View>
         ))}
 
         {/* Support */}
-        <Text style={[styles.sectionLabel, { marginTop: 28 }]}>SUPPORT</Text>
-        <Animated.View entering={FadeInDown.delay(350).springify()} style={styles.supportCard}>
+        <View style={[s.sectionRow, { marginTop: 28 }]}>
+          <Text style={s.sectionLabel}>SUPPORT & HELP</Text>
+          <View style={s.sectionLine} />
+        </View>
+
+        <Animated.View entering={FadeInDown.delay(380).springify()} style={s.supportCard}>
           {SUPPORT_LINKS.map((link, i) => (
             <TouchableOpacity
               key={link.label}
               onPress={() => open(link.url)}
-              style={[styles.supportRow, i < SUPPORT_LINKS.length - 1 && styles.supportRowBorder]}
+              style={[s.supportRow, i < SUPPORT_LINKS.length - 1 && s.supportDivider]}
             >
-              <Text style={styles.supportLabel}>{link.label}</Text>
-              <ExternalLink size={14} color="#64748B" />
+              <Text style={s.supportLabel}>{link.label}</Text>
+              <ExternalLink size={14} color="#475569" />
             </TouchableOpacity>
           ))}
+        </Animated.View>
+
+        <Animated.View entering={FadeInDown.delay(480).springify()} style={s.footerNote}>
+          <Sparkles size={13} color="#334155" />
+          <Text style={s.footerNoteText}>
+            AdRoom AI is built in public — your feedback directly shapes the product.
+          </Text>
         </Animated.View>
       </ScrollView>
     </SafeAreaView>
   );
 }
 
-const styles = StyleSheet.create({
+const s = StyleSheet.create({
   safe: { flex: 1, backgroundColor: '#0B0F19' },
   header: {
     flexDirection: 'row', alignItems: 'center',
     paddingHorizontal: 20, paddingVertical: 14,
-    borderBottomWidth: 1, borderBottomColor: 'rgba(0,240,255,0.08)',
+    borderBottomWidth: 1, borderBottomColor: 'rgba(0,240,255,0.07)',
   },
-  backBtn: { marginRight: 14, padding: 4 },
-  headerLabel: { color: '#64748B', fontSize: 11, fontWeight: '600', letterSpacing: 1, textTransform: 'uppercase' },
-  headerTitle: { color: '#FFFFFF', fontSize: 22, fontWeight: '800', marginTop: 1 },
-  headerBadge: {
+  menuBtn: { marginRight: 14, padding: 6 },
+  headerEyebrow: {
+    color: '#475569', fontSize: 11, fontWeight: '600',
+    letterSpacing: 1.2, textTransform: 'uppercase',
+  },
+  headerTitle: { color: '#F1F5F9', fontSize: 22, fontWeight: '800', letterSpacing: -0.3, marginTop: 1 },
+  headerPill: {
     flexDirection: 'row', alignItems: 'center', gap: 5,
-    backgroundColor: 'rgba(0,240,255,0.08)', borderWidth: 1, borderColor: 'rgba(0,240,255,0.2)',
-    borderRadius: 20, paddingHorizontal: 12, paddingVertical: 6,
+    backgroundColor: 'rgba(0,240,255,0.07)', borderWidth: 1,
+    borderColor: 'rgba(0,240,255,0.18)', borderRadius: 20,
+    paddingHorizontal: 11, paddingVertical: 6,
   },
-  headerBadgeText: { color: '#00F0FF', fontSize: 12, fontWeight: '700' },
+  headerPillText: { color: '#00F0FF', fontSize: 12, fontWeight: '700' },
 
-  scroll: { padding: 16 },
-  sectionLabel: {
-    color: '#475569', fontSize: 10, fontWeight: '700', letterSpacing: 1.5,
-    textTransform: 'uppercase', marginBottom: 10,
-  },
-
-  banner: {
+  heroBanner: {
     flexDirection: 'row', alignItems: 'center',
-    backgroundColor: 'rgba(0,240,255,0.05)', borderWidth: 1, borderColor: 'rgba(0,240,255,0.15)',
+    backgroundColor: 'rgba(0,240,255,0.04)',
+    borderWidth: 1, borderColor: 'rgba(0,240,255,0.12)',
     borderRadius: 18, padding: 18, marginBottom: 24,
   },
-  bannerIcon: {
-    width: 52, height: 52, borderRadius: 16,
-    backgroundColor: 'rgba(0,240,255,0.1)', alignItems: 'center', justifyContent: 'center',
+  heroIconCircle: {
+    width: 50, height: 50, borderRadius: 15,
+    backgroundColor: 'rgba(0,240,255,0.1)',
+    alignItems: 'center', justifyContent: 'center',
   },
-  bannerTitle: { color: '#FFFFFF', fontWeight: '700', fontSize: 15, marginBottom: 4 },
-  bannerDesc: { color: '#64748B', fontSize: 12, lineHeight: 18 },
+  heroTitle: { color: '#E2E8F0', fontSize: 14, fontWeight: '700', marginBottom: 5, lineHeight: 20 },
+  heroSub: { color: '#64748B', fontSize: 12, lineHeight: 18 },
+
+  sectionRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 12 },
+  sectionLabel: {
+    color: '#334155', fontSize: 10, fontWeight: '800',
+    letterSpacing: 1.8, textTransform: 'uppercase',
+  },
+  sectionLine: { flex: 1, height: 1, backgroundColor: '#1E293B' },
 
   channelCard: {
     flexDirection: 'row', alignItems: 'center',
-    backgroundColor: '#151B2B', borderRadius: 16, borderWidth: 1, borderColor: '#1E293B',
-    padding: 16, marginBottom: 10,
+    backgroundColor: '#0F1623', borderWidth: 1,
+    borderRadius: 18, padding: 16, marginBottom: 10,
   },
-  channelLogo: { width: 44, height: 44, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
+  channelLogo: {
+    width: 46, height: 46, borderRadius: 14,
+    alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+  },
   channelLogoText: { color: '#FFFFFF', fontWeight: '900', fontSize: 20 },
-  channelName: { color: '#FFFFFF', fontWeight: '700', fontSize: 14, marginBottom: 3 },
-  channelDesc: { color: '#64748B', fontSize: 12, lineHeight: 17 },
-  channelCta: { alignItems: 'center', gap: 4, marginLeft: 10 },
-  channelCtaText: { color: '#00F0FF', fontSize: 11, fontWeight: '700' },
-  comingSoonBadge: {
-    backgroundColor: 'rgba(112,0,255,0.1)', borderWidth: 1, borderColor: 'rgba(112,0,255,0.25)',
-    borderRadius: 20, paddingHorizontal: 10, paddingVertical: 5,
+  channelNameRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 4 },
+  channelName: { color: '#F1F5F9', fontWeight: '700', fontSize: 14 },
+  membersBadge: {
+    backgroundColor: 'rgba(100,116,139,0.15)', borderRadius: 20,
+    paddingHorizontal: 7, paddingVertical: 2,
   },
-  comingSoonText: { color: '#A78BFA', fontSize: 10, fontWeight: '800', letterSpacing: 0.5 },
+  membersText: { color: '#64748B', fontSize: 10, fontWeight: '600' },
+  channelDesc: { color: '#64748B', fontSize: 12, lineHeight: 17 },
+  ctaWrap: { alignItems: 'center', gap: 3, marginLeft: 8, flexShrink: 0 },
+  ctaText: { color: '#00F0FF', fontSize: 11, fontWeight: '700' },
+  soonBadge: {
+    backgroundColor: 'rgba(124,58,237,0.1)', borderWidth: 1,
+    borderColor: 'rgba(124,58,237,0.25)', borderRadius: 20,
+    paddingHorizontal: 10, paddingVertical: 5,
+  },
+  soonText: { color: '#A78BFA', fontSize: 10, fontWeight: '800', letterSpacing: 0.5 },
 
   supportCard: {
-    backgroundColor: '#151B2B', borderRadius: 16, borderWidth: 1, borderColor: '#1E293B', overflow: 'hidden',
+    backgroundColor: '#0F1623', borderRadius: 18,
+    borderWidth: 1, borderColor: '#1E293B', overflow: 'hidden',
   },
   supportRow: {
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
-    paddingHorizontal: 16, paddingVertical: 15,
+    paddingHorizontal: 18, paddingVertical: 15,
   },
-  supportRowBorder: { borderBottomWidth: 1, borderBottomColor: '#1E293B' },
-  supportLabel: { color: '#E2E8F0', fontSize: 14, fontWeight: '500' },
+  supportDivider: { borderBottomWidth: 1, borderBottomColor: '#1A2235' },
+  supportLabel: { color: '#CBD5E1', fontSize: 14, fontWeight: '500' },
+
+  footerNote: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    marginTop: 24, paddingHorizontal: 4,
+  },
+  footerNoteText: { color: '#334155', fontSize: 12, lineHeight: 18, flex: 1 },
 });

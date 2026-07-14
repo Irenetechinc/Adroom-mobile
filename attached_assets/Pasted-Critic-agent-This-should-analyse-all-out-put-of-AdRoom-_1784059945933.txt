@@ -1,0 +1,16 @@
+Critic agent.
+This should analyse all out put of AdRoom. Ai and ensure they are all high qulity and not hucinating and not lieing and realtime 
+
+Mesure agent performance in Admin dashboard 
+Also Admin should be able to switch from local model to the qulivant paid and vice vercer  
+Enhance the Salesman Agent. Add a new sub agents findLeadsViaGoogleDorks. This is not a option and it's not meant to replace any other it's a tool that should be use when required  Use the requests library to call the Google Custom Search JSON API (Endpoint: https://www.googleapis.com/customsearch/v1).
+
+· Configuration: Pull API_KEY and SEARCH_ENGINE_ID from environment 0variables.
+· Dork Library: Pre-seed a list of commercial dorks (e.g., "looking for vendor", "how to fix [X]", site:linkedin.com "owner" "small business"). The agent must rotate these daily.
+· Privacy Filter: Set the API parameter safe='active'.
+· Scoring: Take the snippet of each result. Use our existing local LLM (Qwen/DeepSeek) to score the lead from 0 to 100 based on relevance to the User's product.
+· Deduplication: Before inserting a new lead, check the link against the existing discovered_leads table in Supabase to avoid duplicates.
+· Fallback: If the API key fails or quota is exhausted, automatically switch to using the requests library with requests.get and a rotating User-Agent (using bs4 to parse) as a backup, but log a warning. 
+
+Improve ui designs throughout the app current iu look lke ai built the app improve ai to be more qunique and alive without, it should look like professional human ux/ui desing, software engineer, app developer built it without breaking or changing theme and it should be done for every sing screen no one should be left out ui/ux must be morden and prfesional and basic looks app theme and on the slash screen right bellow it should say powered by syntax
+please note that is app must work entierly withpout replit, no ned of migrsting app to replit no replit dependecies or hosting should be user all implimentations must go insynce with whats already impliemneted, no duble implimnetations no demo or simplified implimentations, all implimentations must be for real time and production only.

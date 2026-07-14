@@ -109,6 +109,10 @@ export const AuthLoadingSkeleton = () => {
           <PulseDot delay={200} />
           <PulseDot delay={400} />
         </View>
+        <Text style={splashStyles.poweredBy}>
+          powered by{' '}
+          <Text style={splashStyles.poweredByBrand}>syntax</Text>
+        </Text>
       </View>
     </View>
   );
@@ -224,8 +228,10 @@ const splashStyles = StyleSheet.create({
   logo: { width: 88, height: 88, borderRadius: 24 },
   brand: { color: '#FFFFFF', fontSize: 26, fontWeight: '900', letterSpacing: -0.4 },
   tagline: { color: '#64748B', fontSize: 13, marginTop: 8, fontWeight: '500', letterSpacing: 0.2 },
-  footer: { position: 'absolute', bottom: 56 },
-  dotRow: { flexDirection: 'row' },
+  footer: { position: 'absolute', bottom: 44, alignItems: 'center' },
+  dotRow: { flexDirection: 'row', marginBottom: 14 },
+  poweredBy: { color: '#334155', fontSize: 11, letterSpacing: 0.6, textTransform: 'uppercase', fontWeight: '500' },
+  poweredByBrand: { color: '#00F0FF', fontWeight: '700', letterSpacing: 1.2 },
 });
 
 const chatStyles = StyleSheet.create({
