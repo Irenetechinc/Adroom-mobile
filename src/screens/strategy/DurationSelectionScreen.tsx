@@ -80,8 +80,37 @@ export default function DurationSelectionScreen() {
         <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
           <ArrowLeft size={24} color={COLORS.muted} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Step 3: Duration</Text>
+        <Text style={styles.headerTitle}>Campaign Duration</Text>
         <View style={{ width: 36 }} />
+      </View>
+
+      {/* Step progress indicator */}
+      <View style={styles.stepBar}>
+        {[
+          { n: 1, label: 'Product',  done: true },
+          { n: 2, label: 'Goal',     done: true },
+          { n: 3, label: 'Duration', done: false, active: true },
+          { n: 4, label: 'Review',   done: false },
+        ].map((step, i, arr) => (
+          <React.Fragment key={step.n}>
+            <View style={styles.stepItem}>
+              <View style={[
+                styles.stepCircle,
+                step.done && styles.stepCircleDone,
+                (step as any).active && styles.stepCircleActive,
+              ]}>
+                {step.done
+                  ? <Text style={styles.stepCheckmark}>✓</Text>
+                  : <Text style={[styles.stepNum, (step as any).active && { color: '#0B0F19' }]}>{step.n}</Text>
+                }
+              </View>
+              <Text style={[styles.stepLabel, (step as any).active && styles.stepLabelActive]}>{step.label}</Text>
+            </View>
+            {i < arr.length - 1 && (
+              <View style={[styles.stepLine, step.done && styles.stepLineDone]} />
+            )}
+          </React.Fragment>
+        ))}
       </View>
 
       <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 120, paddingTop: 16 }}>
@@ -190,8 +219,29 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1, borderBottomColor: COLORS.border,
   },
   backBtn: { width: 36, height: 36, alignItems: 'center', justifyContent: 'center' },
-  headerTitle: { color: COLORS.text, fontSize: 18, fontWeight: '700' },
+  headerTitle: { color: COLORS.text, fontSize: 17, fontWeight: '800' },
   subtitle: { color: COLORS.muted, fontSize: 14, marginBottom: 16 },
+
+  stepBar: {
+    flexDirection: 'row', alignItems: 'center',
+    paddingHorizontal: 20, paddingVertical: 12,
+    borderBottomWidth: 1, borderBottomColor: COLORS.border,
+    backgroundColor: '#0F1623',
+  },
+  stepItem: { alignItems: 'center', gap: 4 },
+  stepCircle: {
+    width: 26, height: 26, borderRadius: 13,
+    backgroundColor: '#1E293B', borderWidth: 1.5, borderColor: '#334155',
+    alignItems: 'center', justifyContent: 'center',
+  },
+  stepCircleDone: { backgroundColor: 'rgba(16,185,129,0.15)', borderColor: '#10B981' },
+  stepCircleActive: { backgroundColor: COLORS.neon, borderColor: COLORS.neon },
+  stepCheckmark: { color: '#10B981', fontSize: 12, fontWeight: '800' },
+  stepNum: { color: '#475569', fontSize: 11, fontWeight: '700' },
+  stepLabel: { color: '#334155', fontSize: 9, fontWeight: '600', textTransform: 'uppercase', letterSpacing: 0.5 },
+  stepLabelActive: { color: COLORS.neon },
+  stepLine: { flex: 1, height: 1.5, backgroundColor: '#1E293B', marginBottom: 14 },
+  stepLineDone: { backgroundColor: '#10B981' },
   productSummary: {
     backgroundColor: COLORS.card, borderRadius: 14, borderWidth: 1,
     borderColor: COLORS.border, padding: 14, marginBottom: 20,

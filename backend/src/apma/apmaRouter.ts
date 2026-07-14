@@ -868,3 +868,66 @@ apmaClientRouter.get('/oauth/poll/:stateId', apmaClientAuth, async (req: any, re
   apmaOAuthStates.delete(stateId);
   return res.json({ status: 'completed', accounts: accounts ?? [] });
 });
+
+// ═════════════════════════════════════════════════════════════════════════════
+// CRITIC AGENT DASHBOARD  (live quality scores, auto-pause, auto-improve)
+// ═════════════════════════════════════════════════════════════════════════════
+
+apmaClientRouter.get('/critic/stats', async (_req: any, res) => {
+  try {
+    const { criticAgentService } = await import('../services/criticAgentService');
+    const stats = await criticAgentService.getStats();
+    res.json(stats);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+apmaClientRouter.get('/critic/logs', async (req: any, res) => {
+  const limit     = Math.min(200, parseInt(String(req.query.limit ?? '50'), 10));
+  const verdict   = req.query.verdict   ? String(req.query.verdict)   : undefined;
+  const agentType = req.query.agentType ? String(req.query.agentType) : undefined;
+  try {
+    const { criticAgentService } = await import('../services/criticAgentService');
+    const logs = await criticAgentService.getLogs({ limit, verdict, agentType });
+    res.json({ logs });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+apmaClientRouter.get('/critic/pause-config', async (_req: any, res) => {
+  try {
+    const { criticAgentService } = await import('../services/criticAgentService');
+    const thresholds = await criticAgentService.getPauseThresholds();
+    res.json({ thresholds });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+apmaClientRouter.post('/critic/pause-config', async (req: any, res) => {
+  const { thresholds } = req.body ?? {};
+  if (!thresholds || typeof thresholds !== 'object') {
+    return res.status(400).json({ error: 'thresholds must be a key→number object' });
+  }
+  try {
+    const { criticAgentService } = await import('../services/criticAgentService');
+    await criticAgentService.setPauseThresholds(thresholds);
+    res.json({ ok: true });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+apmaClientRouter.post('/critic/auto-improve/:agentType', async (req: any, res) => {
+  const { agentType } = req.params;
+  if (!agentType) return res.status(400).json({ error: 'agentType is required' });
+  try {
+    const { criticAgentService } = await import('../services/criticAgentService');
+    const recommendation = await criticAgentService.triggerAutoImprove(agentType);
+    res.json({ ok: true, recommendation });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});

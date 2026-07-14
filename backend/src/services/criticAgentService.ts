@@ -270,6 +270,99 @@ Return JSON only:
     const { data } = await query;
     return data || [];
   }
+
+  // ── Auto-pause threshold management ────────────────────────────────────────
+  async getPauseThresholds(): Promise<Record<string, number>> {
+    try {
+      const { data } = await this.supabase
+        .from('model_override_config')
+        .select('value')
+        .eq('key', 'critic_pause_thresholds')
+        .single();
+      return (data?.value as Record<string, number>) ?? {};
+    } catch {
+      return {};
+    }
+  }
+
+  async setPauseThresholds(thresholds: Record<string, number>): Promise<void> {
+    // Validate all values are numbers 0-100
+    const clean: Record<string, number> = {};
+    for (const [k, v] of Object.entries(thresholds)) {
+      if (typeof v === 'number' && v >= 0 && v <= 100) {
+        clean[k] = Math.round(v);
+      }
+    }
+    await this.supabase
+      .from('model_override_config')
+      .upsert({ key: 'critic_pause_thresholds', value: clean, updated_at: new Date().toISOString() });
+    console.log('[CriticAgent] Pause thresholds updated:', clean);
+  }
+
+  // ── Check if an agent is paused (average quality below threshold) ──────────
+  async isAgentPaused(agentType: string): Promise<boolean> {
+    const thresholds = await this.getPauseThresholds();
+    const threshold = thresholds[agentType];
+    if (threshold === undefined) return false;
+
+    const { data } = await this.supabase
+      .from('critic_agent_logs')
+      .select('quality_score')
+      .eq('agent_type', agentType)
+      .order('created_at', { ascending: false })
+      .limit(10);
+
+    if (!data || data.length < 5) return false;
+    const avg = data.reduce((s: number, r: any) => s + (r.quality_score || 0), 0) / data.length;
+    return avg < threshold;
+  }
+
+  // ── Auto-improve: AI analyses recent failures and generates recommendations ─
+  async triggerAutoImprove(agentType: string): Promise<string> {
+    const { data: poorLogs } = await this.supabase
+      .from('critic_agent_logs')
+      .select('task_type, output_text, quality_score, issues, verdict, created_at')
+      .eq('agent_type', agentType)
+      .in('verdict', ['rejected', 'flagged'])
+      .order('created_at', { ascending: false })
+      .limit(6);
+
+    if (!poorLogs || poorLogs.length === 0) {
+      return `No poor-quality outputs found for ${agentType} — agent is performing well.`;
+    }
+
+    const prompt = `You are an AI quality coach analysing recent poor-quality outputs from the "${agentType}" marketing agent in AdRoom AI.
+
+RECENT FLAGGED/REJECTED OUTPUTS:
+${(poorLogs as any[]).map((l, i) => `
+[${i + 1}] Score: ${l.quality_score}/100 | Task: ${l.task_type} | Verdict: ${l.verdict}
+Issues: ${Array.isArray(l.issues) ? l.issues.join('; ') : 'none'}
+Output snippet: "${(l.output_text || '').slice(0, 300)}"
+`).join('\n')}
+
+ANALYSIS TASK:
+1. Identify the top 2-3 patterns causing poor quality in these outputs
+2. Provide specific, actionable improvements to the prompt instructions for this agent
+3. Give a concrete example of a better output format
+
+Keep your response concise and practical — max 300 words.`;
+
+    try {
+      const result = await this.ai.generateStrategyEconomy({}, prompt);
+      const recommendation = result.text || 'No recommendation generated.';
+
+      await this.supabase.from('model_override_config').upsert({
+        key: `critic_improvement_${agentType.toLowerCase()}`,
+        value: { recommendation, generated_at: new Date().toISOString(), based_on_logs: poorLogs.length },
+        updated_at: new Date().toISOString(),
+      });
+
+      console.log(`[CriticAgent] Auto-improve recommendation generated for ${agentType}`);
+      return recommendation;
+    } catch (err: any) {
+      throw new Error(`Auto-improve AI call failed: ${err.message}`);
+    }
+  }
 }
 
 export const criticAgentService = new CriticAgentService();

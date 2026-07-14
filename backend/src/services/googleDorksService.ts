@@ -1,21 +1,17 @@
 /**
  * Google Dorks Lead Finder — SalesmanAgent sub-tool
  *
- * Uses the Google Custom Search JSON API to find commercial intent pages
- * with rotating dork queries. Falls back to direct HTML scraping when the
- * CSE quota is exhausted.
+ * AI-DRIVEN QUERY GENERATION: Every search session generates fresh, product-specific
+ * queries using GPT-4o based on the exact product context. Zero hardcoded templates.
  *
  * Configuration:
  *   GOOGLE_CUSTOM_SEARCH_API_KEY — Google API key with Custom Search enabled
  *   GOOGLE_SEARCH_ENGINE_ID      — Programmable Search Engine CX ID
  *
- * Dork rotation: queries rotate daily (dayOfYear mod library length) so the
- * same query isn't repeated two days in a row.
- *
  * Safety: safe=active is always passed to the CSE API.
  * Dedup:  links are checked against the discovered_leads table before insert.
  * Scoring: each result snippet is scored 0–100 by the AI against the
- *          user's product context. Results below 30 are discarded.
+ *          user's product context. Results below 35 are discarded.
  */
 
 import fetch from 'node-fetch';
@@ -27,41 +23,6 @@ import { dynamicProblemSolver } from './dynamicProblemSolver';
 const GOOGLE_CSE_ENDPOINT = 'https://www.googleapis.com/customsearch/v1';
 const API_KEY    = process.env.GOOGLE_CUSTOM_SEARCH_API_KEY || '';
 const SEARCH_ENGINE_ID = process.env.GOOGLE_SEARCH_ENGINE_ID || '';
-
-// ─── Commercial-intent dork library ──────────────────────────────────────────
-// Placeholders {product} and {category} are replaced at runtime from product memory.
-const DORK_LIBRARY = [
-  '"looking for vendor" OR "need supplier" site:linkedin.com',
-  '"looking for a {category}" OR "recommend a {category}" site:reddit.com',
-  '"how do I find a good {product}" OR "where to buy {product}"',
-  '"recommendations for {category}" site:quora.com',
-  '"small business owner" "looking for" "{category}"',
-  'site:linkedin.com intitle:"owner" OR intitle:"founder" "{category}"',
-  '"anyone know a good {category} service" site:facebook.com',
-  '"need help with {product}" site:reddit.com',
-  '"looking to hire" "{category}" site:linkedin.com',
-  '"best {category} for small business" OR "affordable {category}"',
-  '"I need {product}" OR "want to buy {product}" site:twitter.com',
-  '"{product} alternative" OR "switch from" "{product}" site:reddit.com',
-  '"unhappy with current {category}" OR "frustrated with {category}"',
-  '"accepting quotes" OR "get a quote" "{category}"',
-  'intitle:"looking for {category}" filetype:html',
-  '"can anyone recommend" "{category}" site:community',
-  '"where can I find" "{product}" OR "{category}" inurl:forum',
-  '"freelancer" OR "contractor" needed "{category}"',
-  '"startup" "need" "{category} solution"',
-  '"budget" "looking for" "{category}" site:reddit.com',
-  '"pain point" "{category}" OR "{product}"',
-  '"cost of {category}" OR "price of {product}" site:reddit.com',
-  '"which {category} is best" OR "top {category} tools"',
-  '"just launched" business needs "{category}"',
-  '"side hustle" needs "{category}" site:reddit.com',
-  '"ecommerce" "need" "{category}" OR "{product}"',
-  '"agency owner" looking for "{category}"',
-  '"digital marketing" "need" "{product}"',
-  '"social media" "struggling with" "{category}"',
-  '"looking for software" "{category}" site:producthunt.com',
-];
 
 // Rotating User-Agent pool for fallback scraping
 const USER_AGENTS = [
@@ -96,20 +57,101 @@ export class GoogleDorksService {
     this.supabase = getServiceSupabaseClient();
   }
 
-  // ── Select today's dorks (rotate daily) ────────────────────────────────────
-  private getDailyDorks(product: string, category: string, count = 3): Array<{ query: string; raw: string }> {
-    const dayOfYear = Math.floor(Date.now() / 86400000);
-    const start = dayOfYear % DORK_LIBRARY.length;
+  // ── AI: dynamically generate search queries for this specific product ──────
+  private async generateAIDorks(product: any, recentlyUsedQueries: string[]): Promise<string[]> {
+    const productName      = product.name        || 'unknown product';
+    const description      = (product.description || '').slice(0, 300);
+    const category         = product.category    || '';
+    const targetAudience   = product.target_audience || '';
+    const painPoints       = product.pain_points  || '';
+    const price            = product.price ? `${product.currency || 'USD'} ${product.price}` : '';
+    const recentList       = recentlyUsedQueries.length
+      ? recentlyUsedQueries.slice(0, 12).map((q, i) => `${i + 1}. ${q}`).join('\n')
+      : 'None yet.';
 
-    const selected: Array<{ query: string; raw: string }> = [];
-    for (let i = 0; i < count; i++) {
-      const raw = DORK_LIBRARY[(start + i) % DORK_LIBRARY.length];
-      const query = raw
-        .replace(/{product}/g, product.toLowerCase())
-        .replace(/{category}/g, (category || product).toLowerCase());
-      selected.push({ query, raw });
+    const today = new Date().toISOString().split('T')[0];
+
+    const prompt = `You are an expert B2B/B2C lead generation analyst specialising in Google search operator ("dork") queries that surface people or businesses actively looking to buy or hire for a specific product.
+
+TODAY'S DATE: ${today}
+
+TARGET PRODUCT:
+  Name: ${productName}
+  Description: ${description}
+  Category: ${category}
+  Target Audience: ${targetAudience || 'General consumers and small businesses'}
+  Pain Points Solved: ${painPoints || 'Efficiency, cost savings, growth'}
+  Price Point: ${price || 'Not specified'}
+
+RECENTLY USED QUERIES (do NOT repeat these):
+${recentList}
+
+TASK:
+Generate exactly 5 highly targeted Google search queries that will surface people or businesses ACTIVELY expressing a need, problem, or purchase intent that "${productName}" can solve.
+
+Rules:
+- Each query must be unique and NOT a variation of a recently used query
+- Use Google operators (site:, intitle:, inurl:, filetype:, "exact phrases", OR, -exclude) where they help
+- Queries must reflect REAL commercial intent language people actually type — not marketing language
+- Vary the platforms: mix forum sites (reddit.com, quora.com), professional networks (linkedin.com), community sites, and open web
+- Think about what a BUYER says when they're frustrated with their current solution, researching alternatives, or ready to spend money
+- Queries should be specific to "${productName}"'s exact value proposition — not generic for the category
+- Consider the target audience's vocabulary and the platforms they use to ask for help
+
+Return ONLY a JSON object with this structure:
+{
+  "queries": [
+    "query string 1",
+    "query string 2",
+    "query string 3",
+    "query string 4",
+    "query string 5"
+  ],
+  "rationale": "1-sentence explanation of the targeting angle used"
+}`;
+
+    try {
+      const result = await this.ai.generateStrategyEconomy({}, prompt);
+      const parsed = result.parsedJson;
+      if (parsed?.queries && Array.isArray(parsed.queries) && parsed.queries.length >= 3) {
+        const valid = parsed.queries
+          .map((q: any) => (typeof q === 'string' ? q.trim() : ''))
+          .filter((q: string) => q.length > 10 && q.length < 250);
+        console.log(`[GoogleDorks] AI rationale: ${parsed.rationale || 'N/A'}`);
+        console.log(`[GoogleDorks] Generated ${valid.length} queries for "${productName}"`);
+        return valid.slice(0, 5);
+      }
+      // Fallback: parse queries from text if JSON parsing failed
+      const text = result.text || '';
+      const lines = text.split('\n').filter((l: string) => l.trim().startsWith('"') || /^\d+\./.test(l.trim()));
+      return lines
+        .map((l: string) => l.replace(/^\d+\.\s*/, '').replace(/^"|"$/g, '').trim())
+        .filter((q: string) => q.length > 10)
+        .slice(0, 5);
+    } catch (err: any) {
+      console.error('[GoogleDorks] AI dork generation failed:', err.message);
+      return [];
     }
-    return selected;
+  }
+
+  // ── Fetch recently-used queries from DB (last 7 days) ─────────────────────
+  private async getRecentQueries(userId: string, limit = 20): Promise<string[]> {
+    try {
+      const since = new Date(Date.now() - 7 * 24 * 3600 * 1000).toISOString();
+      const { data } = await this.supabase
+        .from('discovered_leads')
+        .select('dork_used')
+        .eq('user_id', userId)
+        .gte('created_at', since)
+        .order('created_at', { ascending: false })
+        .limit(limit);
+
+      if (!data?.length) return [];
+      const unique = [...new Set(data.map((r: any) => r.dork_used).filter(Boolean))] as string[];
+      return unique;
+    } catch {
+      return [];
+    }
   }
 
   // ── Call Google Custom Search API ──────────────────────────────────────────
@@ -188,7 +230,7 @@ export class GoogleDorksService {
     }
   }
 
-  // ── AI-score a single result against the product ───────────────────────────
+  // ── AI-score each result against the product ───────────────────────────────
   private async scoreResults(results: DorkSearchResult[], product: any): Promise<Array<DorkSearchResult & { score: number }>> {
     if (!results.length) return [];
 
@@ -257,16 +299,26 @@ Return JSON: { "scores": [score0, score1, ...] }`;
     }
   }
 
-  // ── Main entry: run dork search for a product ─────────────────────────────
+  // ── Main entry: run AI-driven dork search for a product ───────────────────
   async runForProduct(userId: string, product: any): Promise<number> {
     const productName = product.name || 'product';
-    const category   = product.category || productName;
-    console.log(`[GoogleDorks] Running for user=${userId} product="${productName}"`);
+    console.log(`[GoogleDorks] Running AI-driven discovery for user=${userId} product="${productName}"`);
 
-    const dorks = this.getDailyDorks(productName, category, 3);
+    // Step 1: Get recent queries to avoid repetition
+    const recentQueries = await this.getRecentQueries(userId);
+
+    // Step 2: AI generates fresh, product-specific search queries
+    const queries = await this.generateAIDorks(product, recentQueries);
+
+    if (!queries.length) {
+      console.warn(`[GoogleDorks] AI returned no queries for "${productName}" — skipping`);
+      return 0;
+    }
+
     let totalInserted = 0;
 
-    for (const { query, raw } of dorks) {
+    for (const query of queries) {
+      console.log(`[GoogleDorks] Executing query: ${query}`);
       let rawResults: DorkSearchResult[] = [];
 
       // Try Google CSE first, fall back to scrape
@@ -303,7 +355,7 @@ Return JSON: { "scores": [score0, score1, ...] }`;
         title:           r.title,
         snippet:         r.snippet,
         relevance_score: r.score,
-        dork_used:       raw,
+        dork_used:       query,
         source:          r.source,
       }));
 
@@ -320,11 +372,11 @@ Return JSON: { "scores": [score0, score1, ...] }`;
 
   // ── Run discovery cycle for all active users ──────────────────────────────
   async runDiscoveryCycle(): Promise<void> {
-    console.log('[GoogleDorks] Starting discovery cycle...');
+    console.log('[GoogleDorks] Starting AI-driven discovery cycle...');
 
     const { data: products } = await this.supabase
       .from('product_memory')
-      .select('id, name, description, category, user_id')
+      .select('id, name, description, category, target_audience, pain_points, price, currency, user_id')
       .limit(30);
 
     if (!products?.length) {
