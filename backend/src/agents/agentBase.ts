@@ -107,6 +107,7 @@ export class AgentBase {
         socialData?: any;
         platformIntel?: any;
         instructionOverride?: string;
+        userId?: string;
     }): Promise<{ headline: string; body: string; image_prompt: string; hashtags: string[]; cta: string }> {
         const prompt = `
 You are the AdRoom ${this.agentType} Agent generating PRODUCTION-READY social content.
@@ -148,13 +149,34 @@ Return STRICT JSON only (no markdown, no explanation):
 }
 `;
         const response = await this.ai.generateStrategy({}, prompt);
-        return response.parsedJson || {
+        const content = response.parsedJson || {
             headline: 'Check this out',
             body: params.context,
             image_prompt: `Professional marketing image for ${params.product?.product_name || 'product'}`,
             hashtags: [],
             cta: 'Learn more'
         };
+
+        // Fire-and-forget critic evaluation (never blocks the pipeline)
+        try {
+            const { criticAgentService } = await import('../services/criticAgentService');
+            const reviewText = [
+                content.headline,
+                content.body,
+                content.cta,
+                (content.hashtags || []).join(' '),
+            ].filter(Boolean).join('\n\n');
+            criticAgentService.analyze({
+                output:    reviewText,
+                agentType: this.agentType,
+                taskType:  params.taskType,
+                platform:  params.platform,
+                userId:    params.userId,
+                operation: `${params.taskType}_day${params.dayNumber}`,
+            });
+        } catch { /* critic is non-critical — never throw */ }
+
+        return content;
     }
 
     // ─── PUBLISHING ENGINE ───────────────────────────────────────────────────────

@@ -854,6 +854,55 @@ router.get('/api/critic/logs', auth, async (req, res) => {
   }
 });
 
+// ─── CRITIC AGENT: HEATMAP (7-day rolling avg per agent × platform) ───────────
+router.get('/api/critic/heatmap', auth, async (_req, res) => {
+  try {
+    const { criticAgentService } = await import('../services/criticAgentService');
+    const cells = await criticAgentService.getHeatmapData();
+    res.json({ cells });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── CRITIC AGENT: PAUSE CONFIG ───────────────────────────────────────────────
+router.get('/api/critic/pause-config', auth, async (_req, res) => {
+  try {
+    const { criticAgentService } = await import('../services/criticAgentService');
+    const thresholds = await criticAgentService.getPauseThresholds();
+    res.json({ thresholds });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.post('/api/critic/pause-config', auth, async (req, res) => {
+  const { thresholds } = req.body ?? {};
+  if (!thresholds || typeof thresholds !== 'object') {
+    return res.status(400).json({ error: 'thresholds must be a key→number object' });
+  }
+  try {
+    const { criticAgentService } = await import('../services/criticAgentService');
+    await criticAgentService.setPauseThresholds(thresholds);
+    res.json({ ok: true });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── CRITIC AGENT: AUTO-IMPROVE ───────────────────────────────────────────────
+router.post('/api/critic/auto-improve/:agentType', auth, async (req, res) => {
+  const { agentType } = req.params;
+  if (!agentType) return res.status(400).json({ error: 'agentType required' });
+  try {
+    const { criticAgentService } = await import('../services/criticAgentService');
+    const recommendation = await criticAgentService.triggerAutoImprove(agentType);
+    res.json({ ok: true, recommendation });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ─── MODEL OVERRIDE: STATUS ────────────────────────────────────────────────────
 router.get('/api/models/status', auth, async (_req, res) => {
   try {

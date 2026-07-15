@@ -96,4 +96,5 @@ export const apmaApi = {
     apiFetch<{ ok: boolean }>('/critic/pause-config', { method: 'POST', body: JSON.stringify({ thresholds }) }),
   criticAutoImprove:        (agentType: string)               =>
     apiFetch<{ ok: boolean; recommendation: string }>(`/critic/auto-improve/${agentType}`, { method: 'POST' }),
+  criticHeatmap:            ()                              => apiFetch<{ cells: any[] }>('/critic/heatmap'),
 };

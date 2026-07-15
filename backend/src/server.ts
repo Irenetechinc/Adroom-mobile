@@ -1593,6 +1593,61 @@ app.post('/api/ai/activate-agents', async (req, res) => {
     }
 });
 
+// ═══════════════════════════════════════════════════════════════════════════
+// CRITIC AGENT — User-level routes (Supabase JWT auth, data scoped to user)
+// ═══════════════════════════════════════════════════════════════════════════
+
+/**
+ * GET /api/critic/stats — overall quality stats for the authenticated user
+ */
+app.get('/api/critic/stats', async (req, res) => {
+  try {
+    const sb = getSupabaseClient(req as any);
+    const { data: { user } } = await sb.auth.getUser();
+    if (!user) return res.status(401).json({ error: 'Unauthorized.' });
+    const { criticAgentService } = await import('./services/criticAgentService');
+    const stats = await criticAgentService.getUserStats(user.id);
+    res.json(stats);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * GET /api/critic/heatmap — 7-day agent×platform heatmap for the authenticated user
+ */
+app.get('/api/critic/heatmap', async (req, res) => {
+  try {
+    const sb = getSupabaseClient(req as any);
+    const { data: { user } } = await sb.auth.getUser();
+    if (!user) return res.status(401).json({ error: 'Unauthorized.' });
+    const { criticAgentService } = await import('./services/criticAgentService');
+    const cells = await criticAgentService.getHeatmapData(user.id);
+    res.json({ cells });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * GET /api/critic/logs — recent critic evaluations for the authenticated user
+ */
+app.get('/api/critic/logs', async (req, res) => {
+  try {
+    const sb = getSupabaseClient(req as any);
+    const { data: { user } } = await sb.auth.getUser();
+    if (!user) return res.status(401).json({ error: 'Unauthorized.' });
+    const limit   = Math.min(parseInt(String(req.query.limit ?? '50')), 200);
+    const verdict = req.query.verdict   as string | undefined;
+    const agentType = req.query.agentType as string | undefined;
+    const { criticAgentService } = await import('./services/criticAgentService');
+    const logs = await criticAgentService.getLogs({ limit, verdict, agentType });
+    res.json({ logs });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 /**
  * Get Agent Status — live performance, tasks, interventions
  */
