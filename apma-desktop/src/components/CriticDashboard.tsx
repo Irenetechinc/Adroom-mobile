@@ -1,5 +1,6 @@
 import { useEffect, useState, useRef } from 'react';
 import { apmaApi } from '../services/api';
+import AgentHeatmap from './AgentHeatmap';
 
 const AGENT_COLORS: Record<string, string> = {
   SALESMAN:  '#10B981',
@@ -420,6 +421,19 @@ export default function CriticDashboard() {
             </tbody>
           </table>
         </div>
+      </div>
+
+      {/* ── AGENT × PLATFORM HEATMAP ──────────────────────────────────────── */}
+      <div style={{
+        background: '#0f172a', border: '1px solid #1e293b',
+        borderRadius: 16, padding: 24, marginBottom: 24,
+      }}>
+        <AgentHeatmap
+          fetchHeatmap={apmaApi.criticHeatmap}
+          agents={['SALESMAN', 'AWARENESS', 'PROMOTION', 'LAUNCH', 'IPE', 'STRATEGY']}
+          platforms={['facebook', 'instagram', 'twitter', 'linkedin', 'tiktok', 'reddit', 'telegram', 'web']}
+          title="Agent × Platform Quality Heatmap"
+        />
       </div>
 
     </div>

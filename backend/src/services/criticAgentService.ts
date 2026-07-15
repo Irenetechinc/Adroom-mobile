@@ -33,6 +33,15 @@ interface CriticParams {
   taskType:    string;
   userId?:     string;
   operation?:  string;
+  platform?:   string;
+}
+
+export interface HeatmapCell {
+  agentType: string;
+  platform:  string;
+  avgScore:  number;
+  count:     number;
+  verdict:   'good' | 'warn' | 'bad' | 'none';
 }
 
 // Patterns that strongly suggest hallucination or low quality
@@ -185,6 +194,7 @@ Return JSON only:
           agent_type:    params.agentType,
           task_type:     params.taskType,
           operation:     params.operation,
+          platform:      params.platform ?? null,
           output_text:   params.output.slice(0, 2000),
           quality_score: result.quality_score,
           issues:        result.issues,
@@ -269,6 +279,80 @@ Return JSON only:
 
     const { data } = await query;
     return data || [];
+  }
+
+  // ── Heatmap: 7-day rolling avg per agent × platform ───────────────────────
+  async getHeatmapData(userId?: string): Promise<HeatmapCell[]> {
+    const since = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+    let query = this.supabase
+      .from('critic_agent_logs')
+      .select('agent_type, platform, quality_score')
+      .gte('created_at', since)
+      .not('platform', 'is', null);
+
+    if (userId) query = (query as any).eq('user_id', userId);
+
+    const { data: rows } = await query;
+    if (!rows || rows.length === 0) return [];
+
+    const map = new Map<string, { sum: number; count: number }>();
+    for (const r of rows as any[]) {
+      if (!r.agent_type || !r.platform) continue;
+      const key = `${r.agent_type}||${r.platform}`;
+      const cur = map.get(key) ?? { sum: 0, count: 0 };
+      cur.sum += r.quality_score || 0;
+      cur.count++;
+      map.set(key, cur);
+    }
+
+    const cells: HeatmapCell[] = [];
+    for (const [key, { sum, count }] of map) {
+      const [agentType, platform] = key.split('||');
+      const avgScore = Math.round(sum / count);
+      cells.push({
+        agentType,
+        platform,
+        avgScore,
+        count,
+        verdict: avgScore >= 75 ? 'good' : avgScore >= 50 ? 'warn' : 'bad',
+      });
+    }
+    return cells;
+  }
+
+  // ── User-level stats (mobile app — filtered by userId) ─────────────────────
+  async getUserStats(userId: string) {
+    const { data: logs } = await this.supabase
+      .from('critic_agent_logs')
+      .select('agent_type, platform, quality_score, verdict, created_at')
+      .eq('user_id', userId)
+      .order('created_at', { ascending: false })
+      .limit(2000);
+
+    const all = logs || [];
+    const cutoff = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+    const recent = all.filter((r: any) => r.created_at >= cutoff);
+
+    const approved = all.filter((r: any) => r.verdict === 'approved').length;
+    const flagged  = all.filter((r: any) => r.verdict === 'flagged').length;
+    const rejected = all.filter((r: any) => r.verdict === 'rejected').length;
+    const avgScore = all.length
+      ? Math.round(all.reduce((s: number, r: any) => s + (r.quality_score || 0), 0) / all.length)
+      : 0;
+
+    const byAgent: Record<string, { total: number; avg: number }> = {};
+    const agentSums: Record<string, number> = {};
+    for (const r of all as any[]) {
+      if (!r.agent_type) continue;
+      if (!byAgent[r.agent_type]) { byAgent[r.agent_type] = { total: 0, avg: 0 }; agentSums[r.agent_type] = 0; }
+      byAgent[r.agent_type].total++;
+      agentSums[r.agent_type] += r.quality_score || 0;
+    }
+    for (const k of Object.keys(byAgent)) {
+      byAgent[k].avg = Math.round(agentSums[k] / byAgent[k].total);
+    }
+
+    return { total: all.length, approved, flagged, rejected, avgScore, byAgent, last24h: { total: recent.length, rejected: recent.filter((r: any) => r.verdict === 'rejected').length } };
   }
 
   // ── Auto-pause threshold management ────────────────────────────────────────
