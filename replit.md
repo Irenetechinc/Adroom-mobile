@@ -63,6 +63,12 @@ AdRoom is a **React Native (Expo) mobile app** with a Node.js/Express backend. I
 | `POST /api/auth/facebook/exchange` | Facebook OAuth token exchange |
 | `GET /api/admin/tokens/status` | Token expiry status for all connected platforms |
 | `POST /api/admin/tokens/refresh` | Manually trigger OAuth token refresh sweep |
+| `GET /admin/critic` | **Critic Agent Dashboard** — agent×platform heatmap, stats, logs |
+| `GET /api/admin/critic/stats` | Aggregate quality stats across all agents + APMA |
+| `GET /api/admin/critic/heatmap` | 7-day rolling quality heatmap data (agent×platform) |
+| `GET /api/admin/critic/logs` | Recent critic evaluations (`?verdict=rejected&agent=SALESMAN`) |
+| `POST /api/admin/critic/improve/:agentType` | Trigger AI quality coaching for an agent |
+| `GET/PUT /api/admin/critic/thresholds` | Auto-pause score thresholds per agent |
 
 ## Referral System (May 2026)
 - Each user has a unique 8-char code in `profiles.referral_code`

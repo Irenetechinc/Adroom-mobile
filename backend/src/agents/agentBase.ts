@@ -1145,7 +1145,22 @@ For LAUNCH goal: build excitement, exclusive energy.
 
 Return ONLY the reply text, nothing else.
 `);
-            return result.text?.trim().replace(/^"|"$/g, '').substring(0, 120) || null;
+            const replyText = result.text?.trim().replace(/^"|"$/g, '').substring(0, 120) || null;
+
+            // Critic: fire-and-forget quality evaluation — never blocks the pipeline
+            if (replyText) {
+                import('../services/criticAgentService').then(({ criticAgentService }) => {
+                    criticAgentService.analyze({
+                        output: replyText,
+                        agentType: this.agentType,
+                        taskType: 'comment_reply',
+                        platform,
+                        operation: 'quick_reply',
+                    });
+                }).catch(() => {});
+            }
+
+            return replyText;
         } catch { return null; }
     }
 
@@ -1288,6 +1303,23 @@ Only include comments that should be replied to.`;
         try {
             const aiResult = await this.ai.generateStrategy({}, classifyPrompt);
             replyPlan = aiResult.parsedJson?.replies || [];
+
+            // Critic: evaluate the reply plan batch as a whole (fire-and-forget)
+            if (replyPlan.length > 0) {
+                const batchText = replyPlan.map((r: any) => r.reply).filter(Boolean).join('\n---\n');
+                if (batchText) {
+                    import('../services/criticAgentService').then(({ criticAgentService }) => {
+                        criticAgentService.analyze({
+                            output: batchText,
+                            agentType: this.agentType,
+                            taskType: 'comment_reply_batch',
+                            platform: params.platform,
+                            userId: params.userId,
+                            operation: 'scan_and_reply_comments',
+                        });
+                    }).catch(() => {});
+                }
+            }
         } catch { return { replied: 0, leads: 0 }; }
 
         let replied = 0;

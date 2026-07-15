@@ -3045,6 +3045,116 @@ app.post('/api/admin/tokens/refresh', async (req, res) => {
   }
 });
 
+// ─── ADMIN: CRITIC AGENT DASHBOARD ───────────────────────────────────────────
+
+/**
+ * GET /admin/critic — Serve the Critic Agent admin dashboard HTML.
+ * Accessible at /admin/critic with no auth (internal Replit only) or with
+ * ?token=<ADMIN_SECRET> for Railway prod.
+ */
+app.get('/admin/critic', (req, res) => {
+  const fs = require('fs');
+  const path = require('path');
+  const file = path.join(__dirname, '../../admin-critic.html');
+  if (fs.existsSync(file)) {
+    res.setHeader('Content-Type', 'text/html; charset=utf-8');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.sendFile(file);
+  } else {
+    res.status(404).send('Admin critic dashboard HTML not found. Deploy the full backend bundle.');
+  }
+});
+
+/**
+ * GET /api/admin/critic/stats — aggregate critic stats across ALL users + APMA.
+ */
+app.get('/api/admin/critic/stats', async (_req, res) => {
+  try {
+    const { criticAgentService } = await import('./services/criticAgentService');
+    const stats = await criticAgentService.getStats();
+    res.json(stats);
+  } catch (e: any) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+/**
+ * GET /api/admin/critic/heatmap — 7-day rolling avg per agent×platform (all users).
+ */
+app.get('/api/admin/critic/heatmap', async (_req, res) => {
+  try {
+    const { criticAgentService } = await import('./services/criticAgentService');
+    const cells = await criticAgentService.getHeatmapData(); // no userId = all users
+    res.json(cells);
+  } catch (e: any) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+/**
+ * GET /api/admin/critic/logs — recent critic evaluation logs.
+ * ?limit=50&verdict=rejected&agent=SALESMAN
+ */
+app.get('/api/admin/critic/logs', async (req, res) => {
+  try {
+    const limit    = Math.min(parseInt(String(req.query.limit  ?? '50')), 200);
+    const verdict  = req.query.verdict as string | undefined;
+    const agentType = req.query.agent  as string | undefined;
+    const { criticAgentService } = await import('./services/criticAgentService');
+    const logs = await criticAgentService.getLogs({ limit, verdict, agentType });
+    res.json(logs);
+  } catch (e: any) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+/**
+ * POST /api/admin/critic/improve/:agentType — trigger AI auto-improvement coaching.
+ */
+app.post('/api/admin/critic/improve/:agentType', async (req, res) => {
+  try {
+    const { agentType } = req.params;
+    const { criticAgentService } = await import('./services/criticAgentService');
+    const recommendation = await criticAgentService.triggerAutoImprove(agentType);
+    res.json({ ok: true, recommendation });
+  } catch (e: any) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+/**
+ * GET /api/admin/critic/thresholds — get auto-pause thresholds per agent.
+ */
+app.get('/api/admin/critic/thresholds', async (_req, res) => {
+  try {
+    const { criticAgentService } = await import('./services/criticAgentService');
+    const thresholds = await criticAgentService.getPauseThresholds();
+    res.json(thresholds);
+  } catch (e: any) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+/**
+ * PUT /api/admin/critic/thresholds — set auto-pause score threshold per agent.
+ * Body: { "SALESMAN": 40, "AWARENESS": 45 }
+ */
+app.put('/api/admin/critic/thresholds', async (req, res) => {
+  try {
+    const thresholds = req.body;
+    if (!thresholds || typeof thresholds !== 'object') {
+      return res.status(400).json({ error: 'Body must be a JSON object of agentType→score pairs' });
+    }
+    const { criticAgentService } = await import('./services/criticAgentService');
+    await criticAgentService.setPauseThresholds(thresholds);
+    res.json({ ok: true });
+  } catch (e: any) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ─── END ADMIN: CRITIC AGENT DASHBOARD ────────────────────────────────────────
+
 /**
  * Remote Logging — receives logs from the Expo app and prints them to Railway terminal
  */

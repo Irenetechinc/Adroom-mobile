@@ -691,6 +691,18 @@ Return JSON: { "message": "the reply text", "reasoning": "why this reply" }`;
             return;
         }
 
+        // Critic: fire-and-forget quality evaluation — never blocks the pipeline
+        import('../services/criticAgentService').then(({ criticAgentService }) => {
+            criticAgentService.analyze({
+                output: reply,
+                agentType: 'SALESMAN',
+                taskType: 'inbound_reply',
+                platform: lead.platform,
+                userId: task.user_id,
+                operation: 'inbound_reply',
+            });
+        }).catch(() => {});
+
         // Send the reply via the correct platform
         let sent = false;
         try {
