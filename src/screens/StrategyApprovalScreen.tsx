@@ -8,7 +8,7 @@ import { RootStackParamList } from '../types';
 import { useAgentStore } from '../store/agentStore';
 import { useEnergyStore } from '../store/energyStore';
 import { CreativeAsset } from '../types/agent';
-import { Zap, AlertTriangle, ImageIcon, Sparkles } from 'lucide-react-native';
+import { Zap, AlertTriangle, ImageIcon, Sparkles, ArrowLeft } from 'lucide-react-native';
 import { supabase } from '../config/supabase';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'StrategyApproval'>;
@@ -233,7 +233,7 @@ export default function StrategyApprovalScreen({ navigation }: Props) {
           style={{ width: 36, height: 36, alignItems: 'center', justifyContent: 'center', marginRight: 8 }}
           activeOpacity={0.7}
         >
-          <Zap size={18} color="#475569" />
+          <ArrowLeft size={22} color="#94A3B8" />
         </TouchableOpacity>
         <View style={{ flex: 1, alignItems: 'center' }}>
           <Text style={{ color: '#475569', fontSize: 10, letterSpacing: 2, fontWeight: '700', textTransform: 'uppercase', marginBottom: 1 }}>
