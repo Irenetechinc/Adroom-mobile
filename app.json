@@ -17,7 +17,7 @@
         "backgroundColor": "#ffffff"
       },
       "package": "com.adroom.mobile",
-      "versionCode": 62,
+      "versionCode": 66,
       "googleServicesFile": "./google-services.json",
       "permissions": [
         "RECEIVE_BOOT_COMPLETED",
