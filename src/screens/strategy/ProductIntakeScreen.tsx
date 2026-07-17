@@ -168,9 +168,38 @@ export default function ProductIntakeScreen() {
 
   return (
     <SafeAreaView style={styles.container}>
+      {/* Step progress indicator */}
+      <View style={styles.stepBar}>
+        {[
+          { n: 1, label: 'Product',  done: false, active: true },
+          { n: 2, label: 'Goal',     done: false },
+          { n: 3, label: 'Duration', done: false },
+          { n: 4, label: 'Review',   done: false },
+        ].map((step, i, arr) => (
+          <React.Fragment key={step.n}>
+            <View style={styles.stepItem}>
+              <View style={[
+                styles.stepCircle,
+                step.done && styles.stepCircleDone,
+                step.active && styles.stepCircleActive,
+              ]}>
+                {step.done
+                  ? <Text style={styles.stepCheckmark}>✓</Text>
+                  : <Text style={[styles.stepNum, step.active && { color: '#0B0F19' }]}>{step.n}</Text>
+                }
+              </View>
+              <Text style={[styles.stepLabel, step.active && styles.stepLabelActive]}>{step.label}</Text>
+            </View>
+            {i < arr.length - 1 && (
+              <View style={[styles.stepLine, step.done && styles.stepLineDone]} />
+            )}
+          </React.Fragment>
+        ))}
+      </View>
+
       <ScrollView style={styles.scroll} contentContainerStyle={{ paddingBottom: 24 }}>
         <Text style={styles.title}>New Strategy Setup</Text>
-        <Text style={styles.subtitle}>Step 1: Product Intake</Text>
+        <Text style={styles.subtitle}>Tell us about your product so AI can build a perfect campaign.</Text>
 
         {/* ── Image Upload ────────────────────────────────────── */}
         <Text style={styles.sectionLabel}>Product Image</Text>
@@ -438,6 +467,28 @@ function FormField({
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.bg },
+
+  stepBar: {
+    flexDirection: 'row', alignItems: 'center',
+    paddingHorizontal: 20, paddingVertical: 12,
+    borderBottomWidth: 1, borderBottomColor: COLORS.border,
+    backgroundColor: '#0F1623',
+  },
+  stepItem: { alignItems: 'center', gap: 4 },
+  stepCircle: {
+    width: 26, height: 26, borderRadius: 13,
+    backgroundColor: '#1E293B', borderWidth: 1.5, borderColor: '#334155',
+    alignItems: 'center', justifyContent: 'center',
+  },
+  stepCircleDone: { backgroundColor: 'rgba(16,185,129,0.15)', borderColor: '#10B981' },
+  stepCircleActive: { backgroundColor: COLORS.neon, borderColor: COLORS.neon },
+  stepCheckmark: { color: '#10B981', fontSize: 12, fontWeight: '800' },
+  stepNum: { color: '#475569', fontSize: 11, fontWeight: '700' },
+  stepLabel: { color: '#334155', fontSize: 9, fontWeight: '600', textTransform: 'uppercase', letterSpacing: 0.5 },
+  stepLabelActive: { color: COLORS.neon },
+  stepLine: { flex: 1, height: 1.5, backgroundColor: '#1E293B', marginBottom: 14 },
+  stepLineDone: { backgroundColor: '#10B981' },
+
   scroll: { flex: 1, paddingHorizontal: 20 },
   title: { color: COLORS.text, fontSize: 22, fontWeight: '800', marginTop: 20, marginBottom: 4 },
   subtitle: { color: COLORS.muted, fontSize: 14, marginBottom: 20 },

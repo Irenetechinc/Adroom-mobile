@@ -1,5 +1,8 @@
 import * as WebBrowser from 'expo-web-browser';
 
+// Ensure the auth session can be completed (important for some platforms/browsers)
+WebBrowser.maybeCompleteAuthSession();
+
 /**
  * Opens the OAuth browser and polls the backend until the authorisation code
  * arrives.  Works reliably on both iOS and Android physical devices.
@@ -37,9 +40,20 @@ export async function runOAuthBrowserFlow(
   let browserClosed = false;
   const openedAt = Date.now();
 
-  WebBrowser.openBrowserAsync(authUrl, { showInRecents: false })
-    .then(() => { browserClosed = true; })
-    .catch(() => { browserClosed = true; });
+  console.log(`[OAuthBrowser] Attempting to open auth session for: ${authUrl.split('?')[0]}`);
+
+  // Use openAuthSessionAsync which is more robust for OAuth flows than openBrowserAsync.
+  // It handles the redirect back to the app better and is less likely to be 
+  // intercepted by native apps in a way that fails silently.
+  WebBrowser.openAuthSessionAsync(authUrl, 'adroom://oauth-done')
+    .then((result) => { 
+      console.log(`[OAuthBrowser] Auth session closed with result:`, result);
+      browserClosed = true; 
+    })
+    .catch((err) => { 
+      console.error(`[OAuthBrowser] Auth session failed to open:`, err);
+      browserClosed = true; 
+    });
 
   const pollOnce = async (): Promise<string | 'error' | null> => {
     try {
@@ -52,10 +66,11 @@ export async function runOAuthBrowserFlow(
     return null;
   };
 
+  // Wait 1.5 seconds before starting Phase 1 to allow the browser/app to stabilize.
+  await new Promise<void>(r => setTimeout(r, 1500));
+
   // Phase 1: poll every second while the browser is open (up to 2 minutes).
   for (let i = 0; i < 120 && !browserClosed; i++) {
-    await new Promise<void>(r => setTimeout(r, 1000));
-    if (browserClosed) break;
     const result = await pollOnce();
     if (result === 'error') {
       try { await WebBrowser.dismissBrowser(); } catch { /* ignore */ }
@@ -65,6 +80,7 @@ export async function runOAuthBrowserFlow(
       try { await WebBrowser.dismissBrowser(); } catch { /* ignore */ }
       return result;
     }
+    await new Promise<void>(r => setTimeout(r, 1000));
   }
 
   // Phase 2: browser is closed.
@@ -75,7 +91,9 @@ export async function runOAuthBrowserFlow(
   //             — 15 s is plenty to pick up the code that was stored just
   //                before the redirect fired.
   const browserLifespanMs = Date.now() - openedAt;
-  const phase2Limit = browserLifespanMs < 3000 ? 90 : 15;
+  // If the browser closed extremely fast (< 2s), it's either a native app intercept
+  // OR a failure to open. We give it 90s to handle the app-intercept case.
+  const phase2Limit = browserLifespanMs < 2000 ? 90 : 15;
 
   console.log(
     `[OAuthBrowser] Phase 2 — browser was open ${Math.round(browserLifespanMs / 1000)}s, ` +

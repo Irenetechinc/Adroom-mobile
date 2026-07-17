@@ -80,4 +80,21 @@ export const apmaApi = {
 
   oauthStart: (platform: string)  => apiFetch<{ authUrl: string; stateId: string }>(`/oauth/start/${platform}`, { method: 'POST' }),
   oauthPoll:  (stateId: string)   => apiFetch<{ status: 'pending' | 'completed' | 'error' | 'expired'; accounts?: any[]; error?: string }>(`/oauth/poll/${stateId}`),
+
+  // ── Critic Agent Dashboard ─────────────────────────────────────────────────
+  criticStats:            ()                              => apiFetch<any>('/critic/stats'),
+  criticLogs:             (opts: { limit?: number; verdict?: string; agentType?: string } = {}) => {
+    const params = new URLSearchParams();
+    if (opts.limit)     params.set('limit',     String(opts.limit));
+    if (opts.verdict)   params.set('verdict',   opts.verdict);
+    if (opts.agentType) params.set('agentType', opts.agentType);
+    const q = params.toString();
+    return apiFetch<{ logs: any[] }>(`/critic/logs${q ? `?${q}` : ''}`);
+  },
+  criticPauseConfig:        ()                                => apiFetch<{ thresholds: Record<string, number> }>('/critic/pause-config'),
+  setCriticPauseThresholds: (thresholds: Record<string, number>) =>
+    apiFetch<{ ok: boolean }>('/critic/pause-config', { method: 'POST', body: JSON.stringify({ thresholds }) }),
+  criticAutoImprove:        (agentType: string)               =>
+    apiFetch<{ ok: boolean; recommendation: string }>(`/critic/auto-improve/${agentType}`, { method: 'POST' }),
+  criticHeatmap:            ()                              => apiFetch<{ cells: any[] }>('/critic/heatmap'),
 };

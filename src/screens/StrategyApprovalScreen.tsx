@@ -8,7 +8,7 @@ import { RootStackParamList } from '../types';
 import { useAgentStore } from '../store/agentStore';
 import { useEnergyStore } from '../store/energyStore';
 import { CreativeAsset } from '../types/agent';
-import { Zap, AlertTriangle, ImageIcon, Sparkles } from 'lucide-react-native';
+import { Zap, AlertTriangle, ImageIcon, Sparkles, ArrowLeft } from 'lucide-react-native';
 import { supabase } from '../config/supabase';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'StrategyApproval'>;
@@ -222,8 +222,31 @@ export default function StrategyApprovalScreen({ navigation }: Props) {
   return (
     <View style={{ flex: 1, backgroundColor: '#0B0F19' }}>
       {/* Header */}
-      <View style={{ backgroundColor: '#0F1623', paddingHorizontal: 16, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: 'rgba(0,240,255,0.2)' }}>
-        <Text style={{ color: '#00F0FF', textAlign: 'center', fontWeight: '800', fontSize: 13, letterSpacing: 2, textTransform: 'uppercase' }}>Strategy Preview</Text>
+      <View style={{
+        backgroundColor: '#0F1623',
+        paddingHorizontal: 16, paddingVertical: 14,
+        borderBottomWidth: 1, borderBottomColor: `${goalColor}30`,
+        flexDirection: 'row', alignItems: 'center',
+      }}>
+        <TouchableOpacity
+          onPress={() => navigation.goBack()}
+          style={{ width: 36, height: 36, alignItems: 'center', justifyContent: 'center', marginRight: 8 }}
+          activeOpacity={0.7}
+        >
+          <ArrowLeft size={22} color="#94A3B8" />
+        </TouchableOpacity>
+        <View style={{ flex: 1, alignItems: 'center' }}>
+          <Text style={{ color: '#475569', fontSize: 10, letterSpacing: 2, fontWeight: '700', textTransform: 'uppercase', marginBottom: 1 }}>
+            AdRoom AI
+          </Text>
+          <Text style={{ color: '#FFFFFF', fontWeight: '800', fontSize: 15 }}>Strategy Preview</Text>
+        </View>
+        <View style={{
+          backgroundColor: `${goalColor}15`, paddingHorizontal: 10, paddingVertical: 5,
+          borderRadius: 20, borderWidth: 1, borderColor: `${goalColor}40`,
+        }}>
+          <Text style={{ color: goalColor, fontSize: 10, fontWeight: '800', letterSpacing: 1 }}>{goal}</Text>
+        </View>
       </View>
 
       {/* Credit Check Modal */}

@@ -2,7 +2,7 @@
 import fetch from 'node-fetch';
 
 export const FacebookApi = {
-  baseUrl: 'https://graph.facebook.com/v19.0',
+  baseUrl: 'https://graph.facebook.com/v25.0',
 
   async postContent(accessToken: string, pageId: string, message: string, imageUrl?: string) {
       const endpoint = imageUrl ? 'photos' : 'feed';

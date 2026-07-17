@@ -19,7 +19,7 @@ import { getServiceSupabaseClient } from '../config/supabase';
 import { AIEngine } from '../config/ai-models';
 import { pushService } from './pushService';
 
-const FB_GRAPH = 'https://graph.facebook.com/v19.0';
+const FB_GRAPH = 'https://graph.facebook.com/v25.0';
 
 interface InboundMsg {
   externalId: string;

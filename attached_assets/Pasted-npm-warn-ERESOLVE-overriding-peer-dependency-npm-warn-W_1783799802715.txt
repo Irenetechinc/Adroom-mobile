@@ -1,0 +1,70 @@
+npm warn ERESOLVE overriding peer dependency
+npm warn While resolving: @react-native/virtualized-lists@0.83.9
+npm warn Found: @types/react@19.0.14
+npm warn node_modules/@types/react
+npm warn   dev @types/react@"~19.0.10" from the root project
+npm warn   2 more (@types/react-test-renderer, zustand)
+npm warn
+npm warn Could not resolve dependency:
+npm warn peerOptional @types/react@"^19.2.0" from @react-native/virtualized-lists@0.83.9
+npm warn node_modules/@react-native/virtualized-lists
+npm warn   @react-native/virtualized-lists@"0.83.9" from react-native@0.83.9
+npm warn   node_modules/react-native
+npm warn
+npm warn Conflicting peer dependency: @types/react@19.2.17
+npm warn node_modules/@types/react
+npm warn   peerOptional @types/react@"^19.2.0" from @react-native/virtualized-lists@0.83.9
+npm warn   node_modules/@react-native/virtualized-lists
+npm warn     @react-native/virtualized-lists@"0.83.9" from react-native@0.83.9
+npm warn     node_modules/react-native
+npm error code ERESOLVE
+npm error ERESOLVE could not resolve
+npm error
+npm error While resolving: react-native@0.83.9
+npm error Found: @types/react@19.0.14
+npm error node_modules/@types/react
+npm error   dev @types/react@"~19.0.10" from the root project
+npm error   @types/react@"*" from @types/react-test-renderer@19.1.0
+npm error   node_modules/@types/react-test-renderer
+npm error     @types/react-test-renderer@"^19.1.0" from react-native-gesture-handler@2.31.2
+npm error     node_modules/react-native-gesture-handler
+npm error       react-native-gesture-handler@"~2.31.1" from the root project
+npm error       2 more (@react-navigation/drawer, react-native-drawer-layout)
+npm error   1 more (zustand)
+npm error
+npm error Could not resolve dependency:
+npm error peerOptional @types/react@"^19.1.1" from react-native@0.83.9
+npm error node_modules/react-native
+npm error   react-native@"0.83.9" from the root project
+npm error   peerOptional react-native@"*" from @expo/cli@55.0.32
+npm error   node_modules/@expo/cli
+npm error     @expo/cli@"55.0.32" from expo@55.0.26
+npm error     node_modules/expo
+npm error       expo@"~55.0.26" from the root project
+npm error       29 more (@expo/cli, @expo/dom-webview, @expo/log-box, ...)
+npm error   36 more (@expo/devtools, @expo/dom-webview, @expo/log-box, ...)
+npm error
+npm error Conflicting peer dependency: @types/react@19.2.17
+npm error node_modules/@types/react
+npm error   peerOptional @types/react@"^19.1.1" from react-native@0.83.9
+npm error   node_modules/react-native
+npm error     react-native@"0.83.9" from the root project
+npm error     peerOptional react-native@"*" from @expo/cli@55.0.32
+npm error     node_modules/@expo/cli
+npm error       @expo/cli@"55.0.32" from expo@55.0.26
+npm error       node_modules/expo
+npm error         expo@"~55.0.26" from the root project
+npm error         29 more (@expo/cli, @expo/dom-webview, @expo/log-box, ...)
+npm error     36 more (@expo/devtools, @expo/dom-webview, @expo/log-box, ...)
+npm error
+npm error Fix the upstream dependency conflict, or retry
+npm error this command with --force or --legacy-peer-deps
+npm error to accept an incorrect (and potentially broken) dependency resolution.
+npm error
+npm error
+npm error For a full report see:
+npm error /home/runner/.npm/_logs/2026-07-11T19_52_37_712Z-eresolve-report.txt
+npm error A complete log of this run can be found in: /home/runner/.npm/_logs/2026-07-11T19_52_37_712Z-debug-0.log
+~/workspace$ npx install
+npm error could not determine executable to run
+npm error A com

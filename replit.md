@@ -63,11 +63,13 @@ AdRoom is a **React Native (Expo) mobile app** with a Node.js/Express backend. I
 | `POST /api/auth/facebook/exchange` | Facebook OAuth token exchange |
 | `GET /api/admin/tokens/status` | Token expiry status for all connected platforms |
 | `POST /api/admin/tokens/refresh` | Manually trigger OAuth token refresh sweep |
+
 | `GET /api/feature-flags` | Effective feature flags for authenticated user (mobile) |
 | `GET /admin/api/feature-flags` | List all global flags (admin) |
 | `PUT /admin/api/feature-flags/:key` | Toggle a global flag on/off (admin) |
 | `PUT /admin/api/feature-flags/user/:userId/:key` | Set per-user flag override (admin) |
 | `DELETE /admin/api/feature-flags/user/:userId/:key` | Remove per-user override (admin) |
+
 
 ## Referral System (May 2026)
 - Each user has a unique 8-char code in `profiles.referral_code`

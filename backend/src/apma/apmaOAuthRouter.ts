@@ -84,19 +84,19 @@ apmaOAuthRouter.get('/callback/:platform', async (req, res) => {
 
         const redir = redirectUri('facebook');
 
-        const shortRes = await fetch(`https://graph.facebook.com/v18.0/oauth/access_token?client_id=${FB_APP_ID}&client_secret=${FB_APP_SECRET}&redirect_uri=${encodeURIComponent(redir)}&code=${encodeURIComponent(code)}`);
+        const shortRes = await fetch(`https://graph.facebook.com/v25.0/oauth/access_token?client_id=${FB_APP_ID}&client_secret=${FB_APP_SECRET}&redirect_uri=${encodeURIComponent(redir)}&code=${encodeURIComponent(code)}`);
         const shortData = await shortRes.json() as any;
         if (!shortRes.ok || !shortData.access_token) throw new Error(shortData.error?.message ?? 'Failed to get Facebook token');
         const shortToken: string = shortData.access_token;
 
-        const llRes = await fetch(`https://graph.facebook.com/v18.0/oauth/access_token?grant_type=fb_exchange_token&client_id=${FB_APP_ID}&client_secret=${FB_APP_SECRET}&fb_exchange_token=${shortToken}`);
+        const llRes = await fetch(`https://graph.facebook.com/v25.0/oauth/access_token?grant_type=fb_exchange_token&client_id=${FB_APP_ID}&client_secret=${FB_APP_SECRET}&fb_exchange_token=${shortToken}`);
         const llData = await llRes.json() as any;
         const longToken: string = llData.access_token || shortToken;
 
-        const meRes = await fetch(`https://graph.facebook.com/v18.0/me?fields=id,name&access_token=${longToken}`);
+        const meRes = await fetch(`https://graph.facebook.com/v25.0/me?fields=id,name&access_token=${longToken}`);
         const me = await meRes.json() as any;
 
-        const pagesRes = await fetch(`https://graph.facebook.com/v18.0/me/accounts?fields=id,name,access_token&access_token=${longToken}&limit=25`);
+        const pagesRes = await fetch(`https://graph.facebook.com/v25.0/me/accounts?fields=id,name,access_token&access_token=${longToken}&limit=25`);
         const pagesData = await pagesRes.json() as any;
         const pages: any[] = pagesData.data ?? [];
 
@@ -114,11 +114,11 @@ apmaOAuthRouter.get('/callback/:platform', async (req, res) => {
             });
             if (fbId) newIds.push(fbId);
 
-            const igRes = await fetch(`https://graph.facebook.com/v18.0/${page.id}?fields=instagram_business_account&access_token=${pageToken}`);
+            const igRes = await fetch(`https://graph.facebook.com/v25.0/${page.id}?fields=instagram_business_account&access_token=${pageToken}`);
             const igData = await igRes.json() as any;
             const igId: string | undefined = igData.instagram_business_account?.id;
             if (igId) {
-              const igInfoRes = await fetch(`https://graph.facebook.com/v18.0/${igId}?fields=id,name,username&access_token=${pageToken}`);
+              const igInfoRes = await fetch(`https://graph.facebook.com/v25.0/${igId}?fields=id,name,username&access_token=${pageToken}`);
               const igInfo = await igInfoRes.json() as any;
               const igAcctId = await upsertAccount(sb, {
                 client_id: st.clientId,

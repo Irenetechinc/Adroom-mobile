@@ -388,7 +388,7 @@ Return JSON:
             this.log(`Scanning Facebook post ${params.postId} for sales leads`);
             try {
                 const resp = await fetch(
-                    `https://graph.facebook.com/v19.0/${params.postId}/comments?fields=id,message,from&access_token=${params.tokens.facebook.access_token}`
+                    `https://graph.facebook.com/v25.0/${params.postId}/comments?fields=id,message,from&access_token=${params.tokens.facebook.access_token}`
                 );
                 if (!resp.ok) return;
 
@@ -690,6 +690,18 @@ Return JSON: { "message": "the reply text", "reasoning": "why this reply" }`;
             await this.failTask(taskId, 'AI Brain could not generate INBOUND_REPLY response');
             return;
         }
+
+        // Critic: fire-and-forget quality evaluation — never blocks the pipeline
+        import('../services/criticAgentService').then(({ criticAgentService }) => {
+            criticAgentService.analyze({
+                output: reply,
+                agentType: 'SALESMAN',
+                taskType: 'inbound_reply',
+                platform: lead.platform,
+                userId: task.user_id,
+                operation: 'inbound_reply',
+            });
+        }).catch(() => {});
 
         // Send the reply via the correct platform
         let sent = false;

@@ -13,9 +13,10 @@ import InsightsPanel from '../components/InsightsPanel';
 import SocialAccountsPanel from '../components/SocialAccountsPanel';
 import OppositionPanel from '../components/OppositionPanel';
 import CampaignAnalytics from '../components/CampaignAnalytics';
+import CriticDashboard from '../components/CriticDashboard';
 import { SkeletonStats, SkeletonCard } from '../components/SkeletonLoader';
 
-type Tab = 'overview' | 'analytics' | 'opposition' | 'actions' | 'recommendations' | 'blogs' | 'calendar' | 'insights' | 'accounts' | 'monitor';
+type Tab = 'overview' | 'analytics' | 'opposition' | 'actions' | 'recommendations' | 'blogs' | 'calendar' | 'insights' | 'accounts' | 'monitor' | 'critic';
 
 const EVENT_COLOURS: Record<string, string> = {
   start:           '#818CF8',
@@ -119,6 +120,7 @@ export default function DashboardScreen() {
     { id: 'blogs',           label: 'Blogs'           },
     { id: 'calendar',        label: '📅 Calendar'     },
     { id: 'monitor',         label: '⬤ Monitor'       },
+    { id: 'critic',          label: '🔍 Critic'        },
   ];
 
   return (
@@ -282,6 +284,10 @@ export default function DashboardScreen() {
             </div>
             <PredictiveCalendar />
           </div>
+        )}
+
+        {tab === 'critic' && (
+          <CriticDashboard />
         )}
 
         {tab === 'monitor' && (
