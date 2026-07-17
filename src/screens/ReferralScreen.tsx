@@ -1,4 +1,5 @@
 import React, { useEffect, useState, useCallback } from 'react';
+import FeatureGate from '../components/FeatureGate';
 import {
   View, Text, TouchableOpacity, StyleSheet, ScrollView,
   Share, ActivityIndicator, Clipboard,
@@ -74,6 +75,7 @@ export default function ReferralScreen() {
   };
 
   return (
+    <FeatureGate flag="referral_system" message="The referral programme has been temporarily disabled by your administrator.">
     <SafeAreaView style={s.safe} edges={['top']}>
       <View style={s.header}>
         <TouchableOpacity
@@ -217,6 +219,7 @@ export default function ReferralScreen() {
         </Animated.View>
       </ScrollView>
     </SafeAreaView>
+    </FeatureGate>
   );
 }
 

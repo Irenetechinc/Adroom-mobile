@@ -9,6 +9,8 @@ import {
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../types';
 import { useAgentStore, type ChatSession } from '../store/agentStore';
+import useFeatureFlags from '../hooks/useFeatureFlags';
+import FeatureGate from '../components/FeatureGate';
 import * as ImagePicker from 'expo-image-picker';
 import Animated, {
   FadeInUp, FadeInRight, FadeInLeft, Layout,
@@ -1385,6 +1387,8 @@ export default function AgentChatScreen({ navigation, route }: Props) {
     fetchRecentSessions, applySession, restoreLastSession, deleteSession,
   } = useAgentStore();
 
+  const { isEnabled } = useFeatureFlags();
+
   // Tracks which agent message IDs have finished streaming their text.
   // Cards/forms inside a bubble are hidden until the text is done.
   const [doneTextIds, setDoneTextIds] = useState<Set<string>>(new Set());
@@ -1845,7 +1849,7 @@ export default function AgentChatScreen({ navigation, route }: Props) {
           />
         )}
         {item.uiType === 'strategy_preview' && item.uiData?.strategy && (
-          <StrategyPreviewCard strategy={item.uiData.strategy} onLaunch={handleStrategySelection} onBack={goBackToMenu} onStepBack={stepBackProp} disabled={isDisabled} />
+          <StrategyPreviewCard strategy={item.uiData.strategy} onLaunch={handleStrategySelection} onBack={goBackToMenu} onStepBack={stepBackProp} disabled={isDisabled || !isEnabled('agent_execution')} />
         )}
         {item.uiType === 'retry_action' && (
           <RetryActionCard
@@ -1951,6 +1955,28 @@ export default function AgentChatScreen({ navigation, route }: Props) {
 
   if (!historyLoaded) {
     return <AgentChatSkeleton />;
+  }
+
+  // Gate strategy_creation. Allow through when opened as a platform-connection
+  // deep-link (isStackEntry) so the user can still connect accounts.
+  if (!isStackEntry && !isEnabled('strategy_creation')) {
+    return (
+      <SafeAreaView style={styles.safe} edges={['top']}>
+        <View style={styles.header}>
+          <TouchableOpacity
+            onPress={() => navigation.dispatch(DrawerActions.openDrawer())}
+            style={styles.headerMenuBtn}
+          >
+            <Menu color="#E2E8F0" size={22} />
+          </TouchableOpacity>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.headerLabel}>Intelligence</Text>
+            <Text style={styles.headerTitle}>AI Agent</Text>
+          </View>
+        </View>
+        <FeatureGate flag="strategy_creation" fullScreen={false} />
+      </SafeAreaView>
+    );
   }
 
   return (
