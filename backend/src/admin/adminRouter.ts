@@ -648,11 +648,11 @@ router.get('/api/evolution/log', auth, async (req, res) => {
 
     let query = sb
       .from('self_evolution_log')
-      .select('id, agent_type, evolution_type, old_value, new_value, reason, performance_delta, created_at')
+      .select('id, agent, cycle_date, analysis, adopted_sources, scaled_back_sources, new_source_ideas, overall_recommendation, created_at')
       .order('created_at', { ascending: false })
       .limit(limit);
 
-    if (type) query = query.eq('evolution_type', type);
+    if (type) query = query.eq('agent', type);
 
     const { data, error } = await query;
     if (error) throw error;
@@ -1144,7 +1144,7 @@ router.get('/api/stream', auth, (req, res) => {
         sb.from('strategies').select('id, title, user_id, created_at').gte('created_at', since),
         sb.from('agent_tasks').select('id, agent_type, task_type, platform, status, user_id, created_at').gte('created_at', since).neq('status', 'pending'),
         sb.from('energy_transactions').select('user_id, type, credits, description, created_at').gte('created_at', since).in('type', ['topup', 'subscription_grant', 'trial_grant']),
-        sb.from('self_evolution_log').select('id, agent_type, evolution_type, old_value, new_value, reason, performance_delta, created_at').gte('created_at', since).order('created_at', { ascending: false }),
+        sb.from('self_evolution_log').select('id, agent, cycle_date, analysis, adopted_sources, scaled_back_sources, new_source_ideas, overall_recommendation, created_at').gte('created_at', since).order('created_at', { ascending: false }),
       ]);
 
       const events: any[] = [];
@@ -1649,8 +1649,8 @@ label{font-size:12px;color:#94A3B8;font-weight:600}
         <div class="section-header">
           <div class="section-title">Live Activity Feed</div>
           <div style="display:flex;align-items:center;gap:8px">
-            <div class="sse-dot" id="sse-dot-2" style="background:#EF4444"></div>
-            <span style="font-size:12px;color:#64748B" id="sse-status-2">Connecting…</span>
+            <div class="sse-dot" id="sse-dot-activity" style="background:#EF4444"></div>
+            <span style="font-size:12px;color:#64748B" id="sse-status-activity">Connecting…</span>
           </div>
         </div>
         <div class="card" style="padding:16px">
@@ -1791,13 +1791,12 @@ label{font-size:12px;color:#94A3B8;font-weight:600}
             <div id="evo-live-dot" style="width:8px;height:8px;border-radius:50%;background:#10B981;box-shadow:0 0 6px #10B981;flex-shrink:0"></div>
             <span id="evo-live-label" style="font-size:12px;color:#64748B">Live</span>
             <select id="evo-type-filter" class="input" style="width:160px;padding:4px 8px;font-size:12px" onchange="loadEvolutionLog()">
-              <option value="">All Types</option>
-              <option value="prompt_tweak">Prompt Tweak</option>
-              <option value="threshold_change">Threshold Change</option>
-              <option value="strategy_shift">Strategy Shift</option>
-              <option value="tone_adjustment">Tone Adjustment</option>
-              <option value="benchmark">Benchmark</option>
-              <option value="self_improvement">Self-Improvement</option>
+              <option value="">All Agents</option>
+              <option value="LEAD_DISCOVERY">Lead Discovery</option>
+              <option value="SALESMAN">Salesman</option>
+              <option value="AWARENESS">Awareness</option>
+              <option value="PROMOTION">Promotion</option>
+              <option value="LAUNCH">Launch</option>
             </select>
             <button class="btn btn-ghost btn-sm" onclick="loadEvolutionLog()">↺ Refresh</button>
           </div>
@@ -1806,22 +1805,22 @@ label{font-size:12px;color:#94A3B8;font-weight:600}
         <!-- KPI strip -->
         <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:16px">
           <div class="stat-card">
-            <div class="stat-label">Total Evolutions</div>
+            <div class="stat-label">Total Cycles</div>
             <div class="stat-value" id="evo-total" style="color:#818CF8">—</div>
             <div class="stat-sub">all time</div>
           </div>
           <div class="stat-card">
             <div class="stat-label">Last 24 h</div>
             <div class="stat-value" id="evo-24h" style="color:#38BDF8">—</div>
-            <div class="stat-sub">decisions made</div>
+            <div class="stat-sub">cycles run</div>
           </div>
           <div class="stat-card">
-            <div class="stat-label">Avg Δ Performance</div>
+            <div class="stat-label">Avg Sources Adopted</div>
             <div class="stat-value" id="evo-avg-delta" style="color:#10B981">—</div>
-            <div class="stat-sub">per evolution event</div>
+            <div class="stat-sub">per cycle</div>
           </div>
           <div class="stat-card">
-            <div class="stat-label">Last Evolution</div>
+            <div class="stat-label">Last Cycle</div>
             <div class="stat-value" id="evo-last-time" style="font-size:16px;color:#F59E0B">—</div>
             <div class="stat-sub" id="evo-last-type">—</div>
           </div>
@@ -1831,17 +1830,16 @@ label{font-size:12px;color:#94A3B8;font-weight:600}
         <div class="card" style="margin-bottom:16px;padding:14px 16px">
           <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
             <div>
-              <div style="font-size:13px;font-weight:700">📈 Performance Delta Over Time</div>
-              <div style="font-size:11px;color:#475569;margin-top:2px">Each point = one AI self-improvement decision. Green = positive, Red = regressive.</div>
+              <div style="font-size:13px;font-weight:700">📈 Sources Adopted vs Scaled Back Over Time</div>
+              <div style="font-size:11px;color:#475569;margin-top:2px">Each bar = one AI self-evolution cycle. Green = sources the AI adopted, Red = sources scaled back.</div>
             </div>
             <div style="display:flex;gap:12px;font-size:11px;align-items:center">
-              <span style="display:flex;align-items:center;gap:4px"><span style="width:8px;height:8px;border-radius:50%;background:#10B981;display:inline-block"></span>Positive</span>
-              <span style="display:flex;align-items:center;gap:4px"><span style="width:8px;height:8px;border-radius:50%;background:#EF4444;display:inline-block"></span>Negative</span>
-              <span style="display:flex;align-items:center;gap:4px"><span style="width:8px;height:8px;border-radius:50%;background:#818CF8;display:inline-block"></span>Neutral</span>
+              <span style="display:flex;align-items:center;gap:4px"><span style="width:8px;height:8px;border-radius:50%;background:#10B981;display:inline-block"></span>Adopted</span>
+              <span style="display:flex;align-items:center;gap:4px"><span style="width:8px;height:8px;border-radius:50%;background:#EF4444;display:inline-block"></span>Scaled back</span>
             </div>
           </div>
           <svg id="evo-chart-svg" width="100%" height="180" style="display:block;overflow:visible"></svg>
-          <div id="evo-chart-empty" style="display:none;text-align:center;padding:40px 0;color:#475569;font-size:12px">No performance data yet — the AI will chart its improvements here.</div>
+          <div id="evo-chart-empty" style="display:none;text-align:center;padding:40px 0;color:#475569;font-size:12px">No evolution cycles yet — the AI will chart its decisions here once the Lead Discovery agent runs.</div>
         </div>
 
         <!-- Live event ticker -->
@@ -1867,11 +1865,11 @@ label{font-size:12px;color:#94A3B8;font-weight:600}
                 <tr style="background:#0B0F19">
                   <th style="padding:10px 14px;text-align:left;color:#475569;font-weight:600;white-space:nowrap">Time</th>
                   <th style="padding:10px 14px;text-align:left;color:#475569;font-weight:600">Agent</th>
-                  <th style="padding:10px 14px;text-align:left;color:#475569;font-weight:600">Type</th>
-                  <th style="padding:10px 14px;text-align:left;color:#475569;font-weight:600">Old Value</th>
-                  <th style="padding:10px 14px;text-align:left;color:#475569;font-weight:600">New Value</th>
-                  <th style="padding:10px 14px;text-align:left;color:#475569;font-weight:600">Reason</th>
-                  <th style="padding:10px 14px;text-align:right;color:#475569;font-weight:600">Δ Perf</th>
+                  <th style="padding:10px 14px;text-align:left;color:#475569;font-weight:600">Analysis</th>
+                  <th style="padding:10px 14px;text-align:left;color:#475569;font-weight:600">Recommendation</th>
+                  <th style="padding:10px 14px;text-align:right;color:#475569;font-weight:600">✅ Adopted</th>
+                  <th style="padding:10px 14px;text-align:right;color:#475569;font-weight:600">🔽 Scaled Back</th>
+                  <th style="padding:10px 14px;text-align:right;color:#475569;font-weight:600">💡 New Ideas</th>
                 </tr>
               </thead>
               <tbody id="evo-log-body">
@@ -3248,8 +3246,8 @@ async function loadModelCredits() {
 
 // ── SSE ───────────────────────────────────────────────────────────────────────
 function setSseStatus(color, text) {
-  ['sse-dot', 'sse-dot-2'].forEach(id => { const el = document.getElementById(id); if (el) el.style.background = color; });
-  ['sse-status', 'sse-status-2'].forEach(id => { const el = document.getElementById(id); if (el) el.textContent = text; });
+  ['sse-dot', 'sse-dot-2', 'sse-dot-activity'].forEach(id => { const el = document.getElementById(id); if (el) el.style.background = color; });
+  ['sse-status', 'sse-status-2', 'sse-status-activity'].forEach(id => { const el = document.getElementById(id); if (el) el.textContent = text; });
 }
 
 function connectSSE() {
@@ -3716,31 +3714,33 @@ function renderEvolutionTable(entries) {
   const badge = document.getElementById('evo-count-badge');
   if (badge) badge.textContent = entries.length + ' entries';
   if (!entries.length) {
-    tbody.innerHTML = '<tr><td colspan="7" style="padding:24px;text-align:center;color:#475569">No evolution entries yet — the AI will populate this as it self-improves.</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="7" style="padding:24px;text-align:center;color:#475569">No evolution cycles yet — the Lead Discovery agent runs every 3 hours and will populate this log.</td></tr>';
     return;
   }
   tbody.innerHTML = entries.map(e => {
-    const delta = e.performance_delta != null ? parseFloat(e.performance_delta) : null;
-    const deltaStr = delta == null ? '—'
-      : (delta >= 0 ? \`<span style="color:#10B981">+\${delta.toFixed(2)}</span>\` : \`<span style="color:#EF4444">\${delta.toFixed(2)}</span>\`);
+    const adopted   = Array.isArray(e.adopted_sources)      ? e.adopted_sources.length      : 0;
+    const scaledBack= Array.isArray(e.scaled_back_sources)  ? e.scaled_back_sources.length  : 0;
+    const ideas     = Array.isArray(e.new_source_ideas)     ? e.new_source_ideas.length     : 0;
+    const analysis  = e.analysis  ? (e.analysis.length  > 80 ? \`<span title="\${e.analysis.replace(/"/g,'&quot;')}">\${e.analysis.slice(0,80)}…</span>\` : e.analysis) : '—';
+    const rec       = e.overall_recommendation ? (e.overall_recommendation.length > 60 ? \`<span title="\${e.overall_recommendation.replace(/"/g,'&quot;')}">\${e.overall_recommendation.slice(0,60)}…</span>\` : e.overall_recommendation) : '—';
     return \`<tr style="border-bottom:1px solid #0F172A">
       <td style="padding:9px 14px;color:#64748B;white-space:nowrap;font-size:11px">\${timeAgo(e.created_at)}</td>
-      <td style="padding:9px 14px">\${evoAgentBadge(e.agent_type)}</td>
-      <td style="padding:9px 14px">\${evoTypeBadge(e.evolution_type)}</td>
-      <td style="padding:9px 14px;color:#94A3B8;max-width:160px">\${evoTruncate(e.old_value, 40)}</td>
-      <td style="padding:9px 14px;color:#E2E8F0;max-width:160px">\${evoTruncate(e.new_value, 40)}</td>
-      <td style="padding:9px 14px;color:#94A3B8;max-width:220px">\${evoTruncate(e.reason, 60)}</td>
-      <td style="padding:9px 14px;text-align:right">\${deltaStr}</td>
+      <td style="padding:9px 14px">\${evoAgentBadge(e.agent)}</td>
+      <td style="padding:9px 14px;color:#94A3B8;max-width:200px;font-size:11px">\${analysis}</td>
+      <td style="padding:9px 14px;color:#E2E8F0;max-width:180px;font-size:11px">\${rec}</td>
+      <td style="padding:9px 14px;text-align:right"><span style="color:#10B981;font-weight:700">\${adopted}</span></td>
+      <td style="padding:9px 14px;text-align:right"><span style="color:#EF4444;font-weight:700">\${scaledBack}</span></td>
+      <td style="padding:9px 14px;text-align:right"><span style="color:#818CF8;font-weight:700">\${ideas}</span></td>
     </tr>\`;
   }).join('');
 }
 
 function updateEvolutionKPIs(entries) {
-  const totalEl = document.getElementById('evo-total');
-  const h24El = document.getElementById('evo-24h');
-  const avgEl = document.getElementById('evo-avg-delta');
-  const lastEl = document.getElementById('evo-last-time');
-  const lastTypeEl = document.getElementById('evo-last-type');
+  const totalEl   = document.getElementById('evo-total');
+  const h24El     = document.getElementById('evo-24h');
+  const avgEl     = document.getElementById('evo-avg-delta');
+  const lastEl    = document.getElementById('evo-last-time');
+  const lastTypeEl= document.getElementById('evo-last-type');
 
   if (totalEl) totalEl.textContent = entries.length;
 
@@ -3748,13 +3748,14 @@ function updateEvolutionKPIs(entries) {
   const recent = entries.filter(e => new Date(e.created_at).getTime() > cutoff);
   if (h24El) h24El.textContent = recent.length;
 
-  const deltas = entries.filter(e => e.performance_delta != null).map(e => parseFloat(e.performance_delta));
-  if (avgEl) avgEl.textContent = deltas.length ? (deltas.reduce((a,b)=>a+b,0)/deltas.length).toFixed(3) : '—';
+  const adoptedCounts = entries.map(e => Array.isArray(e.adopted_sources) ? e.adopted_sources.length : 0);
+  const avgAdopted = adoptedCounts.length ? (adoptedCounts.reduce((a,b)=>a+b,0)/adoptedCounts.length) : 0;
+  if (avgEl) avgEl.textContent = adoptedCounts.length ? avgAdopted.toFixed(1) : '—';
 
   if (entries.length) {
     const last = entries[0];
     if (lastEl) lastEl.textContent = timeAgo(last.created_at);
-    if (lastTypeEl) lastTypeEl.textContent = last.evolution_type || '—';
+    if (lastTypeEl) lastTypeEl.textContent = last.agent || '—';
   }
 
   renderEvolutionChart(entries);
@@ -3765,8 +3766,8 @@ function renderEvolutionChart(entries) {
   const emptyEl = document.getElementById('evo-chart-empty');
   if (!svg) return;
 
-  const withDelta = entries.filter(e => e.performance_delta != null).slice().reverse();
-  if (!withDelta.length) {
+  const data = entries.slice().reverse();
+  if (!data.length) {
     svg.style.display = 'none';
     if (emptyEl) emptyEl.style.display = 'block';
     return;
@@ -3776,86 +3777,51 @@ function renderEvolutionChart(entries) {
 
   const W = svg.clientWidth || 800;
   const H = 180;
-  const PAD = { top: 16, right: 20, bottom: 28, left: 48 };
+  const PAD = { top: 16, right: 20, bottom: 28, left: 40 };
   const cW = W - PAD.left - PAD.right;
   const cH = H - PAD.top - PAD.bottom;
 
-  const vals = withDelta.map(e => parseFloat(e.performance_delta));
-  const minV = Math.min(...vals, 0);
-  const maxV = Math.max(...vals, 0);
-  const range = maxV - minV || 1;
+  const adoptedVals   = data.map(e => Array.isArray(e.adopted_sources)     ? e.adopted_sources.length     : 0);
+  const scaledVals    = data.map(e => Array.isArray(e.scaled_back_sources)  ? e.scaled_back_sources.length : 0);
+  const maxV = Math.max(...adoptedVals, ...scaledVals, 1);
 
-  const scaleX = (i) => PAD.left + (i / Math.max(withDelta.length - 1, 1)) * cW;
-  const scaleY = (v) => PAD.top + cH - ((v - minV) / range) * cH;
-  const zeroY  = scaleY(0);
+  const n = data.length;
+  const barW = Math.max(4, Math.min(24, (cW / (n * 2.5))));
+  const gap  = cW / Math.max(n, 1);
 
-  // Build polyline points
-  const pts = withDelta.map((e, i) => scaleX(i) + ',' + scaleY(parseFloat(e.performance_delta))).join(' ');
+  const scaleY = (v) => PAD.top + cH - (v / maxV) * cH;
 
-  // X-axis labels (show up to 6 evenly spaced dates)
-  const step = Math.max(1, Math.floor(withDelta.length / 6));
-  const xLabels = withDelta.map((e, i) => {
-    if (i % step !== 0 && i !== withDelta.length - 1) return '';
-    const d = new Date(e.created_at);
-    return \`<text x="\${scaleX(i)}" y="\${H - 6}" text-anchor="middle" fill="#475569" font-size="10">\${d.getMonth()+1}/\${d.getDate()}</text>\`;
+  // Bar pairs + x-axis labels
+  const bars = data.map((e, i) => {
+    const x = PAD.left + i * gap;
+    const aH = (adoptedVals[i] / maxV) * cH;
+    const sH = (scaledVals[i]  / maxV) * cH;
+    const d  = new Date(e.created_at);
+    const label = (i % Math.max(1, Math.floor(n / 6)) === 0 || i === n - 1)
+      ? \`<text x="\${x + barW}" y="\${H - 6}" text-anchor="middle" fill="#475569" font-size="9">\${d.getMonth()+1}/\${d.getDate()}</text>\`
+      : '';
+    return \`
+      <rect x="\${x}" y="\${PAD.top + cH - aH}" width="\${barW}" height="\${aH}" fill="#10B981" opacity="0.8" rx="2">
+        <title>\${e.agent}: \${adoptedVals[i]} adopted, \${scaledVals[i]} scaled back — \${new Date(e.created_at).toLocaleString()}</title>
+      </rect>
+      <rect x="\${x + barW + 2}" y="\${PAD.top + cH - sH}" width="\${barW}" height="\${sH}" fill="#EF4444" opacity="0.7" rx="2">
+        <title>\${e.agent}: \${scaledVals[i]} scaled back</title>
+      </rect>
+      \${label}
+    \`;
   }).join('');
 
-  // Y-axis labels
-  const yTicks = [minV, (minV+maxV)/2, maxV].map(v => {
-    return \`<text x="\${PAD.left - 6}" y="\${scaleY(v) + 4}" text-anchor="end" fill="#475569" font-size="10">\${v >= 0 ? '+' : ''}\${v.toFixed(2)}</text>\`;
+  // Y-axis ticks
+  const yTicks = [0, Math.ceil(maxV/2), maxV].map(v => {
+    return \`<text x="\${PAD.left - 6}" y="\${scaleY(v) + 4}" text-anchor="end" fill="#475569" font-size="9">\${v}</text>
+    <line x1="\${PAD.left}" y1="\${scaleY(v)}" x2="\${PAD.left + cW}" y2="\${scaleY(v)}" stroke="#1E293B" stroke-width="1" stroke-dasharray="3,3"/>\`;
   }).join('');
-
-  // Coloured dots per point
-  const dots = withDelta.map((e, i) => {
-    const v = parseFloat(e.performance_delta);
-    const cx = scaleX(i), cy = scaleY(v);
-    const color = v > 0 ? '#10B981' : v < 0 ? '#EF4444' : '#818CF8';
-    const label = e.agent_type ? e.agent_type.slice(0,3) : '';
-    const tip = (e.agent_type||'') + ' ' + (e.evolution_type||'') + ': ' + (v >= 0 ? '+' : '') + v.toFixed(3);
-    return \`<circle cx="\${cx}" cy="\${cy}" r="4" fill="\${color}" stroke="#0D1625" stroke-width="1.5" opacity="0.9">
-      <title>\${tip}</title>
-    </circle>\`;
-  }).join('');
-
-  // Shaded area under zero line
-  const areaAbove = withDelta.map((e, i) => {
-    const v = parseFloat(e.performance_delta);
-    return scaleX(i) + ',' + (v >= 0 ? scaleY(v) : zeroY);
-  });
-  const areaBelow = withDelta.map((e, i) => {
-    const v = parseFloat(e.performance_delta);
-    return scaleX(i) + ',' + (v < 0 ? scaleY(v) : zeroY);
-  });
-  const areaAbovePoly = \`\${PAD.left},\${zeroY} \${areaAbove.join(' ')} \${scaleX(withDelta.length-1)},\${zeroY}\`;
-  const areaBelowPoly = \`\${PAD.left},\${zeroY} \${areaBelow.join(' ')} \${scaleX(withDelta.length-1)},\${zeroY}\`;
 
   svg.innerHTML = \`
-    <defs>
-      <linearGradient id="evo-grad-pos" x1="0" y1="0" x2="0" y2="1">
-        <stop offset="0%" stop-color="#10B981" stop-opacity="0.3"/>
-        <stop offset="100%" stop-color="#10B981" stop-opacity="0"/>
-      </linearGradient>
-      <linearGradient id="evo-grad-neg" x1="0" y1="1" x2="0" y2="0">
-        <stop offset="0%" stop-color="#EF4444" stop-opacity="0.3"/>
-        <stop offset="100%" stop-color="#EF4444" stop-opacity="0"/>
-      </linearGradient>
-    </defs>
-    <!-- grid lines -->
     <line x1="\${PAD.left}" y1="\${PAD.top}" x2="\${PAD.left}" y2="\${PAD.top+cH}" stroke="#1E293B" stroke-width="1"/>
     <line x1="\${PAD.left}" y1="\${PAD.top+cH}" x2="\${PAD.left+cW}" y2="\${PAD.top+cH}" stroke="#1E293B" stroke-width="1"/>
-    <!-- zero line -->
-    <line x1="\${PAD.left}" y1="\${zeroY}" x2="\${PAD.left+cW}" y2="\${zeroY}" stroke="#334155" stroke-width="1" stroke-dasharray="4,3"/>
-    <text x="\${PAD.left - 6}" y="\${zeroY + 4}" text-anchor="end" fill="#334155" font-size="9">0</text>
-    <!-- shaded areas -->
-    <polygon points="\${areaAbovePoly}" fill="url(#evo-grad-pos)"/>
-    <polygon points="\${areaBelowPoly}" fill="url(#evo-grad-neg)"/>
-    <!-- line -->
-    <polyline points="\${pts}" fill="none" stroke="#818CF8" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
-    <!-- dots -->
-    \${dots}
-    <!-- labels -->
-    \${xLabels}
     \${yTicks}
+    \${bars}
   \`;
 }
 
@@ -3864,15 +3830,19 @@ function addEvolutionTickerEvent(entry) {
   if (!ticker) return;
   const empty = ticker.querySelector('.empty');
   if (empty) empty.remove();
-  const color = EVO_TYPE_COLORS[entry.evolution_type] || '#64748B';
+  const adopted   = Array.isArray(entry.adopted_sources)     ? entry.adopted_sources.length     : 0;
+  const scaledBack= Array.isArray(entry.scaled_back_sources) ? entry.scaled_back_sources.length : 0;
+  const color = adopted > scaledBack ? '#10B981' : scaledBack > adopted ? '#EF4444' : '#818CF8';
   const div = document.createElement('div');
   div.style.cssText = \`display:flex;align-items:flex-start;gap:8px;padding:6px 10px;border-radius:6px;background:\${color}10;border:1px solid \${color}25;font-size:11px;animation:fadeIn .3s ease\`;
   div.innerHTML = \`<span style="color:\${color};font-size:14px;line-height:1">●</span>
     <div style="flex:1;min-width:0">
-      <span style="color:\${color};font-weight:700">\${entry.agent_type || 'SYSTEM'}</span>
-      <span style="color:#64748B;margin:0 4px">→</span>
-      <span style="color:#94A3B8">\${entry.evolution_type}</span>
-      \${entry.reason ? \`<div style="color:#64748B;margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">\${entry.reason}</div>\` : ''}
+      <span style="color:\${color};font-weight:700">\${entry.agent || 'AI'}</span>
+      <span style="color:#64748B;margin:0 4px">·</span>
+      <span style="color:#10B981">+\${adopted} adopted</span>
+      <span style="color:#64748B;margin:0 4px">/</span>
+      <span style="color:#EF4444">−\${scaledBack} scaled back</span>
+      \${entry.analysis ? \`<div style="color:#64748B;margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">\${entry.analysis.slice(0, 80)}</div>\` : ''}
     </div>
     <span style="color:#475569;white-space:nowrap">\${timeAgo(entry.created_at)}</span>\`;
   ticker.insertBefore(div, ticker.firstChild);
