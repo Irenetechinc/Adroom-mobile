@@ -17,6 +17,7 @@ import {
   Heart, MessageCircle, Share2, Users, BarChart2, Truck, Award, ShoppingBag,
 } from 'lucide-react-native';
 import { useEnergyStore, PLAN_DETAILS } from '../store/energyStore';
+import useFeatureFlags from '../hooks/useFeatureFlags';
 
 // ─── Performance Chart Component ─────────────────────────────────────────────
 interface PerfRow {
@@ -227,6 +228,7 @@ export default function DashboardScreen() {
   const { session } = useAuthStore();
   const insets = useSafeAreaInsets();
   const { account, subscription, fetchEnergy } = useEnergyStore();
+  const { isEnabled } = useFeatureFlags();
 
   const [activeStrategies, setActiveStrategies] = useState<any[]>([]);
   const [alerts, setAlerts] = useState<any[]>([]);
@@ -471,7 +473,7 @@ export default function DashboardScreen() {
 
   return (
     <>
-    <TrialPromoModal onStartTrial={(planId) => navigation.navigate('Subscription', { autoStartTrial: planId })} />
+    {isEnabled('trial_modal') && <TrialPromoModal onStartTrial={(planId) => navigation.navigate('Subscription', { autoStartTrial: planId })} />}
     <SafeAreaView style={styles.safe} edges={['top']}>
       <View style={styles.header}>
         <TouchableOpacity onPress={() => navigation.dispatch(DrawerActions.openDrawer())} style={styles.menuBtn}>

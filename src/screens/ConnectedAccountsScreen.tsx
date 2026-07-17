@@ -17,6 +17,7 @@ import Svg, {
   Path, G, Defs, LinearGradient, Stop, Rect, Circle, ClipPath,
 } from 'react-native-svg';
 import { useAgentStore } from '../store/agentStore';
+import FeatureGate from '../components/FeatureGate';
 import { useEnergyStore } from '../store/energyStore';
 import { Skeleton } from '../components/Skeleton';
 
@@ -316,6 +317,7 @@ export default function ConnectedAccountsScreen() {
   };
 
   return (
+    <FeatureGate flag="platform_connections" message="Platform connections have been temporarily disabled by your administrator.">
     <SafeAreaView style={styles.safe} edges={['top']}>
       <View style={styles.header}>
         <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
@@ -479,6 +481,7 @@ export default function ConnectedAccountsScreen() {
         })}
       </ScrollView>
     </SafeAreaView>
+    </FeatureGate>
   );
 }
 

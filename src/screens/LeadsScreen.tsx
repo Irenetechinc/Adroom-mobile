@@ -16,6 +16,7 @@ import { supabase } from '../services/supabase';
 import { useAuthStore } from '../store/authStore';
 import { useFocusEffect } from '@react-navigation/native';
 import { RootStackParamList } from '../types';
+import FeatureGate from '../components/FeatureGate';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 interface Lead {
@@ -363,6 +364,7 @@ export default function LeadsScreen({ route }: Props) {
   const platColor  = platformFilter ? (PLATFORM_COLORS_LS[platformFilter.toLowerCase()] ?? '#00F0FF') : '#00F0FF';
 
   return (
+    <FeatureGate flag="lead_capture" message="Lead capture has been temporarily disabled by your administrator.">
     <View style={styles.container}>
       <SafeAreaView style={{ flex: 1 }}>
         {/* ── Header ── */}
@@ -495,6 +497,7 @@ export default function LeadsScreen({ route }: Props) {
         </ScrollView>
       </SafeAreaView>
     </View>
+    </FeatureGate>
   );
 }
 

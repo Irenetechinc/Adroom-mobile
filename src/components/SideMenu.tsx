@@ -1,4 +1,5 @@
 import React from 'react';
+import useFeatureFlags from '../hooks/useFeatureFlags';
 import { View, Text, TouchableOpacity, ScrollView } from 'react-native';
 import { DrawerContentComponentProps } from '@react-navigation/drawer';
 import { useNavigation } from '@react-navigation/native';
@@ -25,6 +26,7 @@ export default function SideMenu(props: DrawerContentComponentProps) {
   const navigation = useNavigation<any>();
   const profileName = useProfileStore((s) => s.displayName);
   const profileInitial = useProfileStore((s) => s.initial);
+  const { isEnabled } = useFeatureFlags();
 
   const userEmail = user?.email || '';
   const displayName = profileName || (userEmail ? userEmail.split('@')[0] : 'User');
@@ -127,6 +129,7 @@ export default function SideMenu(props: DrawerContentComponentProps) {
           })}
 
           {/* Leads Inbox — navigates to root stack LeadsScreen */}
+          {isEnabled('lead_capture') && (
           <Animated.View entering={FadeInLeft.delay(menuItems.length * 60).springify()}>
             <TouchableOpacity
               onPress={() => navigation.navigate('Leads')}
@@ -157,6 +160,7 @@ export default function SideMenu(props: DrawerContentComponentProps) {
               <ChevronRight color="#10B981" size={14} />
             </TouchableOpacity>
           </Animated.View>
+          )}
 
           {/* Energy — navigates to Subscription screen */}
           <Animated.View entering={FadeInLeft.delay((menuItems.length + 1) * 60).springify()}>

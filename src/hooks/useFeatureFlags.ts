@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { supabase } from '../config/supabase';
 
 const BACKEND_URL = process.env.EXPO_PUBLIC_API_URL ?? '';
-const CACHE_TTL_MS = 5 * 60 * 1000;
+const CACHE_TTL_MS = 30 * 1000;
 
 interface FlagMap { [key: string]: boolean }
 
