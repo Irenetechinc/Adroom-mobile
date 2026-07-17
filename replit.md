@@ -63,6 +63,11 @@ AdRoom is a **React Native (Expo) mobile app** with a Node.js/Express backend. I
 | `POST /api/auth/facebook/exchange` | Facebook OAuth token exchange |
 | `GET /api/admin/tokens/status` | Token expiry status for all connected platforms |
 | `POST /api/admin/tokens/refresh` | Manually trigger OAuth token refresh sweep |
+| `GET /api/feature-flags` | Effective feature flags for authenticated user (mobile) |
+| `GET /admin/api/feature-flags` | List all global flags (admin) |
+| `PUT /admin/api/feature-flags/:key` | Toggle a global flag on/off (admin) |
+| `PUT /admin/api/feature-flags/user/:userId/:key` | Set per-user flag override (admin) |
+| `DELETE /admin/api/feature-flags/user/:userId/:key` | Remove per-user override (admin) |
 
 ## Referral System (May 2026)
 - Each user has a unique 8-char code in `profiles.referral_code`
@@ -109,6 +114,15 @@ AdRoom is a **React Native (Expo) mobile app** with a Node.js/Express backend. I
 `social_conversations`, `emotional_ownership`, `narrative_snapshots`,
 `subscriptions`, `payment_methods`, `energy_transactions`, `user_notifications`,
 `referrals`, `profiles` (+ `referral_code` column), `app_releases`
+
+## Feature Flags System (July 2026)
+- Global flags + per-user overrides stored in `feature_flags` + `user_feature_overrides` tables
+- **13 flags**: `strategy_creation`, `agent_execution`, `platform_connections`, `lead_capture`, `intelligence_engines`, `push_notifications`, `trial_modal`, `referral_system`, `google_maps_outreach`, `dm_detection`, `token_refresh`, `product_manager`, `performance_monitoring`
+- All default to ON — no behaviour change until you explicitly disable something
+- **DB migration**: `backend/feature_flags_migration.sql` — run in Supabase SQL editor
+- **Mobile hook**: `src/hooks/useFeatureFlags.ts` — `const { isEnabled } = useFeatureFlags();`
+- **Admin dashboard**: Sidebar → "🎛️ Feature Flags" — global toggles + per-user overrides
+- User-level overrides take precedence over global flags; flags default to `true` if table missing
 
 ## DB Migrations to Apply (Supabase SQL editor)
 Run in this order:

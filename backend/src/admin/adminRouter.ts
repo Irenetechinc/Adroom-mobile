@@ -6,6 +6,7 @@ import { pushService } from '../services/pushService';
 import { apmaAdminRouter } from '../apma/apmaRouter';
 import { broadcast as _sseBroadcast, registerSSEClient, unregisterSSEClient } from '../events/sseBroadcast';
 import { runAPMAStartupMigration, checkAPMAMigrationStatus } from '../utils/apmaStartupMigration';
+import * as featureFlags from '../services/featureFlagService';
 
 const router = Router();
 
@@ -999,6 +1000,64 @@ router.get('/api/stream', auth, (req, res) => {
   });
 });
 
+// ─── FEATURE FLAGS ────────────────────────────────────────────────────────────
+
+router.get('/api/feature-flags', auth, async (_req, res) => {
+  try {
+    const flags = await featureFlags.getAllFlags();
+    res.json({ flags });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.put('/api/feature-flags/:key', auth, async (req: Request, res: Response) => {
+  try {
+    const { key } = req.params;
+    const { enabled } = req.body;
+    if (typeof enabled !== 'boolean') return res.status(400).json({ error: 'enabled (boolean) required' });
+    await featureFlags.setGlobalFlag(key, enabled, ADMIN_EMAIL);
+    await logAction('feature_flag_toggle', null, null, { flag_key: key, enabled });
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.get('/api/feature-flags/user/:userId', auth, async (req: Request, res: Response) => {
+  try {
+    const { userId } = req.params;
+    const overrides = await featureFlags.getUserOverrides(userId);
+    res.json({ overrides });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.put('/api/feature-flags/user/:userId/:key', auth, async (req: Request, res: Response) => {
+  try {
+    const { userId, key } = req.params;
+    const { enabled } = req.body;
+    if (typeof enabled !== 'boolean') return res.status(400).json({ error: 'enabled (boolean) required' });
+    await featureFlags.setUserOverride(userId, key, enabled, ADMIN_EMAIL);
+    await logAction('user_feature_override', userId, null, { flag_key: key, enabled });
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.delete('/api/feature-flags/user/:userId/:key', auth, async (req: Request, res: Response) => {
+  try {
+    const { userId, key } = req.params;
+    await featureFlags.removeUserOverride(userId, key);
+    await logAction('user_feature_override_remove', userId, null, { flag_key: key });
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ─── SERVE DASHBOARD HTML ─────────────────────────────────────────────────────
 router.get('/', (_req, res) => {
   res.setHeader('Content-Type', 'text/html; charset=utf-8');
@@ -1185,6 +1244,9 @@ label{font-size:12px;color:#94A3B8;font-weight:600}
     </button>
     <button class="nav-item" onclick="showSection('agentnet')" id="nav-agentnet">
       <span>🕸️</span> Agent Network
+    </button>
+    <button class="nav-item" onclick="showSection('featureflags')" id="nav-featureflags">
+      <span>🎛️</span> Feature Flags
     </button>
     <div class="nav-section">APMA</div>
     <button class="nav-item" onclick="showSection('apma')" id="nav-apma">
@@ -1545,6 +1607,41 @@ label{font-size:12px;color:#94A3B8;font-weight:600}
           </div>
         </div>
       </div>
+
+      <!-- ───────────── FEATURE FLAGS ───────────── -->
+      <div id="section-featureflags" class="section">
+        <div class="section-header">
+          <div class="section-title">Feature Flags — App Feature Control</div>
+          <button class="btn btn-ghost btn-sm" onclick="loadFeatureFlags()">↺ Refresh</button>
+        </div>
+
+        <!-- Global flags -->
+        <div class="card" style="margin-bottom:20px">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
+            <div>
+              <div style="font-size:14px;font-weight:700;color:#E2E8F0">Global Feature Switches</div>
+              <div style="font-size:12px;color:#64748B;margin-top:2px">Turn features on or off for all users at once. User overrides take precedence.</div>
+            </div>
+            <div id="ff-save-status" style="font-size:12px;color:#22C55E;opacity:0;transition:opacity .3s">✓ Saved</div>
+          </div>
+          <div id="ff-global-list" style="display:flex;flex-direction:column;gap:2px">
+            <div class="empty">Loading…</div>
+          </div>
+        </div>
+
+        <!-- Per-user overrides -->
+        <div class="card">
+          <div style="font-size:14px;font-weight:700;color:#E2E8F0;margin-bottom:4px">Per-User Overrides</div>
+          <div style="font-size:12px;color:#64748B;margin-bottom:14px">Enter a user ID to view or set per-user flag overrides.</div>
+          <div style="display:flex;gap:10px;margin-bottom:16px">
+            <input id="ff-user-id-input" type="text" placeholder="User UUID…"
+              style="flex:1;background:#0B1120;border:1px solid #334155;border-radius:8px;padding:10px 14px;color:#F1F5F9;font-size:13px;outline:none"
+              onkeydown="if(event.key==='Enter') loadUserOverrides()" />
+            <button class="btn btn-sm" onclick="loadUserOverrides()">Load</button>
+          </div>
+          <div id="ff-user-overrides-list" style="display:flex;flex-direction:column;gap:2px"></div>
+        </div>
+      </div><!-- /section-featureflags -->
 
       <!-- ───────────── CMA SAVINGS ───────────── -->
       <div id="section-cma" class="section">
@@ -2053,8 +2150,8 @@ if (TOKEN) {
 }
 
 // ── Navigation ────────────────────────────────────────────────────────────────
-const SECTIONS = ['dashboard', 'users', 'credits', 'notifications', 'deletions', 'trials', 'activity', 'terminal', 'logs', 'cma', 'agentnet', 'apma'];
-const TITLES = { dashboard: 'Dashboard', users: 'All Users', credits: 'Credit Management', notifications: 'Push Notifications', deletions: 'Account Deletion Requests', trials: 'Trials & Billing Monitor', activity: 'Live Activity', terminal: 'Live Server Terminal', logs: 'Admin Logs', cma: 'CMA Savings Dashboard', agentnet: 'Agent Network', apma: 'APMA — Political Marketing' };
+const SECTIONS = ['dashboard', 'users', 'credits', 'notifications', 'deletions', 'trials', 'activity', 'terminal', 'logs', 'cma', 'agentnet', 'featureflags', 'apma'];
+const TITLES = { dashboard: 'Dashboard', users: 'All Users', credits: 'Credit Management', notifications: 'Push Notifications', deletions: 'Account Deletion Requests', trials: 'Trials & Billing Monitor', activity: 'Live Activity', terminal: 'Live Server Terminal', logs: 'Admin Logs', cma: 'CMA Savings Dashboard', agentnet: 'Agent Network', featureflags: 'Feature Flags', apma: 'APMA — Political Marketing' };
 
 function showSection(name) {
   SECTIONS.forEach(s => {
@@ -2066,8 +2163,8 @@ function showSection(name) {
   if (name === 'cma') { loadCMAStats(); loadModelCredits(); }
   if (name === 'trials') { loadTrials(); }
   if (name === 'apma') { loadAPMASection(); startAPMAMonitor(); } else { stopAPMAMonitor(); }
-  // Start polling when entering the agent network section, stop when leaving
   if (name === 'agentnet') { startAgentNetPolling(); } else { stopAgentNetPolling(); }
+  if (name === 'featureflags') { loadFeatureFlags(); }
 }
 
 // ── Trials & Billing ─────────────────────────────────────────────────────────
@@ -3856,6 +3953,103 @@ function scoreColor(score) {
   if (score >= 0.3) return '#22C55E';
   if (score >= 0) return '#F59E0B';
   return '#EF4444';
+}
+
+// ── Feature Flags ─────────────────────────────────────────────────────────────
+let ffGlobalFlags = [];
+
+async function loadFeatureFlags() {
+  try {
+    const data = await api('/api/feature-flags');
+    ffGlobalFlags = data.flags || [];
+    renderGlobalFlags();
+  } catch(e) { showToast('Error loading flags: ' + e.message, 'error'); }
+}
+
+function renderGlobalFlags() {
+  const el = document.getElementById('ff-global-list');
+  if (!ffGlobalFlags.length) { el.innerHTML = '<div class="empty">No flags found \u2014 run backend/feature_flags_migration.sql in Supabase first.</div>'; return; }
+  el.innerHTML = ffGlobalFlags.map(function(f) {
+    const bg   = f.enabled ? '#22C55E' : '#374151';
+    const knob = f.enabled ? 'right:3px' : 'left:3px';
+    const chk  = f.enabled ? 'checked' : '';
+    return '<div style="display:flex;align-items:center;justify-content:space-between;padding:12px 14px;border-radius:8px;background:#0D1625;margin-bottom:4px;gap:12px">' +
+      '<div style="flex:1;min-width:0">' +
+        '<div style="font-size:13px;font-weight:600;color:#E2E8F0">' + f.label + '</div>' +
+        '<div style="font-size:11px;color:#475569;margin-top:2px">' + (f.description || '') + ' <code style="color:#475569;font-size:10px">' + f.flag_key + '</code></div>' +
+      '</div>' +
+      '<label style="position:relative;display:inline-flex;align-items:center;cursor:pointer;flex-shrink:0">' +
+        '<input type="checkbox" ' + chk + ' onchange="toggleGlobalFlag(\'' + f.flag_key + '\',this.checked)" style="opacity:0;width:0;height:0;position:absolute">' +
+        '<div id="ff-toggle-' + f.flag_key + '" style="width:44px;height:24px;border-radius:12px;background:' + bg + ';transition:background .2s;position:relative;flex-shrink:0">' +
+          '<div style="position:absolute;top:3px;' + knob + ';width:18px;height:18px;border-radius:50%;background:#fff;transition:all .2s;box-shadow:0 1px 3px rgba(0,0,0,.4)"></div>' +
+        '</div>' +
+      '</label>' +
+    '</div>';
+  }).join('');
+}
+
+async function toggleGlobalFlag(key, enabled) {
+  try {
+    await api('/api/feature-flags/' + key, 'PUT', { enabled });
+    const f = ffGlobalFlags.find(x => x.flag_key === key);
+    if (f) f.enabled = enabled;
+    renderGlobalFlags();
+    const el = document.getElementById('ff-save-status');
+    if (el) { el.style.opacity = '1'; setTimeout(() => el.style.opacity = '0', 1800); }
+  } catch(e) { showToast('Error: ' + e.message, 'error'); }
+}
+
+async function loadUserOverrides() {
+  const userId = document.getElementById('ff-user-id-input').value.trim();
+  if (!userId) return;
+  const el = document.getElementById('ff-user-overrides-list');
+  el.innerHTML = '<div class="empty">Loading…</div>';
+  try {
+    const data = await api('/api/feature-flags/user/' + userId);
+    const overrides = data.overrides || [];
+    if (!ffGlobalFlags.length) await loadFeatureFlags();
+    el.innerHTML = ffGlobalFlags.map(function(f) {
+      const ov = overrides.find(function(o) { return o.flag_key === f.flag_key; });
+      const effectiveEnabled = ov !== undefined ? ov.enabled : f.enabled;
+      const hasOverride = ov !== undefined;
+      const bg   = effectiveEnabled ? '#22C55E' : '#374151';
+      const knob = effectiveEnabled ? 'right:2px' : 'left:2px';
+      const chk  = effectiveEnabled ? 'checked' : '';
+      const ovBadge = hasOverride
+        ? '<span style="font-size:10px;background:#6366F130;color:#818CF8;border:1px solid #6366F150;border-radius:4px;padding:1px 6px">override</span>'
+        : '<span style="font-size:10px;color:#475569">global default</span>';
+      const rmBtn = hasOverride
+        ? '<button onclick="removeUserOverride(\'' + userId + '\',\'' + f.flag_key + '\')" title="Remove override" style="background:#1E293B;border:1px solid #334155;color:#94A3B8;border-radius:6px;padding:3px 8px;font-size:11px;cursor:pointer">\u2715</button>'
+        : '';
+      return '<div style="display:flex;align-items:center;justify-content:space-between;padding:10px 14px;border-radius:8px;background:#0D1625;margin-bottom:4px;gap:12px">' +
+        '<div style="flex:1;min-width:0"><div style="display:flex;align-items:center;gap:8px">' +
+          '<span style="font-size:13px;font-weight:600;color:#E2E8F0">' + f.label + '</span>' + ovBadge +
+        '</div></div>' +
+        '<div style="display:flex;align-items:center;gap:8px;flex-shrink:0">' +
+          '<label style="position:relative;display:inline-flex;align-items:center;cursor:pointer">' +
+            '<input type="checkbox" ' + chk + ' onchange="setUserOverride(\'' + userId + '\',\'' + f.flag_key + '\',this.checked)" style="opacity:0;width:0;height:0;position:absolute">' +
+            '<div style="width:40px;height:22px;border-radius:11px;background:' + bg + ';transition:background .2s;position:relative">' +
+              '<div style="position:absolute;top:2px;' + knob + ';width:18px;height:18px;border-radius:50%;background:#fff;transition:all .2s;box-shadow:0 1px 3px rgba(0,0,0,.4)"></div>' +
+            '</div>' +
+          '</label>' + rmBtn +
+        '</div>' +
+      '</div>';
+    }).join('');
+  } catch(e) { el.innerHTML = '<div class="empty" style="color:#EF4444">Error: ' + e.message + '</div>'; }
+}
+
+async function setUserOverride(userId, key, enabled) {
+  try {
+    await api('/api/feature-flags/user/' + userId + '/' + key, 'PUT', { enabled });
+    await loadUserOverrides();
+  } catch(e) { showToast('Error: ' + e.message, 'error'); }
+}
+
+async function removeUserOverride(userId, key) {
+  try {
+    await api('/api/feature-flags/user/' + userId + '/' + key, 'DELETE');
+    await loadUserOverrides();
+  } catch(e) { showToast('Error: ' + e.message, 'error'); }
 }
 
 // ── API Key Modal ─────────────────────────────────────────────────────────────

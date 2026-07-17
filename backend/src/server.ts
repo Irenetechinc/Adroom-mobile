@@ -22,6 +22,7 @@ import { flutterwaveService } from './services/flutterwaveService';
 import { pushService } from './services/pushService';
 import { energyCheck, deductEnergyForUser } from './services/energyMiddleware';
 import { checkFeatureAccess, getSubscriptionGuard, SUBSCRIPTION_PLAN_LIMITS } from './services/subscriptionGuard';
+import { getFlagsForUser as getFeatureFlagsForUser } from './services/featureFlagService';
 import adminRouter from './admin/adminRouter';
 import authPagesRouter from './auth/authPagesRouter';
 import { popOAuthEntry, setOAuthCode, setOAuthError } from './auth/oauthStore';
@@ -4612,6 +4613,24 @@ async function processReferralAward(referredUserId: string): Promise<void> {
     }).catch(() => {});
   } catch { /* non-fatal — never break billing */ }
 }
+
+/**
+ * GET /api/feature-flags — returns the effective feature flags for the
+ * authenticated user (global flags merged with any per-user overrides).
+ * Mobile app polls this on login and caches for 5 min.
+ */
+app.get('/api/feature-flags', async (req, res) => {
+  try {
+    const supabase = getSupabaseClient(req as any);
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return res.status(401).json({ error: 'Unauthorized' });
+    const flags = await getFeatureFlagsForUser(user.id);
+    res.json({ flags });
+  } catch (err: any) {
+    // Never block the app on a flag fetch failure — return empty (all defaults to true)
+    res.json({ flags: [] });
+  }
+});
 
 app.listen(PORT, async () => {
   console.log(`[AdRoom Server] Running on port ${PORT} — ${new Date().toISOString()}`);
