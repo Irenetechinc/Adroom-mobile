@@ -662,6 +662,33 @@ router.get('/api/evolution/log', auth, async (req, res) => {
   }
 });
 
+// ─── AI PROMPT LOG ───────────────────────────────────────────────────────────
+// Every key AI Brain decision logged to ai_prompt_log. Supports filter by
+// agent_type and success status.
+router.get('/api/ai-prompt-log', auth, async (req, res) => {
+  try {
+    const sb = getServiceSupabaseClient();
+    const limit = Math.min(parseInt(String(req.query.limit || '100')), 500);
+    const agentType = typeof req.query.agent_type === 'string' && req.query.agent_type ? req.query.agent_type : undefined;
+    const successStr = typeof req.query.success === 'string' ? req.query.success : undefined;
+
+    let query = sb
+      .from('ai_prompt_log')
+      .select('id, agent_type, operation, prompt_summary, response_summary, model_used, latency_ms, success, error_message, created_at')
+      .order('created_at', { ascending: false })
+      .limit(limit);
+
+    if (agentType) query = query.eq('agent_type', agentType);
+    if (successStr !== undefined) query = query.eq('success', successStr === 'true');
+
+    const { data, error } = await query;
+    if (error) throw error;
+    res.json({ entries: data || [], count: (data || []).length });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ─── AGENT NETWORK STATUS ────────────────────────────────────────────────────
 router.get('/api/agent-network', auth, async (_req, res) => {
   try {
@@ -1786,11 +1813,17 @@ label{font-size:12px;color:#94A3B8;font-weight:600}
       <!-- ───────────── AI SELF-EVOLUTION LOG ───────────── -->
       <div id="section-evolution" class="section">
         <div class="section-header">
-          <div class="section-title">AI Self-Evolution — Live Benchmark &amp; Decision Log</div>
-          <div style="display:flex;gap:8px;align-items:center">
+          <div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap">
+            <div class="section-title">🧬 AI Self-Evolution</div>
+            <div style="display:flex;gap:4px">
+              <button id="evo-tab-btn-cycles" onclick="switchEvoTab('cycles')" class="btn btn-primary btn-sm" style="font-size:11px;padding:4px 10px">🔄 Evolution Cycles</button>
+              <button id="evo-tab-btn-prompts" onclick="switchEvoTab('prompts')" class="btn btn-ghost btn-sm" style="font-size:11px;padding:4px 10px">🧠 AI Decisions</button>
+            </div>
+          </div>
+          <div id="evo-controls-cycles" style="display:flex;gap:8px;align-items:center">
             <div id="evo-live-dot" style="width:8px;height:8px;border-radius:50%;background:#10B981;box-shadow:0 0 6px #10B981;flex-shrink:0"></div>
             <span id="evo-live-label" style="font-size:12px;color:#64748B">Live</span>
-            <select id="evo-type-filter" class="input" style="width:160px;padding:4px 8px;font-size:12px" onchange="loadEvolutionLog()">
+            <select id="evo-type-filter" class="input" style="width:150px;padding:4px 8px;font-size:12px" onchange="loadEvolutionLog()">
               <option value="">All Agents</option>
               <option value="LEAD_DISCOVERY">Lead Discovery</option>
               <option value="SALESMAN">Salesman</option>
@@ -1800,7 +1833,28 @@ label{font-size:12px;color:#94A3B8;font-weight:600}
             </select>
             <button class="btn btn-ghost btn-sm" onclick="loadEvolutionLog()">↺ Refresh</button>
           </div>
+          <div id="evo-controls-prompts" style="display:none;gap:8px;align-items:center">
+            <select id="prompt-agent-filter" class="input" style="width:150px;padding:4px 8px;font-size:12px" onchange="loadAIPromptLog()">
+              <option value="">All Agents</option>
+              <option value="LEAD_DISCOVERY">Lead Discovery</option>
+              <option value="SALESMAN">Salesman</option>
+              <option value="AWARENESS">Awareness</option>
+              <option value="PROMOTION">Promotion</option>
+              <option value="LAUNCH">Launch</option>
+              <option value="CMA">CMA</option>
+              <option value="IPE">IPE</option>
+            </select>
+            <select id="prompt-success-filter" class="input" style="width:130px;padding:4px 8px;font-size:12px" onchange="loadAIPromptLog()">
+              <option value="">All Results</option>
+              <option value="true">✅ Success only</option>
+              <option value="false">❌ Failures only</option>
+            </select>
+            <button class="btn btn-ghost btn-sm" onclick="loadAIPromptLog()">↺ Refresh</button>
+          </div>
         </div>
+
+        <!-- ── TAB: Evolution Cycles ── -->
+        <div id="evo-panel-cycles">
 
         <!-- KPI strip -->
         <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:16px">
@@ -1878,6 +1932,63 @@ label{font-size:12px;color:#94A3B8;font-weight:600}
             </table>
           </div>
         </div>
+        </div><!-- /evo-panel-cycles -->
+
+        <!-- ── TAB: AI Decisions (prompt log) ── -->
+        <div id="evo-panel-prompts" style="display:none">
+
+          <!-- KPIs -->
+          <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:16px">
+            <div class="stat-card">
+              <div class="stat-label">Total Decisions</div>
+              <div class="stat-value" id="prompt-total" style="color:#818CF8">—</div>
+              <div class="stat-sub">all time</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-label">Success Rate</div>
+              <div class="stat-value" id="prompt-success-rate" style="color:#10B981">—</div>
+              <div class="stat-sub">of all AI calls</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-label">Avg Latency</div>
+              <div class="stat-value" id="prompt-avg-latency" style="color:#38BDF8">—</div>
+              <div class="stat-sub">ms per call</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-label">Most Used Model</div>
+              <div class="stat-value" id="prompt-top-model" style="font-size:14px;color:#F59E0B">—</div>
+              <div class="stat-sub" id="prompt-top-model-pct">—</div>
+            </div>
+          </div>
+
+          <!-- Table -->
+          <div class="card" style="padding:0;overflow:hidden">
+            <div style="padding:14px 16px;border-bottom:1px solid #1E293B;display:flex;align-items:center;justify-content:space-between">
+              <div style="font-size:13px;font-weight:700">🧠 AI Decision Log</div>
+              <span id="prompt-count-badge" class="badge badge-gray">0 entries</span>
+            </div>
+            <div style="overflow-x:auto">
+              <table style="width:100%;border-collapse:collapse;font-size:12px">
+                <thead>
+                  <tr style="background:#0B0F19">
+                    <th style="padding:10px 14px;text-align:left;color:#475569;font-weight:600;white-space:nowrap">Time</th>
+                    <th style="padding:10px 14px;text-align:left;color:#475569;font-weight:600">Agent</th>
+                    <th style="padding:10px 14px;text-align:left;color:#475569;font-weight:600">Operation</th>
+                    <th style="padding:10px 14px;text-align:left;color:#475569;font-weight:600">Model</th>
+                    <th style="padding:10px 14px;text-align:right;color:#475569;font-weight:600">Latency</th>
+                    <th style="padding:10px 14px;text-align:center;color:#475569;font-weight:600">Result</th>
+                    <th style="padding:10px 14px;text-align:left;color:#475569;font-weight:600">Prompt</th>
+                    <th style="padding:10px 14px;text-align:left;color:#475569;font-weight:600">Response</th>
+                  </tr>
+                </thead>
+                <tbody id="prompt-log-body">
+                  <tr><td colspan="8" style="padding:24px;text-align:center;color:#475569">Loading…</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div><!-- /evo-panel-prompts -->
+
       </div><!-- /section-evolution -->
 
       <!-- ───────────── FEATURE FLAGS ───────────── -->
@@ -2436,7 +2547,7 @@ function showSection(name) {
   if (name === 'trials') { loadTrials(); }
   if (name === 'apma') { loadAPMASection(); startAPMAMonitor(); } else { stopAPMAMonitor(); }
   if (name === 'agentnet') { startAgentNetPolling(); } else { stopAgentNetPolling(); }
-  if (name === 'evolution') { loadEvolutionLog(); startEvolutionPolling(); } else { stopEvolutionPolling(); }
+  if (name === 'evolution') { loadEvolutionLog(); loadAIPromptLog(); startEvolutionPolling(); } else { stopEvolutionPolling(); }
   if (name === 'featureflags') { loadFeatureFlags(); }
 }
 
@@ -3861,6 +3972,106 @@ function startEvolutionPolling() {
 
 function stopEvolutionPolling() {
   if (evolutionPoller) { clearInterval(evolutionPoller); evolutionPoller = null; }
+}
+
+// ── Evolution sub-tab switcher ────────────────────────────────────────────────
+function switchEvoTab(tab) {
+  const isCycles = tab === 'cycles';
+  document.getElementById('evo-panel-cycles').style.display  = isCycles ? '' : 'none';
+  document.getElementById('evo-panel-prompts').style.display = isCycles ? 'none' : '';
+  document.getElementById('evo-controls-cycles').style.display  = isCycles ? 'flex' : 'none';
+  document.getElementById('evo-controls-prompts').style.display = isCycles ? 'none' : 'flex';
+  const btnC = document.getElementById('evo-tab-btn-cycles');
+  const btnP = document.getElementById('evo-tab-btn-prompts');
+  if (btnC) { btnC.className = isCycles ? 'btn btn-primary btn-sm' : 'btn btn-ghost btn-sm'; btnC.style.cssText = 'font-size:11px;padding:4px 10px'; }
+  if (btnP) { btnP.className = isCycles ? 'btn btn-ghost btn-sm' : 'btn btn-primary btn-sm'; btnP.style.cssText = 'font-size:11px;padding:4px 10px'; }
+  if (!isCycles) loadAIPromptLog();
+}
+
+// ── AI Prompt Log ─────────────────────────────────────────────────────────────
+let promptEntries = [];
+
+async function loadAIPromptLog() {
+  const agentType = document.getElementById('prompt-agent-filter')?.value || '';
+  const success   = document.getElementById('prompt-success-filter')?.value || '';
+  let url = '/api/ai-prompt-log?limit=100';
+  if (agentType) url += '&agent_type=' + encodeURIComponent(agentType);
+  if (success)   url += '&success=' + encodeURIComponent(success);
+  try {
+    const data = await api('GET', url);
+    promptEntries = data.entries || [];
+    renderAIPromptTable(promptEntries);
+    updateAIPromptKPIs(promptEntries);
+  } catch (e) {
+    const tbody = document.getElementById('prompt-log-body');
+    if (tbody) tbody.innerHTML = \`<tr><td colspan="8" style="padding:20px;text-align:center;color:#EF4444">Error: \${e.message}</td></tr>\`;
+  }
+}
+
+function renderAIPromptTable(entries) {
+  const tbody = document.getElementById('prompt-log-body');
+  const badge = document.getElementById('prompt-count-badge');
+  if (badge) badge.textContent = entries.length + ' entries';
+  if (!entries.length) {
+    if (tbody) tbody.innerHTML = '<tr><td colspan="8" style="padding:24px;text-align:center;color:#475569">No AI decisions logged yet — they appear here as agents run.</td></tr>';
+    return;
+  }
+  const modelColor = (m) => {
+    if (!m) return '#64748B';
+    if (m.includes('gpt-4')) return '#10B981';
+    if (m.includes('gemini')) return '#818CF8';
+    if (m.includes('imagen')) return '#F59E0B';
+    return '#38BDF8';
+  };
+  const truncate = (s, n) => {
+    if (!s) return '<span style="color:#475569">—</span>';
+    const safe = String(s).replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    return safe.length > n ? \`<span title="\${safe.replace(/"/g,'&quot;')}">\${safe.slice(0,n)}…</span>\` : safe;
+  };
+  if (!tbody) return;
+  tbody.innerHTML = entries.map(e => {
+    const mc = modelColor(e.model_used);
+    const modelLabel = e.model_used ? e.model_used.replace('gemini-','gem-').replace('gpt-','gpt-') : '—';
+    const latency = e.latency_ms != null ? (e.latency_ms >= 1000 ? (e.latency_ms/1000).toFixed(1)+'s' : e.latency_ms+'ms') : '—';
+    const result  = e.success
+      ? \`<span style="color:#10B981;font-weight:700">✅</span>\`
+      : \`<span style="color:#EF4444;font-weight:700" title="\${(e.error_message||'').replace(/"/g,'&quot;')}">❌</span>\`;
+    return \`<tr style="border-bottom:1px solid #0F172A">
+      <td style="padding:9px 14px;color:#64748B;white-space:nowrap;font-size:11px">\${timeAgo(e.created_at)}</td>
+      <td style="padding:9px 14px">\${evoAgentBadge(e.agent_type)}</td>
+      <td style="padding:9px 14px;color:#94A3B8;font-size:11px;white-space:nowrap">\${e.operation || '—'}</td>
+      <td style="padding:9px 14px"><span style="font-size:10px;padding:2px 7px;border-radius:4px;background:\${mc}20;color:\${mc};border:1px solid \${mc}40;white-space:nowrap">\${modelLabel}</span></td>
+      <td style="padding:9px 14px;text-align:right;color:#64748B;white-space:nowrap;font-size:11px">\${latency}</td>
+      <td style="padding:9px 14px;text-align:center">\${result}</td>
+      <td style="padding:9px 14px;color:#64748B;max-width:200px;font-size:11px">\${truncate(e.prompt_summary, 60)}</td>
+      <td style="padding:9px 14px;color:#E2E8F0;max-width:200px;font-size:11px">\${truncate(e.response_summary, 60)}</td>
+    </tr>\`;
+  }).join('');
+}
+
+function updateAIPromptKPIs(entries) {
+  const totalEl    = document.getElementById('prompt-total');
+  const successEl  = document.getElementById('prompt-success-rate');
+  const latencyEl  = document.getElementById('prompt-avg-latency');
+  const modelEl    = document.getElementById('prompt-top-model');
+  const modelPctEl = document.getElementById('prompt-top-model-pct');
+
+  if (totalEl) totalEl.textContent = entries.length;
+
+  const successes = entries.filter(e => e.success === true);
+  const rate = entries.length ? Math.round((successes.length / entries.length) * 100) : null;
+  if (successEl) successEl.textContent = rate != null ? rate + '%' : '—';
+  if (successEl) successEl.style.color = rate != null ? (rate >= 90 ? '#10B981' : rate >= 70 ? '#F59E0B' : '#EF4444') : '#10B981';
+
+  const withLatency = entries.filter(e => e.latency_ms != null);
+  const avgLat = withLatency.length ? Math.round(withLatency.reduce((a,b)=>a+(b.latency_ms||0),0)/withLatency.length) : null;
+  if (latencyEl) latencyEl.textContent = avgLat != null ? (avgLat >= 1000 ? (avgLat/1000).toFixed(1)+'s' : avgLat+'ms') : '—';
+
+  const modelCounts = {};
+  entries.forEach(e => { if (e.model_used) modelCounts[e.model_used] = (modelCounts[e.model_used]||0)+1; });
+  const topModel = Object.entries(modelCounts).sort((a,b)=>b[1]-a[1])[0];
+  if (modelEl) modelEl.textContent = topModel ? topModel[0].replace('gemini-2.0-flash','Gemini 2.0').replace('gpt-4o','GPT-4o').replace('gpt-4','GPT-4') : '—';
+  if (modelPctEl) modelPctEl.textContent = topModel ? Math.round((topModel[1]/entries.length)*100)+'% of calls' : '—';
 }
 
 async function loadAgentNetwork() {
