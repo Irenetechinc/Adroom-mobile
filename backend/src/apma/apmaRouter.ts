@@ -789,7 +789,7 @@ apmaClientRouter.post('/oauth/start/:platform', apmaClientAuth, async (req: any,
   const { platform } = req.params;
   const clientId: string = req.apmaClientId;
 
-  const base = (process.env.PUBLIC_BASE_URL ?? 'https://api.adroomai.com').replace(/\/+$/, '');
+  const base = (process.env.PUBLIC_BASE_URL ?? 'https://backend.adroomai.com').replace(/\/+$/, '');
   const redir = (p: string) => `${base}/api/apma/oauth/callback/${p}`;
 
   const stateId = crypto.randomBytes(20).toString('hex');

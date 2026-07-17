@@ -1139,11 +1139,12 @@ router.get('/api/stream', auth, (req, res) => {
     try {
       const sb = getServiceSupabaseClient();
       const since = new Date(Date.now() - 30000).toISOString();
-      const [newUsers, newStrategies, newAgentTasks, newTx] = await Promise.all([
+      const [newUsers, newStrategies, newAgentTasks, newTx, newEvolution] = await Promise.all([
         sb.from('energy_accounts').select('user_id, created_at').gte('created_at', since),
         sb.from('strategies').select('id, title, user_id, created_at').gte('created_at', since),
         sb.from('agent_tasks').select('id, agent_type, task_type, platform, status, user_id, created_at').gte('created_at', since).neq('status', 'pending'),
         sb.from('energy_transactions').select('user_id, type, credits, description, created_at').gte('created_at', since).in('type', ['topup', 'subscription_grant', 'trial_grant']),
+        sb.from('self_evolution_log').select('id, user_id, agent_type, evolution_type, old_value, new_value, reason, performance_delta, created_at').gte('created_at', since).order('created_at', { ascending: false }),
       ]);
 
       const events: any[] = [];
@@ -1156,6 +1157,11 @@ router.get('/api/stream', auth, (req, res) => {
         const msg = `event: activity\ndata: ${JSON.stringify(events)}\n\n`;
         try { res.write(msg); } catch {}
       }
+
+      (newEvolution.data || []).forEach(entry => {
+        const msg = `event: evolution_entry\ndata: ${JSON.stringify(entry)}\n\n`;
+        try { res.write(msg); } catch {}
+      });
     } catch {}
   }, 10000);
 
@@ -1410,6 +1416,9 @@ label{font-size:12px;color:#94A3B8;font-weight:600}
     </button>
     <button class="nav-item" onclick="showSection('agentnet')" id="nav-agentnet">
       <span>🕸️</span> Agent Network
+    </button>
+    <button class="nav-item" onclick="showSection('evolution')" id="nav-evolution">
+      <span>🧬</span> AI Self-Evolution
     </button>
     <button class="nav-item" onclick="showSection('featureflags')" id="nav-featureflags">
       <span>🎛️</span> Feature Flags
@@ -1773,6 +1782,88 @@ label{font-size:12px;color:#94A3B8;font-weight:600}
           </div>
         </div>
       </div>
+
+      <!-- ───────────── AI SELF-EVOLUTION LOG ───────────── -->
+      <div id="section-evolution" class="section">
+        <div class="section-header">
+          <div class="section-title">AI Self-Evolution — Live Benchmark &amp; Decision Log</div>
+          <div style="display:flex;gap:8px;align-items:center">
+            <div id="evo-live-dot" style="width:8px;height:8px;border-radius:50%;background:#10B981;box-shadow:0 0 6px #10B981;flex-shrink:0"></div>
+            <span id="evo-live-label" style="font-size:12px;color:#64748B">Live</span>
+            <select id="evo-type-filter" class="input" style="width:160px;padding:4px 8px;font-size:12px" onchange="loadEvolutionLog()">
+              <option value="">All Types</option>
+              <option value="prompt_tweak">Prompt Tweak</option>
+              <option value="threshold_change">Threshold Change</option>
+              <option value="strategy_shift">Strategy Shift</option>
+              <option value="tone_adjustment">Tone Adjustment</option>
+              <option value="benchmark">Benchmark</option>
+              <option value="self_improvement">Self-Improvement</option>
+            </select>
+            <button class="btn btn-ghost btn-sm" onclick="loadEvolutionLog()">↺ Refresh</button>
+          </div>
+        </div>
+
+        <!-- KPI strip -->
+        <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:16px">
+          <div class="stat-card">
+            <div class="stat-label">Total Evolutions</div>
+            <div class="stat-value" id="evo-total" style="color:#818CF8">—</div>
+            <div class="stat-sub">all time</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">Last 24 h</div>
+            <div class="stat-value" id="evo-24h" style="color:#38BDF8">—</div>
+            <div class="stat-sub">decisions made</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">Avg Δ Performance</div>
+            <div class="stat-value" id="evo-avg-delta" style="color:#10B981">—</div>
+            <div class="stat-sub">per evolution event</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">Last Evolution</div>
+            <div class="stat-value" id="evo-last-time" style="font-size:16px;color:#F59E0B">—</div>
+            <div class="stat-sub" id="evo-last-type">—</div>
+          </div>
+        </div>
+
+        <!-- Live event ticker -->
+        <div class="card" style="margin-bottom:16px;padding:14px 16px">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+            <div style="font-size:13px;font-weight:700;color:#00F0FF">⚡ Real-Time Evolution Feed</div>
+            <button onclick="clearEvolutionFeed()" style="font-size:11px;color:#475569;background:none;border:none;cursor:pointer">Clear</button>
+          </div>
+          <div id="evo-ticker" style="display:flex;flex-direction:column;gap:5px;max-height:140px;overflow-y:auto">
+            <div class="empty">Waiting for evolution events…</div>
+          </div>
+        </div>
+
+        <!-- Full log table -->
+        <div class="card" style="padding:0;overflow:hidden">
+          <div style="padding:14px 16px;border-bottom:1px solid #1E293B;display:flex;align-items:center;justify-content:space-between">
+            <div style="font-size:13px;font-weight:700">Evolution Log</div>
+            <span id="evo-count-badge" class="badge badge-gray">0 entries</span>
+          </div>
+          <div style="overflow-x:auto">
+            <table style="width:100%;border-collapse:collapse;font-size:12px">
+              <thead>
+                <tr style="background:#0B0F19">
+                  <th style="padding:10px 14px;text-align:left;color:#475569;font-weight:600;white-space:nowrap">Time</th>
+                  <th style="padding:10px 14px;text-align:left;color:#475569;font-weight:600">Agent</th>
+                  <th style="padding:10px 14px;text-align:left;color:#475569;font-weight:600">Type</th>
+                  <th style="padding:10px 14px;text-align:left;color:#475569;font-weight:600">Old Value</th>
+                  <th style="padding:10px 14px;text-align:left;color:#475569;font-weight:600">New Value</th>
+                  <th style="padding:10px 14px;text-align:left;color:#475569;font-weight:600">Reason</th>
+                  <th style="padding:10px 14px;text-align:right;color:#475569;font-weight:600">Δ Perf</th>
+                </tr>
+              </thead>
+              <tbody id="evo-log-body">
+                <tr><td colspan="7" style="padding:24px;text-align:center;color:#475569">Loading…</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div><!-- /section-evolution -->
 
       <!-- ───────────── FEATURE FLAGS ───────────── -->
       <div id="section-featureflags" class="section">
@@ -2316,8 +2407,8 @@ if (TOKEN) {
 }
 
 // ── Navigation ────────────────────────────────────────────────────────────────
-const SECTIONS = ['dashboard', 'users', 'credits', 'notifications', 'deletions', 'trials', 'activity', 'terminal', 'logs', 'cma', 'agentnet', 'featureflags', 'apma'];
-const TITLES = { dashboard: 'Dashboard', users: 'All Users', credits: 'Credit Management', notifications: 'Push Notifications', deletions: 'Account Deletion Requests', trials: 'Trials & Billing Monitor', activity: 'Live Activity', terminal: 'Live Server Terminal', logs: 'Admin Logs', cma: 'CMA Savings Dashboard', agentnet: 'Agent Network', featureflags: 'Feature Flags', apma: 'APMA — Political Marketing' };
+const SECTIONS = ['dashboard', 'users', 'credits', 'notifications', 'deletions', 'trials', 'activity', 'terminal', 'logs', 'cma', 'agentnet', 'evolution', 'featureflags', 'apma'];
+const TITLES = { dashboard: 'Dashboard', users: 'All Users', credits: 'Credit Management', notifications: 'Push Notifications', deletions: 'Account Deletion Requests', trials: 'Trials & Billing Monitor', activity: 'Live Activity', terminal: 'Live Server Terminal', logs: 'Admin Logs', cma: 'CMA Savings Dashboard', agentnet: 'Agent Network', evolution: 'AI Self-Evolution Log', featureflags: 'Feature Flags', apma: 'APMA — Political Marketing' };
 
 function showSection(name) {
   SECTIONS.forEach(s => {
@@ -2330,6 +2421,7 @@ function showSection(name) {
   if (name === 'trials') { loadTrials(); }
   if (name === 'apma') { loadAPMASection(); startAPMAMonitor(); } else { stopAPMAMonitor(); }
   if (name === 'agentnet') { startAgentNetPolling(); } else { stopAgentNetPolling(); }
+  if (name === 'evolution') { loadEvolutionLog(); startEvolutionPolling(); } else { stopEvolutionPolling(); }
   if (name === 'featureflags') { loadFeatureFlags(); }
 }
 
@@ -3281,6 +3373,14 @@ function attachSSEListeners() {
     if (el) { el.className = 'badge badge-purple'; el.textContent = 'Learning'; setTimeout(() => { el.className = 'badge badge-blue'; el.textContent = 'Updated'; }, 3000); }
   });
 
+  evtSource.addEventListener('evolution_entry', e => {
+    const entry = JSON.parse(e.data);
+    addEvolutionTickerEvent(entry);
+    evolutionEntries.unshift(entry);
+    renderEvolutionTable(evolutionEntries);
+    updateEvolutionKPIs(evolutionEntries);
+  });
+
   evtSource.addEventListener('server_log', e => {
     const d = JSON.parse(e.data);
     appendTermLine(d.level, d.msg, d.ts);
@@ -3547,6 +3647,132 @@ function startAgentNetPolling() {
 
 function stopAgentNetPolling() {
   if (agentNetPoller) { clearInterval(agentNetPoller); agentNetPoller = null; }
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   AI SELF-EVOLUTION LOG
+═══════════════════════════════════════════════════════════════════ */
+let evolutionPoller = null;
+let evolutionEntries = [];
+
+const EVO_TYPE_COLORS = {
+  prompt_tweak:      '#818CF8',
+  threshold_change:  '#38BDF8',
+  strategy_shift:    '#F59E0B',
+  tone_adjustment:   '#A78BFA',
+  benchmark:         '#10B981',
+  self_improvement:  '#EC4899',
+};
+
+function evoTypeBadge(t) {
+  const color = EVO_TYPE_COLORS[t] || '#64748B';
+  return \`<span style="font-size:10px;padding:2px 7px;border-radius:4px;background:\${color}20;color:\${color};border:1px solid \${color}40;white-space:nowrap">\${t || '—'}</span>\`;
+}
+
+function evoAgentBadge(a) {
+  const map = { SALESMAN:'#10B981', AWARENESS:'#38BDF8', PROMOTION:'#F59E0B', LAUNCH:'#EC4899', CMA:'#818CF8', IPE:'#00F0FF' };
+  const c = map[a] || '#64748B';
+  return \`<span style="font-size:10px;padding:2px 7px;border-radius:4px;background:\${c}20;color:\${c};border:1px solid \${c}40">\${a || 'SYSTEM'}</span>\`;
+}
+
+function evoTruncate(v, max) {
+  if (v == null) return '<span style="color:#475569">—</span>';
+  const s = typeof v === 'object' ? JSON.stringify(v) : String(v);
+  return s.length > max ? \`<span title="\${s.replace(/"/g,'&quot;')}">\${s.slice(0,max)}…</span>\` : s;
+}
+
+async function loadEvolutionLog() {
+  const type = document.getElementById('evo-type-filter')?.value || '';
+  const url = '/api/evolution/log?limit=100' + (type ? '&type=' + encodeURIComponent(type) : '');
+  try {
+    const data = await api('GET', url);
+    evolutionEntries = data.entries || [];
+    renderEvolutionTable(evolutionEntries);
+    updateEvolutionKPIs(evolutionEntries);
+  } catch(e) {
+    document.getElementById('evo-log-body').innerHTML = \`<tr><td colspan="7" style="padding:20px;text-align:center;color:#EF4444">Error: \${e.message}</td></tr>\`;
+  }
+}
+
+function renderEvolutionTable(entries) {
+  const tbody = document.getElementById('evo-log-body');
+  const badge = document.getElementById('evo-count-badge');
+  if (badge) badge.textContent = entries.length + ' entries';
+  if (!entries.length) {
+    tbody.innerHTML = '<tr><td colspan="7" style="padding:24px;text-align:center;color:#475569">No evolution entries yet — the AI will populate this as it self-improves.</td></tr>';
+    return;
+  }
+  tbody.innerHTML = entries.map(e => {
+    const delta = e.performance_delta != null ? parseFloat(e.performance_delta) : null;
+    const deltaStr = delta == null ? '—'
+      : (delta >= 0 ? \`<span style="color:#10B981">+\${delta.toFixed(2)}</span>\` : \`<span style="color:#EF4444">\${delta.toFixed(2)}</span>\`);
+    return \`<tr style="border-bottom:1px solid #0F172A">
+      <td style="padding:9px 14px;color:#64748B;white-space:nowrap;font-size:11px">\${timeAgo(e.created_at)}</td>
+      <td style="padding:9px 14px">\${evoAgentBadge(e.agent_type)}</td>
+      <td style="padding:9px 14px">\${evoTypeBadge(e.evolution_type)}</td>
+      <td style="padding:9px 14px;color:#94A3B8;max-width:160px">\${evoTruncate(e.old_value, 40)}</td>
+      <td style="padding:9px 14px;color:#E2E8F0;max-width:160px">\${evoTruncate(e.new_value, 40)}</td>
+      <td style="padding:9px 14px;color:#94A3B8;max-width:220px">\${evoTruncate(e.reason, 60)}</td>
+      <td style="padding:9px 14px;text-align:right">\${deltaStr}</td>
+    </tr>\`;
+  }).join('');
+}
+
+function updateEvolutionKPIs(entries) {
+  const totalEl = document.getElementById('evo-total');
+  const h24El = document.getElementById('evo-24h');
+  const avgEl = document.getElementById('evo-avg-delta');
+  const lastEl = document.getElementById('evo-last-time');
+  const lastTypeEl = document.getElementById('evo-last-type');
+
+  if (totalEl) totalEl.textContent = entries.length;
+
+  const cutoff = Date.now() - 86400000;
+  const recent = entries.filter(e => new Date(e.created_at).getTime() > cutoff);
+  if (h24El) h24El.textContent = recent.length;
+
+  const deltas = entries.filter(e => e.performance_delta != null).map(e => parseFloat(e.performance_delta));
+  if (avgEl) avgEl.textContent = deltas.length ? (deltas.reduce((a,b)=>a+b,0)/deltas.length).toFixed(3) : '—';
+
+  if (entries.length) {
+    const last = entries[0];
+    if (lastEl) lastEl.textContent = timeAgo(last.created_at);
+    if (lastTypeEl) lastTypeEl.textContent = last.evolution_type || '—';
+  }
+}
+
+function addEvolutionTickerEvent(entry) {
+  const ticker = document.getElementById('evo-ticker');
+  if (!ticker) return;
+  const empty = ticker.querySelector('.empty');
+  if (empty) empty.remove();
+  const color = EVO_TYPE_COLORS[entry.evolution_type] || '#64748B';
+  const div = document.createElement('div');
+  div.style.cssText = \`display:flex;align-items:flex-start;gap:8px;padding:6px 10px;border-radius:6px;background:\${color}10;border:1px solid \${color}25;font-size:11px;animation:fadeIn .3s ease\`;
+  div.innerHTML = \`<span style="color:\${color};font-size:14px;line-height:1">●</span>
+    <div style="flex:1;min-width:0">
+      <span style="color:\${color};font-weight:700">\${entry.agent_type || 'SYSTEM'}</span>
+      <span style="color:#64748B;margin:0 4px">→</span>
+      <span style="color:#94A3B8">\${entry.evolution_type}</span>
+      \${entry.reason ? \`<div style="color:#64748B;margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">\${entry.reason}</div>\` : ''}
+    </div>
+    <span style="color:#475569;white-space:nowrap">\${timeAgo(entry.created_at)}</span>\`;
+  ticker.insertBefore(div, ticker.firstChild);
+  while (ticker.children.length > 20) ticker.removeChild(ticker.lastChild);
+}
+
+function clearEvolutionFeed() {
+  const ticker = document.getElementById('evo-ticker');
+  if (ticker) ticker.innerHTML = '<div class="empty">Waiting for evolution events…</div>';
+}
+
+function startEvolutionPolling() {
+  stopEvolutionPolling();
+  evolutionPoller = setInterval(loadEvolutionLog, 30000);
+}
+
+function stopEvolutionPolling() {
+  if (evolutionPoller) { clearInterval(evolutionPoller); evolutionPoller = null; }
 }
 
 async function loadAgentNetwork() {
@@ -4126,7 +4352,7 @@ let ffGlobalFlags = [];
 
 async function loadFeatureFlags() {
   try {
-    const data = await api('/api/feature-flags');
+    const data = await api('GET', '/api/feature-flags');
     ffGlobalFlags = data.flags || [];
     renderGlobalFlags();
   } catch(e) { showToast('Error loading flags: ' + e.message, 'error'); }
@@ -4145,7 +4371,7 @@ function renderGlobalFlags() {
         '<div style="font-size:11px;color:#475569;margin-top:2px">' + (f.description || '') + ' <code style="color:#475569;font-size:10px">' + f.flag_key + '</code></div>' +
       '</div>' +
       '<label style="position:relative;display:inline-flex;align-items:center;cursor:pointer;flex-shrink:0">' +
-        '<input type="checkbox" ' + chk + ' onchange="toggleGlobalFlag(\'' + f.flag_key + '\',this.checked)" style="opacity:0;width:0;height:0;position:absolute">' +
+        '<input type="checkbox" ' + chk + ' onchange="toggleGlobalFlag(\\'' + f.flag_key + '\\',this.checked)" style="opacity:0;width:0;height:0;position:absolute">' +
         '<div id="ff-toggle-' + f.flag_key + '" style="width:44px;height:24px;border-radius:12px;background:' + bg + ';transition:background .2s;position:relative;flex-shrink:0">' +
           '<div style="position:absolute;top:3px;' + knob + ';width:18px;height:18px;border-radius:50%;background:#fff;transition:all .2s;box-shadow:0 1px 3px rgba(0,0,0,.4)"></div>' +
         '</div>' +
@@ -4156,7 +4382,7 @@ function renderGlobalFlags() {
 
 async function toggleGlobalFlag(key, enabled) {
   try {
-    await api('/api/feature-flags/' + key, 'PUT', { enabled });
+    await api('PUT', '/api/feature-flags/' + key, { enabled });
     const f = ffGlobalFlags.find(x => x.flag_key === key);
     if (f) f.enabled = enabled;
     renderGlobalFlags();
@@ -4171,7 +4397,7 @@ async function loadUserOverrides() {
   const el = document.getElementById('ff-user-overrides-list');
   el.innerHTML = '<div class="empty">Loading…</div>';
   try {
-    const data = await api('/api/feature-flags/user/' + userId);
+    const data = await api('GET', '/api/feature-flags/user/' + userId);
     const overrides = data.overrides || [];
     if (!ffGlobalFlags.length) await loadFeatureFlags();
     el.innerHTML = ffGlobalFlags.map(function(f) {
@@ -4185,7 +4411,7 @@ async function loadUserOverrides() {
         ? '<span style="font-size:10px;background:#6366F130;color:#818CF8;border:1px solid #6366F150;border-radius:4px;padding:1px 6px">override</span>'
         : '<span style="font-size:10px;color:#475569">global default</span>';
       const rmBtn = hasOverride
-        ? '<button onclick="removeUserOverride(\'' + userId + '\',\'' + f.flag_key + '\')" title="Remove override" style="background:#1E293B;border:1px solid #334155;color:#94A3B8;border-radius:6px;padding:3px 8px;font-size:11px;cursor:pointer">\u2715</button>'
+        ? '<button onclick="removeUserOverride(\\'' + userId + '\\',\\'' + f.flag_key + '\\')" title="Remove override" style="background:#1E293B;border:1px solid #334155;color:#94A3B8;border-radius:6px;padding:3px 8px;font-size:11px;cursor:pointer">\u2715</button>'
         : '';
       return '<div style="display:flex;align-items:center;justify-content:space-between;padding:10px 14px;border-radius:8px;background:#0D1625;margin-bottom:4px;gap:12px">' +
         '<div style="flex:1;min-width:0"><div style="display:flex;align-items:center;gap:8px">' +
@@ -4193,7 +4419,7 @@ async function loadUserOverrides() {
         '</div></div>' +
         '<div style="display:flex;align-items:center;gap:8px;flex-shrink:0">' +
           '<label style="position:relative;display:inline-flex;align-items:center;cursor:pointer">' +
-            '<input type="checkbox" ' + chk + ' onchange="setUserOverride(\'' + userId + '\',\'' + f.flag_key + '\',this.checked)" style="opacity:0;width:0;height:0;position:absolute">' +
+            '<input type="checkbox" ' + chk + ' onchange="setUserOverride(\\'' + userId + '\\',\\'' + f.flag_key + '\\',this.checked)" style="opacity:0;width:0;height:0;position:absolute">' +
             '<div style="width:40px;height:22px;border-radius:11px;background:' + bg + ';transition:background .2s;position:relative">' +
               '<div style="position:absolute;top:2px;' + knob + ';width:18px;height:18px;border-radius:50%;background:#fff;transition:all .2s;box-shadow:0 1px 3px rgba(0,0,0,.4)"></div>' +
             '</div>' +
@@ -4206,14 +4432,14 @@ async function loadUserOverrides() {
 
 async function setUserOverride(userId, key, enabled) {
   try {
-    await api('/api/feature-flags/user/' + userId + '/' + key, 'PUT', { enabled });
+    await api('PUT', '/api/feature-flags/user/' + userId + '/' + key, { enabled });
     await loadUserOverrides();
   } catch(e) { showToast('Error: ' + e.message, 'error'); }
 }
 
 async function removeUserOverride(userId, key) {
   try {
-    await api('/api/feature-flags/user/' + userId + '/' + key, 'DELETE');
+    await api('DELETE', '/api/feature-flags/user/' + userId + '/' + key);
     await loadUserOverrides();
   } catch(e) { showToast('Error: ' + e.message, 'error'); }
 }
