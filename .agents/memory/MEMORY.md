@@ -1,3 +1,6 @@
 - [Android OAuth browser function](oauth-android-browser.md) — use openAuthSessionAsync (not openBrowserAsync) for OAuth; ignore return value, use server-side polling instead.
 - [Agent skill storage pattern](agent-skill-pattern.md) — execution_prompt must be prose description, never a {{placeholder}} template; useSkill() writes a fresh AI prompt each time from description + live variables.
 - [Follow-up evolution tables](follow-up-evolution-tables.md) — follow_up_evolution_log, self_evolution_log, lead_evolution_queries, ai_prompt_log added in autonomous_intelligence_migration.sql (migration #9).
+- [Admin HTML template literals](admin-html-template-literals.md) — JS functions inside DASHBOARD_HTML must use string concat, never backtick template literals (nested backticks break the outer TS template literal).
+- [ThinkingIndicator suppression fix](thinking-indicator.md) — STRATEGY_GENERATION must take priority over hasStreamingInProgress in ListFooterComponent so it shows even while typewriter plays.
+- [Feature Flags system](feature-flags.md) — global + per-user flags; mobile hook defaults true on error/missing table; needs feature_flags_migration.sql run in Supabase.

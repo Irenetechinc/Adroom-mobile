@@ -2014,10 +2014,10 @@ export default function AgentChatScreen({ navigation, route }: Props) {
           showsVerticalScrollIndicator={false}
           contentContainerStyle={[styles.flatListContent, { paddingBottom: insets.bottom + 24 }]}
           ListFooterComponent={
-            hasStreamingInProgress
-              ? null
-              : flowState === 'STRATEGY_GENERATION' && isTyping
-                ? <ThinkingIndicator />
+            flowState === 'STRATEGY_GENERATION' && isTyping
+              ? <ThinkingIndicator />
+              : hasStreamingInProgress
+                ? null
                 : (isTyping || uploading)
                   ? <TypingIndicator />
                   : null
