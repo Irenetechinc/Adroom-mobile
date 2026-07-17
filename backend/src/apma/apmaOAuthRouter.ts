@@ -5,7 +5,7 @@ import { apmaOAuthStates } from './apmaOAuthStore';
 export const apmaOAuthRouter = Router();
 
 function getBase(): string {
-  return (process.env.PUBLIC_BASE_URL ?? 'https://api.adroomai.com').replace(/\/+$/, '');
+  return (process.env.PUBLIC_BASE_URL ?? 'https://backend.adroomai.com').replace(/\/+$/, '');
 }
 
 function redirectUri(platform: string): string {
