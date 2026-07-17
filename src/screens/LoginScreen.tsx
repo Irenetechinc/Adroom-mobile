@@ -1,101 +1,535 @@
-import React, { useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, Alert, ActivityIndicator, KeyboardAvoidingView, Platform } from 'react-native';
+import React, { useState, useRef, useEffect } from 'react';
+import {
+  View, Text, TextInput, TouchableOpacity, Modal, Image,
+  ActivityIndicator, KeyboardAvoidingView, Platform, StyleSheet, ScrollView,
+} from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import Animated, { FadeInDown, FadeInUp } from 'react-native-reanimated';
 import { RootStackParamList } from '../types';
 import { supabase } from '../services/supabase';
+import { Mail, Lock, Eye, EyeOff, KeyRound, CheckCircle, ArrowLeft, X } from 'lucide-react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import Constants from 'expo-constants';
+import InlineAlert, { InlineAlertVariant } from '../components/InlineAlert';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Login'>;
 
-export default function LoginScreen({ navigation }: Props) {
-  const [email, setEmail] = useState('');
+const BACKEND_URL =
+  process.env.EXPO_PUBLIC_API_URL ||
+  (Constants.expoConfig?.extra?.apiUrl as string) ||
+  '';
+
+export default function LoginScreen({ navigation, route }: Props) {
+  const prefillEmail = route?.params?.prefillEmail ?? '';
+  const [email, setEmail] = useState(prefillEmail);
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
+  const [emailFocused, setEmailFocused] = useState(false);
+  const [passwordFocused, setPasswordFocused] = useState(false);
+
+  const [alert, setAlert] = useState<{ visible: boolean; title: string; message?: string; variant: InlineAlertVariant }>({
+    visible: false, title: '', variant: 'error',
+  });
+  const showAlert = (title: string, message?: string, variant: InlineAlertVariant = 'error') =>
+    setAlert({ visible: true, title, message, variant });
+  const closeAlert = () => setAlert((a) => ({ ...a, visible: false }));
+
+  const [showForgotModal, setShowForgotModal] = useState(false);
+  const [forgotStep, setForgotStep] = useState<'input' | 'sent'>('input');
+  const [forgotEmail, setForgotEmail] = useState('');
+  const [forgotEmailFocused, setForgotEmailFocused] = useState(false);
+  const [forgotLoading, setForgotLoading] = useState(false);
+  const [resendLoading, setResendLoading] = useState(false);
+  const [resendSent, setResendSent] = useState(false);
+  const [resendCooldown, setResendCooldown] = useState(0);
+  const cooldownRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  useEffect(() => {
+    return () => { if (cooldownRef.current) clearInterval(cooldownRef.current); };
+  }, []);
+
+  // Pick up email handed off from the Signup "already exists" flow
+  useEffect(() => {
+    if (prefillEmail && prefillEmail !== email) {
+      setEmail(prefillEmail);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [prefillEmail]);
 
   const handleLogin = async () => {
     if (!email || !password) {
-      Alert.alert('Error', 'Please fill in all fields');
+      showAlert('Missing Information', 'Please enter your email and password to continue.', 'warning');
       return;
     }
-
     setLoading(true);
-    const { error } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    });
-
+    const { error } = await supabase.auth.signInWithPassword({ email: email.trim(), password });
     setLoading(false);
     if (error) {
-      Alert.alert('Login Failed', error.message);
+      const raw = (error.message || '').toLowerCase();
+      let title = 'Sign In Failed';
+      let msg = error.message || 'We couldn\'t sign you in. Please try again.';
+      if (raw.includes('invalid login credentials') || raw.includes('invalid email or password')) {
+        title = 'Incorrect email or password';
+        msg = 'The email or password you entered doesn\'t match our records. Double-check and try again, or use "Forgot password?" to reset.';
+      } else if (raw.includes('email not confirmed') || raw.includes('not confirmed')) {
+        title = 'Verify your email first';
+        msg = 'Your email address hasn\'t been verified yet. Check your inbox (and spam) for the verification link we sent during sign-up.';
+      } else if (raw.includes('rate') || raw.includes('too many')) {
+        title = 'Too many attempts';
+        msg = 'You\'ve tried to sign in too many times. Please wait a minute and try again.';
+      } else if (raw.includes('network') || raw.includes('fetch')) {
+        title = 'Connection problem';
+        msg = 'We couldn\'t reach our servers. Check your internet connection and try again.';
+      }
+      showAlert(title, msg, 'error');
     }
   };
 
+  const openForgotModal = () => {
+    setForgotEmail(email.trim());
+    setForgotStep('input');
+    setResendSent(false);
+    setResendCooldown(0);
+    if (cooldownRef.current) clearInterval(cooldownRef.current);
+    setShowForgotModal(true);
+  };
+
+  const startCooldown = () => {
+    setResendCooldown(60);
+    cooldownRef.current = setInterval(() => {
+      setResendCooldown((prev) => {
+        if (prev <= 1) {
+          if (cooldownRef.current) clearInterval(cooldownRef.current);
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+  };
+
+  const sendResetRequest = async (emailToSend: string): Promise<{ ok: boolean; error?: string }> => {
+    // Try the backend first — it uses the service role and bypasses anon-key
+    // rate limits / template issues that can silently swallow the request.
+    if (BACKEND_URL) {
+      try {
+        const res = await fetch(`${BACKEND_URL}/api/auth/reset-password`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email: emailToSend, redirectTo: 'adroom://reset-password' }),
+        });
+        if (res.ok) return { ok: true };
+        const data = await res.json().catch(() => ({}));
+        // 429 = rate-limit, surface the message; otherwise fall through to client SDK.
+        if (res.status === 429) {
+          return { ok: false, error: data.error || 'Too many requests. Please wait and try again.' };
+        }
+      } catch {
+        // network glitch — fall through to client SDK below
+      }
+    }
+    const { error } = await supabase.auth.resetPasswordForEmail(emailToSend, {
+      redirectTo: 'adroom://reset-password',
+    });
+    return error ? { ok: false, error: error.message } : { ok: true };
+  };
+
+  const handleSendReset = async () => {
+    const trimmed = forgotEmail.trim();
+    if (!trimmed || !trimmed.includes('@')) {
+      showAlert('Invalid Email', 'Please enter a valid email address before sending the reset link.', 'warning');
+      return;
+    }
+    setForgotLoading(true);
+    try {
+      const result = await sendResetRequest(trimmed);
+      if (!result.ok) {
+        showAlert('Couldn\'t Send Reset Email', result.error || 'Something went wrong while sending your reset link. Please try again in a moment.', 'error');
+        return;
+      }
+      setForgotStep('sent');
+      setResendSent(false);
+      startCooldown();
+    } catch {
+      showAlert('Network Issue', 'We couldn\'t reach our servers. Check your connection and try again.', 'error');
+    } finally {
+      setForgotLoading(false);
+    }
+  };
+
+  const handleResendReset = async () => {
+    if (resendLoading || resendCooldown > 0) return;
+    setResendLoading(true);
+    setResendSent(false);
+    try {
+      await sendResetRequest(forgotEmail.trim());
+      setResendSent(true);
+      startCooldown();
+    } catch {
+      // fail silently
+    } finally {
+      setResendLoading(false);
+    }
+  };
+
+  const closeForgotModal = () => {
+    setShowForgotModal(false);
+    setForgotStep('input');
+    setResendSent(false);
+    setResendCooldown(0);
+    if (cooldownRef.current) clearInterval(cooldownRef.current);
+  };
+
   return (
-    <KeyboardAvoidingView 
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      className="flex-1 bg-adroom-dark justify-center px-6"
-    >
-      <Animated.View 
-        entering={FadeInUp.duration(1000).springify()} 
-        className="items-center mb-12"
-      >
-        <Text className="text-5xl font-extrabold text-transparent bg-clip-text text-white" style={{ textShadowColor: '#00F0FF', textShadowOffset: { width: 0, height: 0 }, textShadowRadius: 20 }}>
-          ADROOM
-        </Text>
-        <Text className="text-adroom-text-muted mt-3 text-lg tracking-widest uppercase">
-          Autonomous Marketing
-        </Text>
-      </Animated.View>
+    <SafeAreaView style={styles.safe}>
+      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.kav}>
+        <ScrollView contentContainerStyle={styles.inner} keyboardShouldPersistTaps="handled">
 
-      <Animated.View entering={FadeInDown.delay(200).duration(1000).springify()}>
-        <View className="mb-6 space-y-4">
-          <View>
-            <Text className="text-adroom-neon mb-2 font-bold uppercase text-xs tracking-wider">Email Interface</Text>
-            <TextInput
-              className="w-full bg-adroom-card border border-adroom-neon/30 focus:border-adroom-neon rounded-xl p-4 text-adroom-text placeholder:text-gray-600"
-              placeholder="Enter your email"
-              placeholderTextColor="#4B5563"
-              value={email}
-              onChangeText={setEmail}
-              autoCapitalize="none"
-              keyboardType="email-address"
-            />
+          {/* Logo */}
+          <Animated.View entering={FadeInDown.delay(100).springify()} style={styles.logoBlock}>
+            <View style={styles.logoIcon}>
+              <Image
+                source={require('../../assets/icon.png')}
+                style={{ width: 76, height: 76, borderRadius: 18 }}
+                resizeMode="contain"
+              />
+            </View>
+            <Text style={styles.logoSub}>Sign in to your account</Text>
+          </Animated.View>
+
+          {/* Form */}
+          <Animated.View entering={FadeInDown.delay(250).springify()} style={styles.form}>
+            {/* Email */}
+            <View style={styles.fieldGroup}>
+              <Text style={styles.label}>Email</Text>
+              <View style={[styles.inputWrap, emailFocused && styles.inputFocused]}>
+                <Mail size={18} color={emailFocused ? '#00F0FF' : '#475569'} style={{ marginRight: 10 }} />
+                <TextInput
+                  style={styles.input}
+                  placeholder="your@email.com"
+                  placeholderTextColor="#475569"
+                  value={email}
+                  onChangeText={setEmail}
+                  autoCapitalize="none"
+                  keyboardType="email-address"
+                  onFocus={() => setEmailFocused(true)}
+                  onBlur={() => setEmailFocused(false)}
+                />
+              </View>
+            </View>
+
+            {/* Password */}
+            <View style={styles.fieldGroup}>
+              <Text style={styles.label}>Password</Text>
+              <View style={[styles.inputWrap, passwordFocused && styles.inputFocused]}>
+                <Lock size={18} color={passwordFocused ? '#00F0FF' : '#475569'} style={{ marginRight: 10 }} />
+                <TextInput
+                  style={[styles.input, { flex: 1 }]}
+                  placeholder="••••••••"
+                  placeholderTextColor="#475569"
+                  value={password}
+                  onChangeText={setPassword}
+                  secureTextEntry={!showPassword}
+                  onFocus={() => setPasswordFocused(true)}
+                  onBlur={() => setPasswordFocused(false)}
+                />
+                <TouchableOpacity onPress={() => setShowPassword(!showPassword)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+                  {showPassword ? <EyeOff size={18} color="#475569" /> : <Eye size={18} color="#475569" />}
+                </TouchableOpacity>
+              </View>
+            </View>
+
+            {/* Forgot */}
+            <TouchableOpacity style={styles.forgotWrap} onPress={openForgotModal} activeOpacity={0.7}>
+              <Text style={styles.forgotText}>Forgot password?</Text>
+            </TouchableOpacity>
+
+            {/* Submit */}
+            <TouchableOpacity
+              onPress={handleLogin}
+              disabled={loading}
+              style={[styles.btn, loading && { opacity: 0.7 }]}
+              activeOpacity={0.85}
+            >
+              {loading
+                ? <ActivityIndicator color="#0B0F19" />
+                : <Text style={styles.btnText}>Sign In</Text>}
+            </TouchableOpacity>
+
+            {/* Divider */}
+            <View style={styles.divider}>
+              <View style={styles.dividerLine} />
+              <Text style={styles.dividerText}>Don't have an account?</Text>
+              <View style={styles.dividerLine} />
+            </View>
+
+            {/* Sign up */}
+            <TouchableOpacity
+              onPress={() => navigation.navigate('Signup')}
+              style={styles.outlineBtn}
+              activeOpacity={0.8}
+            >
+              <Text style={styles.outlineBtnText}>Create Account</Text>
+            </TouchableOpacity>
+          </Animated.View>
+        </ScrollView>
+      </KeyboardAvoidingView>
+
+      {/* ── Forgot Password Modal ── */}
+      <Modal visible={showForgotModal} transparent animationType="fade" onRequestClose={closeForgotModal}>
+        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
+          <View style={styles.modalOverlay}>
+            <View style={styles.modalCard}>
+
+              {/* Close */}
+              <TouchableOpacity onPress={closeForgotModal} style={styles.closeBtn}>
+                <X size={18} color="#475569" />
+              </TouchableOpacity>
+
+              {forgotStep === 'input' ? (
+                <>
+                  {/* Icon */}
+                  <View style={styles.modalIconWrap}>
+                    <View style={styles.modalIconRing}>
+                      <KeyRound size={28} color="#00F0FF" />
+                    </View>
+                  </View>
+
+                  <Text style={styles.modalTitle}>Reset your password</Text>
+                  <Text style={styles.modalSubtitle}>
+                    Enter the email you signed up with and we'll send you a secure reset link right away.
+                  </Text>
+
+                  {/* Email Input */}
+                  <View style={styles.fieldGroup}>
+                    <Text style={styles.inputLabel}>Email Address</Text>
+                    <View style={[styles.inputWrap, forgotEmailFocused && styles.inputFocusedCyan]}>
+                      <Mail size={17} color={forgotEmailFocused ? '#00F0FF' : '#475569'} style={{ marginRight: 10 }} />
+                      <TextInput
+                        style={styles.input}
+                        placeholder="your@email.com"
+                        placeholderTextColor="#475569"
+                        value={forgotEmail}
+                        onChangeText={setForgotEmail}
+                        autoCapitalize="none"
+                        keyboardType="email-address"
+                        autoFocus
+                        onFocus={() => setForgotEmailFocused(true)}
+                        onBlur={() => setForgotEmailFocused(false)}
+                      />
+                    </View>
+                  </View>
+
+                  <TouchableOpacity
+                    onPress={handleSendReset}
+                    disabled={forgotLoading}
+                    style={[styles.modalPrimaryBtn, forgotLoading && { opacity: 0.7 }]}
+                    activeOpacity={0.85}
+                  >
+                    {forgotLoading
+                      ? <ActivityIndicator color="#0B0F19" size="small" />
+                      : <Text style={styles.modalPrimaryBtnText}>Send Reset Link</Text>
+                    }
+                  </TouchableOpacity>
+
+                  <TouchableOpacity onPress={closeForgotModal} style={styles.modalSecondaryBtn}>
+                    <Text style={styles.modalSecondaryBtnText}>Cancel</Text>
+                  </TouchableOpacity>
+                </>
+              ) : (
+                <>
+                  {/* Success icon */}
+                  <View style={styles.modalIconWrap}>
+                    <View style={[styles.modalIconRing, { borderColor: 'rgba(16,185,129,0.35)', backgroundColor: 'rgba(16,185,129,0.08)' }]}>
+                      <Mail size={28} color="#10B981" />
+                    </View>
+                  </View>
+
+                  <Text style={styles.modalTitle}>Check your inbox</Text>
+                  <Text style={styles.modalSubtitle}>We sent a password reset link to</Text>
+
+                  <View style={styles.emailChip}>
+                    <Text style={styles.emailChipText} numberOfLines={1}>{forgotEmail}</Text>
+                  </View>
+
+                  <Text style={styles.modalBody}>
+                    Open the link in the email to create a new password. It expires in 1 hour, so check soon.
+                  </Text>
+
+                  {/* Steps */}
+                  <View style={styles.modalDivider} />
+                  {[
+                    'Open the email from AdRoom AI',
+                    'Tap "Reset My Password"',
+                    'Choose a new password and sign in',
+                  ].map((step, i) => (
+                    <View key={i} style={styles.stepRow}>
+                      <View style={styles.stepNum}>
+                        <Text style={styles.stepNumText}>{i + 1}</Text>
+                      </View>
+                      <Text style={styles.stepText}>{step}</Text>
+                    </View>
+                  ))}
+
+                  {/* Resend */}
+                  <TouchableOpacity
+                    onPress={handleResendReset}
+                    disabled={resendLoading || resendCooldown > 0}
+                    style={[
+                      styles.resendBtn,
+                      resendSent && styles.resendBtnSent,
+                      resendCooldown > 0 && !resendSent && { opacity: 0.5 },
+                    ]}
+                    activeOpacity={0.75}
+                  >
+                    {resendLoading ? (
+                      <ActivityIndicator size="small" color="#67E8F9" />
+                    ) : resendSent ? (
+                      <>
+                        <CheckCircle size={14} color="#10B981" />
+                        <Text style={[styles.resendText, { color: '#10B981' }]}>
+                          Sent!{resendCooldown > 0 ? `  Resend in ${resendCooldown}s` : ''}
+                        </Text>
+                      </>
+                    ) : (
+                      <Text style={styles.resendText}>
+                        Didn't get it?{resendCooldown > 0 ? `  Resend in ${resendCooldown}s` : '  Resend Link'}
+                      </Text>
+                    )}
+                  </TouchableOpacity>
+
+                  {/* Back to sign in */}
+                  <TouchableOpacity onPress={closeForgotModal} style={styles.modalPrimaryBtn} activeOpacity={0.85}>
+                    <ArrowLeft size={17} color="#0B0F19" />
+                    <Text style={styles.modalPrimaryBtnText}>Back to Sign In</Text>
+                  </TouchableOpacity>
+                </>
+              )}
+            </View>
           </View>
+        </KeyboardAvoidingView>
+      </Modal>
 
-          <View>
-            <Text className="text-adroom-neon mb-2 font-bold uppercase text-xs tracking-wider">Passcode</Text>
-            <TextInput
-              className="w-full bg-adroom-card border border-adroom-neon/30 focus:border-adroom-neon rounded-xl p-4 text-adroom-text placeholder:text-gray-600"
-              placeholder="Enter your password"
-              placeholderTextColor="#4B5563"
-              value={password}
-              onChangeText={setPassword}
-              secureTextEntry
-            />
-          </View>
-        </View>
-
-        <TouchableOpacity 
-          onPress={handleLogin}
-          disabled={loading}
-          className={`w-full bg-adroom-neon p-4 rounded-xl items-center shadow-lg shadow-adroom-neon/50 ${loading ? 'opacity-70' : ''}`}
-        >
-          {loading ? (
-            <ActivityIndicator color="#0B0F19" />
-          ) : (
-            <Text className="text-adroom-dark font-bold text-lg uppercase tracking-wider">Initialize Session</Text>
-          )}
-        </TouchableOpacity>
-
-        <TouchableOpacity 
-          onPress={() => navigation.navigate('Signup')}
-          className="items-center mt-8"
-        >
-          <Text className="text-adroom-text-muted">
-            New User? <Text className="text-adroom-neon font-bold">Create Identity</Text>
-          </Text>
-        </TouchableOpacity>
-      </Animated.View>
-    </KeyboardAvoidingView>
+      <InlineAlert
+        visible={alert.visible}
+        title={alert.title}
+        message={alert.message}
+        variant={alert.variant}
+        onClose={closeAlert}
+      />
+    </SafeAreaView>
   );
 }
+
+const styles = StyleSheet.create({
+  safe: { flex: 1, backgroundColor: '#0B0F19' },
+  kav: { flex: 1 },
+  inner: { flexGrow: 1, justifyContent: 'center', paddingHorizontal: 24, paddingVertical: 32 },
+  logoBlock: { alignItems: 'center', marginBottom: 40 },
+  logoIcon: {
+    width: 100, height: 100, borderRadius: 28,
+    backgroundColor: '#151B2B',
+    borderWidth: 1.5, borderColor: 'rgba(0,240,255,0.25)',
+    alignItems: 'center', justifyContent: 'center', marginBottom: 18,
+    overflow: 'hidden',
+  },
+  logoSub: { color: '#64748B', fontSize: 14, marginTop: 6, fontWeight: '500' },
+  form: { gap: 0 },
+  fieldGroup: { marginBottom: 16 },
+  label: { color: '#94A3B8', fontSize: 12, fontWeight: '600', letterSpacing: 0.5, marginBottom: 8, textTransform: 'uppercase' },
+  inputWrap: {
+    flexDirection: 'row', alignItems: 'center',
+    backgroundColor: '#151B2B', borderWidth: 1.5, borderColor: '#1E293B',
+    borderRadius: 14, paddingHorizontal: 16, paddingVertical: 14,
+  },
+  inputFocused: { borderColor: '#00F0FF', backgroundColor: 'rgba(0,240,255,0.04)' },
+  inputFocusedCyan: { borderColor: '#00F0FF', backgroundColor: 'rgba(0,240,255,0.04)' },
+  input: { flex: 1, color: '#E2E8F0', fontSize: 15, fontWeight: '500' },
+  forgotWrap: { alignItems: 'flex-end', marginBottom: 24, marginTop: -4 },
+  forgotText: { color: '#00F0FF', fontSize: 13, fontWeight: '600' },
+  btn: {
+    backgroundColor: '#00F0FF', borderRadius: 14,
+    height: 54, alignItems: 'center', justifyContent: 'center', marginBottom: 20,
+  },
+  btnText: { color: '#0B0F19', fontWeight: '800', fontSize: 16, letterSpacing: 0.3 },
+  divider: { flexDirection: 'row', alignItems: 'center', marginBottom: 16, gap: 10 },
+  dividerLine: { flex: 1, height: 1, backgroundColor: '#1E293B' },
+  dividerText: { color: '#475569', fontSize: 12, fontWeight: '500' },
+  outlineBtn: {
+    borderWidth: 1.5, borderColor: '#1E293B', borderRadius: 14,
+    height: 54, alignItems: 'center', justifyContent: 'center',
+  },
+  outlineBtnText: { color: '#94A3B8', fontWeight: '700', fontSize: 15 },
+
+  modalOverlay: {
+    flex: 1, backgroundColor: 'rgba(0,0,0,0.78)',
+    justifyContent: 'center', alignItems: 'center', padding: 22,
+  },
+  modalCard: {
+    backgroundColor: '#111827', borderRadius: 26,
+    padding: 28, width: '100%',
+    borderWidth: 1, borderColor: 'rgba(0,240,255,0.18)',
+  },
+  closeBtn: {
+    position: 'absolute', top: 16, right: 16, padding: 6,
+    backgroundColor: 'rgba(255,255,255,0.05)', borderRadius: 8,
+  },
+  modalIconWrap: { alignItems: 'center', marginBottom: 18, marginTop: 4 },
+  modalIconRing: {
+    width: 70, height: 70, borderRadius: 35,
+    backgroundColor: 'rgba(0,240,255,0.08)',
+    borderWidth: 1.5, borderColor: 'rgba(0,240,255,0.3)',
+    alignItems: 'center', justifyContent: 'center',
+  },
+  modalTitle: {
+    color: '#FFFFFF', fontSize: 22, fontWeight: '800',
+    textAlign: 'center', letterSpacing: -0.3, marginBottom: 8,
+  },
+  modalSubtitle: {
+    color: '#64748B', fontSize: 13, textAlign: 'center', lineHeight: 20, marginBottom: 20,
+  },
+  inputLabel: {
+    color: '#94A3B8', fontSize: 11, fontWeight: '600',
+    letterSpacing: 0.5, marginBottom: 8, textTransform: 'uppercase',
+  },
+  modalPrimaryBtn: {
+    backgroundColor: '#00F0FF', borderRadius: 14,
+    height: 52, flexDirection: 'row',
+    alignItems: 'center', justifyContent: 'center', gap: 8, marginTop: 4,
+  },
+  modalPrimaryBtnText: { color: '#0B0F19', fontWeight: '800', fontSize: 15 },
+  modalSecondaryBtn: {
+    marginTop: 10, paddingVertical: 13, borderRadius: 12,
+    alignItems: 'center', borderWidth: 1, borderColor: '#1E293B',
+  },
+  modalSecondaryBtnText: { color: '#64748B', fontWeight: '600', fontSize: 14 },
+  emailChip: {
+    alignSelf: 'center', backgroundColor: 'rgba(0,240,255,0.07)',
+    borderWidth: 1, borderColor: 'rgba(0,240,255,0.2)',
+    borderRadius: 50, paddingHorizontal: 16, paddingVertical: 6,
+    marginBottom: 14, maxWidth: '100%',
+  },
+  emailChipText: { color: '#67E8F9', fontSize: 13, fontWeight: '600' },
+  modalBody: { color: '#475569', fontSize: 13, textAlign: 'center', lineHeight: 20, marginBottom: 20 },
+  modalDivider: { height: 1, backgroundColor: 'rgba(255,255,255,0.06)', marginBottom: 18 },
+  stepRow: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 12 },
+  stepNum: {
+    width: 24, height: 24, borderRadius: 12,
+    backgroundColor: 'rgba(0,240,255,0.1)',
+    borderWidth: 1, borderColor: 'rgba(0,240,255,0.25)',
+    alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+  },
+  stepNumText: { color: '#67E8F9', fontSize: 11, fontWeight: '800' },
+  stepText: { color: '#94A3B8', fontSize: 13, flex: 1, lineHeight: 18 },
+  resendBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
+    borderWidth: 1, borderColor: 'rgba(0,240,255,0.18)',
+    borderRadius: 10, paddingVertical: 11, marginBottom: 10, marginTop: 4,
+    backgroundColor: 'rgba(0,240,255,0.05)',
+  },
+  resendBtnSent: {
+    borderColor: 'rgba(16,185,129,0.25)',
+    backgroundColor: 'rgba(16,185,129,0.06)',
+  },
+  resendText: { color: '#67E8F9', fontSize: 13, fontWeight: '600' },
+});

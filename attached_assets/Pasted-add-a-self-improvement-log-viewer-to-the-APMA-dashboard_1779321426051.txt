@@ -1,0 +1,15 @@
+add a self-improvement log viewer to the APMA dashboard — showing the AI's own performance retrospectives and deployed optimizations as a new.
+
+apma needs to first of all build it client profile understand who that client is how public percive this client is this client likely going to win the election for office he or she is runing for and other relevant data apama needs to achove goal.
+
+add another goal to apma goal selection add get votes, improve- build positive narative and get votes for client.
+
+admin should be able to connect soial accounts in which apma is going to be using seemlesly just lick it is in the adroom mobile app social media connection flow, and for facebook apma should be able to connect multiple pages from one profile as well sam as muktiple whatsapp accounts, instergram accounts, twitter, and apma should be bale to run atonomus activity sumutainues as well as use all connected account strategically according to it plan and strategy where and when rewuired.
+
+in the adroom mobile app am faceing this problem where user try to connect social accounts abd ib the agent chat screen after clicking the connect account button all the user sees next is the typing insicator nothing else happens mind you evry other social account connection is working perfectly, how it suppose to work when user click on the connect facebook or whatsapp or instergram in the agent chat screen they should be redirected an in app browser wher the will login if rewuired then authorise connection, then for facebook the user will be redirectd back to the agent chat screen where they will slect thier prefered page after ehich user facebook account and page is connect sucessfully and for instegram and whatsapp the dont need page selction ince user usthorise connection in the in app browser with app the permission rewuired for all autonomus activity the should bre redirected to the agent chat screen where adroom will reply with connection succesfulljust like the othe rsocial medi account connections
+
+please not and remebr apma is a not and should not show in the adroom mobile app.Note:
+Do not disrupt any already. Made progress, no dummy or demo implementations, no hard coded data look what been don and update, creat and Impliment where required avoid any form of double implimentation make sure all fix and Implemtations are for realtime and production. All implimentation must align with what already done and work in syc.
+must run 100% without replit, railway for backend and supabase for database
+
+

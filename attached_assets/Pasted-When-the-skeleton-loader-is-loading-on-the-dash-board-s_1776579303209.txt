@@ -1,0 +1,20 @@
+When the skeleton loader is loading on the dash board screen the main dashboard screen is not hidden even when the skeleton loader is on you can see clearly the djanord screen content if you scroll down the skeleton loader fix this
+
+User should be able to pause a active stragey in the stregy history screen, this should stop every autonomy service /all service runi g the strategy for that user until that user resums stretegy. All agent should take into account the puase incase and adjust stregy accordingly remebr no hard coded ai rules all discitions are dynwmic this aha been Implimented do not implement  disrupts. 
+
+Adroom ai should give summary of what they have done for the day for each active stragey they are running  and why the took such aproch it should be a comprehensive report sumarry this should be received by user via notification and viable on dashboard 
+
+Rader agent this agent get activated when a strategy is activated and running what it dose it uses other methods outside social media to help atten client active strategy goal utilises Google maps, reviews, pain point and every other tool it can get to help attain clients goal in realtime to tool the Rader agent can use that is not mentioned here 
+
+Change redit in the community screen to coming soon
+Make linked account connection  coming soon but leave all intigrtions 
+
+Adroom ai should be able to know user tire and amount of account connections allowed for that during stragey creation and Autonomus platform selection it should check if use connected to any account before recommending and account if use is already connected to an account the are are only limited to one account connection in this case adroom should creat strategy around the connected accounts and proceed with it no need for suggesting additional account as user tire dosnt permit 
+
+Vieo file asset upload was implimented but dosnt reflection the fro tend verify this for all upload forms where required in the agent chat screen if not implimented at all impliment them and make sure adroom ai uses them during strategy creation and ensure that adroom ai can generate realtime video ads and content if the account tire required and how many required 
+
+Impliment a realtime smart video editor agent that will edit uploaded video of client where required and pass the aspect adroom ai can use this videos in realtime
+
+Also how are images and videos saved on this app during stragey creation and approval and running becouse I have not created a buket In supabase for it becouse I have never been required to make sure that they are saved properly in database or some where adroom access and use any time  
+
+Please remeber no demo implementation, all implementation and fix must be made for realtime and production, no hard coded data, no simplified method, no unresolved comments

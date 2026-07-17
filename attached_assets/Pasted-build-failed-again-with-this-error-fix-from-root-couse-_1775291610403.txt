@@ -1,0 +1,69 @@
+build failed again with this error fix from root couse, remeber this is mobile application not web app, i use railay for backend and supabase for database, this app must run 100% off replit replit here is just an editor 
+Starting Metro Bundler
+Android Bundling failed 912ms index.ts (1 module)
+SyntaxError: index.ts: Cannot read properties of undefined (reading 'wrapModule')
+TypeError: Cannot read properties of undefined (reading 'wrapModule')
+    at transformJS (/home/expo/workingdir/build/node_modules/@expo/metro-config/build/transform-worker/metro-transform-worker.js:348:61)
+    at transformJSWithBabel (/home/expo/workingdir/build/node_modules/@expo/metro-config/build/transform-worker/metro-transform-worker.js:489:18)
+
+Running "expo doctor"
+Running 17 checks on your project...
+14/17 checks passed. 3 checks failed. Possible issues detected:
+Use the --verbose flag to see more details about passed checks.
+
+✖ Check Expo config (app.json/ app.config.js) schema
+Error validating fields in /home/expo/workingdir/build/app.json:
+ Field: android - should NOT have additional property 'predictiveBackGestureEnabled'.
+Advice:
+Resolve schema errors in your app config. Learn more: https://docs.expo.dev/workflow/configuration/
+✖ Check that native modules use compatible support package versions for installed Expo SDK
+Expected package @expo/config-plugins@~10.1.1
+Found invalid:
+  @expo/config-plugins@54.0.4
+  (for more info, run: npm why @expo/config-plugins)
+Expected package metro@^0.82.0
+Found invalid:
+  metro@0.83.3
+  (for more info, run: npm why metro)
+Expected package metro-resolver@^0.82.0
+Found invalid:
+  metro-resolver@0.83.3
+  (for more info, run: npm why metro-resolver)
+Expected package metro-config@^0.82.0
+Found invalid:
+  metro-config@0.83.3
+  (for more info, run: npm why metro-config)
+Advice:
+Upgrade dependencies that are using the invalid package versions.
+
+✖ Check that packages match versions required by installed Expo SDK
+The following packages should be updated for best compatibility with the installed expo version:
+  expo-auth-session@7.0.10 - expected version: ~6.2.1
+  expo-build-properties@1.0.10 - expected version: ~0.14.8
+  expo-constants@18.0.13 - expected version: ~17.1.8
+  expo-crypto@15.0.8 - expected version: ~14.1.5
+  expo-file-system@19.0.21 - expected version: ~18.1.11
+  expo-image-picker@17.0.10 - expected version: ~16.1.4
+  expo-secure-store@15.0.8 - expected version: ~14.2.4
+  expo-status-bar@3.0.9 - expected version: ~2.2.3
+  expo-web-browser@15.0.10 - expected version: ~14.2.0
+  react@19.1.0 - expected version: 19.0.0
+  react-dom@19.1.0 - expected version: 19.0.0
+  react-native@0.81.5 - expected version: 0.79.6
+  react-native-gesture-handler@2.28.0 - expected version: ~2.24.0
+  react-native-reanimated@4.1.6 - expected version: ~3.17.4
+  react-native-safe-area-context@5.6.2 - expected version: 5.4.0
+  react-native-screens@4.16.0 - expected version: ~4.11.1
+  react-native-svg@15.12.1 - expected version: 15.11.2
+  react-native-web@0.21.2 - expected version: ^0.20.0
+  @types/react@19.1.17 - expected version: ~19.0.10
+  babel-preset-expo@54.0.10 - expected version: ~13.0.0
+  jest-expo@54.0.17 - expected version: ~53.0.14
+  typescript@5.9.3 - expected version: ~5.8.3
+Your project may not work correctly until you install the expected versions of the packages.
+Found outdated dependencies
+Advice:
+Use 'npx expo install --check' to review and upgrade your dependencies.
+To ignore specific packages, add them to "expo.install.exclude" in package.json. Learn more: https://expo.fyi/dependency-validation
+3 checks failed, indicating possible issues with the project.
+Command "expo doctor" failed.

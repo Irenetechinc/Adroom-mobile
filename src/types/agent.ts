@@ -57,13 +57,19 @@ export interface ProductDetails {
   name: string;
   description: string;
   price?: string;
+  currency?: string;
   targetAudience?: string;
   category?: string;
   baseImageUri?: string;
   marketingType?: 'PRODUCT' | 'BRAND' | 'SERVICE' | 'BRAND_PRODUCT';
   dimensions?: string;
   colorPalette?: string[];
-  // New fields
+  color?: string;
+  sizes?: string[];
+  quantity?: string;
+  portfolioUrl?: string;
+  mission?: string;
+  values?: string;
   scanResult?: any;
   images?: { uri: string; base64: string | null }[];
 }

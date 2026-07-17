@@ -1,0 +1,502 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>AdRoom AI — Critic Agent Dashboard</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+:root {
+  --bg:      #0B0F19;
+  --surface: #151B2B;
+  --border:  #1E293B;
+  --border2: #263148;
+  --txt:     #E2E8F0;
+  --muted:   #64748B;
+  --muted2:  #475569;
+  --green:   #10B981;
+  --green-bg:rgba(16,185,129,0.12);
+  --amber:   #F59E0B;
+  --amber-bg:rgba(245,158,11,0.12);
+  --red:     #EF4444;
+  --red-bg:  rgba(239,68,68,0.12);
+  --blue:    #00F0FF;
+  --purple:  #7C3AED;
+  --brand1:  #00F0FF;
+  --brand2:  #7000FF;
+}
+body { background: var(--bg); color: var(--txt); font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif; min-height: 100vh; }
+
+/* ── Top bar ── */
+.topbar { display:flex; align-items:center; justify-content:space-between; padding:16px 28px; border-bottom:1px solid var(--border); background:var(--surface); position:sticky; top:0; z-index:100; }
+.topbar-left { display:flex; align-items:center; gap:16px; }
+.logo { font-size:18px; font-weight:900; background:linear-gradient(135deg,var(--brand1),var(--brand2)); -webkit-background-clip:text; -webkit-text-fill-color:transparent; letter-spacing:-0.3px; }
+.logo-sub { color:var(--muted); font-size:13px; font-weight:500; }
+.topbar-right { display:flex; align-items:center; gap:12px; }
+.badge-live { display:inline-flex; align-items:center; gap:6px; background:var(--green-bg); border:1px solid rgba(16,185,129,0.3); border-radius:999px; padding:5px 12px; }
+.dot-live { width:7px; height:7px; border-radius:50%; background:var(--green); animation:pulse 2s infinite; }
+@keyframes pulse { 0%,100%{opacity:1}50%{opacity:0.35} }
+.badge-live span { color:var(--green); font-size:12px; font-weight:700; letter-spacing:0.4px; }
+.countdown { color:var(--muted); font-size:13px; }
+.btn { background:var(--border2); border:1px solid var(--border2); color:var(--txt); border-radius:8px; padding:7px 14px; font-size:13px; font-weight:600; cursor:pointer; transition:all 0.15s; }
+.btn:hover { background:var(--border); border-color:var(--muted2); }
+.btn-sm { padding:4px 10px; font-size:12px; font-weight:600; }
+.btn-blue { background:rgba(0,240,255,0.1); border-color:rgba(0,240,255,0.25); color:var(--brand1); }
+.btn-blue:hover { background:rgba(0,240,255,0.18); }
+.btn-purple { background:rgba(124,58,237,0.15); border-color:rgba(124,58,237,0.3); color:#A78BFA; }
+.btn-purple:hover { background:rgba(124,58,237,0.22); }
+
+/* ── Layout ── */
+.container { max-width:1480px; margin:0 auto; padding:24px 28px 60px; }
+.section-title { font-size:11px; font-weight:700; letter-spacing:1.2px; text-transform:uppercase; color:var(--muted); margin-bottom:14px; }
+
+/* ── Stat cards ── */
+.stats-row { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:12px; margin-bottom:28px; }
+.stat-card { background:var(--surface); border:1px solid var(--border); border-radius:14px; padding:18px 20px; }
+.stat-label { font-size:11px; font-weight:700; letter-spacing:0.8px; text-transform:uppercase; color:var(--muted); margin-bottom:6px; }
+.stat-value { font-size:26px; font-weight:800; color:var(--txt); line-height:1; }
+.stat-sub { font-size:12px; color:var(--muted); margin-top:5px; }
+.stat-green { border-color:rgba(16,185,129,0.25); }
+.stat-green .stat-value { color:var(--green); }
+.stat-amber { border-color:rgba(245,158,11,0.25); }
+.stat-amber .stat-value { color:var(--amber); }
+.stat-red { border-color:rgba(239,68,68,0.25); }
+.stat-red .stat-value { color:var(--red); }
+
+/* ── Heatmap ── */
+.heatmap-section { background:var(--surface); border:1px solid var(--border); border-radius:18px; padding:24px 26px; margin-bottom:28px; }
+.heatmap-header { display:flex; align-items:center; justify-content:space-between; margin-bottom:20px; }
+.heatmap-legend { display:flex; gap:16px; align-items:center; }
+.legend-item { display:flex; align-items:center; gap:6px; font-size:12px; color:var(--muted); }
+.legend-dot { width:10px; height:10px; border-radius:3px; }
+.legend-good  { background:var(--green); }
+.legend-warn  { background:var(--amber); }
+.legend-bad   { background:var(--red); }
+.legend-none  { background:var(--border2); }
+
+.heatmap-wrap { overflow-x:auto; }
+.heatmap-table { border-collapse:collapse; min-width:100%; }
+.hm-th-corner { width:130px; min-width:130px; }
+.hm-th { padding:8px 6px; text-align:center; font-size:11px; font-weight:700; letter-spacing:0.4px; color:var(--muted); text-transform:uppercase; white-space:nowrap; min-width:82px; }
+.hm-td-label { padding:10px 12px 10px 0; text-align:right; white-space:nowrap; }
+.agent-label { display:inline-flex; align-items:center; gap:8px; font-size:13px; font-weight:700; color:var(--txt); }
+.agent-badge { font-size:10px; font-weight:700; padding:2px 7px; border-radius:5px; letter-spacing:0.5px; }
+.badge-adroom  { background:rgba(0,240,255,0.1); color:var(--brand1); border:1px solid rgba(0,240,255,0.2); }
+.badge-apma    { background:rgba(124,58,237,0.15); color:#A78BFA; border:1px solid rgba(124,58,237,0.3); }
+
+.hm-cell { padding:5px; text-align:center; }
+.hm-cell-inner {
+  width:72px; height:52px; border-radius:10px; display:flex; flex-direction:column;
+  align-items:center; justify-content:center; gap:2px; cursor:default;
+  transition:transform 0.12s, box-shadow 0.12s;
+  border:1px solid transparent;
+}
+.hm-cell-inner:hover { transform:scale(1.08); box-shadow:0 4px 20px rgba(0,0,0,0.4); z-index:2; position:relative; }
+.hm-score { font-size:16px; font-weight:800; line-height:1; }
+.hm-count { font-size:10px; font-weight:500; opacity:0.7; }
+
+.cell-good { background:rgba(16,185,129,0.18); border-color:rgba(16,185,129,0.3); }
+.cell-good .hm-score { color:#34D399; }
+.cell-warn { background:rgba(245,158,11,0.18); border-color:rgba(245,158,11,0.3); }
+.cell-warn .hm-score { color:#FBBF24; }
+.cell-bad  { background:rgba(239,68,68,0.18); border-color:rgba(239,68,68,0.3); }
+.cell-bad  .hm-score { color:#F87171; }
+.cell-none { background:var(--border); border-color:transparent; }
+.cell-none .hm-score { color:var(--muted2); font-size:13px; }
+
+/* ── By-agent summary ── */
+.agent-summary { display:grid; grid-template-columns:repeat(auto-fit,minmax(200px,1fr)); gap:12px; margin-bottom:28px; }
+.agent-card { background:var(--surface); border:1px solid var(--border); border-radius:14px; padding:16px 18px; }
+.agent-card-top { display:flex; align-items:center; justify-content:space-between; margin-bottom:12px; }
+.agent-card-name { font-size:13px; font-weight:800; color:var(--txt); }
+.agent-score-big { font-size:22px; font-weight:900; }
+.agent-bar-bg { height:5px; background:var(--border2); border-radius:999px; overflow:hidden; }
+.agent-bar-fill { height:100%; border-radius:999px; transition:width 0.6s ease; }
+.agent-stats-row { display:flex; gap:12px; margin-top:10px; }
+.agent-stat-mini { text-align:center; flex:1; }
+.agent-stat-mini .v { font-size:13px; font-weight:700; }
+.agent-stat-mini .l { font-size:10px; color:var(--muted); margin-top:2px; }
+
+/* ── Logs table ── */
+.logs-section { background:var(--surface); border:1px solid var(--border); border-radius:18px; padding:24px 26px; }
+.logs-header { display:flex; align-items:center; justify-content:space-between; margin-bottom:16px; flex-wrap:wrap; gap:10px; }
+.filter-row { display:flex; gap:8px; }
+.filter-btn { background:var(--border); border:1px solid var(--border2); color:var(--muted); border-radius:7px; padding:5px 12px; font-size:12px; font-weight:600; cursor:pointer; transition:all 0.1s; }
+.filter-btn:hover, .filter-btn.active { background:var(--border2); color:var(--txt); border-color:var(--muted2); }
+.filter-btn.f-approved.active { background:var(--green-bg); border-color:rgba(16,185,129,0.4); color:var(--green); }
+.filter-btn.f-flagged.active  { background:var(--amber-bg); border-color:rgba(245,158,11,0.4); color:var(--amber); }
+.filter-btn.f-rejected.active { background:var(--red-bg);   border-color:rgba(239,68,68,0.4);  color:var(--red); }
+
+.log-table { width:100%; border-collapse:collapse; }
+.log-table th { padding:10px 12px; text-align:left; font-size:11px; font-weight:700; letter-spacing:0.8px; text-transform:uppercase; color:var(--muted); border-bottom:1px solid var(--border); }
+.log-table td { padding:10px 12px; font-size:13px; border-bottom:1px solid var(--border); vertical-align:top; }
+.log-table tr:last-child td { border-bottom:none; }
+.log-table tr:hover td { background:rgba(255,255,255,0.02); }
+.verdict-badge { display:inline-block; padding:2px 9px; border-radius:5px; font-size:11px; font-weight:700; letter-spacing:0.4px; text-transform:uppercase; }
+.verdict-approved { background:var(--green-bg); color:var(--green); border:1px solid rgba(16,185,129,0.3); }
+.verdict-flagged  { background:var(--amber-bg); color:var(--amber); border:1px solid rgba(245,158,11,0.3); }
+.verdict-rejected { background:var(--red-bg);   color:var(--red);   border:1px solid rgba(239,68,68,0.3); }
+.score-pill { display:inline-block; min-width:36px; text-align:center; font-weight:800; font-size:13px; padding:1px 8px; border-radius:6px; }
+.issues-list { color:var(--muted); font-size:12px; margin-top:3px; line-height:1.5; }
+.platform-tag { display:inline-block; font-size:11px; font-weight:600; background:var(--border); border-radius:5px; padding:1px 7px; color:var(--muted); }
+.improve-modal { display:none; position:fixed; inset:0; background:rgba(0,0,0,0.7); z-index:200; align-items:center; justify-content:center; }
+.improve-modal.open { display:flex; }
+.improve-box { background:var(--surface); border:1px solid var(--border2); border-radius:18px; padding:28px 30px; max-width:560px; width:90%; }
+.improve-box h3 { font-size:16px; font-weight:800; margin-bottom:12px; }
+.improve-content { background:var(--bg); border:1px solid var(--border); border-radius:10px; padding:16px; font-size:13px; line-height:1.7; color:var(--txt); white-space:pre-wrap; max-height:320px; overflow-y:auto; margin-bottom:16px; }
+.improve-loading { color:var(--muted); font-style:italic; }
+.modal-close { float:right; font-size:18px; cursor:pointer; color:var(--muted); line-height:1; }
+
+/* ── Responsive ── */
+@media(max-width:680px){
+  .topbar{ flex-direction:column; gap:10px; align-items:flex-start; }
+  .stats-row{ grid-template-columns:1fr 1fr; }
+  .heatmap-legend{ display:none; }
+  .agent-summary{ grid-template-columns:1fr 1fr; }
+}
+</style>
+</head>
+<body>
+
+<!-- Top bar -->
+<div class="topbar">
+  <div class="topbar-left">
+    <div>
+      <div class="logo">AdRoom AI</div>
+      <div class="logo-sub">Critic Agent — Quality Dashboard</div>
+    </div>
+    <div class="badge-live">
+      <div class="dot-live"></div>
+      <span>LIVE</span>
+    </div>
+  </div>
+  <div class="topbar-right">
+    <span class="countdown" id="countdown">Refreshing in 30s</span>
+    <button class="btn btn-blue btn-sm" onclick="refreshAll()">↺ Refresh Now</button>
+  </div>
+</div>
+
+<div class="container">
+
+  <!-- Stats row -->
+  <div class="section-title" style="margin-top:24px">Overall Quality — 7 Day Rolling</div>
+  <div class="stats-row" id="stats-row">
+    <div class="stat-card"><div class="stat-label">Total Evals</div><div class="stat-value" id="s-total">—</div><div class="stat-sub">All agents · all platforms</div></div>
+    <div class="stat-card stat-green"><div class="stat-label">Approved</div><div class="stat-value" id="s-approved">—</div><div class="stat-sub" id="s-approved-pct">—</div></div>
+    <div class="stat-card stat-amber"><div class="stat-label">Flagged</div><div class="stat-value" id="s-flagged">—</div><div class="stat-sub" id="s-flagged-pct">—</div></div>
+    <div class="stat-card stat-red"><div class="stat-label">Rejected</div><div class="stat-value" id="s-rejected">—</div><div class="stat-sub" id="s-rejected-pct">—</div></div>
+    <div class="stat-card"><div class="stat-label">Avg Score</div><div class="stat-value" id="s-avg">—</div><div class="stat-sub">Out of 100</div></div>
+    <div class="stat-card stat-red"><div class="stat-label">Last 24h Rejected</div><div class="stat-value" id="s-24h-rej">—</div><div class="stat-sub" id="s-24h-total">of — evals</div></div>
+  </div>
+
+  <!-- Heatmap -->
+  <div class="heatmap-section">
+    <div class="heatmap-header">
+      <div>
+        <div class="section-title" style="margin-bottom:4px">Agent × Platform Health Heatmap</div>
+        <div style="color:var(--muted);font-size:12px;">Rolling 7-day average quality score · hover for detail</div>
+      </div>
+      <div class="heatmap-legend">
+        <div class="legend-item"><div class="legend-dot legend-good"></div>Good ≥75</div>
+        <div class="legend-item"><div class="legend-dot legend-warn"></div>Warn 50–74</div>
+        <div class="legend-item"><div class="legend-dot legend-bad"></div>Poor &lt;50</div>
+        <div class="legend-item"><div class="legend-dot legend-none"></div>No data</div>
+      </div>
+    </div>
+    <div class="heatmap-wrap">
+      <table class="heatmap-table" id="heatmap-table">
+        <thead>
+          <tr>
+            <th class="hm-th-corner"></th>
+            <th class="hm-th">Facebook</th>
+            <th class="hm-th">Instagram</th>
+            <th class="hm-th">Twitter/X</th>
+            <th class="hm-th">LinkedIn</th>
+            <th class="hm-th">TikTok</th>
+            <th class="hm-th">Reddit</th>
+            <th class="hm-th">Telegram</th>
+            <th class="hm-th">WordPress</th>
+          </tr>
+        </thead>
+        <tbody id="heatmap-body">
+          <tr><td colspan="9" style="text-align:center;padding:30px;color:var(--muted);">Loading heatmap...</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Per-agent summary -->
+  <div class="section-title">Agent Breakdown</div>
+  <div class="agent-summary" id="agent-summary">
+    <div style="color:var(--muted);font-size:13px;padding:20px 0;">Loading...</div>
+  </div>
+
+  <!-- Logs -->
+  <div class="logs-section">
+    <div class="logs-header">
+      <div class="section-title" style="margin-bottom:0">Recent Evaluations</div>
+      <div class="filter-row">
+        <button class="filter-btn active" data-verdict="all" onclick="setFilter(this,'all')">All</button>
+        <button class="filter-btn f-approved" data-verdict="approved" onclick="setFilter(this,'approved')">Approved</button>
+        <button class="filter-btn f-flagged" data-verdict="flagged" onclick="setFilter(this,'flagged')">Flagged</button>
+        <button class="filter-btn f-rejected" data-verdict="rejected" onclick="setFilter(this,'rejected')">Rejected</button>
+      </div>
+    </div>
+    <table class="log-table">
+      <thead>
+        <tr>
+          <th style="width:90px">Time</th>
+          <th style="width:130px">Agent</th>
+          <th>Task</th>
+          <th style="width:90px">Platform</th>
+          <th style="width:70px">Score</th>
+          <th style="width:90px">Verdict</th>
+          <th>Issues</th>
+        </tr>
+      </thead>
+      <tbody id="logs-body">
+        <tr><td colspan="7" style="text-align:center;padding:30px;color:var(--muted);">Loading...</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+</div>
+
+<!-- Auto-improve modal -->
+<div class="improve-modal" id="improve-modal" onclick="if(event.target===this)closeImprove()">
+  <div class="improve-box">
+    <span class="modal-close" onclick="closeImprove()">✕</span>
+    <h3 id="improve-title">AI Quality Coach</h3>
+    <div class="improve-content" id="improve-content">
+      <span class="improve-loading">Analysing recent failures and generating recommendations...</span>
+    </div>
+    <div style="display:flex;gap:10px;justify-content:flex-end;">
+      <button class="btn" onclick="closeImprove()">Close</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ── Config ────────────────────────────────────────────────────────────────────
+const API = '';  // same origin — backend serves this HTML
+const AGENTS = [
+  { key:'SALESMAN',      label:'SALESMAN',      type:'adroom' },
+  { key:'AWARENESS',     label:'AWARENESS',     type:'adroom' },
+  { key:'PROMOTION',     label:'PROMOTION',     type:'adroom' },
+  { key:'LAUNCH',        label:'LAUNCH',        type:'adroom' },
+  { key:'APMA_POLITICAL',label:'APMA',          type:'apma'   },
+];
+const PLATFORMS = ['facebook','instagram','twitter','linkedin','tiktok','reddit','telegram','wordpress'];
+
+// ── State ─────────────────────────────────────────────────────────────────────
+let allLogs    = [];
+let activeFilter = 'all';
+let countdown  = 30;
+let countdownTimer;
+
+// ── Bootstrap ─────────────────────────────────────────────────────────────────
+window.addEventListener('DOMContentLoaded', () => {
+  refreshAll();
+  startCountdown();
+});
+
+function startCountdown() {
+  clearInterval(countdownTimer);
+  countdown = 30;
+  countdownTimer = setInterval(() => {
+    countdown--;
+    document.getElementById('countdown').textContent = `Refreshing in ${countdown}s`;
+    if (countdown <= 0) { refreshAll(); countdown = 30; }
+  }, 1000);
+}
+
+async function refreshAll() {
+  countdown = 30;
+  document.getElementById('countdown').textContent = 'Refreshing...';
+  await Promise.all([fetchStats(), fetchHeatmap(), fetchLogs()]);
+  document.getElementById('countdown').textContent = `Refreshing in 30s`;
+}
+
+// ── Stats ─────────────────────────────────────────────────────────────────────
+async function fetchStats() {
+  try {
+    const r = await fetch(`${API}/api/admin/critic/stats`);
+    if (!r.ok) return;
+    const d = await r.json();
+    const total = d.total || 0;
+    document.getElementById('s-total').textContent    = fmtN(total);
+    document.getElementById('s-approved').textContent = fmtN(d.approved || 0);
+    document.getElementById('s-flagged').textContent  = fmtN(d.flagged  || 0);
+    document.getElementById('s-rejected').textContent = fmtN(d.rejected || 0);
+    document.getElementById('s-avg').textContent      = `${d.avgScore || 0}`;
+    document.getElementById('s-24h-rej').textContent  = fmtN(d.last24h?.rejected || 0);
+    document.getElementById('s-24h-total').textContent = `of ${fmtN(d.last24h?.total || 0)} evals`;
+    if (total > 0) {
+      document.getElementById('s-approved-pct').textContent = `${pct(d.approved, total)}% of total`;
+      document.getElementById('s-flagged-pct').textContent  = `${pct(d.flagged,  total)}% of total`;
+      document.getElementById('s-rejected-pct').textContent = `${pct(d.rejected, total)}% of total`;
+    }
+    renderAgentSummary(d.byAgent || {});
+  } catch(e) { console.error('Stats error:', e); }
+}
+
+function renderAgentSummary(byAgent) {
+  const el = document.getElementById('agent-summary');
+  if (!Object.keys(byAgent).length) {
+    el.innerHTML = '<div style="color:var(--muted);font-size:13px;">No data yet — evaluations will appear as agents run.</div>';
+    return;
+  }
+  el.innerHTML = AGENTS.map(ag => {
+    const d = byAgent[ag.key];
+    if (!d) return `
+      <div class="agent-card">
+        <div class="agent-card-top">
+          <span class="agent-card-name">${ag.label}</span>
+          <span class="agent-badge ${ag.type === 'apma' ? 'badge-apma' : 'badge-adroom'}">${ag.type.toUpperCase()}</span>
+        </div>
+        <div style="color:var(--muted);font-size:12px;margin-bottom:10px;">No evaluations yet</div>
+        <button class="btn btn-purple btn-sm" onclick="openImprove('${ag.key}','${ag.label}')">✦ Coach</button>
+      </div>`;
+    const avg = d.avg || 0;
+    const scoreColor = avg >= 75 ? 'var(--green)' : avg >= 50 ? 'var(--amber)' : 'var(--red)';
+    const barColor   = avg >= 75 ? 'var(--green)' : avg >= 50 ? 'var(--amber)' : 'var(--red)';
+    return `
+      <div class="agent-card">
+        <div class="agent-card-top">
+          <span class="agent-card-name">${ag.label}</span>
+          <span class="agent-badge ${ag.type === 'apma' ? 'badge-apma' : 'badge-adroom'}">${ag.type.toUpperCase()}</span>
+        </div>
+        <div style="display:flex;align-items:flex-end;justify-content:space-between;margin-bottom:8px;">
+          <span class="agent-score-big" style="color:${scoreColor}">${avg}</span>
+          <span style="color:var(--muted);font-size:12px;">${fmtN(d.total)} evals</span>
+        </div>
+        <div class="agent-bar-bg"><div class="agent-bar-fill" style="width:${avg}%;background:${barColor}"></div></div>
+        <div style="margin-top:12px;display:flex;justify-content:flex-end;">
+          <button class="btn btn-purple btn-sm" onclick="openImprove('${ag.key}','${ag.label}')">✦ Coach AI</button>
+        </div>
+      </div>`;
+  }).join('');
+}
+
+// ── Heatmap ───────────────────────────────────────────────────────────────────
+async function fetchHeatmap() {
+  try {
+    const r = await fetch(`${API}/api/admin/critic/heatmap`);
+    if (!r.ok) return;
+    const cells = await r.json();
+    renderHeatmap(cells);
+  } catch(e) { console.error('Heatmap error:', e); }
+}
+
+function renderHeatmap(cells) {
+  // Build lookup: agentType||platform → cell
+  const map = {};
+  for (const c of cells) map[`${c.agentType}||${c.platform.toLowerCase()}`] = c;
+
+  const tbody = document.getElementById('heatmap-body');
+  tbody.innerHTML = AGENTS.map(ag => `
+    <tr>
+      <td class="hm-td-label">
+        <div class="agent-label">
+          <span>${ag.label}</span>
+          <span class="agent-badge ${ag.type === 'apma' ? 'badge-apma' : 'badge-adroom'}">${ag.type.toUpperCase()}</span>
+        </div>
+      </td>
+      ${PLATFORMS.map(p => {
+        const c = map[`${ag.key}||${p}`];
+        if (!c) return `<td class="hm-cell"><div class="hm-cell-inner cell-none" title="No data for ${ag.key} × ${p}"><span class="hm-score">—</span></div></td>`;
+        const cls = c.verdict === 'good' ? 'cell-good' : c.verdict === 'warn' ? 'cell-warn' : 'cell-bad';
+        return `<td class="hm-cell"><div class="hm-cell-inner ${cls}" title="${ag.key} × ${p}\nAvg score: ${c.avgScore}/100\nEvaluations: ${c.count}\n7-day rolling">
+          <span class="hm-score">${c.avgScore}</span>
+          <span class="hm-count">${c.count}×</span>
+        </div></td>`;
+      }).join('')}
+    </tr>
+  `).join('');
+}
+
+// ── Logs ──────────────────────────────────────────────────────────────────────
+async function fetchLogs() {
+  try {
+    const vParam = activeFilter !== 'all' ? `&verdict=${activeFilter}` : '';
+    const r = await fetch(`${API}/api/admin/critic/logs?limit=60${vParam}`);
+    if (!r.ok) return;
+    allLogs = await r.json();
+    renderLogs(allLogs);
+  } catch(e) { console.error('Logs error:', e); }
+}
+
+function renderLogs(logs) {
+  const tbody = document.getElementById('logs-body');
+  if (!logs.length) {
+    tbody.innerHTML = `<tr><td colspan="7" style="text-align:center;padding:30px;color:var(--muted);">No evaluations found${activeFilter !== 'all' ? ` with verdict "${activeFilter}"` : ''}.</td></tr>`;
+    return;
+  }
+  tbody.innerHTML = logs.map(l => {
+    const vClass = `verdict-${l.verdict}`;
+    const scoreColor = (l.quality_score||0) >= 75 ? 'var(--green)' : (l.quality_score||0) >= 50 ? 'var(--amber)' : 'var(--red)';
+    const issues = Array.isArray(l.issues) && l.issues.length
+      ? `<div class="issues-list">⚠ ${l.issues.slice(0,2).join(' · ')}</div>` : '';
+    const platform = l.platform ? `<span class="platform-tag">${l.platform}</span>` : '<span style="color:var(--muted2)">—</span>';
+    const agentInfo = AGENTS.find(a => a.key === l.agent_type);
+    const badgeCls = agentInfo?.type === 'apma' ? 'badge-apma' : 'badge-adroom';
+    return `<tr>
+      <td style="color:var(--muted);white-space:nowrap">${timeAgo(l.created_at)}</td>
+      <td>
+        <div style="font-weight:700;font-size:12px">${l.agent_type||'—'}</div>
+        ${agentInfo ? `<span class="agent-badge ${badgeCls}" style="margin-top:3px;display:inline-block">${agentInfo.type.toUpperCase()}</span>` : ''}
+      </td>
+      <td style="color:var(--muted);font-size:12px">${l.task_type||'—'}${l.operation ? ` / ${l.operation}` : ''}</td>
+      <td>${platform}</td>
+      <td><span class="score-pill" style="color:${scoreColor}">${l.quality_score||0}</span></td>
+      <td><span class="verdict-badge ${vClass}">${l.verdict}</span></td>
+      <td>${issues || '<span style="color:var(--muted2);font-size:12px">—</span>'}</td>
+    </tr>`;
+  }).join('');
+}
+
+function setFilter(btn, verdict) {
+  document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  activeFilter = verdict;
+  fetchLogs();
+}
+
+// ── Auto-improve modal ────────────────────────────────────────────────────────
+async function openImprove(agentType, agentLabel) {
+  document.getElementById('improve-title').textContent = `✦ AI Quality Coach — ${agentLabel}`;
+  document.getElementById('improve-content').innerHTML = '<span class="improve-loading">Analysing recent failures and generating improvement recommendations…</span>';
+  document.getElementById('improve-modal').classList.add('open');
+  try {
+    const r = await fetch(`${API}/api/admin/critic/improve/${agentType}`, { method:'POST' });
+    const d = await r.json();
+    if (d.recommendation) {
+      document.getElementById('improve-content').textContent = d.recommendation;
+    } else {
+      document.getElementById('improve-content').textContent = d.error || 'No recommendation generated.';
+    }
+  } catch(e) {
+    document.getElementById('improve-content').textContent = 'Error: ' + e.message;
+  }
+}
+
+function closeImprove() {
+  document.getElementById('improve-modal').classList.remove('open');
+}
+
+// ── Utilities ─────────────────────────────────────────────────────────────────
+function fmtN(n) { return Number(n).toLocaleString(); }
+function pct(a, b) { return b ? Math.round((a/b)*100) : 0; }
+function timeAgo(iso) {
+  if (!iso) return '—';
+  const diff = Date.now() - new Date(iso).getTime();
+  const m = Math.floor(diff/60000);
+  if (m < 1) return 'just now';
+  if (m < 60) return `${m}m ago`;
+  const h = Math.floor(m/60);
+  if (h < 24) return `${h}h ago`;
+  return `${Math.floor(h/24)}d ago`;
+}
+</script>
+</body>
+</html>

@@ -7,6 +7,12 @@
     "**/*.ts",
     "**/*.tsx",
     "app.d.ts",
-    "src/types/**/*.d.ts"
+    "src/types/**/*.d.ts",
+    "nativewind-env.d.ts"
+  ],
+  "exclude": [
+    "node_modules",
+    "backend",
+    "web-build"
   ]
 }

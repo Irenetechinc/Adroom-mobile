@@ -1,0 +1,27 @@
+add a "retry now" button inside the failed top-up push notification / Subscription screen so users can immediately re-attempt a failed auto top-up without waiting for the 24-hour automatic retry.
+
+i noticed that tiktok dosnt have autonomus video uploading capabilites fix this.
+
+aslo when adroom present a strgey sumary and require user to approve all assets, contnet required for the first seven days of that stragey must be genrated so use can see the actual assets and how they will look, not a script, actual reuqired assets, videos, content, graphics design.
+
+impliement a very compregensive and rubust grapgics desinger agent that is reposible for genrating required graphics desing and not just random graphics desing must desing look, feel must be according to realtime data from engin that that stregy or conten trequires to achive its goal in realtime, the graphics desinger agent can desing and generate some or identical graphics for two post or user evry single graphics across all post and user be unuqe no reputation and must be unique and every other agent should be able to work with this agent when and where required and in sync note this grapics desinger agent must be very robus and should the best graphics desinger in the world flexible and daptable must draw realtime attention and user traction.
+
+chack other sicial account for required autonmus activities that hasnt been implimented and implimentent them accordinlyand autonomus activities work with all adroom ai engins and are intelegent smart and should be self awaer for learning and adpating folow whats all ready implimented and and impliment acordinly.
+also add thinking state that syce accordinly after user selected goal just before the duration recomendations makr sure that the thinking is not out  of syce but in syc.
+
+i cant login to admin panel am getting this error in browser consol fix from root couse "Uncaught SyntaxError: Unexpected stringUnderstand this error
+8admin:127 Uncaught ReferenceError: doLogin is not defined
+    at HTMLButtonElement.onclick (admin:127:129)"
+
+ensure that the promt below where all implimented and noting was left half done or missing entirely 
+
+Promt: ok ensure that when user togle the auto top up here the user credicts are automatically toped up with the user spcified top up amount once credicts reached 25 credicts and subscription circle hasnt ended so once user toglees the auto topup they shoud be reuired to specify auto topup amount and should a selection of ether 100 credicts for 25$, 300 energy credicts for 50$, and 120$ for 600 energy credicts and user should be able to change this auto top up amount at any given time, so the auto top up auto charge user card with the reuired amount for that top up amount after sucessfuly acount charge user account is credicted with require credicts and and as well recive a notifcation where user account is not suffeciant for auto top up it should be automatically retried after 24hr ecept if user cancels the or off the auto top up amount.
+
+all terminal and consol logs should be streamed live and view live as the run in admin pannel as well as any general activity going on in backend that user cant see
+
+in connected accounts user the valid social mideo icons for evry social media account not a look alike logo or text.
+
+i also noticed that when user recice or has an unred notifcation the notifaction text section in the setting screen dosnt show the unread notification barge count until user navigate to notification screen and back to setting screen before unread notifcation barge in the setting screen show this barge should show unread notifcation count bage even if user dosnt or hasnt navigated to nptifcation screen and as new notications entire barge should increment count accordinly in realtime with page refresh
+Note:
+Do not disrupt any already. Made progress, no dummy or demo implementations, no hard coded data look what been don and update, creat and Impliment where required avoid any form of double implimentation make sure all fix and Implemtations are for realtime and production. All implimentation must align with what already done and work in syc.
+This is a mobile app not web application. And must run 100% off replit, railway for backend and supabase for database
