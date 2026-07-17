@@ -1,9 +1,6 @@
 import { supabase } from './supabase';
 import { FacebookConfig } from '../types/facebook';
-import * as WebBrowser from 'expo-web-browser';
 import { runOAuthBrowserFlow } from '../utils/oauthBrowser';
-
-WebBrowser.maybeCompleteAuthSession();
 
 const FB_APP_ID = process.env.EXPO_PUBLIC_FACEBOOK_APP_ID;
 
@@ -36,7 +33,7 @@ export const FacebookService = {
     const callbackUrl = `${BACKEND_URL}/auth/facebook/callback`;
 
     const authUrl =
-      `https://www.facebook.com/v18.0/dialog/oauth` +
+      `https://www.facebook.com/dialog/oauth` +
       `?client_id=${FB_APP_ID}` +
       `&redirect_uri=${encodeURIComponent(callbackUrl)}` +
       `&response_type=code` +
@@ -82,7 +79,7 @@ export const FacebookService = {
 
   async getPages(userAccessToken: string): Promise<FacebookPage[]> {
     const response = await fetch(
-      `https://graph.facebook.com/v18.0/me/accounts?access_token=${userAccessToken}&fields=id,name,access_token,category`
+      `https://graph.facebook.com/v25.0/me/accounts?access_token=${userAccessToken}&fields=id,name,access_token,category`
     );
     const data = await response.json();
     if (data.error) throw new Error(data.error.message);
@@ -92,7 +89,7 @@ export const FacebookService = {
   async validateCredentials(input: any): Promise<boolean> {
     if (!input.access_token) return false;
     try {
-      const meRes = await fetch(`https://graph.facebook.com/v18.0/me?access_token=${input.access_token}`);
+      const meRes = await fetch(`https://graph.facebook.com/v25.0/me?access_token=${input.access_token}`);
       return meRes.ok;
     } catch { return false; }
   },
@@ -113,7 +110,7 @@ export const FacebookService = {
   },
 
   async postComment(objectId: string, message: string, accessToken: string): Promise<string> {
-    const response = await fetch(`https://graph.facebook.com/v18.0/${objectId}/comments`, {
+    const response = await fetch(`https://graph.facebook.com/v25.0/${objectId}/comments`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ message, access_token: accessToken }),
     });
@@ -123,7 +120,7 @@ export const FacebookService = {
   },
 
   async likeObject(objectId: string, accessToken: string): Promise<boolean> {
-    const response = await fetch(`https://graph.facebook.com/v18.0/${objectId}/likes`, {
+    const response = await fetch(`https://graph.facebook.com/v25.0/${objectId}/likes`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ access_token: accessToken }),
     });
@@ -133,7 +130,7 @@ export const FacebookService = {
   },
 
   async postMessage(recipientId: string, message: string, accessToken: string): Promise<string> {
-    const response = await fetch(`https://graph.facebook.com/v18.0/me/messages`, {
+    const response = await fetch(`https://graph.facebook.com/v25.0/me/messages`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         recipient: { id: recipientId }, message: { text: message }, access_token: accessToken,
@@ -148,7 +145,7 @@ export const FacebookService = {
     const body: any = { message, access_token: accessToken, published: true };
     const endpoint  = imageUrl ? 'photos' : 'feed';
     if (imageUrl) body.url = imageUrl;
-    const response = await fetch(`https://graph.facebook.com/v18.0/${pageId}/${endpoint}`, {
+    const response = await fetch(`https://graph.facebook.com/v25.0/${pageId}/${endpoint}`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
     });

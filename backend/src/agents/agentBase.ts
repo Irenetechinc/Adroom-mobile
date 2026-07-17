@@ -36,7 +36,7 @@ export interface PublishResult {
     url?: string;
 }
 
-const FB_GRAPH = 'https://graph.facebook.com/v19.0';
+const FB_GRAPH = 'https://graph.facebook.com/v25.0';
 const TWITTER_API = 'https://api.twitter.com/2';
 const LINKEDIN_API = 'https://api.linkedin.com/v2';
 const TIKTOK_API = 'https://open.tiktokapis.com/v2';
@@ -107,6 +107,7 @@ export class AgentBase {
         socialData?: any;
         platformIntel?: any;
         instructionOverride?: string;
+        userId?: string;
     }): Promise<{ headline: string; body: string; image_prompt: string; hashtags: string[]; cta: string }> {
         const prompt = `
 You are the AdRoom ${this.agentType} Agent generating PRODUCTION-READY social content.
@@ -148,13 +149,34 @@ Return STRICT JSON only (no markdown, no explanation):
 }
 `;
         const response = await this.ai.generateStrategy({}, prompt);
-        return response.parsedJson || {
+        const content = response.parsedJson || {
             headline: 'Check this out',
             body: params.context,
             image_prompt: `Professional marketing image for ${params.product?.product_name || 'product'}`,
             hashtags: [],
             cta: 'Learn more'
         };
+
+        // Fire-and-forget critic evaluation (never blocks the pipeline)
+        try {
+            const { criticAgentService } = await import('../services/criticAgentService');
+            const reviewText = [
+                content.headline,
+                content.body,
+                content.cta,
+                (content.hashtags || []).join(' '),
+            ].filter(Boolean).join('\n\n');
+            criticAgentService.analyze({
+                output:    reviewText,
+                agentType: this.agentType,
+                taskType:  params.taskType,
+                platform:  params.platform,
+                userId:    params.userId,
+                operation: `${params.taskType}_day${params.dayNumber}`,
+            });
+        } catch { /* critic is non-critical — never throw */ }
+
+        return content;
     }
 
     // ─── PUBLISHING ENGINE ───────────────────────────────────────────────────────
@@ -1123,7 +1145,22 @@ For LAUNCH goal: build excitement, exclusive energy.
 
 Return ONLY the reply text, nothing else.
 `);
-            return result.text?.trim().replace(/^"|"$/g, '').substring(0, 120) || null;
+            const replyText = result.text?.trim().replace(/^"|"$/g, '').substring(0, 120) || null;
+
+            // Critic: fire-and-forget quality evaluation — never blocks the pipeline
+            if (replyText) {
+                import('../services/criticAgentService').then(({ criticAgentService }) => {
+                    criticAgentService.analyze({
+                        output: replyText,
+                        agentType: this.agentType,
+                        taskType: 'comment_reply',
+                        platform,
+                        operation: 'quick_reply',
+                    });
+                }).catch(() => {});
+            }
+
+            return replyText;
         } catch { return null; }
     }
 
@@ -1266,6 +1303,23 @@ Only include comments that should be replied to.`;
         try {
             const aiResult = await this.ai.generateStrategy({}, classifyPrompt);
             replyPlan = aiResult.parsedJson?.replies || [];
+
+            // Critic: evaluate the reply plan batch as a whole (fire-and-forget)
+            if (replyPlan.length > 0) {
+                const batchText = replyPlan.map((r: any) => r.reply).filter(Boolean).join('\n---\n');
+                if (batchText) {
+                    import('../services/criticAgentService').then(({ criticAgentService }) => {
+                        criticAgentService.analyze({
+                            output: batchText,
+                            agentType: this.agentType,
+                            taskType: 'comment_reply_batch',
+                            platform: params.platform,
+                            userId: params.userId,
+                            operation: 'scan_and_reply_comments',
+                        });
+                    }).catch(() => {});
+                }
+            }
         } catch { return { replied: 0, leads: 0 }; }
 
         let replied = 0;

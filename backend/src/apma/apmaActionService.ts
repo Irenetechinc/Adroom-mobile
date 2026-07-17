@@ -114,6 +114,17 @@ export class APMAActionService {
       const result = await this._publishContent(client, campaign, action, humanized, strategyId, imageBase64, imageMime);
       if (result.success) success++; else fail++;
 
+      // Critic: fire-and-forget quality evaluation on published APMA content
+      import('../services/criticAgentService').then(({ criticAgentService }) => {
+        criticAgentService.analyze({
+          output: humanized.text,
+          agentType: 'APMA_POLITICAL',
+          taskType: action.type || 'social_post',
+          platform: action.platform,
+          operation: 'apma_content_publish',
+        });
+      }).catch(() => {});
+
       // Realistic inter-post delay (reduced in execution to max 5s so cycles don't time out)
       if (i < action.count - 1) await this._sleep(Math.floor(Math.random() * 5000 + 1000));
     }
@@ -312,7 +323,7 @@ Write ONLY the ${action.type} text. No quotes. No label.`;
           formData.append('caption', text);
           formData.append('access_token', pageToken);
 
-          const photoRes = await fetch(`https://graph.facebook.com/v19.0/${pageId}/photos`, {
+          const photoRes = await fetch(`https://graph.facebook.com/v25.0/${pageId}/photos`, {
             method: 'POST',
             body: formData,
           });
@@ -325,7 +336,7 @@ Write ONLY the ${action.type} text. No quotes. No label.`;
       }
 
       // Text-only fallback
-      const res = await fetch(`https://graph.facebook.com/v19.0/${pageId}/feed`, {
+      const res = await fetch(`https://graph.facebook.com/v25.0/${pageId}/feed`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ message: text, access_token: pageToken }),

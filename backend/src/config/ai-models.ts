@@ -13,6 +13,26 @@ const GEMINI_FLASH_MODEL = 'gemini-2.0-flash';
 const GEMINI_VISION_MODEL = 'gemini-2.0-flash';
 const OPENAI_STRATEGY_MODEL = process.env.OPENAI_TEXT_MODEL || 'gpt-4o';
 
+// ── Global admin model override ────────────────────────────────────────────────
+// Admin can switch the entire system between 'auto' | 'economy' | 'premium'.
+// 'auto'    = CMA decides based on tier/burn-rate (default)
+// 'economy' = force all strategy ops to Gemini Flash (cheaper/faster)
+// 'premium' = force all economy ops up to GPT-4o (best quality)
+let _globalModelOverride: 'auto' | 'economy' | 'premium' = 'auto';
+let _modelOverrideReason = '';
+let _modelOverrideSetAt: string | null = null;
+
+export function getModelOverride() {
+  return { mode: _globalModelOverride, reason: _modelOverrideReason, setAt: _modelOverrideSetAt };
+}
+
+export function setModelOverride(mode: 'auto' | 'economy' | 'premium', reason = '') {
+  _globalModelOverride = mode;
+  _modelOverrideReason = reason;
+  _modelOverrideSetAt = mode === 'auto' ? null : new Date().toISOString();
+  console.log(`[AI:ModelOverride] Set to '${mode}'${reason ? ` — ${reason}` : ''}`);
+}
+
 function aiLog(engine: string, action: string, detail?: any) {
   const ts = new Date().toISOString();
   const base = `[AI:${engine}] [${ts}] ${action}`;
@@ -78,6 +98,11 @@ export class AIEngine {
   }
 
   async generateStrategy(context: any, prompt: string): Promise<AIResponse> {
+    // Admin economy override: route premium request to Gemini Flash
+    if (_globalModelOverride === 'economy') {
+      aiLog('GPT-4o', 'generateStrategy OVERRIDE→economy (admin forced)');
+      return this.generateStrategyEconomy(context, prompt);
+    }
     aiLog('GPT-4o', `generateStrategy START — model: ${OPENAI_STRATEGY_MODEL}`);
     try {
       const completion = await openai.chat.completions.create({
@@ -118,6 +143,11 @@ export class AIEngine {
    * Produces the same JSON structure as generateStrategy.
    */
   async generateStrategyEconomy(context: any, prompt: string): Promise<AIResponse> {
+    // Admin premium override: route economy request up to GPT-4o
+    if (_globalModelOverride === 'premium') {
+      aiLog('GEMINI-FLASH', 'generateStrategyEconomy OVERRIDE→premium (admin forced)');
+      return this._generateStrategyOpenAI(context, prompt);
+    }
     aiLog('GEMINI-FLASH', `generateStrategyEconomy START (economy routing)`);
     try {
       const model = genAI.getGenerativeModel({ model: GEMINI_FLASH_MODEL });
@@ -139,6 +169,30 @@ export class AIEngine {
     } catch (error: any) {
       aiLog('GEMINI-FLASH', 'generateStrategyEconomy ERROR', error.message);
       throw new Error(`Gemini Economy Strategy Failed: ${error.message}`);
+    }
+  }
+
+  // Internal helper used when admin forces premium mode on economy calls
+  private async _generateStrategyOpenAI(context: any, prompt: string): Promise<AIResponse> {
+    aiLog('GPT-4o', `_generateStrategyOpenAI START (premium override)`);
+    try {
+      const completion = await openai.chat.completions.create({
+        messages: [
+          { role: 'system', content: 'You are AdRoom AI Core Brain — a world-class marketing strategist. Always respond with valid JSON only, no markdown, no code blocks.' },
+          { role: 'user', content: `Context: ${JSON.stringify(context)}\n\nTask: ${prompt}` },
+        ],
+        model: OPENAI_STRATEGY_MODEL,
+        response_format: { type: 'json_object' },
+        temperature: 0.7,
+      });
+      const text = completion.choices[0].message.content || '';
+      let parsedJson;
+      try { parsedJson = JSON.parse(text); } catch (_e) {}
+      aiLog('GPT-4o', '_generateStrategyOpenAI SUCCESS', { textLength: text.length });
+      return { text, parsedJson };
+    } catch (error: any) {
+      aiLog('GPT-4o', '_generateStrategyOpenAI ERROR', error.message);
+      throw new Error(`OpenAI Premium Override Failed: ${error.message}`);
     }
   }
 
