@@ -97,14 +97,41 @@ export class TokenRefreshService {
     const supabase = getServiceSupabaseClient();
     const now = new Date();
 
-    const { data: configs, error } = await supabase
+    // Try with token_expires_at first; fall back gracefully if the column
+    // hasn't been added yet (migration not yet run in Supabase).
+    let { data: configs, error } = await supabase
       .from('ad_configs')
       .select('user_id, platform, access_token, refresh_token, token_expires_at, updated_at')
       .not('access_token', 'is', null);
 
     if (error) {
-      console.error('[TokenRefresh] DB fetch error:', error.message);
-      return;
+      const isColMissing =
+        error.message?.includes('token_expires_at') &&
+        (error.message?.includes('does not exist') || error.message?.includes('column'));
+
+      if (isColMissing) {
+        console.warn(
+          '[TokenRefresh] Column token_expires_at missing — run backend/token_refresh_migration.sql ' +
+          'in the Supabase SQL editor to enable proactive token refresh. Falling back to updated_at heuristic.',
+        );
+        // Retry without the missing column — needsRefresh() falls back to
+        // updated_at when token_expires_at is null, so everything still works.
+        const fallback = await supabase
+          .from('ad_configs')
+          .select('user_id, platform, access_token, refresh_token, updated_at')
+          .not('access_token', 'is', null);
+
+        if (fallback.error) {
+          console.error('[TokenRefresh] DB fetch error:', fallback.error.message);
+          return;
+        }
+        // Patch each row with a null token_expires_at so TokenRow shape is met
+        configs = (fallback.data ?? []).map((r: any) => ({ ...r, token_expires_at: null }));
+        error   = null;
+      } else {
+        console.error('[TokenRefresh] DB fetch error:', error.message);
+        return;
+      }
     }
 
     const rows = (configs ?? []) as TokenRow[];
