@@ -648,7 +648,7 @@ router.get('/api/evolution/log', auth, async (req, res) => {
 
     let query = sb
       .from('self_evolution_log')
-      .select('id, user_id, agent_type, evolution_type, old_value, new_value, reason, performance_delta, created_at')
+      .select('id, agent_type, evolution_type, old_value, new_value, reason, performance_delta, created_at')
       .order('created_at', { ascending: false })
       .limit(limit);
 
@@ -670,7 +670,7 @@ router.get('/api/agent-network', auth, async (_req, res) => {
     const { data: tasks } = await sb
       .from('agent_tasks')
       .select('agent_type, status, platform')
-      .gte('updated_at', since);
+      .gte('created_at', since);
 
     const summary: Record<string, { agent_type: string; total: number; running: number; done: number; failed: number; platforms: Set<string> }> = {};
     for (const t of tasks || []) {
@@ -1123,17 +1123,17 @@ router.get('/api/stream', auth, (req, res) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.flushHeaders();
 
-  // Send a real named event (not just a comment) immediately so the browser
-  // fires onopen and EventSource transitions from CONNECTING → OPEN right away.
-  // Comments (": ...") are valid SSE but some browsers/proxies don't trigger
-  // onopen until an actual event arrives.
-  try { res.write('event: connected\ndata: {}\n\n'); } catch {}
+  // Send a real named event immediately so the browser fires onopen and
+  // EventSource transitions from CONNECTING → OPEN right away.
+  // flush() is called after every write to bypass proxy buffering (Replit mTLS proxy).
+  const flush = () => { try { (res as any).flush?.(); } catch {} };
+  try { res.write('event: connected\ndata: {}\n\n'); flush(); } catch {}
 
   registerSSEClient(res);
 
   const ping = setInterval(() => {
-    try { res.write(': ping\n\n'); } catch { clearInterval(ping); unregisterSSEClient(res); }
-  }, 15000);
+    try { res.write(': ping\n\n'); flush(); } catch { clearInterval(ping); unregisterSSEClient(res); }
+  }, 5000);
 
   const pollActivity = setInterval(async () => {
     try {
@@ -1144,7 +1144,7 @@ router.get('/api/stream', auth, (req, res) => {
         sb.from('strategies').select('id, title, user_id, created_at').gte('created_at', since),
         sb.from('agent_tasks').select('id, agent_type, task_type, platform, status, user_id, created_at').gte('created_at', since).neq('status', 'pending'),
         sb.from('energy_transactions').select('user_id, type, credits, description, created_at').gte('created_at', since).in('type', ['topup', 'subscription_grant', 'trial_grant']),
-        sb.from('self_evolution_log').select('id, user_id, agent_type, evolution_type, old_value, new_value, reason, performance_delta, created_at').gte('created_at', since).order('created_at', { ascending: false }),
+        sb.from('self_evolution_log').select('id, agent_type, evolution_type, old_value, new_value, reason, performance_delta, created_at').gte('created_at', since).order('created_at', { ascending: false }),
       ]);
 
       const events: any[] = [];
@@ -1155,12 +1155,12 @@ router.get('/api/stream', auth, (req, res) => {
 
       if (events.length > 0) {
         const msg = `event: activity\ndata: ${JSON.stringify(events)}\n\n`;
-        try { res.write(msg); } catch {}
+        try { res.write(msg); flush(); } catch {}
       }
 
       (newEvolution.data || []).forEach(entry => {
         const msg = `event: evolution_entry\ndata: ${JSON.stringify(entry)}\n\n`;
-        try { res.write(msg); } catch {}
+        try { res.write(msg); flush(); } catch {}
       });
     } catch {}
   }, 10000);
@@ -1825,6 +1825,23 @@ label{font-size:12px;color:#94A3B8;font-weight:600}
             <div class="stat-value" id="evo-last-time" style="font-size:16px;color:#F59E0B">—</div>
             <div class="stat-sub" id="evo-last-type">—</div>
           </div>
+        </div>
+
+        <!-- Performance Delta Chart -->
+        <div class="card" style="margin-bottom:16px;padding:14px 16px">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+            <div>
+              <div style="font-size:13px;font-weight:700">📈 Performance Delta Over Time</div>
+              <div style="font-size:11px;color:#475569;margin-top:2px">Each point = one AI self-improvement decision. Green = positive, Red = regressive.</div>
+            </div>
+            <div style="display:flex;gap:12px;font-size:11px;align-items:center">
+              <span style="display:flex;align-items:center;gap:4px"><span style="width:8px;height:8px;border-radius:50%;background:#10B981;display:inline-block"></span>Positive</span>
+              <span style="display:flex;align-items:center;gap:4px"><span style="width:8px;height:8px;border-radius:50%;background:#EF4444;display:inline-block"></span>Negative</span>
+              <span style="display:flex;align-items:center;gap:4px"><span style="width:8px;height:8px;border-radius:50%;background:#818CF8;display:inline-block"></span>Neutral</span>
+            </div>
+          </div>
+          <svg id="evo-chart-svg" width="100%" height="180" style="display:block;overflow:visible"></svg>
+          <div id="evo-chart-empty" style="display:none;text-align:center;padding:40px 0;color:#475569;font-size:12px">No performance data yet — the AI will chart its improvements here.</div>
         </div>
 
         <!-- Live event ticker -->
@@ -3739,6 +3756,107 @@ function updateEvolutionKPIs(entries) {
     if (lastEl) lastEl.textContent = timeAgo(last.created_at);
     if (lastTypeEl) lastTypeEl.textContent = last.evolution_type || '—';
   }
+
+  renderEvolutionChart(entries);
+}
+
+function renderEvolutionChart(entries) {
+  const svg = document.getElementById('evo-chart-svg');
+  const emptyEl = document.getElementById('evo-chart-empty');
+  if (!svg) return;
+
+  const withDelta = entries.filter(e => e.performance_delta != null).slice().reverse();
+  if (!withDelta.length) {
+    svg.style.display = 'none';
+    if (emptyEl) emptyEl.style.display = 'block';
+    return;
+  }
+  svg.style.display = 'block';
+  if (emptyEl) emptyEl.style.display = 'none';
+
+  const W = svg.clientWidth || 800;
+  const H = 180;
+  const PAD = { top: 16, right: 20, bottom: 28, left: 48 };
+  const cW = W - PAD.left - PAD.right;
+  const cH = H - PAD.top - PAD.bottom;
+
+  const vals = withDelta.map(e => parseFloat(e.performance_delta));
+  const minV = Math.min(...vals, 0);
+  const maxV = Math.max(...vals, 0);
+  const range = maxV - minV || 1;
+
+  const scaleX = (i) => PAD.left + (i / Math.max(withDelta.length - 1, 1)) * cW;
+  const scaleY = (v) => PAD.top + cH - ((v - minV) / range) * cH;
+  const zeroY  = scaleY(0);
+
+  // Build polyline points
+  const pts = withDelta.map((e, i) => scaleX(i) + ',' + scaleY(parseFloat(e.performance_delta))).join(' ');
+
+  // X-axis labels (show up to 6 evenly spaced dates)
+  const step = Math.max(1, Math.floor(withDelta.length / 6));
+  const xLabels = withDelta.map((e, i) => {
+    if (i % step !== 0 && i !== withDelta.length - 1) return '';
+    const d = new Date(e.created_at);
+    return \`<text x="\${scaleX(i)}" y="\${H - 6}" text-anchor="middle" fill="#475569" font-size="10">\${d.getMonth()+1}/\${d.getDate()}</text>\`;
+  }).join('');
+
+  // Y-axis labels
+  const yTicks = [minV, (minV+maxV)/2, maxV].map(v => {
+    return \`<text x="\${PAD.left - 6}" y="\${scaleY(v) + 4}" text-anchor="end" fill="#475569" font-size="10">\${v >= 0 ? '+' : ''}\${v.toFixed(2)}</text>\`;
+  }).join('');
+
+  // Coloured dots per point
+  const dots = withDelta.map((e, i) => {
+    const v = parseFloat(e.performance_delta);
+    const cx = scaleX(i), cy = scaleY(v);
+    const color = v > 0 ? '#10B981' : v < 0 ? '#EF4444' : '#818CF8';
+    const label = e.agent_type ? e.agent_type.slice(0,3) : '';
+    const tip = (e.agent_type||'') + ' ' + (e.evolution_type||'') + ': ' + (v >= 0 ? '+' : '') + v.toFixed(3);
+    return \`<circle cx="\${cx}" cy="\${cy}" r="4" fill="\${color}" stroke="#0D1625" stroke-width="1.5" opacity="0.9">
+      <title>\${tip}</title>
+    </circle>\`;
+  }).join('');
+
+  // Shaded area under zero line
+  const areaAbove = withDelta.map((e, i) => {
+    const v = parseFloat(e.performance_delta);
+    return scaleX(i) + ',' + (v >= 0 ? scaleY(v) : zeroY);
+  });
+  const areaBelow = withDelta.map((e, i) => {
+    const v = parseFloat(e.performance_delta);
+    return scaleX(i) + ',' + (v < 0 ? scaleY(v) : zeroY);
+  });
+  const areaAbovePoly = \`\${PAD.left},\${zeroY} \${areaAbove.join(' ')} \${scaleX(withDelta.length-1)},\${zeroY}\`;
+  const areaBelowPoly = \`\${PAD.left},\${zeroY} \${areaBelow.join(' ')} \${scaleX(withDelta.length-1)},\${zeroY}\`;
+
+  svg.innerHTML = \`
+    <defs>
+      <linearGradient id="evo-grad-pos" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0%" stop-color="#10B981" stop-opacity="0.3"/>
+        <stop offset="100%" stop-color="#10B981" stop-opacity="0"/>
+      </linearGradient>
+      <linearGradient id="evo-grad-neg" x1="0" y1="1" x2="0" y2="0">
+        <stop offset="0%" stop-color="#EF4444" stop-opacity="0.3"/>
+        <stop offset="100%" stop-color="#EF4444" stop-opacity="0"/>
+      </linearGradient>
+    </defs>
+    <!-- grid lines -->
+    <line x1="\${PAD.left}" y1="\${PAD.top}" x2="\${PAD.left}" y2="\${PAD.top+cH}" stroke="#1E293B" stroke-width="1"/>
+    <line x1="\${PAD.left}" y1="\${PAD.top+cH}" x2="\${PAD.left+cW}" y2="\${PAD.top+cH}" stroke="#1E293B" stroke-width="1"/>
+    <!-- zero line -->
+    <line x1="\${PAD.left}" y1="\${zeroY}" x2="\${PAD.left+cW}" y2="\${zeroY}" stroke="#334155" stroke-width="1" stroke-dasharray="4,3"/>
+    <text x="\${PAD.left - 6}" y="\${zeroY + 4}" text-anchor="end" fill="#334155" font-size="9">0</text>
+    <!-- shaded areas -->
+    <polygon points="\${areaAbovePoly}" fill="url(#evo-grad-pos)"/>
+    <polygon points="\${areaBelowPoly}" fill="url(#evo-grad-neg)"/>
+    <!-- line -->
+    <polyline points="\${pts}" fill="none" stroke="#818CF8" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
+    <!-- dots -->
+    \${dots}
+    <!-- labels -->
+    \${xLabels}
+    \${yTicks}
+  \`;
 }
 
 function addEvolutionTickerEvent(entry) {
