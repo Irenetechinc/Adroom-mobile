@@ -1271,99 +1271,223 @@ const DASHBOARD_HTML = `<!DOCTYPE html>
 <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
 <title>AdRoom Admin</title>
 <style>
+:root{--bg:#030B14;--surface:#0A1628;--elevated:#0F1D30;--card:#0D1825;--border:#182238;--border2:#223352;--accent:#00F5FF;--accent2:#818CF8;--success:#10B981;--danger:#EF4444;--warn:#F59E0B;--text:#F0F6FC;--text2:#7A8FA8;--text3:#3A5070;--sidebar:248px}
 *{box-sizing:border-box;margin:0;padding:0}
-body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#0B0F19;color:#E2E8F0;min-height:100vh}
-::-webkit-scrollbar{width:6px;height:6px}
-::-webkit-scrollbar-track{background:#151B2B}
-::-webkit-scrollbar-thumb{background:#1E293B;border-radius:3px}
-#login{display:flex;align-items:center;justify-content:center;min-height:100vh;background:#0B0F19}
+html{scroll-behavior:smooth}
+body{font-family:-apple-system,BlinkMacSystemFont,'Inter','Segoe UI',sans-serif;background:var(--bg);color:var(--text);min-height:100vh;font-size:13px;line-height:1.5;-webkit-font-smoothing:antialiased}
+::-webkit-scrollbar{width:4px;height:4px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:var(--border2);border-radius:2px}
+@keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.45;transform:scale(.82)}}
+@keyframes glow{0%,100%{box-shadow:0 0 5px rgba(0,245,255,.35)}50%{box-shadow:0 0 18px rgba(0,245,255,.7),0 0 36px rgba(0,245,255,.2)}}
+@keyframes fadeIn{from{opacity:0;transform:translateY(5px)}to{opacity:1;transform:translateY(0)}}
+@keyframes slideRight{from{opacity:0;transform:translateX(-8px)}to{opacity:1;transform:translateX(0)}}
+@keyframes shimmer{0%{background-position:-200% 0}100%{background-position:200% 0}}
+@keyframes thinking{0%,100%{opacity:.25;transform:scale(.8)}50%{opacity:1;transform:scale(1)}}
+@keyframes scanPulse{0%,100%{opacity:.4}50%{opacity:1}}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+/* ── Login ── */
+#login{display:flex;align-items:center;justify-content:center;min-height:100vh;background:radial-gradient(ellipse 80% 50% at 50% -10%,rgba(0,245,255,.07) 0%,transparent 65%),var(--bg)}
 #app{display:none;flex-direction:row;min-height:100vh}
-.sidebar{width:240px;background:#0D1220;border-right:1px solid #1E293B;display:flex;flex-direction:column;flex-shrink:0;position:fixed;top:0;left:0;height:100vh;overflow-y:auto;z-index:100}
-.main{margin-left:240px;flex:1;display:flex;flex-direction:column;min-height:100vh;overflow-x:hidden}
-.logo{padding:20px;border-bottom:1px solid #1E293B;display:flex;align-items:center;gap:10px}
-.logo-dot{width:10px;height:10px;border-radius:50%;background:#00F0FF;box-shadow:0 0 8px #00F0FF}
-.logo-text{font-size:16px;font-weight:800;color:#00F0FF;letter-spacing:1px}
-.logo-sub{font-size:10px;color:#64748B;letter-spacing:2px}
-.nav-section{padding:8px 12px;color:#475569;font-size:10px;font-weight:700;letter-spacing:1.5px;margin-top:8px}
-.nav-item{display:flex;align-items:center;gap:10px;padding:10px 16px;cursor:pointer;border-radius:8px;margin:2px 8px;color:#94A3B8;font-size:13px;font-weight:500;transition:all .15s;border:none;background:none;width:calc(100% - 16px);text-align:left}
-.nav-item:hover{background:#151B2B;color:#E2E8F0}
-.nav-item.active{background:#00F0FF15;color:#00F0FF;border:1px solid #00F0FF30}
-.nav-item .badge{margin-left:auto;background:#EF4444;color:#fff;font-size:10px;padding:1px 6px;border-radius:10px}
-.topbar{background:#0D1220;border-bottom:1px solid #1E293B;padding:12px 24px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:50}
-.topbar-title{font-size:18px;font-weight:800;color:#E2E8F0}
-.topbar-right{display:flex;align-items:center;gap:12px}
-.sse-dot{width:8px;height:8px;border-radius:50%;background:#10B981;animation:pulse 2s infinite}
-@keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
-.content{padding:24px;flex:1}
-.card{background:#151B2B;border:1px solid #1E293B;border-radius:14px;padding:20px}
-.stats-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:16px;margin-bottom:24px}
-.stat-card{background:#151B2B;border:1px solid #1E293B;border-radius:14px;padding:16px}
-.stat-label{font-size:11px;color:#64748B;font-weight:600;text-transform:uppercase;letter-spacing:.5px}
-.stat-value{font-size:28px;font-weight:800;color:#E2E8F0;margin:6px 0 2px}
-.stat-sub{font-size:11px;color:#64748B}
-.btn{border:none;cursor:pointer;border-radius:8px;font-weight:600;font-size:13px;padding:8px 14px;transition:all .15s;display:inline-flex;align-items:center;gap:6px}
-.btn-primary{background:#00F0FF;color:#020617}
-.btn-primary:hover{background:#00D4E0}
-.btn-danger{background:#EF444420;color:#EF4444;border:1px solid #EF444440}
-.btn-danger:hover{background:#EF444440}
-.btn-warn{background:#F59E0B20;color:#F59E0B;border:1px solid #F59E0B40}
-.btn-warn:hover{background:#F59E0B40}
-.btn-ghost{background:#1E293B;color:#E2E8F0}
-.btn-ghost:hover{background:#273449}
-.btn-sm{padding:5px 10px;font-size:11px}
+
+/* ── Mobile sidebar overlay ── */
+#sidebar-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.68);z-index:98;backdrop-filter:blur(3px);transition:opacity .25s}
+#sidebar-overlay.open{display:block}
+
+/* ── Sidebar ── */
+.sidebar{width:var(--sidebar);background:var(--surface);border-right:1px solid var(--border);display:flex;flex-direction:column;position:fixed;top:0;left:0;height:100vh;overflow-y:auto;overflow-x:hidden;z-index:99;transition:transform .25s cubic-bezier(.4,0,.2,1)}
+.logo{padding:15px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px;flex-shrink:0}
+.logo-dot{width:8px;height:8px;border-radius:50%;background:var(--accent);animation:glow 3s infinite;flex-shrink:0}
+.logo-text{font-size:14px;font-weight:800;color:var(--accent);letter-spacing:1.5px}
+.logo-sub{font-size:9px;color:var(--text3);letter-spacing:2px;margin-top:1px}
+.nav-section{padding:14px 14px 3px;font-size:9px;font-weight:700;color:var(--text3);letter-spacing:2px;text-transform:uppercase}
+.nav-item{display:flex;align-items:center;gap:8px;padding:7px 11px;cursor:pointer;border-radius:8px;margin:1px 6px;color:var(--text2);font-size:12px;font-weight:500;transition:all .15s;border:none;background:none;width:calc(100% - 12px);text-align:left;position:relative;overflow:hidden}
+.nav-item:hover{background:rgba(255,255,255,.04);color:var(--text)}
+.nav-item.active{background:rgba(0,245,255,.07);color:var(--accent);border:1px solid rgba(0,245,255,.14)}
+.nav-item.active::before{content:'';position:absolute;left:0;top:22%;bottom:22%;width:2px;background:var(--accent);border-radius:0 2px 2px 0;box-shadow:0 0 8px var(--accent)}
+.nav-item .badge{margin-left:auto;background:var(--danger);color:#fff;font-size:9px;padding:1px 5px;border-radius:8px;line-height:1.4;flex-shrink:0}
+.nav-icon{font-size:14px;width:18px;text-align:center;flex-shrink:0}
+.sidebar-footer{margin-top:auto;padding:10px 6px;border-top:1px solid var(--border)}
+
+/* ── Main ── */
+.main{margin-left:var(--sidebar);flex:1;display:flex;flex-direction:column;min-height:100vh;overflow-x:hidden;transition:margin .25s cubic-bezier(.4,0,.2,1)}
+
+/* ── Topbar ── */
+.topbar{background:rgba(10,22,40,.9);border-bottom:1px solid var(--border);padding:0 18px;height:52px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:50;backdrop-filter:blur(20px);gap:10px}
+.topbar-left{display:flex;align-items:center;gap:9px;min-width:0;flex:1}
+.hamburger{display:none;background:none;border:1px solid var(--border);color:var(--text2);cursor:pointer;padding:5px 7px;border-radius:7px;font-size:16px;line-height:1;flex-shrink:0;transition:all .15s;align-items:center;justify-content:center}
+.hamburger:hover{color:var(--text);background:var(--elevated)}
+.topbar-title{font-size:14px;font-weight:700;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.topbar-right{display:flex;align-items:center;gap:8px;flex-shrink:0}
+.sse-pill{display:flex;align-items:center;gap:5px;background:var(--elevated);border:1px solid var(--border);border-radius:20px;padding:3px 9px;font-size:10px;color:var(--text2);white-space:nowrap}
+.sse-dot{width:6px;height:6px;border-radius:50%;background:var(--danger);flex-shrink:0}
+.admin-badge{font-size:10px;color:var(--text3);background:var(--elevated);border:1px solid var(--border);border-radius:20px;padding:3px 9px;white-space:nowrap}
+
+/* ── Content ── */
+.content{padding:18px 20px;flex:1}
+
+/* ── Cards ── */
+.card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:16px;position:relative;overflow:hidden}
+.card::before{content:'';position:absolute;inset:0;background:linear-gradient(135deg,rgba(255,255,255,.012) 0%,transparent 50%);pointer-events:none;border-radius:inherit}
+.card-glow{box-shadow:0 0 0 1px rgba(0,245,255,.07),0 4px 20px rgba(0,0,0,.5)}
+.card-sm{padding:12px 14px}
+
+/* ── Stat cards ── */
+.stats-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px;margin-bottom:16px}
+.stat-card{background:var(--elevated);border:1px solid var(--border);border-radius:12px;padding:14px;position:relative;overflow:hidden;transition:border-color .2s,transform .15s;cursor:default}
+.stat-card:hover{border-color:var(--border2);transform:translateY(-1px)}
+.stat-card::after{content:'';position:absolute;top:0;left:0;right:0;height:2px;border-radius:2px 2px 0 0;background:var(--sbar,var(--accent));opacity:.6}
+.stat-label{font-size:10px;color:var(--text3);font-weight:700;text-transform:uppercase;letter-spacing:.7px}
+.stat-value{font-size:22px;font-weight:800;color:var(--text);margin:7px 0 3px;line-height:1;font-variant-numeric:tabular-nums}
+.stat-sub{font-size:10px;color:var(--text3)}
+.stat-icon{position:absolute;top:12px;right:12px;font-size:20px;opacity:.18}
+
+/* ── Buttons ── */
+.btn{border:none;cursor:pointer;border-radius:8px;font-weight:600;font-size:12px;padding:6px 12px;transition:all .15s;display:inline-flex;align-items:center;gap:5px;white-space:nowrap;font-family:inherit}
+.btn:active{transform:scale(.96)}
+.btn-primary{background:var(--accent);color:#011820}
+.btn-primary:hover{background:#00dde8;box-shadow:0 0 16px rgba(0,245,255,.4)}
+.btn-danger{background:rgba(239,68,68,.1);color:var(--danger);border:1px solid rgba(239,68,68,.2)}
+.btn-danger:hover{background:rgba(239,68,68,.22)}
+.btn-warn{background:rgba(245,158,11,.1);color:var(--warn);border:1px solid rgba(245,158,11,.2)}
+.btn-warn:hover{background:rgba(245,158,11,.22)}
+.btn-ghost{background:var(--elevated);color:var(--text);border:1px solid var(--border)}
+.btn-ghost:hover{background:var(--border2);border-color:var(--border2)}
+.btn-sm{padding:3px 9px;font-size:10px;border-radius:6px}
+
+/* ── Tables ── */
 table{width:100%;border-collapse:collapse}
-th{text-align:left;padding:10px 14px;font-size:11px;color:#64748B;font-weight:700;text-transform:uppercase;letter-spacing:.5px;border-bottom:1px solid #1E293B}
-td{padding:10px 14px;font-size:13px;border-bottom:1px solid #0F172A;vertical-align:middle}
-tr:hover td{background:#1E293B20}
-.badge{display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:700}
-.badge-green{background:#10B98120;color:#10B981;border:1px solid #10B98130}
-.badge-yellow{background:#F59E0B20;color:#F59E0B;border:1px solid #F59E0B30}
-.badge-red{background:#EF444420;color:#EF4444;border:1px solid #EF444430}
-.badge-blue{background:#3B82F620;color:#3B82F6;border:1px solid #3B82F630}
-.badge-purple{background:#7C3AED20;color:#7C3AED;border:1px solid #7C3AED30}
-.badge-gray{background:#1E293B;color:#64748B}
-.input{background:#0B0F19;border:1px solid #1E293B;border-radius:8px;padding:9px 14px;color:#E2E8F0;font-size:13px;outline:none;width:100%;transition:border .15s}
-.input:focus{border-color:#00F0FF50}
-.input-group{display:flex;flex-direction:column;gap:6px;margin-bottom:14px}
-label{font-size:12px;color:#94A3B8;font-weight:600}
-.modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:200;align-items:flex-start;justify-content:center;padding:40px 20px;overflow-y:auto}
-.modal-overlay.open{display:flex}
-.modal{background:#0D1220;border:1px solid #1E293B;border-radius:16px;width:100%;max-width:780px;overflow:hidden}
-.modal-header{padding:20px 24px;border-bottom:1px solid #1E293B;display:flex;align-items:center;justify-content:space-between}
-.modal-title{font-size:16px;font-weight:800}
-.modal-body{padding:24px;max-height:70vh;overflow-y:auto}
-.close-btn{background:none;border:none;color:#64748B;font-size:20px;cursor:pointer;padding:4px 8px;border-radius:6px}
-.close-btn:hover{background:#1E293B;color:#E2E8F0}
-.tabs{display:flex;gap:4px;border-bottom:1px solid #1E293B;margin-bottom:20px}
-.tab{padding:8px 16px;font-size:13px;font-weight:600;color:#64748B;border:none;background:none;cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-1px;transition:all .15s}
-.tab.active{color:#00F0FF;border-bottom-color:#00F0FF}
-.section{display:none}
+th{text-align:left;padding:7px 11px;font-size:10px;color:var(--text3);font-weight:700;text-transform:uppercase;letter-spacing:.5px;border-bottom:1px solid var(--border);white-space:nowrap;background:rgba(0,0,0,.2)}
+td{padding:9px 11px;font-size:12px;border-bottom:1px solid rgba(24,34,56,.6);vertical-align:middle}
+tr:last-child td{border-bottom:none}
+tr:hover td{background:rgba(255,255,255,.018)}
+
+/* ── Badges ── */
+.badge{display:inline-flex;align-items:center;gap:3px;padding:2px 7px;border-radius:20px;font-size:10px;font-weight:700;line-height:1.4}
+.badge-green{background:rgba(16,185,129,.1);color:#10B981;border:1px solid rgba(16,185,129,.2)}
+.badge-yellow{background:rgba(245,158,11,.1);color:#F59E0B;border:1px solid rgba(245,158,11,.2)}
+.badge-red{background:rgba(239,68,68,.1);color:#EF4444;border:1px solid rgba(239,68,68,.2)}
+.badge-blue{background:rgba(59,130,246,.1);color:#3B82F6;border:1px solid rgba(59,130,246,.2)}
+.badge-purple{background:rgba(129,140,248,.1);color:#818CF8;border:1px solid rgba(129,140,248,.2)}
+.badge-cyan{background:rgba(0,245,255,.08);color:#00F5FF;border:1px solid rgba(0,245,255,.15)}
+.badge-pink{background:rgba(236,72,153,.1);color:#EC4899;border:1px solid rgba(236,72,153,.2)}
+.badge-gray{background:var(--elevated);color:var(--text2);border:1px solid var(--border)}
+
+/* ── Inputs ── */
+.input{background:var(--bg);border:1px solid var(--border2);border-radius:8px;padding:7px 11px;color:var(--text);font-size:12px;outline:none;width:100%;transition:border-color .15s,box-shadow .15s;font-family:inherit}
+.input:focus{border-color:rgba(0,245,255,.4);box-shadow:0 0 0 3px rgba(0,245,255,.06)}
+.input-group{display:flex;flex-direction:column;gap:5px;margin-bottom:12px}
+label{font-size:11px;color:var(--text2);font-weight:600}
+
+/* ── Modal ── */
+.modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.78);z-index:200;align-items:flex-start;justify-content:center;padding:40px 14px;overflow-y:auto;backdrop-filter:blur(5px)}
+.modal-overlay.open{display:flex;animation:fadeIn .2s ease}
+.modal{background:var(--surface);border:1px solid var(--border2);border-radius:14px;width:100%;max-width:780px;overflow:hidden}
+.modal-header{padding:15px 20px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between}
+.modal-title{font-size:14px;font-weight:700}
+.modal-body{padding:20px;max-height:70vh;overflow-y:auto}
+.close-btn{background:none;border:none;color:var(--text3);font-size:18px;cursor:pointer;padding:3px 7px;border-radius:6px;line-height:1;transition:all .15s}
+.close-btn:hover{background:var(--elevated);color:var(--text)}
+
+/* ── Tabs ── */
+.tabs{display:flex;gap:2px;border-bottom:1px solid var(--border);margin-bottom:16px}
+.tab{padding:7px 14px;font-size:12px;font-weight:600;color:var(--text3);border:none;background:none;cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-1px;transition:all .15s}
+.tab.active{color:var(--accent);border-bottom-color:var(--accent)}
+.tab:hover:not(.active){color:var(--text2)}
+
+/* ── Sections ── */
+.section{display:none;animation:fadeIn .18s ease}
 .section.active{display:block}
-.activity-feed{max-height:500px;overflow-y:auto;display:flex;flex-direction:column;gap:6px}
-.activity-item{background:#0B0F19;border:1px solid #1E293B;border-radius:8px;padding:10px 14px;display:flex;align-items:flex-start;gap:10px}
-.activity-icon{width:28px;height:28px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:14px;flex-shrink:0}
-.search-bar{position:relative;margin-bottom:16px}
-.search-bar input{padding-left:36px}
-.search-icon{position:absolute;left:10px;top:50%;transform:translateY(-50%);color:#64748B;pointer-events:none}
-.empty{text-align:center;padding:40px;color:#64748B}
-.tag{display:inline-block;padding:2px 6px;border-radius:4px;font-size:11px;background:#1E293B;color:#94A3B8;margin:1px}
-.progress{height:6px;background:#1E293B;border-radius:3px;overflow:hidden}
-.progress-bar{height:100%;border-radius:3px;transition:width .3s}
-.detail-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}
-.detail-item{background:#0B0F19;border-radius:8px;padding:12px}
-.detail-label{font-size:11px;color:#64748B;font-weight:600;margin-bottom:4px}
-.detail-value{font-size:14px;font-weight:700;color:#E2E8F0}
-.user-actions{display:flex;gap:8px;flex-wrap:wrap;margin:16px 0}
-.toast{position:fixed;top:20px;right:20px;background:#151B2B;border:1px solid #1E293B;border-radius:10px;padding:12px 16px;font-size:13px;font-weight:600;z-index:999;transform:translateX(120%);transition:transform .3s;display:flex;align-items:center;gap:8px;max-width:320px}
+.section-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;gap:10px;flex-wrap:wrap}
+.section-title{font-size:14px;font-weight:700;color:var(--text)}
+
+/* ── Activity feed ── */
+.activity-feed{max-height:460px;overflow-y:auto;display:flex;flex-direction:column;gap:5px}
+.activity-item{background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:8px 11px;display:flex;align-items:flex-start;gap:9px;animation:fadeIn .2s ease}
+.activity-icon{width:26px;height:26px;border-radius:7px;display:flex;align-items:center;justify-content:center;font-size:13px;flex-shrink:0}
+
+/* ── Misc ── */
+.search-bar{position:relative;margin-bottom:12px}
+.search-bar input{padding-left:32px}
+.search-icon{position:absolute;left:9px;top:50%;transform:translateY(-50%);color:var(--text3);pointer-events:none;font-size:12px}
+.empty{text-align:center;padding:32px;color:var(--text3);font-size:12px}
+.tag{display:inline-block;padding:2px 6px;border-radius:4px;font-size:10px;background:var(--elevated);color:var(--text2);margin:1px;border:1px solid var(--border)}
+.progress{height:4px;background:var(--elevated);border-radius:2px;overflow:hidden}
+.progress-bar{height:100%;border-radius:2px;transition:width .4s}
+.detail-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.detail-item{background:var(--bg);border-radius:8px;padding:11px;border:1px solid var(--border)}
+.detail-label{font-size:10px;color:var(--text3);font-weight:600;margin-bottom:3px;text-transform:uppercase;letter-spacing:.5px}
+.detail-value{font-size:13px;font-weight:700;color:var(--text)}
+.user-actions{display:flex;gap:7px;flex-wrap:wrap;margin:12px 0}
+
+/* ── Toast ── */
+.toast{position:fixed;top:14px;right:14px;background:var(--elevated);border:1px solid var(--border2);border-radius:10px;padding:10px 14px;font-size:12px;font-weight:600;z-index:999;transform:translateX(130%);transition:transform .25s cubic-bezier(.4,0,.2,1);display:flex;align-items:center;gap:7px;max-width:300px;box-shadow:0 8px 32px rgba(0,0,0,.6)}
 .toast.show{transform:translateX(0)}
-.toast.success{border-color:#10B98150;color:#10B981}
-.toast.error{border-color:#EF444450;color:#EF4444}
-.toast.info{border-color:#3B82F650;color:#3B82F6}
-.section-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:16px}
-.section-title{font-size:16px;font-weight:800}
-.sub-tabs{display:flex;gap:4px;margin-bottom:16px;background:#0B0F19;border-radius:8px;padding:4px;width:fit-content}
-.sub-tab{padding:5px 12px;font-size:12px;font-weight:600;color:#64748B;border:none;background:none;cursor:pointer;border-radius:6px;transition:all .15s}
-.sub-tab.active{background:#1E293B;color:#E2E8F0}
+.toast.success{border-color:rgba(16,185,129,.3);color:#10B981}
+.toast.error{border-color:rgba(239,68,68,.3);color:#EF4444}
+.toast.info{border-color:rgba(59,130,246,.3);color:#3B82F6}
+
+/* ── Sub-tabs ── */
+.sub-tabs{display:flex;gap:3px;margin-bottom:14px;background:var(--bg);border-radius:8px;padding:4px;width:fit-content;border:1px solid var(--border)}
+.sub-tab{padding:4px 11px;font-size:11px;font-weight:600;color:var(--text2);border:none;background:none;cursor:pointer;border-radius:6px;transition:all .15s}
+.sub-tab.active{background:var(--elevated);color:var(--text);box-shadow:0 1px 4px rgba(0,0,0,.4)}
+.form-input{background:var(--bg);border:1px solid var(--border2);border-radius:8px;padding:7px 11px;color:var(--text);font-size:12px;outline:none;width:100%;transition:border-color .15s;font-family:inherit}.form-input:focus{border-color:rgba(0,245,255,.4)}
+
+/* ── KPI Row ── */
+.kpi-row{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:10px;margin-bottom:14px}
+.kpi-box{background:var(--elevated);border:1px solid var(--border);border-radius:10px;padding:12px 14px;text-align:center}
+.kpi-val{font-size:20px;font-weight:800;color:var(--text);font-variant-numeric:tabular-nums}
+.kpi-lbl{font-size:10px;color:var(--text3);font-weight:600;text-transform:uppercase;letter-spacing:.5px;margin-top:3px}
+
+/* ── AI Brain ── */
+.brain-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(195px,1fr));gap:10px;margin-bottom:14px}
+.brain-agent{background:var(--elevated);border:1px solid var(--border);border-radius:12px;padding:14px;position:relative;overflow:hidden;transition:all .3s}
+.brain-agent.active-agent{border-color:rgba(0,245,255,.25);box-shadow:0 0 16px rgba(0,245,255,.06)}
+.brain-agent-header{display:flex;align-items:center;gap:8px;margin-bottom:8px}
+.brain-agent-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+.brain-agent-name{font-size:11px;font-weight:700;color:var(--text);letter-spacing:.5px}
+.brain-agent-status{font-size:10px;color:var(--text3);margin-bottom:6px}
+.thinking-dots{display:flex;gap:3px;align-items:center}
+.thinking-dot{width:4px;height:4px;border-radius:50%;background:var(--accent);animation:thinking 1.4s infinite}
+.thinking-dot:nth-child(2){animation-delay:.2s}
+.thinking-dot:nth-child(3){animation-delay:.4s}
+.decision-item{background:var(--bg);border:1px solid var(--border);border-radius:9px;padding:11px 13px;animation:slideRight .2s ease;margin-bottom:8px;border-left:3px solid var(--border2)}
+.decision-item.ok{border-left-color:var(--success)}
+.decision-item.fail{border-left-color:var(--danger)}
+.decision-item.pending{border-left-color:var(--warn)}
+
+/* ── Grid helpers ── */
+.grid-2{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.grid-3{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
+.grid-4{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}
+
+/* ── Responsive ── */
+@media(max-width:900px){.grid-3{grid-template-columns:1fr 1fr}.grid-4{grid-template-columns:1fr 1fr}}
+@media(max-width:768px){
+  .sidebar{transform:translateX(-110%)}
+  .sidebar.open{transform:translateX(0);box-shadow:14px 0 50px rgba(0,0,0,.7)}
+  .main{margin-left:0!important}
+  .hamburger{display:flex!important}
+  .content{padding:12px 14px}
+  .stats-grid{grid-template-columns:repeat(2,1fr)}
+  .grid-2,.grid-3,.grid-4{grid-template-columns:1fr!important}
+  .detail-grid{grid-template-columns:1fr}
+  .topbar{height:48px;padding:0 12px}
+  .admin-badge{display:none}
+  .modal-overlay{padding:0;align-items:flex-end}
+  .modal{border-radius:14px 14px 0 0}
+  .modal-body{max-height:55vh}
+  .brain-grid{grid-template-columns:1fr 1fr}
+  .kpi-row{grid-template-columns:repeat(2,1fr)}
+}
+@media(max-width:480px){
+  .stats-grid{grid-template-columns:1fr}
+  .brain-grid{grid-template-columns:1fr}
+  .kpi-row{grid-template-columns:1fr 1fr}
+  .topbar-title{font-size:12px}
+  .stat-value{font-size:19px}
+}
 </style>
 </head>
 <body>
@@ -1397,9 +1521,10 @@ label{font-size:12px;color:#94A3B8;font-weight:600}
 </div>
 
 <!-- APP -->
+<div id="sidebar-overlay" onclick="closeSidebar()"></div>
 <div id="app">
   <!-- Sidebar -->
-  <div class="sidebar">
+  <div class="sidebar" id="sidebar">
     <div class="logo">
       <div class="logo-dot"></div>
       <div>
@@ -1407,56 +1532,67 @@ label{font-size:12px;color:#94A3B8;font-weight:600}
         <div class="logo-sub">ADMIN PANEL</div>
       </div>
     </div>
+
     <div class="nav-section">OVERVIEW</div>
     <button class="nav-item active" onclick="showSection('dashboard')" id="nav-dashboard">
-      <span>📊</span> Dashboard
+      <span class="nav-icon">📊</span> Dashboard
     </button>
-    <div class="nav-section">USER MANAGEMENT</div>
-    <button class="nav-item" onclick="showSection('users')" id="nav-users">
-      <span>👥</span> All Users
-    </button>
-    <button class="nav-item" onclick="showSection('credits')" id="nav-credits">
-      <span>⚡</span> Credits
-    </button>
-    <div class="nav-section">COMMUNICATIONS</div>
-    <button class="nav-item" onclick="showSection('notifications')" id="nav-notifications">
-      <span>🔔</span> Push Notifications
-    </button>
-    <button class="nav-item" onclick="showSection('deletions')" id="nav-deletions">
-      <span>🗑️</span> Deletion Requests <span class="badge" id="deletion-badge" style="display:none">0</span>
-    </button>
-    <div class="nav-section">MONITORING</div>
-    <button class="nav-item" onclick="showSection('trials')" id="nav-trials">
-      <span>🧪</span> Trials &amp; Billing <span class="badge" id="trials-badge" style="display:none">0</span>
-    </button>
-    <button class="nav-item" onclick="showSection('activity')" id="nav-activity">
-      <span>📡</span> Live Activity
-    </button>
-    <button class="nav-item" onclick="showSection('terminal')" id="nav-terminal">
-      <span>🖥️</span> Live Terminal
-    </button>
-    <button class="nav-item" onclick="showSection('logs')" id="nav-logs">
-      <span>📋</span> Admin Logs
-    </button>
-    <button class="nav-item" onclick="showSection('cma')" id="nav-cma">
-      <span>💰</span> CMA Savings
+
+    <div class="nav-section">INTELLIGENCE</div>
+    <button class="nav-item" onclick="showSection('aibrains')" id="nav-aibrains">
+      <span class="nav-icon">🧠</span> AI Brain &amp; Critic
     </button>
     <button class="nav-item" onclick="showSection('agentnet')" id="nav-agentnet">
-      <span>🕸️</span> Agent Network
+      <span class="nav-icon">🕸️</span> Agent Network
     </button>
     <button class="nav-item" onclick="showSection('evolution')" id="nav-evolution">
-      <span>🧬</span> AI Self-Evolution
+      <span class="nav-icon">🧬</span> Self-Evolution
+    </button>
+
+    <div class="nav-section">USER MANAGEMENT</div>
+    <button class="nav-item" onclick="showSection('users')" id="nav-users">
+      <span class="nav-icon">👥</span> All Users
+    </button>
+    <button class="nav-item" onclick="showSection('credits')" id="nav-credits">
+      <span class="nav-icon">⚡</span> Credits
+    </button>
+
+    <div class="nav-section">COMMUNICATIONS</div>
+    <button class="nav-item" onclick="showSection('notifications')" id="nav-notifications">
+      <span class="nav-icon">🔔</span> Push Notifications
+    </button>
+    <button class="nav-item" onclick="showSection('deletions')" id="nav-deletions">
+      <span class="nav-icon">🗑️</span> Deletion Requests <span class="badge" id="deletion-badge" style="display:none">0</span>
+    </button>
+
+    <div class="nav-section">MONITORING</div>
+    <button class="nav-item" onclick="showSection('trials')" id="nav-trials">
+      <span class="nav-icon">🧪</span> Trials &amp; Billing <span class="badge" id="trials-badge" style="display:none">0</span>
+    </button>
+    <button class="nav-item" onclick="showSection('activity')" id="nav-activity">
+      <span class="nav-icon">📡</span> Live Activity
+    </button>
+    <button class="nav-item" onclick="showSection('terminal')" id="nav-terminal">
+      <span class="nav-icon">🖥️</span> Live Terminal
+    </button>
+    <button class="nav-item" onclick="showSection('logs')" id="nav-logs">
+      <span class="nav-icon">📋</span> Admin Logs
+    </button>
+    <button class="nav-item" onclick="showSection('cma')" id="nav-cma">
+      <span class="nav-icon">💰</span> CMA Savings
     </button>
     <button class="nav-item" onclick="showSection('featureflags')" id="nav-featureflags">
-      <span>🎛️</span> Feature Flags
+      <span class="nav-icon">🎛️</span> Feature Flags
     </button>
+
     <div class="nav-section">APMA</div>
     <button class="nav-item" onclick="showSection('apma')" id="nav-apma">
-      <span>🎯</span> Political Marketing
+      <span class="nav-icon">🎯</span> Political Marketing
     </button>
-    <div style="margin-top:auto;padding:16px 8px">
-      <button class="nav-item" onclick="doLogout()" style="color:#EF4444">
-        <span>🚪</span> Sign Out
+
+    <div class="sidebar-footer">
+      <button class="nav-item" onclick="doLogout()" style="color:var(--danger)">
+        <span class="nav-icon">🚪</span> Sign Out
       </button>
     </div>
   </div>
@@ -1464,13 +1600,16 @@ label{font-size:12px;color:#94A3B8;font-weight:600}
   <!-- Main -->
   <div class="main">
     <div class="topbar">
-      <div class="topbar-title" id="page-title">Dashboard</div>
+      <div class="topbar-left">
+        <button class="hamburger" id="hamburger-btn" onclick="toggleSidebar()" aria-label="Toggle menu">☰</button>
+        <div class="topbar-title" id="page-title">Dashboard</div>
+      </div>
       <div class="topbar-right">
-        <div style="display:flex;align-items:center;gap:6px;font-size:12px;color:#64748B">
-          <div class="sse-dot" id="sse-dot" style="background:#EF4444"></div>
-          <span id="sse-status">Connecting...</span>
+        <div class="sse-pill">
+          <div class="sse-dot" id="sse-dot" style="background:var(--danger)"></div>
+          <span id="sse-status">Connecting…</span>
         </div>
-        <span style="font-size:12px;color:#64748B" id="admin-badge">ADMIN@ADROOMAI.COM</span>
+        <span class="admin-badge" id="admin-badge">ADMIN</span>
       </div>
     </div>
 
@@ -1478,23 +1617,79 @@ label{font-size:12px;color:#94A3B8;font-weight:600}
 
       <!-- ───────────── DASHBOARD ───────────── -->
       <div id="section-dashboard" class="section active">
-        <div class="stats-grid" id="stats-grid">
-          <div class="stat-card"><div class="stat-label">Total Users</div><div class="stat-value" id="stat-users">—</div><div class="stat-sub">Registered accounts</div></div>
-          <div class="stat-card"><div class="stat-label">Active Subs</div><div class="stat-value" id="stat-subs">—</div><div class="stat-sub">Active + trialing</div></div>
-          <div class="stat-card"><div class="stat-label">Suspended</div><div class="stat-value" id="stat-suspended" style="color:#F59E0B">—</div><div class="stat-sub">Restricted accounts</div></div>
-          <div class="stat-card"><div class="stat-label">Strategies</div><div class="stat-value" id="stat-strategies">—</div><div class="stat-sub">Total created</div></div>
-          <div class="stat-card"><div class="stat-label">Agent Tasks</div><div class="stat-value" id="stat-agents">—</div><div class="stat-sub">All time</div></div>
-          <div class="stat-card"><div class="stat-label">Credits Sold (30d)</div><div class="stat-value" id="stat-credits" style="color:#00F0FF">—</div><div class="stat-sub">Top-ups + subscriptions</div></div>
-          <div class="stat-card"><div class="stat-label">AI Cost (30d)</div><div class="stat-value" id="stat-cost" style="color:#F59E0B">—</div><div class="stat-sub">Actual model spend</div></div>
+
+        <!-- System health bar -->
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;padding:10px 14px;background:var(--elevated);border:1px solid var(--border);border-radius:10px">
+          <div style="width:8px;height:8px;border-radius:50%;background:var(--success);animation:pulse 2s infinite;flex-shrink:0"></div>
+          <span style="font-size:11px;color:var(--text2);font-weight:600">System Operational</span>
+          <div style="margin-left:auto;display:flex;align-items:center;gap:16px">
+            <div style="font-size:10px;color:var(--text3)">Backend API <span style="color:var(--success)">● Live</span></div>
+            <div style="font-size:10px;color:var(--text3)">SSE Stream <span id="dash-sse-status" style="color:var(--danger)">● Connecting</span></div>
+            <div style="font-size:10px;color:var(--text3)" id="dash-time"></div>
+          </div>
         </div>
 
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+        <!-- Stat cards -->
+        <div class="stats-grid" id="stats-grid">
+          <div class="stat-card" style="--sbar:var(--accent)">
+            <div class="stat-icon">👥</div>
+            <div class="stat-label">Total Users</div>
+            <div class="stat-value" id="stat-users">—</div>
+            <div class="stat-sub">Registered accounts</div>
+          </div>
+          <div class="stat-card" style="--sbar:var(--success)">
+            <div class="stat-icon">💎</div>
+            <div class="stat-label">Active Subs</div>
+            <div class="stat-value" id="stat-subs">—</div>
+            <div class="stat-sub">Active + trialing</div>
+          </div>
+          <div class="stat-card" style="--sbar:var(--warn)">
+            <div class="stat-icon">⚠️</div>
+            <div class="stat-label">Suspended</div>
+            <div class="stat-value" id="stat-suspended">—</div>
+            <div class="stat-sub">Restricted accounts</div>
+          </div>
+          <div class="stat-card" style="--sbar:#818CF8">
+            <div class="stat-icon">🧠</div>
+            <div class="stat-label">Strategies</div>
+            <div class="stat-value" id="stat-strategies">—</div>
+            <div class="stat-sub">Total created</div>
+          </div>
+          <div class="stat-card" style="--sbar:#EC4899">
+            <div class="stat-icon">🤖</div>
+            <div class="stat-label">Agent Tasks</div>
+            <div class="stat-value" id="stat-agents">—</div>
+            <div class="stat-sub">All time</div>
+          </div>
+          <div class="stat-card" style="--sbar:var(--accent)">
+            <div class="stat-icon">⚡</div>
+            <div class="stat-label">Credits Sold (30d)</div>
+            <div class="stat-value" id="stat-credits" style="color:var(--accent)">—</div>
+            <div class="stat-sub">Top-ups + subscriptions</div>
+          </div>
+          <div class="stat-card" style="--sbar:var(--warn)">
+            <div class="stat-icon">💰</div>
+            <div class="stat-label">AI Cost (30d)</div>
+            <div class="stat-value" id="stat-cost" style="color:var(--warn)">—</div>
+            <div class="stat-sub">Actual model spend</div>
+          </div>
+        </div>
+
+        <div class="grid-2">
           <div class="card">
-            <div class="section-header"><div class="section-title">Plan Breakdown</div></div>
-            <div id="plan-breakdown" style="display:flex;flex-direction:column;gap:10px"></div>
+            <div class="section-header">
+              <div class="section-title">📊 Plan Breakdown</div>
+            </div>
+            <div id="plan-breakdown" style="display:flex;flex-direction:column;gap:8px"></div>
           </div>
           <div class="card">
-            <div class="section-header"><div class="section-title">Recent Activity</div><div style="font-size:11px;color:#64748B">Live</div></div>
+            <div class="section-header">
+              <div class="section-title">📡 Live Activity</div>
+              <div style="display:flex;align-items:center;gap:5px">
+                <div style="width:6px;height:6px;border-radius:50%;background:var(--success);animation:pulse 2s infinite"></div>
+                <span style="font-size:10px;color:var(--text3)">Real-time</span>
+              </div>
+            </div>
             <div class="activity-feed" id="live-feed"><div class="empty">Connecting to live feed…</div></div>
           </div>
         </div>
@@ -1991,6 +2186,104 @@ label{font-size:12px;color:#94A3B8;font-weight:600}
 
       </div><!-- /section-evolution -->
 
+
+      <!-- ───────────── AI BRAIN & CRITIC ───────────── -->
+      <div id="section-aibrains" class="section">
+
+        <!-- Agent Status Cards -->
+        <div class="brain-grid" id="brain-agent-grid">
+          <!-- Populated by JS -->
+          <div class="brain-agent"><div class="brain-agent-header"><div class="brain-agent-dot" style="background:#3A5070"></div><div class="brain-agent-name">Loading…</div></div></div>
+        </div>
+
+        <div class="grid-2" style="margin-bottom:14px">
+          <!-- Live Decision Feed -->
+          <div class="card">
+            <div class="section-header">
+              <div class="section-title">⚡ Live AI Decisions</div>
+              <div style="display:flex;align-items:center;gap:8px">
+                <div class="thinking-dots"><div class="thinking-dot"></div><div class="thinking-dot"></div><div class="thinking-dot"></div></div>
+                <span style="font-size:10px;color:var(--text3)">Real-time</span>
+              </div>
+            </div>
+            <div style="margin-bottom:10px;display:flex;gap:6px;flex-wrap:wrap">
+              <select id="brain-agent-filter" class="input" style="width:140px;font-size:11px;padding:4px 8px" onchange="loadAIBrain()">
+                <option value="">All Agents</option>
+                <option value="LEAD_DISCOVERY">Lead Discovery</option>
+                <option value="SALESMAN">Salesman</option>
+                <option value="AWARENESS">Awareness</option>
+                <option value="PROMOTION">Promotion</option>
+                <option value="LAUNCH">Launch</option>
+                <option value="CMA">CMA</option>
+                <option value="IPE">IPE</option>
+              </select>
+              <select id="brain-result-filter" class="input" style="width:120px;font-size:11px;padding:4px 8px" onchange="loadAIBrain()">
+                <option value="">All Results</option>
+                <option value="true">✅ Success</option>
+                <option value="false">❌ Failed</option>
+              </select>
+            </div>
+            <div id="brain-decisions" style="max-height:420px;overflow-y:auto;display:flex;flex-direction:column;gap:0">
+              <div class="empty">Loading decisions…</div>
+            </div>
+          </div>
+
+          <!-- Critic Analysis Panel -->
+          <div class="card">
+            <div class="section-header">
+              <div class="section-title">🔬 Critic Analysis</div>
+              <button class="btn btn-ghost btn-sm" onclick="loadCriticAnalysis()">↻ Refresh</button>
+            </div>
+
+            <!-- KPIs -->
+            <div class="kpi-row" id="brain-kpis" style="margin-bottom:14px">
+              <div class="kpi-box"><div class="kpi-val" id="bkpi-total">—</div><div class="kpi-lbl">Total Decisions</div></div>
+              <div class="kpi-box"><div class="kpi-val" id="bkpi-success" style="color:var(--success)">—</div><div class="kpi-lbl">Success Rate</div></div>
+              <div class="kpi-box"><div class="kpi-val" id="bkpi-latency">—</div><div class="kpi-lbl">Avg Latency</div></div>
+              <div class="kpi-box"><div class="kpi-val" id="bkpi-model" style="color:var(--accent);font-size:12px">—</div><div class="kpi-lbl">Top Model</div></div>
+            </div>
+
+            <!-- Model Usage Breakdown -->
+            <div style="margin-bottom:14px">
+              <div style="font-size:11px;color:var(--text3);font-weight:700;text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">Model Usage Breakdown</div>
+              <div id="brain-models" style="display:flex;flex-direction:column;gap:7px">
+                <div class="empty" style="padding:12px">Loading…</div>
+              </div>
+            </div>
+
+            <!-- Latest Self-Evolution Decision -->
+            <div>
+              <div style="font-size:11px;color:var(--text3);font-weight:700;text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">Latest Critic Recommendation</div>
+              <div id="brain-latest-evo" style="background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:12px;font-size:12px;color:var(--text2);min-height:60px">
+                Loading…
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Operation Heatmap by Agent -->
+        <div class="card" style="margin-bottom:14px">
+          <div class="section-header">
+            <div class="section-title">📊 Operations by Agent (last 24h)</div>
+          </div>
+          <div id="brain-ops-table" style="overflow-x:auto">
+            <div class="empty">Loading…</div>
+          </div>
+        </div>
+
+        <!-- Recent Failures with Reasoning -->
+        <div class="card">
+          <div class="section-header">
+            <div class="section-title">🚨 Recent Failures &amp; Error Reasons</div>
+            <span style="font-size:10px;color:var(--text3)">Last 20 failed decisions</span>
+          </div>
+          <div id="brain-failures" style="display:flex;flex-direction:column;gap:6px;max-height:320px;overflow-y:auto">
+            <div class="empty">Loading…</div>
+          </div>
+        </div>
+
+      </div><!-- /section-aibrains -->
+
       <!-- ───────────── FEATURE FLAGS ───────────── -->
       <div id="section-featureflags" class="section">
         <div class="section-header">
@@ -2486,6 +2779,18 @@ function statusBadge(s) {
   return \`<span class="badge badge-gray">\${s}</span>\`;
 }
 
+// ── Mobile Sidebar ────────────────────────────────────────────────────────────
+function toggleSidebar() {
+  const sb = document.getElementById('sidebar');
+  const ov = document.getElementById('sidebar-overlay');
+  sb.classList.toggle('open');
+  ov.classList.toggle('open');
+}
+function closeSidebar() {
+  document.getElementById('sidebar').classList.remove('open');
+  document.getElementById('sidebar-overlay').classList.remove('open');
+}
+
 // ── Auth ─────────────────────────────────────────────────────────────────────
 async function doLogin() {
   const email = document.getElementById('login-email').value.trim();
@@ -2523,6 +2828,19 @@ function initApp() {
   loadCreditLog();
   loadDeletionRequests();
   connectSSE();
+  // Live clock
+  function updateClock() {
+    const el = document.getElementById('dash-time');
+    if (el) el.textContent = new Date().toLocaleTimeString();
+  }
+  updateClock();
+  setInterval(updateClock, 1000);
+  // Auto-close sidebar on mobile nav click
+  document.querySelectorAll('.nav-item').forEach(btn => {
+    btn.addEventListener('click', () => {
+      if (window.innerWidth <= 768) closeSidebar();
+    });
+  });
 }
 
 if (TOKEN) {
@@ -2533,8 +2851,8 @@ if (TOKEN) {
 }
 
 // ── Navigation ────────────────────────────────────────────────────────────────
-const SECTIONS = ['dashboard', 'users', 'credits', 'notifications', 'deletions', 'trials', 'activity', 'terminal', 'logs', 'cma', 'agentnet', 'evolution', 'featureflags', 'apma'];
-const TITLES = { dashboard: 'Dashboard', users: 'All Users', credits: 'Credit Management', notifications: 'Push Notifications', deletions: 'Account Deletion Requests', trials: 'Trials & Billing Monitor', activity: 'Live Activity', terminal: 'Live Server Terminal', logs: 'Admin Logs', cma: 'CMA Savings Dashboard', agentnet: 'Agent Network', evolution: 'AI Self-Evolution Log', featureflags: 'Feature Flags', apma: 'APMA — Political Marketing' };
+const SECTIONS = ['dashboard', 'aibrains', 'users', 'credits', 'notifications', 'deletions', 'trials', 'activity', 'terminal', 'logs', 'cma', 'agentnet', 'evolution', 'featureflags', 'apma'];
+const TITLES = { dashboard: 'Dashboard', aibrains: '🧠 AI Brain & Critic', users: 'All Users', credits: 'Credit Management', notifications: 'Push Notifications', deletions: 'Account Deletion Requests', trials: 'Trials & Billing Monitor', activity: 'Live Activity', terminal: 'Live Server Terminal', logs: 'Admin Logs', cma: 'CMA Savings Dashboard', agentnet: 'Agent Network', evolution: 'AI Self-Evolution Log', featureflags: 'Feature Flags', apma: 'APMA — Political Marketing' };
 
 function showSection(name) {
   SECTIONS.forEach(s => {
@@ -2548,6 +2866,7 @@ function showSection(name) {
   if (name === 'apma') { loadAPMASection(); startAPMAMonitor(); } else { stopAPMAMonitor(); }
   if (name === 'agentnet') { startAgentNetPolling(); } else { stopAgentNetPolling(); }
   if (name === 'evolution') { loadEvolutionLog(); loadAIPromptLog(); startEvolutionPolling(); } else { stopEvolutionPolling(); }
+  if (name === 'aibrains') { loadAIBrain(); startBrainPolling(); } else { stopBrainPolling(); }
   if (name === 'featureflags') { loadFeatureFlags(); }
 }
 
@@ -3359,6 +3678,8 @@ async function loadModelCredits() {
 function setSseStatus(color, text) {
   ['sse-dot', 'sse-dot-2', 'sse-dot-activity'].forEach(id => { const el = document.getElementById(id); if (el) el.style.background = color; });
   ['sse-status', 'sse-status-2', 'sse-status-activity'].forEach(id => { const el = document.getElementById(id); if (el) el.textContent = text; });
+  const dashSse = document.getElementById('dash-sse-status');
+  if (dashSse) { dashSse.textContent = '● ' + text; dashSse.style.color = color; }
 }
 
 function connectSSE() {
@@ -3973,6 +4294,240 @@ function startEvolutionPolling() {
 function stopEvolutionPolling() {
   if (evolutionPoller) { clearInterval(evolutionPoller); evolutionPoller = null; }
 }
+
+// ── AI Brain & Critic ──────────────────────────────────────────────────────────
+let brainPoller = null;
+
+const AGENT_META = {
+  LEAD_DISCOVERY:  { color: '#00F5FF', icon: '🔍', label: 'Lead Discovery' },
+  SALESMAN:        { color: '#10B981', icon: '💼', label: 'Salesman' },
+  AWARENESS:       { color: '#818CF8', icon: '📣', label: 'Awareness' },
+  PROMOTION:       { color: '#F59E0B', icon: '🎯', label: 'Promotion' },
+  LAUNCH:          { color: '#EC4899', icon: '🚀', label: 'Launch' },
+  CMA:             { color: '#3B82F6', icon: '💰', label: 'CMA' },
+  IPE:             { color: '#8B5CF6', icon: '🌐', label: 'IPE' },
+};
+
+async function loadAIBrain() {
+  await Promise.all([loadBrainDecisions(), loadCriticAnalysis()]);
+}
+
+async function loadBrainDecisions() {
+  const agentF = (document.getElementById('brain-agent-filter') || {}).value || '';
+  const resultF = (document.getElementById('brain-result-filter') || {}).value || '';
+  const el = document.getElementById('brain-decisions');
+  if (!el) return;
+  try {
+    let url = '/api/ai-prompt-log?limit=40';
+    if (agentF) url += '&agent_type=' + agentF;
+    if (resultF) url += '&success=' + resultF;
+    const data = await api('GET', url);
+    const rows = data.logs || [];
+    if (!rows.length) { el.innerHTML = '<div class="empty">No AI decisions recorded yet</div>'; return; }
+
+    // Update agent status cards
+    renderAgentCards(rows);
+
+    el.innerHTML = rows.map(r => {
+      const meta = AGENT_META[r.agent_type] || { color: '#3A5070', icon: '🤖', label: r.agent_type };
+      const latFmt = r.latency_ms ? (r.latency_ms >= 1000 ? (r.latency_ms/1000).toFixed(1)+'s' : r.latency_ms+'ms') : '—';
+      const ts = r.created_at ? new Date(r.created_at).toLocaleTimeString() : '';
+      const cls = r.success ? 'ok' : 'fail';
+      const modelBadge = r.model_used
+        ? \`<span class="badge \${r.model_used.includes('gpt') ? 'badge-cyan' : r.model_used.includes('gemini') ? 'badge-purple' : 'badge-yellow'}" style="font-size:9px">\${r.model_used.split('-').slice(0,2).join('-')}</span>\`
+        : '';
+      return \`<div class="decision-item \${cls}" style="border-left-color:\${meta.color}">
+        <div style="display:flex;align-items:center;gap:6px;margin-bottom:5px;flex-wrap:wrap">
+          <span style="font-size:13px">\${meta.icon}</span>
+          <span style="font-weight:700;font-size:11px;color:\${meta.color}">\${meta.label}</span>
+          \${modelBadge}
+          <span style="font-size:10px;color:var(--text3)">\${r.operation || ''}</span>
+          <span style="margin-left:auto;font-size:10px;color:var(--text3)">\${ts} · \${latFmt}</span>
+          <span style="font-size:12px">\${r.success ? '✅' : '❌'}</span>
+        </div>
+        \${r.prompt_summary ? \`<div style="font-size:11px;color:var(--text2);margin-bottom:3px;line-height:1.4" title="\${r.prompt_summary}">📤 \${r.prompt_summary.slice(0,160)}\${r.prompt_summary.length>160?'…':''}</div>\` : ''}
+        \${r.response_summary ? \`<div style="font-size:11px;color:var(--text3);line-height:1.4" title="\${r.response_summary}">📥 \${r.response_summary.slice(0,160)}\${r.response_summary.length>160?'…':''}</div>\` : ''}
+        \${!r.success && r.error_message ? \`<div style="font-size:11px;color:var(--danger);margin-top:4px;padding:5px 8px;background:rgba(239,68,68,.07);border-radius:5px">⚠️ \${r.error_message.slice(0,200)}</div>\` : ''}
+      </div>\`;
+    }).join('');
+  } catch (e) {
+    if (el) el.innerHTML = \`<div class="empty">Error: \${e.message}</div>\`;
+  }
+}
+
+function renderAgentCards(rows) {
+  const grid = document.getElementById('brain-agent-grid');
+  if (!grid) return;
+  // Aggregate per agent
+  const agents = {};
+  rows.forEach(r => {
+    if (!agents[r.agent_type]) agents[r.agent_type] = { total:0, success:0, last:null, lastOp:'' };
+    agents[r.agent_type].total++;
+    if (r.success) agents[r.agent_type].success++;
+    if (!agents[r.agent_type].last || r.created_at > agents[r.agent_type].last) {
+      agents[r.agent_type].last = r.created_at;
+      agents[r.agent_type].lastOp = r.operation || '';
+    }
+  });
+  const keys = Object.keys(AGENT_META);
+  grid.innerHTML = keys.map(k => {
+    const meta = AGENT_META[k];
+    const a = agents[k];
+    const rate = a ? Math.round((a.success/a.total)*100) : null;
+    const isActive = a && a.last && (Date.now() - new Date(a.last).getTime()) < 15*60*1000;
+    return \`<div class="brain-agent \${isActive ? 'active-agent' : ''}">
+      <div class="brain-agent-header">
+        <div class="brain-agent-dot" style="background:\${meta.color}\${isActive?';animation:pulse 2s infinite':''}"></div>
+        <div>
+          <div class="brain-agent-name">\${meta.icon} \${meta.label}</div>
+          \${isActive ? '<span class="badge badge-cyan" style="font-size:9px">ACTIVE</span>' : '<span class="badge badge-gray" style="font-size:9px">IDLE</span>'}
+        </div>
+      </div>
+      \${a ? \`
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
+          <span style="font-size:11px;color:var(--text3)">\${a.total} decisions</span>
+          <span style="font-size:11px;font-weight:700;color:\${rate>=80?'var(--success)':rate>=50?'var(--warn)':'var(--danger)'}">\${rate}% ok</span>
+        </div>
+        <div class="progress"><div class="progress-bar" style="width:\${rate}%;background:\${rate>=80?'var(--success)':rate>=50?'var(--warn)':'var(--danger)'}"></div></div>
+        \${a.lastOp ? \`<div style="font-size:10px;color:var(--text3);margin-top:6px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">\${a.lastOp}</div>\` : ''}
+      \` : \`
+        <div class="thinking-dots" style="margin-top:6px"><div class="thinking-dot" style="background:var(--text3)"></div><div class="thinking-dot" style="background:var(--text3)"></div><div class="thinking-dot" style="background:var(--text3)"></div></div>
+        <div style="font-size:10px;color:var(--text3);margin-top:5px">No decisions yet</div>
+      \`}
+    </div>\`;
+  }).join('');
+}
+
+async function loadCriticAnalysis() {
+  try {
+    // Load prompt log stats
+    const data = await api('GET', '/api/ai-prompt-log?limit=200');
+    const rows = data.logs || [];
+    const total = rows.length;
+    const successes = rows.filter(r => r.success).length;
+    const rate = total ? Math.round((successes/total)*100) : 0;
+    const latencies = rows.filter(r => r.latency_ms).map(r => r.latency_ms);
+    const avgLat = latencies.length ? Math.round(latencies.reduce((a,b)=>a+b,0)/latencies.length) : 0;
+    const avgLatFmt = avgLat >= 1000 ? (avgLat/1000).toFixed(1)+'s' : avgLat+'ms';
+
+    // Model breakdown
+    const modelCounts = {};
+    rows.forEach(r => { if (r.model_used) { modelCounts[r.model_used] = (modelCounts[r.model_used]||0)+1; } });
+    const topModel = Object.entries(modelCounts).sort((a,b)=>b[1]-a[1])[0];
+
+    const el = (id) => document.getElementById(id);
+    if (el('bkpi-total')) el('bkpi-total').textContent = total.toLocaleString();
+    if (el('bkpi-success')) {
+      el('bkpi-success').textContent = rate + '%';
+      el('bkpi-success').style.color = rate >= 80 ? 'var(--success)' : rate >= 50 ? 'var(--warn)' : 'var(--danger)';
+    }
+    if (el('bkpi-latency')) el('bkpi-latency').textContent = avgLatFmt;
+    if (el('bkpi-model')) el('bkpi-model').textContent = topModel ? topModel[0].split('-').slice(0,2).join('-') : '—';
+
+    // Model bar chart
+    const modelsEl = document.getElementById('brain-models');
+    if (modelsEl && Object.keys(modelCounts).length) {
+      const maxCount = Math.max(...Object.values(modelCounts));
+      modelsEl.innerHTML = Object.entries(modelCounts).sort((a,b)=>b[1]-a[1]).map(([m,c]) => {
+        const pct = Math.round((c/maxCount)*100);
+        const color = m.includes('gpt') ? '#00F5FF' : m.includes('gemini') ? '#818CF8' : '#F59E0B';
+        return \`<div>
+          <div style="display:flex;justify-content:space-between;font-size:10px;color:var(--text2);margin-bottom:3px">
+            <span>\${m}</span><span style="color:\${color}">\${c} calls (\${Math.round((c/total)*100)}%)</span>
+          </div>
+          <div class="progress"><div class="progress-bar" style="width:\${pct}%;background:\${color}"></div></div>
+        </div>\`;
+      }).join('');
+    } else if (modelsEl) {
+      modelsEl.innerHTML = '<div class="empty" style="padding:10px">No model data yet</div>';
+    }
+
+    // Operations heatmap
+    const opsByAgent = {};
+    rows.forEach(r => {
+      if (!opsByAgent[r.agent_type]) opsByAgent[r.agent_type] = {};
+      const op = r.operation || 'unknown';
+      opsByAgent[r.agent_type][op] = (opsByAgent[r.agent_type][op]||0) + 1;
+    });
+    const opsEl = document.getElementById('brain-ops-table');
+    if (opsEl && Object.keys(opsByAgent).length) {
+      const allOps = [...new Set(rows.map(r => r.operation || 'unknown'))].slice(0,8);
+      opsEl.innerHTML = \`<table>
+        <thead><tr><th>Agent</th>\${allOps.map(o=>\`<th style="text-align:center">\${o}</th>\`).join('')}</tr></thead>
+        <tbody>\${Object.entries(opsByAgent).map(([agent, ops]) => {
+          const meta = AGENT_META[agent] || { color:'#3A5070', icon:'🤖', label:agent };
+          return \`<tr>
+            <td><span style="color:\${meta.color};font-weight:700">\${meta.icon} \${meta.label}</span></td>
+            \${allOps.map(op => {
+              const count = ops[op] || 0;
+              return \`<td style="text-align:center">\${count > 0 ? \`<span class="badge badge-gray" style="min-width:28px;justify-content:center">\${count}</span>\` : '<span style="color:var(--text3);font-size:10px">—</span>'}</td>\`;
+            }).join('')}
+          </tr>\`;
+        }).join('')}</tbody>
+      </table>\`;
+    } else if (opsEl) {
+      opsEl.innerHTML = '<div class="empty">No operation data yet</div>';
+    }
+
+    // Failures
+    const failEl = document.getElementById('brain-failures');
+    if (failEl) {
+      const fails = rows.filter(r => !r.success).slice(0, 20);
+      if (!fails.length) { failEl.innerHTML = '<div class="empty" style="color:var(--success)">✅ No recent failures</div>'; }
+      else {
+        failEl.innerHTML = fails.map(r => {
+          const meta = AGENT_META[r.agent_type] || { color:'#3A5070', icon:'🤖', label:r.agent_type };
+          const ts = r.created_at ? new Date(r.created_at).toLocaleString() : '';
+          return \`<div style="background:var(--bg);border:1px solid rgba(239,68,68,.15);border-left:3px solid var(--danger);border-radius:8px;padding:10px 12px">
+            <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px">
+              <span style="font-size:12px">\${meta.icon}</span>
+              <span style="font-weight:700;font-size:11px;color:\${meta.color}">\${meta.label}</span>
+              <span style="font-size:10px;color:var(--text3)">\${r.operation || ''}</span>
+              <span style="margin-left:auto;font-size:10px;color:var(--text3)">\${ts}</span>
+            </div>
+            \${r.error_message ? \`<div style="font-size:11px;color:var(--danger);padding:5px 8px;background:rgba(239,68,68,.07);border-radius:5px;line-height:1.4">\${r.error_message.slice(0,300)}</div>\` : '<div style="font-size:11px;color:var(--text3)">No error message captured</div>'}
+            \${r.prompt_summary ? \`<div style="font-size:10px;color:var(--text3);margin-top:4px">Prompt: \${r.prompt_summary.slice(0,120)}</div>\` : ''}
+          </div>\`;
+        }).join('');
+      }
+    }
+
+    // Latest evolution recommendation
+    const evoEl = document.getElementById('brain-latest-evo');
+    if (evoEl) {
+      try {
+        const evo = await api('GET', '/api/evolution-log?limit=1');
+        const rec = evo.logs?.[0];
+        if (rec) {
+          evoEl.innerHTML = \`<div style="display:flex;gap:8px;align-items:flex-start">
+            <span style="font-size:16px;flex-shrink:0">🧬</span>
+            <div>
+              <div style="font-size:10px;color:var(--text3);margin-bottom:4px">\${rec.agent || 'AI'} · \${rec.cycle_date ? new Date(rec.cycle_date).toLocaleDateString() : ''}</div>
+              <div style="font-size:12px;color:var(--text2);line-height:1.5">\${(rec.overall_recommendation || rec.analysis || 'No recommendation').slice(0,400)}</div>
+              \${rec.adopted_sources ? \`<div style="margin-top:6px;font-size:10px;color:var(--success)">✅ Adopted: \${rec.adopted_sources.slice(0,100)}</div>\` : ''}
+              \${rec.scaled_back_sources ? \`<div style="margin-top:3px;font-size:10px;color:var(--danger)">🔽 Scaled back: \${rec.scaled_back_sources.slice(0,100)}</div>\` : ''}
+            </div>
+          </div>\`;
+        } else {
+          evoEl.textContent = 'No evolution cycles recorded yet.';
+        }
+      } catch(e) { evoEl.textContent = 'Could not load critic recommendation.'; }
+    }
+
+  } catch (e) {
+    console.error('[AIBrain] loadCriticAnalysis error:', e);
+  }
+}
+
+function startBrainPolling() {
+  stopBrainPolling();
+  loadAIBrain();
+  brainPoller = setInterval(loadAIBrain, 20000);
+}
+function stopBrainPolling() {
+  if (brainPoller) { clearInterval(brainPoller); brainPoller = null; }
+}
+
 
 // ── Evolution sub-tab switcher ────────────────────────────────────────────────
 function switchEvoTab(tab) {
