@@ -4496,8 +4496,8 @@ async function loadCriticAnalysis() {
     const evoEl = document.getElementById('brain-latest-evo');
     if (evoEl) {
       try {
-        const evo = await api('GET', '/api/evolution-log?limit=1');
-        const rec = evo.logs?.[0];
+        const evo = await api('GET', '/api/evolution/log?limit=1');
+        const rec = (evo.entries || evo.logs || [])[0];
         if (rec) {
           evoEl.innerHTML = \`<div style="display:flex;gap:8px;align-items:flex-start">
             <span style="font-size:16px;flex-shrink:0">🧬</span>
