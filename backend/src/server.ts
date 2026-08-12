@@ -3931,7 +3931,7 @@ app.get('/delete-account', (req, res) => {
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Delete Account — AdRoom</title>
+  <title>Delete Account — AdRoom AI</title>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     body {
@@ -4042,7 +4042,7 @@ app.get('/delete-account', (req, res) => {
 </head>
 <body>
   <div class="card">
-    <div class="logo">AdRoom</div>
+    <div class="logo">AdRoom AI</div>
     <h1>Delete Your Account</h1>
     <p>Submit your request below. Our team will process it within 30 days. All your personal data, campaigns, and account information will be permanently removed.</p>
 
@@ -4056,7 +4056,7 @@ app.get('/delete-account', (req, res) => {
       <div id="errorBox" class="error-msg" style="display:none"></div>
 
       <button type="submit" id="submitBtn">Request Account Deletion</button>
-      <p class="notice">By submitting this form you confirm that you want your AdRoom account and all associated data permanently deleted. This action cannot be undone.</p>
+      <p class="notice">By submitting this form you confirm that you want your AdRoom AI account and all associated data permanently deleted. This action cannot be undone.</p>
     </form>
 
     <div class="success" id="successBox" style="display:none">
