@@ -8,7 +8,14 @@ interface Props {
   };
 }
 
-const CELLS = [
+interface ActionCell {
+  key: keyof Props['counts'];
+  label: string;
+  icon: string;
+  highlight?: boolean;
+}
+
+const CELLS: ActionCell[] = [
   { key: 'posts',            label: 'Posts Published', icon: '📢' },
   { key: 'comments',         label: 'Comments / Replies', icon: '💬' },
   { key: 'blog_articles',    label: 'Blog Articles', icon: '📰' },

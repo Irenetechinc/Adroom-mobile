@@ -312,18 +312,18 @@ function DemographicPanel({ strategyId }: { strategyId: string }) {
   const [activeSegIdx, setActiveSegIdx] = useState(0);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  const fetch = useCallback(async (isPolling = false) => {
+  const loadIntel = useCallback(async (isPolling = false) => {
     if (!isPolling) setLoading(true);
     try {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session?.access_token || !BACKEND_URL) return;
-      const res = await fetch(`${BACKEND_URL}/api/strategy/${strategyId}/intelligence/demographics`, {
+      const res = await globalThis.fetch(`${BACKEND_URL}/api/strategy/${strategyId}/intelligence/demographics`, {
         headers: { Authorization: `Bearer ${session.access_token}` },
       });
       if (res.status === 202) {
         setGenerating(true);
         if (!pollRef.current) {
-          pollRef.current = setInterval(() => fetch(true), 8000);
+          pollRef.current = setInterval(() => loadIntel(true), 8000);
         }
         return;
       }
@@ -341,9 +341,9 @@ function DemographicPanel({ strategyId }: { strategyId: string }) {
   }, [strategyId]);
 
   useEffect(() => {
-    fetch();
+    loadIntel();
     return () => { if (pollRef.current) clearInterval(pollRef.current); };
-  }, [fetch]);
+  }, [loadIntel]);
 
   if (loading) {
     return (
@@ -368,7 +368,7 @@ function DemographicPanel({ strategyId }: { strategyId: string }) {
       <View style={styles.intelError}>
         <AlertCircle size={16} color="#F87171" />
         <Text style={styles.intelErrorText}>{error}</Text>
-        <TouchableOpacity onPress={() => { setError(null); fetch(); }} style={styles.retryBtn}>
+        <TouchableOpacity onPress={() => { setError(null); loadIntel(); }} style={styles.retryBtn}>
           <RefreshCw size={12} color="#00F0FF" />
           <Text style={styles.retryText}>Retry</Text>
         </TouchableOpacity>
