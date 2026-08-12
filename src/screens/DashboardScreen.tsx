@@ -942,7 +942,7 @@ export default function DashboardScreen() {
               </View>
 
               {gmapsLeads.map((lead, i) => {
-                const sig = (lead.intent_signals || []).find(s => s.source === 'google_maps_discovery') || {};
+                const sig = (lead.intent_signals || []).find(s => s.source === 'google_maps_discovery') ?? null;
                 const score = Math.round((lead.intent_score ?? 0) * 100);
                 const scoreColor = score >= 75 ? '#10B981' : score >= 55 ? '#F59E0B' : '#64748B';
                 const stageColors: Record<string, string> = {
@@ -974,14 +974,14 @@ export default function DashboardScreen() {
                     <View style={{ flex: 1 }}>
                       <Text style={styles.gmapsBizName} numberOfLines={1}>{lead.platform_username}</Text>
                       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 2 }}>
-                        {sig.rating != null && (
+                        {sig?.rating != null && (
                           <Text style={styles.gmapsMeta}>★ {sig.rating}</Text>
                         )}
-                        {sig.total_ratings != null && (
+                        {sig?.total_ratings != null && (
                           <Text style={styles.gmapsMeta}>· {sig.total_ratings} reviews</Text>
                         )}
                       </View>
-                      {sig.outreach_reason ? (
+                      {sig?.outreach_reason ? (
                         <Text style={styles.gmapsReason} numberOfLines={1}>{sig.outreach_reason}</Text>
                       ) : null}
                     </View>

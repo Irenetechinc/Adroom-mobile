@@ -18,6 +18,7 @@
     "@react-navigation/native": "^7.1.33",
     "@react-navigation/native-stack": "^7.14.4",
     "@supabase/supabase-js": "^2.98.0",
+    "dotenv": "^16.6.1",
     "expo": "~55.0.28",
     "expo-auth-session": "~55.0.17",
     "expo-build-properties": "~55.0.16",

@@ -6,7 +6,7 @@ import useFeatureFlags from '../hooks/useFeatureFlags';
 
 interface Props {
   flag: string;
-  children: React.ReactNode;
+  children?: React.ReactNode;
   message?: string;
   fullScreen?: boolean;
 }

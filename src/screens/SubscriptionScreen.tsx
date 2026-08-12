@@ -75,6 +75,8 @@ export default function SubscriptionScreen() {
   const [trialEligible, setTrialEligible] = useState<boolean | null>(null);
   // Tracks which plan the user chose for their trial so we know which verify endpoint to call
   const trialPlanIdRef = useRef<string | null>(null);
+  const isTrialing = subscription?.status === 'trialing';
+  const isActive = subscription?.status === 'active' || isTrialing;
 
   // Direct card charging state
   const [showCardModal, setShowCardModal] = useState(false);
@@ -138,7 +140,7 @@ export default function SubscriptionScreen() {
 
         // Already have a subscription status — if active/trialing/expired, not eligible
         // 'inactive' is the default for new users and should still be eligible for the trial
-        if (subscription?.trial_start || (subscription?.status && subscription.status !== 'none' && subscription.status !== 'cancelled' && subscription.status !== 'inactive')) {
+        if (subscription?.trial_start || (subscription?.status && subscription.status !== 'cancelled' && subscription.status !== 'inactive')) {
           setTrialEligible(false);
           return;
         }
@@ -245,9 +247,6 @@ export default function SubscriptionScreen() {
   const balance = parseFloat(String(account?.balance_credits ?? '0'));
   const plan = subscription?.plan ?? 'none';
   const planInfo = PLAN_DETAILS[plan];
-  const isTrialing = subscription?.status === 'trialing';
-  const isActive = subscription?.status === 'active' || isTrialing;
-
   const trialDaysLeft = subscription?.trial_end
     ? Math.max(0, Math.ceil((new Date(subscription.trial_end).getTime() - Date.now()) / 86400000))
     : null;
@@ -1001,7 +1000,7 @@ export default function SubscriptionScreen() {
                     {/* Pack picker */}
                     {showAutoTopUpPicker && (
                       <View>
-                        <Text style={{ color: COLORS.sub, fontSize: 12, marginBottom: 10, lineHeight: 18 }}>
+                        <Text style={{ color: COLORS.muted, fontSize: 12, marginBottom: 10, lineHeight: 18 }}>
                           Select how many credits to add each time your balance runs low:
                         </Text>
                         {PACKS.map(pack => {
@@ -1073,7 +1072,7 @@ export default function SubscriptionScreen() {
                     <Text style={{ color: COLORS.text, fontWeight: '700', fontSize: 13, marginBottom: 6 }}>
                       Choose your auto top-up amount
                     </Text>
-                    <Text style={{ color: COLORS.sub, fontSize: 12, marginBottom: 12, lineHeight: 18 }}>
+                    <Text style={{ color: COLORS.muted, fontSize: 12, marginBottom: 12, lineHeight: 18 }}>
                       Your saved card will be charged automatically whenever your balance drops to 25 credits or below. You can change or cancel this at any time.
                     </Text>
                     {PACKS.map(pack => (
