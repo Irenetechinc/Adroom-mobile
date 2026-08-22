@@ -1,6 +1,6 @@
 <?php
 /**
- * AdRoom AI — Bug Report Submission Handler
+ * Adirum AI — Bug Report Submission Handler
  *
  * Drop-in PHP for cPanel hosting. NO Composer, NO npm, NO installations.
  * Uses cURL (built into PHP) to send mail via Resend's HTTP API.
@@ -24,7 +24,7 @@
 // set env vars on your hosting plan.
 $RESEND_API_KEY = getenv('RESEND_API_KEY') ?: '';        // re_xxxxxxxx
 $TO_EMAIL       = getenv('BUG_TO_EMAIL')   ?: 'reportbugs@adroomai.com';
-$FROM_EMAIL     = getenv('BUG_FROM_EMAIL') ?: 'AdRoom AI Bugs <noreply@adroomai.com>';
+$FROM_EMAIL     = getenv('BUG_FROM_EMAIL') ?: 'Adirum AI Bugs <noreply@adroomai.com>';
 $LOG_FILE       = __DIR__ . '/bug-reports.json';
 // ====================================================================
 

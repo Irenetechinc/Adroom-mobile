@@ -383,7 +383,7 @@ export default function SignupScreen({ navigation }: Props) {
               <Text style={styles.emailChipText} numberOfLines={1}>{registeredEmail}</Text>
             </View>
             <Text style={styles.modalBody}>
-              Tap the link in the email to activate your AdRoom AI account. It may take a moment to arrive — check your spam folder if needed.
+              Tap the link in the email to activate your Adirum AI account. It may take a moment to arrive — check your spam folder if needed.
             </Text>
 
             {/* Divider */}
@@ -391,7 +391,7 @@ export default function SignupScreen({ navigation }: Props) {
 
             {/* Steps */}
             {[
-              'Open the email from AdRoom AI',
+              'Open the email from Adirum AI',
               'Tap "Confirm My Email"',
               'Sign in and launch your first campaign',
             ].map((step, i) => (

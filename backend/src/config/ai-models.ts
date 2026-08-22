@@ -109,7 +109,7 @@ export class AIEngine {
         messages: [
           {
             role: 'system',
-            content: 'You are AdRoom AI Core Brain — a world-class marketing strategist. Always respond with valid JSON only, no markdown, no code blocks.',
+            content: 'You are Adirum AI Core Brain — a world-class marketing strategist. Always respond with valid JSON only, no markdown, no code blocks.',
           },
           {
             role: 'user',
@@ -152,7 +152,7 @@ export class AIEngine {
     try {
       const model = genAI.getGenerativeModel({ model: GEMINI_FLASH_MODEL });
       const fullPrompt = [
-        'You are AdRoom AI Core Brain — a world-class marketing strategist.',
+        'You are Adirum AI Core Brain — a world-class marketing strategist.',
         'Return ONLY valid JSON, no markdown, no code blocks.',
         `Context: ${JSON.stringify(context)}`,
         `Task: ${prompt}`,
@@ -178,7 +178,7 @@ export class AIEngine {
     try {
       const completion = await openai.chat.completions.create({
         messages: [
-          { role: 'system', content: 'You are AdRoom AI Core Brain — a world-class marketing strategist. Always respond with valid JSON only, no markdown, no code blocks.' },
+          { role: 'system', content: 'You are Adirum AI Core Brain — a world-class marketing strategist. Always respond with valid JSON only, no markdown, no code blocks.' },
           { role: 'user', content: `Context: ${JSON.stringify(context)}\n\nTask: ${prompt}` },
         ],
         model: OPENAI_STRATEGY_MODEL,

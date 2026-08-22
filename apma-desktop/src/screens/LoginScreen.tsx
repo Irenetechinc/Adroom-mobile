@@ -33,7 +33,7 @@ export default function LoginScreen() {
           <div style={{ fontSize:36, marginBottom:8 }}>🎯</div>
           <h1 style={{ fontSize:28, fontWeight:900, color:'#f1f5f9', letterSpacing:'-0.02em' }}>APMA</h1>
           <p style={{ color:'#6366f1', fontSize:11, fontWeight:700, textTransform:'uppercase', letterSpacing:'0.15em', marginTop:4 }}>Autonomous Political Marketing Agent</p>
-          <p style={{ color:'#475569', fontSize:11, marginTop:4 }}>from AdRoom AI</p>
+          <p style={{ color:'#475569', fontSize:11, marginTop:4 }}>from Adirum AI</p>
         </div>
 
         <form onSubmit={handleLogin} className="card" style={{ display:'flex', flexDirection:'column', gap:20 }}>

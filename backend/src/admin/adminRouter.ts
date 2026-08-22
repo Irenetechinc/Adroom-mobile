@@ -482,7 +482,7 @@ router.post('/api/users/:id/plan', auth, async (req, res) => {
       let body = '';
       if (effectiveStatus === 'cancelled' || effectiveStatus === 'expired' || plan === 'none') {
         title = 'Subscription Ended';
-        body = 'Your AdRoom AI subscription has ended. Upgrade to keep your campaigns running.';
+        body = 'Your Adirum AI subscription has ended. Upgrade to keep your campaigns running.';
       } else if (fromPlan === 'none' || (existingSub?.status !== 'active' && existingSub?.status !== 'trialing')) {
         title = `Welcome to ${toLabel}`;
         body = grantCredits && planCredits > 0

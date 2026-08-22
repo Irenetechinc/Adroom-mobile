@@ -9,7 +9,7 @@ Retry fails with adroom retrshow user message not sure what to retry invistigate
 
 5. Fix the screen reload that happen from the connect account screen  each time user clicks the connect account button and the user is redirected to the agent chat screen it happens just after the user has been redirected to the agent chat screen the agent chat screen  reload in a split second after user has been redirected Investigate and fix from root course 
 
-6.Using the adroom logo icon generate a watermark version and it should be visible at the middle and user it say 100% tonomy, smart digital marketing let's go no all at once the should al fade in and fade out lndividualy of the chat screen of this oder (100% otonomy, smart digital marketing, intelegence, workforce, smart autonomous ai, let's go adroom ai)   soon as thier is any activity that is gone 
+6.Using the adroom logo icon generate a watermark version and it should be visible at the middle and user it say 100% tonomy, smart digital marketing let's go no all at once the should al fade in and fade out lndividualy of the chat screen of this oder (100% otonomy, smart digital marketing, intelegence, workforce, smart autonomous ai, let's go Adirum AI)   soon as thier is any activity that is gone 
 
 8. Redisign header ui for agent chat screen shloub like settings screen header use professional ad hat icon for reset
 

@@ -68,8 +68,8 @@ export default function ReferralScreen() {
     if (!code) return;
     try {
       await Share.share({
-        message: `Join me on AdRoom AI — the AI that runs your social media marketing automatically!\n\nUse my referral code ${code} when you sign up and we both earn energy credits.\n\nDownload the app and enter code: ${code}`,
-        title: 'Join AdRoom AI',
+        message: `Join me on Adirum AI — the AI that runs your social media marketing automatically!\n\nUse my referral code ${code} when you sign up and we both earn energy credits.\n\nDownload the app and enter code: ${code}`,
+        title: 'Join Adirum AI',
       });
     } catch { /* user dismissed share sheet */ }
   };
@@ -98,7 +98,7 @@ export default function ReferralScreen() {
           <View style={s.heroIconWrap}>
             <Gift size={32} color="#F59E0B" />
           </View>
-          <Text style={s.heroTitle}>Give AdRoom AI to a friend.</Text>
+          <Text style={s.heroTitle}>Give Adirum AI to a friend.</Text>
           <Text style={s.heroTitle}>You both earn credits.</Text>
           <Text style={s.heroSub}>
             Share your unique referral code. When your friend activates their first plan, you both
@@ -193,7 +193,7 @@ export default function ReferralScreen() {
             {
               step: '2',
               title: 'They sign up',
-              desc: "Your friend creates an AdRoom AI account and enters your code during signup.",
+              desc: "Your friend creates an Adirum AI account and enters your code during signup.",
               color: '#00F0FF',
             },
             {

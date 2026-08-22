@@ -19,7 +19,7 @@ Service intake form should have and input form where user can enter portfolio li
 
 The duration modal in the agent chat screen after during service intake still dosnt recognize the user selected currency the gaol sumarry text still using the dollar sign instead of user selected currency
 
-Integret mempalace memory system adroom ai should be able to remeber ecry user conversions during chat, comment and intersections, improve what on ground with eh following
+Integret mempalace memory system Adirum AI should be able to remeber ecry user conversions during chat, comment and intersections, improve what on ground with eh following
 
 all implementations and fix must be for realtime and production, no dummy data, no demo implemntations, no hardcoded data, no unresolved todo or comments, no type script erros in code base and implementation this app must run 100% off replit. i use railway for backend and supabase for front end
 

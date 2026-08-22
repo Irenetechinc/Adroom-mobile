@@ -1,7 +1,7 @@
 module.exports = ({ config }) => {
   return {
     ...config,
-    name: config.name || 'AdRoom AI',
+    name: config.name || 'Adirum AI',
     slug: config.slug || 'adroom-mobile',
     extra: {
       ...config.extra,

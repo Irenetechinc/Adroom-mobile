@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "AdRoom AI",
+    "name": "Adirum AI",
     "slug": "adroom-mobile",
     "scheme": "adroom",
     "version": "4.2.0",
@@ -66,8 +66,8 @@
       [
         "expo-location",
         {
-          "locationAlwaysAndWhenInUsePermission": "AdRoom AI uses your location to find local trends and optimize campaign targeting.",
-          "locationWhenInUsePermission": "AdRoom AI uses your location to find local trends and optimize campaign targeting."
+          "locationAlwaysAndWhenInUsePermission": "Adirum AI uses your location to find local trends and optimize campaign targeting.",
+          "locationWhenInUsePermission": "Adirum AI uses your location to find local trends and optimize campaign targeting."
         }
       ],
       [

@@ -170,7 +170,7 @@ export default function SettingsScreen() {
         },
         {
           icon: Info,
-          label: 'About AdRoom AI',
+          label: 'About Adirum AI',
           sublabel: 'Version 2.2.7',
           color: '#94A3B8',
           onPress: () => navigation.navigate('About'),
@@ -187,7 +187,7 @@ export default function SettingsScreen() {
           <Menu color="#E2E8F0" size={22} />
         </TouchableOpacity>
         <View style={{ flex: 1 }}>
-          <Text style={styles.headerLabel}>AdRoom AI</Text>
+          <Text style={styles.headerLabel}>Adirum AI</Text>
           <Text style={styles.headerTitle}>Settings</Text>
         </View>
         <View style={styles.headerIcon}>
@@ -263,7 +263,7 @@ export default function SettingsScreen() {
           </TouchableOpacity>
         </Animated.View>
 
-        <Text style={styles.versionText}>AdRoom AI • v2.2.7</Text>
+        <Text style={styles.versionText}>Adirum AI • v2.2.7</Text>
       </ScrollView>
 
       {/* ── Sign Out Confirmation Modal ──────────────────────────────────── */}

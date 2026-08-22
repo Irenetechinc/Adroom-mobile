@@ -94,8 +94,8 @@ export default function ForceUpdateModal({
 
             <Text style={styles.body}>
               {required
-                ? `This version of AdRoom AI (v${currentVersion}) is no longer supported. Please update to continue using the app.`
-                : `A newer version of AdRoom AI is available${
+                ? `This version of Adirum AI (v${currentVersion}) is no longer supported. Please update to continue using the app.`
+                : `A newer version of Adirum AI is available${
                     latestVersion ? ` (v${latestVersion})` : ''
                   }. You're on v${currentVersion}.`}
             </Text>

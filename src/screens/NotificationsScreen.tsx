@@ -309,7 +309,7 @@ export default function NotificationsScreen() {
           <ArrowLeft color="#E2E8F0" size={22} />
         </TouchableOpacity>
         <View style={{ flex: 1 }}>
-          <Text style={styles.headerLabel}>AdRoom AI</Text>
+          <Text style={styles.headerLabel}>Adirum AI</Text>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
             <Text style={styles.headerTitle}>Notifications</Text>
             {unread > 0 && (

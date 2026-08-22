@@ -81,7 +81,7 @@ export default function ProductIntakeScreen() {
       setProductData({ videoUri: result.assets[0].uri });
       Alert.alert(
         'Video Attached',
-        'Your product video has been attached. AdRoom AI will use it in your campaign assets.',
+        'Your product video has been attached. Adirum AI will use it in your campaign assets.',
         [{ text: 'Great!' }],
       );
     }
@@ -90,7 +90,7 @@ export default function ProductIntakeScreen() {
   // ─── AI Video Generation (Pro/Pro+ only, server enforced) ───
   const handleGenerateAiVideo = async () => {
     if (!productData.name) {
-      Alert.alert('Product Name Required', 'Enter a product name first so AdRoom AI can generate a relevant video.');
+      Alert.alert('Product Name Required', 'Enter a product name first so Adirum AI can generate a relevant video.');
       return;
     }
     if (!canGenerateAiVideo) {
@@ -368,7 +368,7 @@ export default function ProductIntakeScreen() {
             )}
           </View>
           <Text style={styles.websiteDesc}>
-            AdRoom AI scrapes your website to enrich product intelligence and tailor your strategy.
+            Adirum AI scrapes your website to enrich product intelligence and tailor your strategy.
           </Text>
           {canUseWebsiteScraping ? (
             <TextInput

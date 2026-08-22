@@ -1,6 +1,6 @@
 <?php
 /**
- * AdRoom AI - Waitlist Email Collector
+ * Adirum AI - Waitlist Email Collector
  * Appends submitted emails to whitelistusers.txt
  * View the file via cPanel File Manager → public_html/whitelistusers.txt
  */

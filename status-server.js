@@ -68,7 +68,7 @@ const html = `<!DOCTYPE html>
       <div class="dot"></div>
       <span class="badge-text">BACKEND RUNNING</span>
     </div>
-    <h1>AdRoom AI</h1>
+    <h1>Adirum AI</h1>
     <p class="sub">Autonomous Social Media Marketing Platform<br>Backend API is live and serving requests on port 8000.</p>
     
     <div class="grid">

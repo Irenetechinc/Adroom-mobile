@@ -4,7 +4,7 @@ ok good but Cold app starts should trigger the restor previous session prompt an
 Cold app starts also trigger the prompt (not just fresh sign-ins)
 The prompt restores only the last session (most recent conversation block), not 7 days
 The history icon opens a popup listing the sessions from the last 7 days with date/time, and user picks one
-Let me implement them. I need to define what a "session" is — a contiguous block of messages bounded by either the agent's greeting ("Hello … I am AdRoom AI") or a >2-hour gap between consecutive messages.
+Let me implement them. I need to define what a "session" is — a contiguous block of messages bounded by either the agent's greeting ("Hello … I am Adirum AI") or a >2-hour gap between consecutive messages.
 
 add a small numeric badge on the History icon showing the count of restorable sessions, so users at a glance know whether there's anything to come back to.
 

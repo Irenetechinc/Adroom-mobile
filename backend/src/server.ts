@@ -1335,7 +1335,7 @@ app.post('/api/ai/generate-strategy', async (req, res) => {
         let weekPreview: any[] = [];
         try {
             const previewPrompt = `
-You are AdRoom AI. Based on this marketing strategy, generate a concrete 7-day content preview.
+You are Adirum AI. Based on this marketing strategy, generate a concrete 7-day content preview.
 Show EXACTLY what will be posted on each of the first 7 days.
 
 STRATEGY:
@@ -3931,7 +3931,7 @@ app.get('/delete-account', (req, res) => {
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Delete Account — AdRoom AI</title>
+  <title>Delete Account — Adirum AI</title>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     body {
@@ -4042,7 +4042,7 @@ app.get('/delete-account', (req, res) => {
 </head>
 <body>
   <div class="card">
-    <div class="logo">AdRoom AI</div>
+    <div class="logo">Adirum AI</div>
     <h1>Delete Your Account</h1>
     <p>Submit your request below. Our team will process it within 30 days. All your personal data, campaigns, and account information will be permanently removed.</p>
 
@@ -4056,7 +4056,7 @@ app.get('/delete-account', (req, res) => {
       <div id="errorBox" class="error-msg" style="display:none"></div>
 
       <button type="submit" id="submitBtn">Request Account Deletion</button>
-      <p class="notice">By submitting this form you confirm that you want your AdRoom AI account and all associated data permanently deleted. This action cannot be undone.</p>
+      <p class="notice">By submitting this form you confirm that you want your Adirum AI account and all associated data permanently deleted. This action cannot be undone.</p>
     </form>
 
     <div class="success" id="successBox" style="display:none">
@@ -4517,7 +4517,7 @@ app.post('/api/sales/outreach', async (req, res) => {
         subject: `Quick question about ${business.name}`,
         html: `<div style="font-family:sans-serif;max-width:480px;margin:0 auto;color:#1a1a1a;padding:24px;">
           <p style="font-size:15px;line-height:1.6;">${message.replace(/\n/g, '<br/>')}</p>
-          <p style="color:#888;font-size:12px;margin-top:24px;">Sent via AdRoom AI Sales Agent</p>
+          <p style="color:#888;font-size:12px;margin-top:24px;">Sent via Adirum AI Sales Agent</p>
         </div>`,
         text: message,
       });

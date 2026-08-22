@@ -41,25 +41,25 @@ const AUTONOMOUS_ACTIONS = [
     icon: Camera,
     color: COLORS.neon,
     title: 'Original Content & Image Creation',
-    body: 'AdRoom AI writes every post from scratch using real-time trend data, emotional signals, and your product context. It generates platform-native captions, hashtags, hooks, and original images tailored to each platform — Facebook, Instagram, TikTok, LinkedIn, and X — all without any input from you.',
+    body: 'Adirum AI writes every post from scratch using real-time trend data, emotional signals, and your product context. It generates platform-native captions, hashtags, hooks, and original images tailored to each platform — Facebook, Instagram, TikTok, LinkedIn, and X — all without any input from you.',
   },
   {
     icon: Video,
     color: COLORS.purple,
     title: 'AI Video Production',
-    body: 'AdRoom AI creates short-form video content and visual assets automatically. From concept to final output, it produces scroll-stopping videos designed specifically for TikTok, Instagram Reels, and Facebook stories — adapting style and pacing to what\'s trending right now.',
+    body: 'Adirum AI creates short-form video content and visual assets automatically. From concept to final output, it produces scroll-stopping videos designed specifically for TikTok, Instagram Reels, and Facebook stories — adapting style and pacing to what\'s trending right now.',
   },
   {
     icon: MessageCircle,
     color: COLORS.green,
     title: 'Comment Replies — Across All Platforms',
-    body: 'Every comment on every post gets a thoughtful, on-brand reply — automatically. AdRoom AI reads sentiment, identifies buying signals, handles objections, and engages your audience 24/7 on Facebook, Instagram, TikTok, LinkedIn, and X. No comment goes unanswered.',
+    body: 'Every comment on every post gets a thoughtful, on-brand reply — automatically. Adirum AI reads sentiment, identifies buying signals, handles objections, and engages your audience 24/7 on Facebook, Instagram, TikTok, LinkedIn, and X. No comment goes unanswered.',
   },
   {
     icon: Send,
     color: COLORS.amber,
     title: 'Direct Message Outreach & Follow-Up',
-    body: 'AdRoom AI sends personalised DMs to warm leads, interested followers, and potential buyers across every connected platform. It follows up intelligently — adjusting tone and timing based on prior interactions — with human-sounding conversations that actually convert.',
+    body: 'Adirum AI sends personalised DMs to warm leads, interested followers, and potential buyers across every connected platform. It follows up intelligently — adjusting tone and timing based on prior interactions — with human-sounding conversations that actually convert.',
   },
   {
     icon: Target,
@@ -71,43 +71,43 @@ const AUTONOMOUS_ACTIONS = [
     icon: Search,
     color: COLORS.orange,
     title: 'Local Business Outreach',
-    body: 'AdRoom AI discovers local businesses in your target market and reaches out via WhatsApp and email with personalised, conversion-optimised pitches. It scores prospects by buying potential, prioritises the hottest leads, and manages the entire outreach sequence autonomously.',
+    body: 'Adirum AI discovers local businesses in your target market and reaches out via WhatsApp and email with personalised, conversion-optimised pitches. It scores prospects by buying potential, prioritises the hottest leads, and manages the entire outreach sequence autonomously.',
   },
   {
     icon: Brain,
     color: COLORS.neon,
     title: 'Real-Time Social Intelligence',
-    body: 'Four intelligence engines run continuously in the background — monitoring platform algorithm shifts, trending conversations, emotional ownership signals, and geographic narrative changes. Every post, reply, and DM AdRoom AI sends is informed by what\'s happening right now, not what worked last week.',
+    body: 'Four intelligence engines run continuously in the background — monitoring platform algorithm shifts, trending conversations, emotional ownership signals, and geographic narrative changes. Every post, reply, and DM Adirum AI sends is informed by what\'s happening right now, not what worked last week.',
   },
   {
     icon: Repeat,
     color: COLORS.purple,
     title: 'Self-Optimising Campaigns',
-    body: 'AdRoom AI monitors the real-time performance of every post — reach, engagement, click-throughs, and follower growth — and continuously adjusts its strategy. If something isn\'t working, it pivots automatically. Your campaigns improve every single day without any intervention.',
+    body: 'Adirum AI monitors the real-time performance of every post — reach, engagement, click-throughs, and follower growth — and continuously adjusts its strategy. If something isn\'t working, it pivots automatically. Your campaigns improve every single day without any intervention.',
   },
   {
     icon: BarChart2,
     color: COLORS.green,
     title: 'Performance Tracking & Platform Metrics',
-    body: 'AdRoom AI pulls live metrics directly from Facebook, Instagram, Twitter, LinkedIn, and TikTok APIs. It tracks what\'s working across every platform in real time and uses that data to refine content strategy, optimal post timing, and audience targeting — all autonomously.',
+    body: 'Adirum AI pulls live metrics directly from Facebook, Instagram, Twitter, LinkedIn, and TikTok APIs. It tracks what\'s working across every platform in real time and uses that data to refine content strategy, optimal post timing, and audience targeting — all autonomously.',
   },
   {
     icon: Bell,
     color: COLORS.amber,
     title: 'Autonomous Multi-Platform Publishing',
-    body: 'AdRoom AI publishes posts, images, and videos at algorithmically optimal times across Facebook, Instagram, TikTok, LinkedIn, and X simultaneously. It manages scheduling, frequency, and format — ensuring each platform gets content calibrated specifically for its audience and algorithm.',
+    body: 'Adirum AI publishes posts, images, and videos at algorithmically optimal times across Facebook, Instagram, TikTok, LinkedIn, and X simultaneously. It manages scheduling, frequency, and format — ensuring each platform gets content calibrated specifically for its audience and algorithm.',
   },
   {
     icon: Activity,
     color: COLORS.red,
     title: 'Emotional Intelligence & Trend Ownership',
-    body: 'AdRoom AI\'s Emotional Intelligence Engine identifies emotional categories your audience cares about — and ensures your brand owns those conversations before competitors do. It\'s not just about posting — it\'s about strategically dominating the narrative in your market.',
+    body: 'Adirum AI\'s Emotional Intelligence Engine identifies emotional categories your audience cares about — and ensures your brand owns those conversations before competitors do. It\'s not just about posting — it\'s about strategically dominating the narrative in your market.',
   },
   {
     icon: Shield,
     color: COLORS.blue,
     title: 'Not a Scheduler — A True AI Agent',
-    body: 'Unlike platforms that just automate post scheduling, AdRoom AI makes real decisions. It reads context, interprets signals, crafts original responses, adapts strategy, and executes actions — the same things a full marketing team would do, running entirely on its own.',
+    body: 'Unlike platforms that just automate post scheduling, Adirum AI makes real decisions. It reads context, interprets signals, crafts original responses, adapts strategy, and executes actions — the same things a full marketing team would do, running entirely on its own.',
   },
 ];
 
@@ -134,7 +134,7 @@ export default function AboutScreen() {
         </TouchableOpacity>
         <View style={{ flex: 1 }}>
           <Text style={styles.headerLabel}>About</Text>
-          <Text style={styles.headerTitle}>AdRoom AI</Text>
+          <Text style={styles.headerTitle}>Adirum AI</Text>
         </View>
       </View>
 
@@ -154,7 +154,7 @@ export default function AboutScreen() {
           </View>
           <Text style={styles.heroTitle}>Your Business's{'\n'}Autonomous Marketing Team</Text>
           <Text style={styles.heroSub}>
-            AdRoom AI doesn't schedule posts. It creates content, replies to comments, sends DMs,
+            Adirum AI doesn't schedule posts. It creates content, replies to comments, sends DMs,
             follows up leads, tracks performance, and adapts strategy — entirely on its own, around the clock.
           </Text>
           <View style={styles.heroBadge}>
@@ -183,10 +183,10 @@ export default function AboutScreen() {
             <Text style={styles.diffTitle}>Not Automation. Actual Intelligence.</Text>
           </View>
           <Text style={styles.diffBody}>
-            Every other "social media tool" lets you schedule posts in advance. AdRoom AI does something fundamentally different — it <Text style={{ color: COLORS.neon, fontWeight: '700' }}>reads, decides, and acts</Text> in real time.
+            Every other "social media tool" lets you schedule posts in advance. Adirum AI does something fundamentally different — it <Text style={{ color: COLORS.neon, fontWeight: '700' }}>reads, decides, and acts</Text> in real time.
           </Text>
           <Text style={[styles.diffBody, { marginTop: 10 }]}>
-            When someone comments on your post at 2am, AdRoom AI reads that comment, understands the intent, and sends a thoughtful reply — one that sounds like your brand voice, not a bot. When a trend emerges, AdRoom AI rewrites your strategy around it before your competitors even notice.
+            When someone comments on your post at 2am, Adirum AI reads that comment, understands the intent, and sends a thoughtful reply — one that sounds like your brand voice, not a bot. When a trend emerges, Adirum AI rewrites your strategy around it before your competitors even notice.
           </Text>
           <Text style={[styles.diffBody, { marginTop: 10, color: COLORS.neon, fontWeight: '700' }]}>
             This is what a real AI agent looks like.
@@ -205,7 +205,7 @@ export default function AboutScreen() {
             ))}
           </View>
           <Text style={[styles.diffBody, { marginTop: 12 }]}>
-            AdRoom AI posts, replies, DMs, and tracks performance natively on every platform — using real API access, not workarounds.
+            Adirum AI posts, replies, DMs, and tracks performance natively on every platform — using real API access, not workarounds.
           </Text>
         </Animated.View>
 
@@ -241,7 +241,7 @@ export default function AboutScreen() {
             A professional agency running paid campaigns at this level of reach and engagement would cost $10,000–$15,000 per month — and require a team of copywriters, designers, community managers, and media buyers.
           </Text>
           <Text style={[styles.calloutBody, { marginTop: 10 }]}>
-            AdRoom AI delivers the same output — posts, replies, DMs, leads, brand growth — entirely organically and automatically. No agency. No ad budget. No team.
+            Adirum AI delivers the same output — posts, replies, DMs, leads, brand growth — entirely organically and automatically. No agency. No ad budget. No team.
           </Text>
           <Text style={[styles.calloutBody, { marginTop: 10, color: COLORS.amber, fontWeight: '700' }]}>
             Your growth compounds. It never expires.
@@ -263,10 +263,10 @@ export default function AboutScreen() {
         {/* Mission */}
         <Animated.View entering={FadeInDown.delay(340).springify()} style={styles.missionCard}>
           <Text style={styles.missionQuote}>
-            "Every business deserves world-class marketing. AdRoom AI exists to make that a reality —
+            "Every business deserves world-class marketing. Adirum AI exists to make that a reality —
             not a privilege reserved for those with the biggest budgets."
           </Text>
-          <Text style={styles.missionAttrib}>— The AdRoom AI Team</Text>
+          <Text style={styles.missionAttrib}>— The Adirum AI Team</Text>
         </Animated.View>
 
         {/* CTA */}
@@ -289,7 +289,7 @@ export default function AboutScreen() {
         </Animated.View>
 
         <Text style={styles.footer}>
-          © {new Date().getFullYear()} AdRoom AI · All rights reserved{'\n'}
+          © {new Date().getFullYear()} Adirum AI · All rights reserved{'\n'}
           Version 2.2.10 · Built for ambitious businesses worldwide
         </Text>
       </ScrollView>

@@ -359,7 +359,7 @@ export default function LoginScreen({ navigation, route }: Props) {
                   {/* Steps */}
                   <View style={styles.modalDivider} />
                   {[
-                    'Open the email from AdRoom AI',
+                    'Open the email from Adirum AI',
                     'Tap "Reset My Password"',
                     'Choose a new password and sign in',
                   ].map((step, i) => (

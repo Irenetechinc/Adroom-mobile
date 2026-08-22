@@ -21,7 +21,7 @@
  *
  * Required env vars (set in Railway dashboard):
  *   - RESEND_API_KEY        Your Resend API key (re_…). https://resend.com/api-keys
- *   - RESEND_FROM_EMAIL     Verified sender address (e.g. "AdRoom AI <noreply@adroomai.com>")
+ *   - RESEND_FROM_EMAIL     Verified sender address (e.g. "Adirum AI <noreply@adroomai.com>")
  */
 
 const RESEND_API_URL = 'https://api.resend.com/emails';
@@ -133,7 +133,7 @@ function buildEmailShell(opts: {
   <span style="display:none;opacity:0;color:transparent;height:0;width:0;overflow:hidden;">${opts.preview}</span>
   <div class="wrapper">
     <div class="card">
-      <div class="logo">AdRoom AI</div>
+      <div class="logo">Adirum AI</div>
       <div class="tag">Intelligent Autonomus Marketing Framework</div>
       <h1>${opts.heading}</h1>
       <p>${opts.intro}</p>
@@ -142,7 +142,7 @@ function buildEmailShell(opts: {
       <p class="small">If the button doesn't work, copy and paste this link into your browser:</p>
       <p class="link"><a href="${opts.ctaUrl}" style="color:#00F0FF;">${opts.ctaUrl}</a></p>
     </div>
-    <div class="footer">© ${new Date().getFullYear()} AdRoom AI · This email was sent because someone used your address to interact with AdRoom AI. If that wasn't you, ignore this email.</div>
+    <div class="footer">© ${new Date().getFullYear()} Adirum AI · This email was sent because someone used your address to interact with Adirum AI. If that wasn't you, ignore this email.</div>
   </div>
 </body></html>`;
 }
@@ -157,17 +157,17 @@ export async function sendSignupConfirmationEmail(
 ): Promise<SendEmailResult> {
   return sendEmailViaResend({
     to,
-    subject: 'Confirm your AdRoom AI account',
+    subject: 'Confirm your Adirum AI account',
     html: buildEmailShell({
-      preview: 'One tap to verify your email and unlock AdRoom AI.',
+      preview: 'One tap to verify your email and unlock Adirum AI.',
       heading: 'Confirm your email',
       intro:
-        'Welcome to AdRoom AI. Tap the button below to verify your email address and finish setting up your account.',
+        'Welcome to Adirum AI. Tap the button below to verify your email address and finish setting up your account.',
       ctaLabel: 'Verify Email',
       ctaUrl: actionLink,
       outro: 'This verification link expires in 24 hours.',
     }),
-    text: `Welcome to AdRoom AI.\n\nVerify your email address by visiting:\n${actionLink}\n\nThis link expires in 24 hours. If you didn't create an account, ignore this email.`,
+    text: `Welcome to Adirum AI.\n\nVerify your email address by visiting:\n${actionLink}\n\nThis link expires in 24 hours. If you didn't create an account, ignore this email.`,
   });
 }
 
@@ -181,17 +181,17 @@ export async function sendPasswordResetEmail(
 ): Promise<SendEmailResult> {
   return sendEmailViaResend({
     to,
-    subject: 'Reset your AdRoom AI password',
+    subject: 'Reset your Adirum AI password',
     html: buildEmailShell({
-      preview: 'Reset your AdRoom AI password — link valid for 1 hour.',
+      preview: 'Reset your Adirum AI password — link valid for 1 hour.',
       heading: 'Reset your password',
       intro:
-        'We received a request to reset the password on your AdRoom AI account. Tap the button below to choose a new password.',
+        'We received a request to reset the password on your Adirum AI account. Tap the button below to choose a new password.',
       ctaLabel: 'Reset Password',
       ctaUrl: actionLink,
       outro:
         "This password-reset link expires in 1 hour. If you didn't request a reset, you can safely ignore this email — your password will stay the same.",
     }),
-    text: `Reset your AdRoom AI password by visiting:\n${actionLink}\n\nThis link expires in 1 hour. If you didn't request a reset, ignore this email.`,
+    text: `Reset your Adirum AI password by visiting:\n${actionLink}\n\nThis link expires in 1 hour. If you didn't request a reset, ignore this email.`,
   });
 }

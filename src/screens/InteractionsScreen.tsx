@@ -215,7 +215,7 @@ const InteractionCard = ({ item, index }: { item: Interaction; index: number }) 
           <View style={styles.adroomBubble}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5, marginBottom: 4 }}>
               <View style={styles.adroomDot} />
-              <Text style={styles.adroomLabel}>AdRoom AI replied</Text>
+              <Text style={styles.adroomLabel}>Adirum AI replied</Text>
             </View>
             <Text style={styles.adroomText}>{item.adroomReply}</Text>
           </View>
@@ -386,7 +386,7 @@ const ConversationThread = ({
             <View style={styles.emptyThreadIcon}><MessageCircle size={28} color="#1E293B" /></View>
             <Text style={styles.emptyTitle}>No messages yet</Text>
             <Text style={styles.emptySubtitle}>
-              AdRoom AI will send the first DM when the follow-up schedule runs.
+              Adirum AI will send the first DM when the follow-up schedule runs.
             </Text>
           </Animated.View>
         ) : (
@@ -401,7 +401,7 @@ const ConversationThread = ({
                   <>
                     <Bot size={10} color="#00F0FF" />
                     <Text style={[styles.bubbleSender, { color: '#00F0FF' }]}>
-                      {msg.persona_name ? `AI · ${msg.persona_name}` : 'AdRoom AI'}
+                      {msg.persona_name ? `AI · ${msg.persona_name}` : 'Adirum AI'}
                     </Text>
                     <Text style={styles.bubbleStep}>{stepLabel(msg.sequence_step)}</Text>
                   </>
@@ -536,7 +536,7 @@ export default function InteractionsScreen() {
     platform: row.platform || 'facebook',
     clientName: row.sender_name || 'User',
     content: row.content || '',
-    adroomReply: row.reply_content || (row.is_replied ? '(replied via AdRoom AI)' : undefined),
+    adroomReply: row.reply_content || (row.is_replied ? '(replied via Adirum AI)' : undefined),
     isReplied: !!row.is_replied, isLiked: !!row.is_liked,
     createdAt: row.created_at,
   });
@@ -740,7 +740,7 @@ export default function InteractionsScreen() {
           {selectedLead ? <ArrowLeft color="#E2E8F0" size={22} /> : <Menu color="#E2E8F0" size={22} />}
         </TouchableOpacity>
         <View style={{ flex: 1 }}>
-          <Text style={styles.headerLabel}>AdRoom AI</Text>
+          <Text style={styles.headerLabel}>Adirum AI</Text>
           <Text style={styles.headerTitle}>
             {selectedLead ? `@${selectedLead.platform_username}` : 'Interactions'}
           </Text>

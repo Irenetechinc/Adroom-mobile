@@ -1447,7 +1447,7 @@ Return JSON:
                         subject: `Quick question about ${biz.name}`,
                         html: `<div style="font-family:sans-serif;max-width:480px;margin:0 auto;color:#1a1a1a;padding:24px;">
                           <p style="font-size:15px;line-height:1.6;">${message.replace(/\n/g, '<br/>')}</p>
-                          <p style="color:#888;font-size:12px;margin-top:24px;">Sent via AdRoom AI Sales Agent</p>
+                          <p style="color:#888;font-size:12px;margin-top:24px;">Sent via Adirum AI Sales Agent</p>
                         </div>`,
                         text: message,
                     });

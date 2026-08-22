@@ -175,7 +175,7 @@ const WATERMARK_PHRASES = [
   'Intelligence',
   'Workforce',
   'Smart Autonomous AI',
-  "Let's Go AdRoom AI",
+  "Let's Go Adirum AI",
 ];
 
 const WatermarkOverlay = ({ visible }: { visible: boolean }) => {
@@ -1274,7 +1274,7 @@ const CardReveal = ({ children }: { children: React.ReactNode }) => {
 
 // ─── Thinking Indicator (rotating, generic phrases) ──────────────────────
 //
-// Replaces the plain "•••" while AdRoom AI is composing a strategy. The
+// Replaces the plain "•••" while Adirum AI is composing a strategy. The
 // phrases are intentionally generic and do NOT name any internal pipeline
 // stage — users see "Analyzing your goals…" / "Drafting your strategy…",
 // never "Calling DecisionEngine" or "Fetching memory context".
@@ -1993,7 +1993,7 @@ export default function AgentChatScreen({ navigation, route }: Props) {
           </TouchableOpacity>
         )}
         <View style={{ flex: 1 }}>
-          <Text style={styles.headerLabel}>AdRoom AI</Text>
+          <Text style={styles.headerLabel}>Adirum AI</Text>
           <Text style={styles.headerTitle}>Intelligence</Text>
         </View>
         <View style={styles.headerRight}>
@@ -2091,7 +2091,7 @@ export default function AgentChatScreen({ navigation, route }: Props) {
                   <Text style={{ fontSize: 16 }}>⚡</Text>
                 </View>
                 <View style={{ flex: 1 }}>
-                  <Text style={{ color: '#00F0FF', fontWeight: '700', fontSize: 13, marginBottom: 2 }}>Get Started with AdRoom AI</Text>
+                  <Text style={{ color: '#00F0FF', fontWeight: '700', fontSize: 13, marginBottom: 2 }}>Get Started with Adirum AI</Text>
                   <Text style={{ color: '#94A3B8', fontSize: 12, lineHeight: 17 }}>Choose a plan to activate your AI marketing agents.</Text>
                 </View>
                 <TouchableOpacity

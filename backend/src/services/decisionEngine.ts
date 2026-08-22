@@ -39,7 +39,7 @@ export class DecisionEngine {
     const weights = this.calculateDynamicWeights(intelligence);
 
     const prompt = `
-      You are the AdRoom AI Core Brain. Generate the OPTIMAL organic strategy that outperforms paid ads.
+      You are the Adirum AI Core Brain. Generate the OPTIMAL organic strategy that outperforms paid ads.
       NO hard-coded rules. Use weighted intelligence to identify high-reach organic arbitrage.
 
       INTELLIGENCE: ${JSON.stringify(intelligence)}
@@ -185,7 +185,7 @@ export class DecisionEngine {
     if (!alerts || alerts.length === 0) return;
 
     const prompt = `
-      You are the AdRoom AI Core Brain. You received alerts from ${source}.
+      You are the Adirum AI Core Brain. You received alerts from ${source}.
       Decide what action to take next for active organic strategies and engagement workflows.
 
       ALERTS:

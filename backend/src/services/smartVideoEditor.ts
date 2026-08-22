@@ -65,7 +65,7 @@ export class SmartVideoEditor {
       : '';
 
     const prompt = `
-You are AdRoom AI's Smart Video Editor. Create a professional video editing plan.
+You are Adirum AI's Smart Video Editor. Create a professional video editing plan.
 
 PRODUCT: ${request.productName}
 MARKETING GOAL: ${request.goal}
@@ -121,7 +121,7 @@ Rules:
       estimatedDuration: plan.estimatedDuration || 30,
       platformOptimizations: plan.platformOptimizations || [],
       status: 'plan_ready',
-      message: `Edit plan ready for ${request.platform}. AdRoom AI will apply this plan when executing the campaign.`,
+      message: `Edit plan ready for ${request.platform}. Adirum AI will apply this plan when executing the campaign.`,
     };
   }
 

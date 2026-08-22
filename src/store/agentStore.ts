@@ -89,7 +89,7 @@ export const SESSION_RESTORE_PROMPT_FLAG_KEY = 'adroom-pending-session-prompt';
 const SESSION_GAP_MS = 2 * 60 * 60 * 1000;
 
 /** Greeting that `startNewSession` emits — every match starts a fresh session. */
-const GREETING_RE = /^Hello\b.*\bI am AdRoom AI\b/i;
+const GREETING_RE = /^Hello\b.*\bI am Adirum AI\b/i;
 
 export type ChatSession = {
   /** Stable identifier — the start timestamp in ms since epoch. */
@@ -106,7 +106,7 @@ export type ChatSession = {
 /**
  * Walk a chronologically-ordered list of chat_history rows and group them
  * into sessions. A new session starts whenever:
- *   1. The agent emits its greeting (`Hello … I am AdRoom AI…`), OR
+ *   1. The agent emits its greeting (`Hello … I am Adirum AI…`), OR
  *   2. There's a >SESSION_GAP_MS gap between consecutive messages.
  *
  * Returns sessions in chronological order (oldest first).
@@ -1255,7 +1255,7 @@ export const useAgentStore = create<AgentState>()(
     const { addMessage, setTyping, startStrategyFlow } = get();
     setTyping(true);
     setTimeout(() => {
-      addMessage(`Hello ${userName}. I am AdRoom AI. Ready to strategize?`, 'agent');
+      addMessage(`Hello ${userName}. I am Adirum AI. Ready to strategize?`, 'agent');
       setTyping(false);
       setTimeout(() => startStrategyFlow(), 1000);
     }, 800);

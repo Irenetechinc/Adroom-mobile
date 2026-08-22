@@ -25,7 +25,7 @@ async function sendCreditPushAlert(userId: string, balance: number): Promise<voi
       body = 'Your credits have run out. Your AI campaigns are now paused. Top up to resume.';
     } else if (balance <= 5) {
       title = '⚠️ Critical: Only ' + balance.toFixed(0) + ' credits left';
-      body = 'Your AdRoom AI campaigns will pause very soon. Top up now to keep them running.';
+      body = 'Your Adirum AI campaigns will pause very soon. Top up now to keep them running.';
     } else {
       title = '🔋 Low Energy Warning — ' + balance.toFixed(0) + ' credits left';
       body = 'Your AdRoom Energy is running low. Top up to ensure uninterrupted campaign execution.';

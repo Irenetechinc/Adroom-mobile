@@ -1,9 +1,9 @@
 {
-  "name": "apma-desktop",
+  "name": "adirum-ai-apma",
   "version": "1.0.0",
   "description": "APMA — Autonomous Political Marketing Agent — Desktop Client",
   "author": {
-    "name": "AdRoom AI",
+    "name": "Adirum AI",
     "email": "hello@adroom.ai"
   },
   "main": "dist-electron/main.js",
@@ -29,7 +29,7 @@
   "build": {
     "appId": "com.adroomai.apma",
     "productName": "APMA",
-    "copyright": "Copyright © 2026 AdRoom AI",
+    "copyright": "Copyright © 2026 Adirum AI",
     "directories": {
       "output": "release"
     },

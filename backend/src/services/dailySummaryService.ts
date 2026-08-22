@@ -49,7 +49,7 @@ export class DailySummaryService {
       const tasksPending = tasks?.filter(t => t.status === 'pending').length ?? 0;
 
       const prompt = `
-You are AdRoom AI's Daily Strategy Analyst. Generate a concise, insightful daily performance summary.
+You are Adirum AI's Daily Strategy Analyst. Generate a concise, insightful daily performance summary.
 
 STRATEGY:
 - Name: ${strategy.strategy_name}

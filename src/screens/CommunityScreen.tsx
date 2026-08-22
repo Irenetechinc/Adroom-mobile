@@ -78,7 +78,7 @@ export default function CommunityScreen() {
           <Menu color="#E2E8F0" size={22} />
         </TouchableOpacity>
         <View style={{ flex: 1 }}>
-          <Text style={s.headerEyebrow}>AdRoom AI</Text>
+          <Text style={s.headerEyebrow}>Adirum AI</Text>
           <Text style={s.headerTitle}>Community</Text>
         </View>
         <View style={s.headerPill}>
@@ -167,7 +167,7 @@ export default function CommunityScreen() {
         <Animated.View entering={FadeInDown.delay(480).springify()} style={s.footerNote}>
           <Sparkles size={13} color="#334155" />
           <Text style={s.footerNoteText}>
-            AdRoom AI is built in public — your feedback directly shapes the product.
+            Adirum AI is built in public — your feedback directly shapes the product.
           </Text>
         </Animated.View>
       </ScrollView>
