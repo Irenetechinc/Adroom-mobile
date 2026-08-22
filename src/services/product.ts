@@ -5,6 +5,7 @@ import { RemoteLogger } from './remoteLogger';
 export const ProductService = {
   /**
    * Saves product details to product_memory table.
+   * Includes all product type, delivery, payment, contact, and media fields.
    */
   async saveProduct(productData: any): Promise<string> {
     RemoteLogger.log('PRODUCT', 'Saving product data');
@@ -23,8 +24,21 @@ export const ProductService = {
           category: productData.category,
           target_audience: productData.targetAudience,
           original_scan_data: productData.scanResult,
-          images: productData.images ? productData.images.map((img: { uri: string }) => img.uri) : (productData.baseImageUri ? [productData.baseImageUri] : []),
-          // Other fields map directly or are optional
+          images: productData.images
+            ? productData.images.map((img: { uri: string }) => img.uri)
+            : productData.baseImageUri
+              ? [productData.baseImageUri]
+              : [],
+          // Product type & delivery fields
+          product_type: productData.productType || 'physical',
+          delivery_type: productData.deliveryType || null,
+          delivery_address: productData.deliveryAddress || null,
+          contact_phone: productData.phone || null,
+          bank_account_details: productData.bankAccount || null,
+          // Media & extras
+          video_url: productData.video?.uri || productData.videoUrl || null,
+          color: productData.color || null,
+          available_sizes: (productData.sizes && productData.sizes.length > 0) ? productData.sizes : null,
         })
         .select('product_id')
         .single();

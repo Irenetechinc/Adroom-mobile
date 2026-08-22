@@ -1,0 +1,53 @@
+Running "expo doctor"
+Running 19 checks on your project...
+18/19 checks passed. 1 checks failed. Possible issues detected:
+Use the --verbose flag to see more details about passed checks.
+✖ Check that packages match versions required by installed Expo SDK
+
+⚠️ Minor version mismatches
+package                       expected  found    
+react-native-gesture-handler  ~2.30.0   2.31.2   
+react-native-reanimated       4.2.1     4.3.1    
+react-native-screens          ~4.23.0   4.25.2   
+react-native-worklets         0.7.4     0.8.3    
+typescript                    ~5.9.2    5.8.3    
+
+🔧 Patch version mismatches
+package                       expected  found    
+expo                          ~55.0.27  55.0.26  
+expo-auth-session             ~55.0.17  55.0.16  
+expo-build-properties         ~55.0.15  55.0.14  
+expo-crypto                   ~55.0.16  55.0.15  
+expo-dev-client               ~55.0.36  55.0.35  
+expo-file-system              ~55.0.23  55.0.22  
+expo-image-picker             ~55.0.21  55.0.20  
+expo-location                 ~55.1.11  55.1.10  
+expo-notifications            ~55.0.24  55.0.23  
+expo-secure-store             ~55.0.15  55.0.14  
+expo-splash-screen            ~55.0.22  55.0.21  
+expo-web-browser              ~55.0.17  55.0.16  
+react-native                  0.83.6    0.83.9   
+react-native-svg              15.15.3   15.15.4  
+react-native-webview          13.16.0   13.16.1  
+jest-expo                     ~55.0.19  55.0.18  
+
+Changelogs:
+- expo-auth-session → https://github.com/expo/expo/blob/sdk-55/packages/expo-auth-session/CHANGELOG.md
+- expo-build-properties → https://github.com/expo/expo/blob/sdk-55/packages/expo-build-properties/CHANGELOG.md
+- expo-crypto → https://github.com/expo/expo/blob/sdk-55/packages/expo-crypto/CHANGELOG.md
+- expo-dev-client → https://github.com/expo/expo/blob/sdk-55/packages/expo-dev-client/CHANGELOG.md
+- expo-file-system → https://github.com/expo/expo/blob/sdk-55/packages/expo-file-system/CHANGELOG.md
+- expo-image-picker → https://github.com/expo/expo/blob/sdk-55/packages/expo-image-picker/CHANGELOG.md
+- expo-location → https://github.com/expo/expo/blob/sdk-55/packages/expo-location/CHANGELOG.md
+- expo-notifications → https://github.com/expo/expo/blob/sdk-55/packages/expo-notifications/CHANGELOG.md
+- expo-secure-store → https://github.com/expo/expo/blob/sdk-55/packages/expo-secure-store/CHANGELOG.md
+- expo-splash-screen → https://github.com/expo/expo/blob/sdk-55/packages/expo-splash-screen/CHANGELOG.md
+- expo-web-browser → https://github.com/expo/expo/blob/sdk-55/packages/expo-web-browser/CHANGELOG.md
+
+21 packages out of date.
+Advice:
+Use 'npx expo install --check' to review and upgrade your dependencies.
+To ignore specific packages, add them to "expo.install.exclude" in package.json. Learn more: https://expo.fyi/dependency-validation
+1 check failed, indicating possible issues with the project.
+Command "expo doctor" failed.
+npx -y expo-doctor exited with non-zero code: 1

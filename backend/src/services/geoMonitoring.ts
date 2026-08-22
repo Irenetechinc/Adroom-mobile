@@ -33,8 +33,8 @@ export class GeoMonitoringEngine {
         ];
 
         for (const query of queries) {
-            // 3. Connect to multiple LLMs
-            const models = ['gpt-4o', 'claude-3-opus', 'gemini-pro', 'perplexity'];
+            // 3. Connect to multiple LLMs (Perplexity removed)
+            const models = ['gpt-4o', 'gemini-1.5-flash'];
             
             for (const model of models) {
                 try {
@@ -150,20 +150,6 @@ export class GeoMonitoringEngine {
             });
             const data: any = await response.json();
             return data.candidates[0]?.content?.parts[0]?.text || null;
-        } else if (model === 'perplexity') {
-            const response = await fetch('https://api.perplexity.ai/chat/completions', {
-                method: 'POST',
-                headers: {
-                    'Authorization': `Bearer ${process.env.PERPLEXITY_API_KEY}`,
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({
-                    model: 'sonar-small-online',
-                    messages: [{ role: 'user', content: query }]
-                })
-            });
-            const data: any = await response.json();
-            return data.choices[0]?.message?.content || null;
         }
         return null;
     } catch (e) {
