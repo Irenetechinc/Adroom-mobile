@@ -99,7 +99,7 @@ export default function SplashScreen({ onDone }: { onDone: () => void }) {
           Autonomous Political Marketing Agent
         </div>
         <div style={{ fontSize: 11, color: '#334155', fontWeight: 500, marginBottom: 52 }}>
-          from <span style={{ color: '#475569' }}>AdRoom AI</span>
+          from <span style={{ color: '#475569' }}>Adirum AI</span>
         </div>
 
         <div style={{ display: 'flex', gap: 10, justifyContent: 'center' }}>

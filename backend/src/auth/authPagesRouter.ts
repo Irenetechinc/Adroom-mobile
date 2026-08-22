@@ -26,7 +26,7 @@ const router = Router();
 const SHARED_HEAD = `
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>AdRoom AI</title>
+  <title>Adirum AI</title>
   <style>
     :root { color-scheme: dark; }
     * { box-sizing: border-box; }
@@ -88,7 +88,7 @@ const SHARED_HEAD = `
 
 function shellHeader(): string {
   return `
-    <div class="logo">AdRoom AI</div>
+    <div class="logo">Adirum AI</div>
     <div class="tag">Intelligent Marketing Framework</div>
   `;
 }
@@ -112,9 +112,9 @@ router.get('/auth/verified', (_req: Request, res: Response) => {
         <svg viewBox="0 0 24 24" fill="none" stroke="#10B981" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
       </div>
       <h1>Email verified</h1>
-      <p>Your AdRoom AI account is now active. Open the app to sign in and start strategizing.</p>
-      <a id="open-app" href="adroom://verified" class="btn">Open AdRoom AI</a>
-      <p class="small">If nothing happens, you can simply open the AdRoom AI app on your phone — your account is already verified.</p>
+      <p>Your Adirum AI account is now active. Open the app to sign in and start strategizing.</p>
+      <a id="open-app" href="adroom://verified" class="btn">Open Adirum AI</a>
+      <p class="small">If nothing happens, you can simply open the Adirum AI app on your phone — your account is already verified.</p>
     </div>
 
     <div id="error-view" class="hide">
@@ -123,7 +123,7 @@ router.get('/auth/verified', (_req: Request, res: Response) => {
       </div>
       <h1>Verification problem</h1>
       <p id="error-msg">This verification link is no longer valid. It may have expired or already been used.</p>
-      <a href="adroom://login" class="btn">Open AdRoom AI</a>
+      <a href="adroom://login" class="btn">Open Adirum AI</a>
       <p class="small">If your email is already verified, just open the app and sign in. Otherwise, request a new verification email from the sign-in screen.</p>
     </div>
   </div>
@@ -196,7 +196,7 @@ router.get('/auth/reset-password', (_req: Request, res: Response) => {
         <svg viewBox="0 0 24 24" fill="none" stroke="#00F0FF" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>
       </div>
       <h1>Reset your password</h1>
-      <p>Choose a new password for your AdRoom AI account. You'll be signed in automatically once it's saved.</p>
+      <p>Choose a new password for your Adirum AI account. You'll be signed in automatically once it's saved.</p>
 
       <form id="reset-form" autocomplete="off">
         <label for="password">New password</label>
@@ -213,8 +213,8 @@ router.get('/auth/reset-password', (_req: Request, res: Response) => {
         <svg viewBox="0 0 24 24" fill="none" stroke="#10B981" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
       </div>
       <h1>Password updated</h1>
-      <p>Your password has been changed. You can now sign in to AdRoom AI with your new password.</p>
-      <a href="adroom://login" class="btn">Open AdRoom AI</a>
+      <p>Your password has been changed. You can now sign in to Adirum AI with your new password.</p>
+      <a href="adroom://login" class="btn">Open Adirum AI</a>
     </div>
 
     <div id="error-view" class="hide">
@@ -223,7 +223,7 @@ router.get('/auth/reset-password', (_req: Request, res: Response) => {
       </div>
       <h1>Reset link problem</h1>
       <p id="link-error-msg">This password-reset link is no longer valid. It may have expired or already been used.</p>
-      <a href="adroom://login" class="btn">Open AdRoom AI</a>
+      <a href="adroom://login" class="btn">Open Adirum AI</a>
       <p class="small">Open the app and tap "Forgot password" to request a fresh link.</p>
     </div>
   </div>
@@ -265,7 +265,7 @@ router.get('/auth/reset-password', (_req: Request, res: Response) => {
       var refreshToken = hashParams.get('refresh_token');
       var type = hashParams.get('type');
       if (!accessToken || type !== 'recovery') {
-        showLinkError('This page can only be opened from a password-reset email. Request a new link from the AdRoom AI app.');
+        showLinkError('This page can only be opened from a password-reset email. Request a new link from the Adirum AI app.');
         return;
       }
 

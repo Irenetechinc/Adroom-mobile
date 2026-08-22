@@ -3,7 +3,7 @@ this app must run 100% off replit, backend is running on railway, supabase for d
 
 promt :
 
- Implement a video file upload to product intake form. also ensure that adroom ai genrate video asset where required in a stragy number of videos assets generation by adroom ai allowed per account will be strictly on subscription types(stater=no video asset creation by adroom except user uploud their own video that adroom can use that. Pro plan = 2 video asset generation. Pro plus = 4 video asset generation
+ Implement a video file upload to product intake form. also ensure that Adirum AI genrate video asset where required in a stragy number of videos assets generation by Adirum AI allowed per account will be strictly on subscription types(stater=no video asset creation by adroom except user uploud their own video that adroom can use that. Pro plan = 2 video asset generation. Pro plus = 4 video asset generation
 ALSO ENSURE THAT ALL SUBSCRUPTION TIER ACTUALLY ENFORCE THIER LIMITS TO USER ACCOUNT AND NOT JUST A TEXT ON THE SUBSCRIPTION PLANES
 
 what has been done:

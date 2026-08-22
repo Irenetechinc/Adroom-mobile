@@ -67,7 +67,7 @@ export default function CampaignListScreen() {
           <Menu color="#E2E8F0" size={22} />
         </TouchableOpacity>
         <View style={{ flex: 1 }}>
-          <Text style={styles.headerLabel}>AdRoom AI</Text>
+          <Text style={styles.headerLabel}>Adirum AI</Text>
           <Text style={styles.headerTitle}>Campaigns</Text>
         </View>
         <TouchableOpacity

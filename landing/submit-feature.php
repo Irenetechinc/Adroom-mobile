@@ -1,6 +1,6 @@
 <?php
 /**
- * AdRoom AI — Feature Request Submission Handler
+ * Adirum AI — Feature Request Submission Handler
  *
  * Drop-in PHP for cPanel hosting. NO Composer, NO npm, NO installations.
  * Uses cURL (built into PHP) to send mail via Resend's HTTP API.

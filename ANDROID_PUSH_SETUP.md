@@ -12,7 +12,7 @@ This guide walks you through fixing it end to end. No code changes required afte
 
 1. Go to **https://console.firebase.google.com/**.
 2. Click **Add project** (or open your existing AdRoom Firebase project if you already have one).
-3. Give it a name like `AdRoom AI`. Google Analytics is optional — you can skip it.
+3. Give it a name like `Adirum AI`. Google Analytics is optional — you can skip it.
 
 ## Step 2 — Add your Android app to Firebase
 
@@ -81,7 +81,7 @@ Once the new build is installed and you've signed in:
 
 - **Expo Go does NOT receive remote push notifications since SDK 53** — you must use a real EAS build (`eas build`) to test push.
 - **The package name must match exactly.** Anything other than `com.adroom.mobile` in Firebase will silently fail.
-- **Battery optimisation on Samsung / Xiaomi / Huawei phones** can also kill background push. After install, go to Android Settings → Apps → AdRoom AI → Battery → set to **Unrestricted**. This is a phone-vendor issue, not an Expo issue.
+- **Battery optimisation on Samsung / Xiaomi / Huawei phones** can also kill background push. After install, go to Android Settings → Apps → Adirum AI → Battery → set to **Unrestricted**. This is a phone-vendor issue, not an Expo issue.
 - **You only need to do steps 1–4 once.** Future code releases just need a normal `eas build` — the credentials stay attached to your Expo project.
 
 ---

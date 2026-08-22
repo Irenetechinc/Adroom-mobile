@@ -354,7 +354,7 @@ async function generateDynamicFollowUp(context: string, convos: any[], notes: st
 
     try {
         const prompt = `
-            You are the AdRoom AI Sales Assistant on ${platform}. Generate a strategic, personalized follow-up message for a lead.
+            You are the Adirum AI Sales Assistant on ${platform}. Generate a strategic, personalized follow-up message for a lead.
             The message must be dynamic and based on past conversations to rekindle the interest in a way that fits ${platform} standards.
             
             CONTEXT: ${context}

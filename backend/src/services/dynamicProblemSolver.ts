@@ -120,7 +120,7 @@ export class DynamicProblemSolver {
     suggestedApproaches: string[];
   }> {
     try {
-      const prompt = `You are the AdRoom AI Brain analyzing a system problem. Classify this problem accurately.
+      const prompt = `You are the Adirum AI Brain analyzing a system problem. Classify this problem accurately.
 
 ERROR: ${errorMsg}
 OPERATION: ${ctx.operation || 'unknown'}
@@ -241,7 +241,7 @@ Return JSON:
    */
   private async notifyUser(userId: string, classification: any, ctx: ProblemContext): Promise<void> {
     try {
-      const prompt = `You are AdRoom AI. A user encountered an issue that needs their attention.
+      const prompt = `You are Adirum AI. A user encountered an issue that needs their attention.
 
 ISSUE CATEGORY: ${classification.type}
 TECHNICAL DETAIL (DO NOT SHARE): ${classification.description}

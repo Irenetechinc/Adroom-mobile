@@ -463,7 +463,7 @@ export default function ConnectedAccountsScreen() {
                     </View>
                     <Text style={styles.notConnectedTitle}>Not Connected</Text>
                     <Text style={styles.notConnectedDesc}>
-                      Connect your {platform.name} account so AdRoom AI can autonomously post, reply, and engage for your campaign.
+                      Connect your {platform.name} account so Adirum AI can autonomously post, reply, and engage for your campaign.
                     </Text>
                     <TouchableOpacity
                       onPress={() => handleConnect(platform)}

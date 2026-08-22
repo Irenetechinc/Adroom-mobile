@@ -237,7 +237,7 @@ export default function StrategyApprovalScreen({ navigation }: Props) {
         </TouchableOpacity>
         <View style={{ flex: 1, alignItems: 'center' }}>
           <Text style={{ color: '#475569', fontSize: 10, letterSpacing: 2, fontWeight: '700', textTransform: 'uppercase', marginBottom: 1 }}>
-            AdRoom AI
+            Adirum AI
           </Text>
           <Text style={{ color: '#FFFFFF', fontWeight: '800', fontSize: 15 }}>Strategy Preview</Text>
         </View>
@@ -476,10 +476,10 @@ export default function StrategyApprovalScreen({ navigation }: Props) {
           </View>
         )}
 
-        {/* What AdRoom AI Will Do */}
+        {/* What Adirum AI Will Do */}
         {actions.length > 0 && (
           <View style={{ backgroundColor: '#0F1623', borderRadius: 16, padding: 20, marginBottom: 16, borderWidth: 1, borderColor: 'rgba(255,255,255,0.06)' }}>
-            <Text style={{ color: goalColor, fontSize: 14, fontWeight: '800', letterSpacing: 1.5, textTransform: 'uppercase', marginBottom: 14 }}>What AdRoom AI Will Do</Text>
+            <Text style={{ color: goalColor, fontSize: 14, fontWeight: '800', letterSpacing: 1.5, textTransform: 'uppercase', marginBottom: 14 }}>What Adirum AI Will Do</Text>
             {actions.map((action: string, idx: number) => {
               const clean = friendlyAction(action);
               if (!clean) return null;

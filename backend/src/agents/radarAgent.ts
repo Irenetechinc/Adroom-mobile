@@ -76,7 +76,7 @@ export class RadarAgent {
         .limit(20);
 
       const prompt = `
-You are a Radar Intelligence Agent for AdRoom AI. Analyze the current market situation for this strategy.
+You are a Radar Intelligence Agent for Adirum AI. Analyze the current market situation for this strategy.
 
 STRATEGY:
 - Goal: ${strategy.goal}
@@ -165,7 +165,7 @@ Be specific, actionable, and data-driven. Focus on insights that can improve cam
         : 'general_knowledge';
 
       // AI Brain adapts its analysis method based on what's available
-      const demographicPrompt = `You are the AdRoom AI Demographic & Market Intelligence Engine.
+      const demographicPrompt = `You are the Adirum AI Demographic & Market Intelligence Engine.
 
 AVAILABLE DATA:
 - Leads discovered: ${leads.length} (${dataConfidence === 'real_data' ? 'sufficient for real analysis' : dataConfidence === 'proxy_data' ? 'limited — improvise with proxies' : 'none — use general market knowledge'})

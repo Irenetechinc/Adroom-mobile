@@ -98,9 +98,7 @@ export const AuthLoadingSkeleton = () => {
             resizeMode="contain"
           />
         </Animated.View>
-        <Text style={splashStyles.brand}>
-          AdRoom <Text style={{ color: '#00F0FF' }}>AI</Text>
-        </Text>
+        <Text style={splashStyles.brand}>Adirum AI</Text>
         <Text style={splashStyles.tagline}>Autonomous Marketing Workforce</Text>
       </View>
       <View style={splashStyles.footer}>
@@ -111,7 +109,7 @@ export const AuthLoadingSkeleton = () => {
         </View>
         <Text style={splashStyles.poweredBy}>
           powered by{' '}
-          <Text style={splashStyles.poweredByBrand}>syntax</Text>
+          <Text style={splashStyles.poweredByBrand}>Adirum Ltd</Text>
         </Text>
       </View>
     </View>

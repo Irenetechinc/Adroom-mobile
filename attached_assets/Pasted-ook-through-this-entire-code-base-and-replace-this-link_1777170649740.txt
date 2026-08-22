@@ -4,13 +4,13 @@ after login user is stock in a loading screen that says verifying your reset lin
 also if user has an active strategy each time user login in theuy should the first screen the should see is the dashabord screen not the agent chatscreen, 
 also thier are multiple spashcreen runing remove evry ohter splashcreen and leave one only which is the custom ui desinged one
 splascreen display time is too short before loading another screen,
-onboarding screen ui dosnt list all capabilites of adroom ai improve that add more feture but do not disclose adroom process or engins, take inpiration from about screen content,
+onboarding screen ui dosnt list all capabilites of Adirum AI improve that add more feture but do not disclose adroom process or engins, take inpiration from about screen content,
 i notice right before the main spash screen load thier is anothe loader screen that shows in a split second before the next screen investigate and fix this that loader screen or second spashcreen shouldnt be thier 
-when user click the get started button in the fetured screen thier are redirtected to the login screen insted of the signup screen and remove the Adroom ai text at the top to from bothe screens itshould just say and change the text color in the registration sceen from white to a sotthing oclor that will compliment the current button background color 
+when user click the get started button in the fetured screen thier are redirtected to the login screen insted of the signup screen and remove the Adirum AI text at the top to from bothe screens itshould just say and change the text color in the registration sceen from white to a sotthing oclor that will compliment the current button background color 
 also user never recived reset pasword email after requesting reset pasword 
 also ensire that users cant creat two account whit same email.
 fix this error am getting in my supabase logs "column strategies.status does not exist".
 update app version code to 2.2.3
-check entire code base where adroom ai is refered to as an os or agent and replace with Intelligence or framework as required and also so the goal is to brand adroom ai as a framwork, intelligence and workforce without revelling the actual adroom process but jsut what it can do for the user it amazing and distince capabilities and fetures where required.
+check entire code base where Adirum AI is refered to as an os or agent and replace with Intelligence or framework as required and also so the goal is to brand Adirum AI as a framwork, intelligence and workforce without revelling the actual adroom process but jsut what it can do for the user it amazing and distince capabilities and fetures where required.
 find any implimentations that where made but never appliy and apply them accordinly but ake sure they are follwing what on ground already and add to the enire system capaboilties and not decress or roll back 
 rember this is not a web app is a mobile application, no dummy implementation or demo implimentations, all fix and implimentation must be don for realtime and production, do not disrupt any alreay made progress or rewure code or feture that has already been written 

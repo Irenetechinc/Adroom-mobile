@@ -44,7 +44,7 @@ export class CommunicationService {
       .limit(3);
 
     const prompt = `
-        You are AdRoom AI. Generate a concise, professional, and encouraging daily ORGANIC marketing report for the user.
+        You are Adirum AI. Generate a concise, professional, and encouraging daily ORGANIC marketing report for the user.
 
         DATE: ${new Date().toLocaleDateString()}
         WINDOW: last 24 hours

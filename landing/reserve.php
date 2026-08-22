@@ -1,6 +1,6 @@
 <?php
 /**
- * AdRoom AI — Investor reservation handler
+ * Adirum AI — Investor reservation handler
  * --------------------------------------------------------------
  * Drop this file into the same directory as investors.html on
  * any PHP-enabled host (Afeeshost, InfinityFree, AwardSpace,

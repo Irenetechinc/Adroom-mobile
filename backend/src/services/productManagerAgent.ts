@@ -169,7 +169,7 @@ RULES:
     console.log(`[ProductManager] Auto-implemented ${improvement.type} for product ${product.id}`);
 
     // Notify user about the auto-change
-    const notifPrompt = `AdRoom AI just improved your product "${product.name}". 
+    const notifPrompt = `Adirum AI just improved your product "${product.name}". 
 Change: ${improvement.type.replace(/_/g, ' ')}
 Reason: ${improvement.rationale}
 
@@ -208,7 +208,7 @@ Return JSON: { "title": "max 6 words", "body": "max 2 sentences" }`;
     if (existing?.length) return; // Already waiting for approval
 
     // AI Brain writes the notification dynamically
-    const notifPrompt = `AdRoom AI wants to suggest a price change for "${product.name}".
+    const notifPrompt = `Adirum AI wants to suggest a price change for "${product.name}".
 Current price: ${product.price || 'not set'} ${product.currency || ''}
 Suggested: ${improvement.suggested}
 Reason from live market data: ${improvement.rationale}

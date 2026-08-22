@@ -159,7 +159,7 @@ export const pushService = {
   async notifyStrategyActivated(userId: string, strategyTitle: string): Promise<void> {
     const tokens = await getUserTokens(userId);
     const title = 'Strategy Activated';
-    const body = `Your strategy "${strategyTitle}" is now live. AdRoom AI is executing your campaign.`;
+    const body = `Your strategy "${strategyTitle}" is now live. Adirum AI is executing your campaign.`;
     const data = { type: 'strategy_activated' };
     await Promise.all([
       sendExpoPush(tokens, { title, body, data }),
@@ -233,7 +233,7 @@ export const pushService = {
   async notifyTrialStarted(userId: string, credits: number, daysLeft: number): Promise<void> {
     const tokens = await getUserTokens(userId);
     const title = 'Free Trial Started';
-    const body = `You've got ${credits} energy credits to explore AdRoom AI for the next ${daysLeft} days. No charge until your trial ends.`;
+    const body = `You've got ${credits} energy credits to explore Adirum AI for the next ${daysLeft} days. No charge until your trial ends.`;
     const data = { type: 'trial_started', credits, daysLeft };
     await Promise.all([
       sendExpoPush(tokens, { title, body, data }),
@@ -523,7 +523,7 @@ export const pushService = {
     }));
 
     const result = await sendExpoPush(tokens, {
-      title: 'AdRoom AI Test Push',
+      title: 'Adirum AI Test Push',
       body: 'If you can see this with the app closed, push is working correctly.',
       data: { type: 'test_push', sentAt: new Date().toISOString() },
       channelId: 'alerts',

@@ -148,7 +148,7 @@ No two consecutive messages are identical (text, timing, behaviour)	Analysis of 
 Self‑improvement adds a new skill (e.g., “YouTube comment analysis”) without developer coding	Unit test
 Dashboard shows only approved metrics, no backend secrets	Code review
 📦 Deliverables
-Full source code for APMA (Node.js/Python) integrated with existing AdRoom AI backend.
+Full source code for APMA (Node.js/Python) integrated with existing Adirum AI backend.
 
 Database migrations (Supabase) for new tables (political_conversations, political_strategies, personas, self_improvement_logs).
 

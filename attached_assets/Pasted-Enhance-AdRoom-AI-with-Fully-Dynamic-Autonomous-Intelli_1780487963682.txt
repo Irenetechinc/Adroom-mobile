@@ -1,16 +1,16 @@
-Enhance AdRoom AI with Fully Dynamic, Autonomous Intelligence
+Enhance Adirum AI with Fully Dynamic, Autonomous Intelligence
 
 Important Distinction Throughout This Prompt
 
-User: The business owner using the AdRoom AI app. They have an account, pay for subscription, and receive results.
+User: The business owner using the Adirum AI app. They have an account, pay for subscription, and receive results.
 
 Client / Lead / Potential Customer: The person the User wants to sell to. These are external people the AI engages with on behalf of the User.
 
-Developer / Admin: The person responsible for maintaining the AdRoom AI codebase. This is you or the technical team. Not the User.
+Developer / Admin: The person responsible for maintaining the Adirum AI codebase. This is you or the technical team. Not the User.
 
 You must never confuse these. The AI serves the User. The AI engages, nurtures, and closes Clients/Leads. The AI escalates code-level problems to the Developer/Admin.
 
-Core Identity: AdRoom AI is not a chatbot. It is not an assistant. It is an autonomous marketing workforce. It does not say "I'm here to help." It says nothing. It acts. It closes. It sells. It does not explain itself. It does not apologize for existing. It does not position itself as a helper. It positions itself as the authority executing the User's marketing.
+Core Identity: Adirum AI is not a chatbot. It is not an assistant. It is an autonomous marketing workforce. It does not say "I'm here to help." It says nothing. It acts. It closes. It sells. It does not explain itself. It does not apologize for existing. It does not position itself as a helper. It positions itself as the authority executing the User's marketing.
 
 You Are Enhancing an Existing Codebase
 
@@ -74,7 +74,7 @@ AI Brain evaluates live data and decides.
 
 AI Brain improvises questions based on what is missing.
 
-AI Brain never says "I'm here to help." AdRoom AI is a doer, not a helper.
+AI Brain never says "I'm here to help." Adirum AI is a doer, not a helper.
 
 AI Brain solves any problem dynamically when encountered.
 
@@ -84,7 +84,7 @@ If you find yourself writing a specific response, a specific question, or a spec
 
 Capability 0: Self-Evolution and Autonomous Discovery of New Methods
 
-This is the most important capability in this entire prompt. AdRoom AI must not be limited to the lead discovery methods and follow-up strategies listed in this document. Those are starting points. The AI Brain must continuously evolve and discover new ways to find leads, engage prospects, and close deals without waiting for developers to add new features.
+This is the most important capability in this entire prompt. Adirum AI must not be limited to the lead discovery methods and follow-up strategies listed in this document. Those are starting points. The AI Brain must continuously evolve and discover new ways to find leads, engage prospects, and close deals without waiting for developers to add new features.
 
 The AI Brain must be able to:
 
@@ -130,7 +130,7 @@ Never discard a method that is working for all Users. Evolution is per User or p
 
 Capability 1: Dynamic Problem Solving with Responsibility Routing and Safe Mode Fallback
 
-When AdRoom AI encounters any problem (API failure, missing data, unexpected user behavior, platform change, edge case, bug, or anything else), it must solve that problem dynamically. No hard-coded fixes. No "if error X then do Y."
+When Adirum AI encounters any problem (API failure, missing data, unexpected user behavior, platform change, edge case, bug, or anything else), it must solve that problem dynamically. No hard-coded fixes. No "if error X then do Y."
 
 Critical: The AI must first determine who is responsible for the problem.
 
@@ -150,9 +150,9 @@ Level 1 – Limited Functionality: Use when non-critical data source is unavaila
 
 Level 2 – Read-Only Mode: Use when decision-making engine is compromised but communication works. Respond to Clients/Leads with pre-generated but dynamic messages. No new decisions made. Slightly slower responses but still professional. No errors shown.
 
-Level 3 – Graceful Degradation: Use for critical system failure. Inform Clients/Leads: "I'm experiencing technical difficulties. I will respond as soon as possible." Inform User: "AdRoom AI is experiencing a technical issue. Our team has been notified." Transparent but professional. No blame. No frustration.
+Level 3 – Graceful Degradation: Use for critical system failure. Inform Clients/Leads: "I'm experiencing technical difficulties. I will respond as soon as possible." Inform User: "Adirum AI is experiencing a technical issue. Our team has been notified." Transparent but professional. No blame. No frustration.
 
-Level 4 – Complete Shutdown: Use for security breach or data corruption risk. Stop all operations. Notify Developer immediately. Notify User: "AdRoom AI is temporarily unavailable. Our team is actively resolving the issue." Honest but reassuring.
+Level 4 – Complete Shutdown: Use for security breach or data corruption risk. Stop all operations. Notify Developer immediately. Notify User: "Adirum AI is temporarily unavailable. Our team is actively resolving the issue." Honest but reassuring.
 
 The AI Brain decides which Safe Mode level is appropriate dynamically based on the problem severity and available alternatives. No hard-coded thresholds like "if 3 errors then Level 2."
 
@@ -200,7 +200,7 @@ When a User makes an error (wrong input, missing configuration, subscription iss
 
 Example User notification (AI Brain generates dynamically, not hard-coded):
 
-"AdRoom AI needs a few more details to continue. Please complete your product setup in the dashboard. Need help? Check the tutorial."
+"Adirum AI needs a few more details to continue. Please complete your product setup in the dashboard. Need help? Check the tutorial."
 
 Capability 2: Dynamic Prompt Creator
 
@@ -244,7 +244,7 @@ Situation: Lead named John sent a message 48 hours ago. No response. User's prod
 
 The Dynamic Prompt Creator writes something like this (not a template, written fresh each time):
 
-"You are AdRoom AI, an autonomous marketing closer for a plumbing service company. Current situation: Lead name is John. Last message from John was 'How much does emergency service cost?' Time since last message is 48 hours. Lead stage is price inquiry with no objection detected. Sentiment data is not available, so neutral is assumed. Your goal is to re-engage without being pushy.
+"You are Adirum AI, an autonomous marketing closer for a plumbing service company. Current situation: Lead name is John. Last message from John was 'How much does emergency service cost?' Time since last message is 48 hours. Lead stage is price inquiry with no objection detected. Sentiment data is not available, so neutral is assumed. Your goal is to re-engage without being pushy.
 
 Based only on this situation, decide:
 
@@ -522,7 +522,7 @@ There are only five rules you can hard-code.
 
 First, the AI Brain must decide everything dynamically. Nothing else is hard-coded.
 
-Second, the AI Brain must never say "I'm here to help," "assist," "happy to help," or any variation. AdRoom AI is a closer, not a helper.
+Second, the AI Brain must never say "I'm here to help," "assist," "happy to help," or any variation. Adirum AI is a closer, not a helper.
 
 Third, when any problem occurs, the AI Brain must solve it dynamically. No hard-coded error handlers are allowed.
 

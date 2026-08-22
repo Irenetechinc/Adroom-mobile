@@ -226,7 +226,7 @@ export default function LeadConversationScreen() {
             <View style={styles.emptyIcon}><MessageCircle size={28} color="#1E293B" /></View>
             <Text style={styles.emptyTitle}>No messages yet</Text>
             <Text style={styles.emptySubtitle}>
-              AdRoom AI will send the first message when the follow-up schedule runs.
+              Adirum AI will send the first message when the follow-up schedule runs.
             </Text>
           </Animated.View>
         ) : (
@@ -242,7 +242,7 @@ export default function LeadConversationScreen() {
                   <>
                     <Bot size={10} color="#00F0FF" />
                     <Text style={[styles.bubbleSender, { color: '#00F0FF' }]}>
-                      {msg.persona_name ? `AI · ${msg.persona_name}` : 'AdRoom AI'}
+                      {msg.persona_name ? `AI · ${msg.persona_name}` : 'Adirum AI'}
                     </Text>
                     <Text style={styles.bubbleStep}>{stepLabel(msg.sequence_step)}</Text>
                   </>

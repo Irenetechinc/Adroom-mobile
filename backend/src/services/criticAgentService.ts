@@ -415,7 +415,7 @@ Return JSON only:
       return `No poor-quality outputs found for ${agentType} — agent is performing well.`;
     }
 
-    const prompt = `You are an AI quality coach analysing recent poor-quality outputs from the "${agentType}" marketing agent in AdRoom AI.
+    const prompt = `You are an AI quality coach analysing recent poor-quality outputs from the "${agentType}" marketing agent in Adirum AI.
 
 RECENT FLAGGED/REJECTED OUTPUTS:
 ${(poorLogs as any[]).map((l, i) => `

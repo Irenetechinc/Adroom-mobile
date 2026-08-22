@@ -1057,7 +1057,7 @@ export default function StrategyHistoryScreen() {
           <Menu color="#E2E8F0" size={22} />
         </TouchableOpacity>
         <View style={{ flex: 1 }}>
-          <Text style={styles.headerLabel}>AdRoom AI</Text>
+          <Text style={styles.headerLabel}>Adirum AI</Text>
           <Text style={styles.headerTitle}>Strategy History</Text>
         </View>
         <View style={styles.countBadge}>

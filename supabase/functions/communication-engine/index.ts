@@ -41,7 +41,7 @@ serve(async (req) => {
 
         // 3. Construct Prompt
         const prompt = `
-            You are AdRoom AI. Generate a concise, professional, and encouraging daily marketing report for the user.
+            You are Adirum AI. Generate a concise, professional, and encouraging daily marketing report for the user.
             
             DATE: ${new Date().toLocaleDateString()}
             

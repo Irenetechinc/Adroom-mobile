@@ -131,7 +131,7 @@ export class LeadDiscoveryService {
    * AI Brain generates search queries from product context — no hardcoded strings.
    */
   private async generateSearchQueries(product: any): Promise<string[]> {
-    const prompt = `You are the AdRoom AI Brain. Generate search queries to find potential customers for this product/service.
+    const prompt = `You are the Adirum AI Brain. Generate search queries to find potential customers for this product/service.
 
 PRODUCT: ${product.name}
 DESCRIPTION: ${product.description || 'Not provided'}
@@ -551,7 +551,7 @@ Return JSON: { "queries": ["query1", "query2", "query3"] }`;
     if (!newLeads.length) return;
 
     // Batch AI intent scoring — AI Brain scores all leads at once
-    const scoringPrompt = `You are the AdRoom AI Brain scoring potential leads for "${product.name}" (${product.category}).
+    const scoringPrompt = `You are the Adirum AI Brain scoring potential leads for "${product.name}" (${product.category}).
 
 LEADS TO SCORE:
 ${newLeads.map((l, i) => `${i}. [${l.platform}] @${l.platformUsername}: "${l.firstInteraction.slice(0, 150)}"`).join('\n')}
@@ -685,7 +685,7 @@ Return JSON: { "scores": [0.7, 0.4, ...] } — one score per lead in same order`
       }
 
       // 3. AI Brain analyses performance and decides what to do — no hardcoded rules
-      const evolutionPrompt = `You are the AdRoom AI Brain performing a self-evolution analysis of the lead discovery system.
+      const evolutionPrompt = `You are the Adirum AI Brain performing a self-evolution analysis of the lead discovery system.
 
 WEEKLY SOURCE PERFORMANCE:
 ${JSON.stringify(sourceSummary, null, 2)}

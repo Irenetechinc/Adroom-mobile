@@ -6,7 +6,7 @@
   <meta http-equiv="X-UA-Compatible" content="IE=edge" />
   <meta name="x-apple-disable-message-reformatting" />
   <meta name="format-detection" content="telephone=no,address=no,email=no,date=no,url=no" />
-  <title>One last step — confirm your AdRoom AI account</title>
+  <title>One last step — confirm your Adirum AI account</title>
   <!--[if mso]>
   <noscript>
     <xml>
@@ -35,7 +35,7 @@
 </head>
 
 <!--
-  AdRoom AI — Email Confirmation Template
+  Adirum AI — Email Confirmation Template
   Supabase variable: {{ .ConfirmationURL }}
   Paste into: Supabase › Authentication › Email Templates › Confirm signup
 -->
@@ -63,7 +63,7 @@
                   <td style="vertical-align:middle;padding-right:10px;">
                     <img
                       src="https://adroom.adroomai.com/wp-content/uploads/2026/04/CompressJPEG.Online_img512x512.jpg"
-                      alt="AdRoom AI Logo" width="36" height="36"
+                      alt="Adirum AI Logo" width="36" height="36"
                       style="display:block;width:36px;height:36px;border-radius:9px;border:0;"
                     />
                   </td>
@@ -94,7 +94,7 @@
                   <td align="center" style="padding:44px 48px 0;">
                     <img
                       src="https://adroom.adroomai.com/wp-content/uploads/2026/04/CompressJPEG.Online_img512x512.jpg"
-                      alt="AdRoom AI" width="80" height="80"
+                      alt="Adirum AI" width="80" height="80"
                       style="display:block;width:80px;height:80px;border-radius:22px;border:2px solid rgba(245,158,11,0.25);"
                     />
                   </td>
@@ -258,7 +258,7 @@
                       Excited to have you on board. If you ever have questions, just reply to support@adroomai.com this email.
                     </p>
                     <p style="margin:0;font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:14px;color:#64748B;line-height:1.7;">
-                      — The AdRoom AI Team
+                      — The Adirum AI Team
                     </p>
                   </td>
                 </tr>
@@ -285,7 +285,7 @@
                         <td style="padding-left:10px;">
                           <p style="margin:0;font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:12px;color:#64748B;line-height:1.65;">
                             <strong style="color:#94A3B8;">Heads up:</strong> This link expires in 24 hours and works only once.
-                            If you didn't sign up for AdRoom AI, no worries — just ignore this email and nothing will happen.
+                            If you didn't sign up for Adirum AI, no worries — just ignore this email and nothing will happen.
                           </p>
                         </td>
                       </tr>
@@ -315,7 +315,7 @@
                 <tr>
                   <td align="center">
                     <p style="margin:0;font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:11px;color:#1E293B;line-height:1.7;">
-                      &copy; 2026 AdRoom AI &nbsp;&middot;&nbsp; You received this because you signed up at adroomai.com
+                      &copy; 2026 Adirum AI &nbsp;&middot;&nbsp; You received this because you signed up at adroomai.com
                     </p>
                   </td>
                 </tr>

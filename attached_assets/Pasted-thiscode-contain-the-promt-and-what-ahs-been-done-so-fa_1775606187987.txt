@@ -2,7 +2,7 @@ thiscode contain the promt and what ahs been done so far, using the promt ivisti
  and pleas CMA has to be dynamic flexible and be able to monitor think and implement were nessary in realtime to achive its primary goal
 
 promt:
-Impliment an agent that will mange my actual ai credits usage and spend  to avoid adroom using unessaary ai crdicts and ensure management, this agent should be able to prioritise ai credit use by tire, how their used the best model to use, cost efficient and still a hive se result and still work with other tools already in implimented so before implimentimg this look at all activities adroom ai dose and make sure none is left put the goal of this ai is save money internerly for the company across all user while meeting standerds and not rowing down on quality or effectiveness of out put comes etc
+Impliment an agent that will mange my actual ai credits usage and spend  to avoid adroom using unessaary ai crdicts and ensure management, this agent should be able to prioritise ai credit use by tire, how their used the best model to use, cost efficient and still a hive se result and still work with other tools already in implimented so before implimentimg this look at all activities Adirum AI dose and make sure none is left put the goal of this ai is save money internerly for the company across all user while meeting standerds and not rowing down on quality or effectiveness of out put comes etc
 all implimentations and fix must be for reatrime and production, i use railway for backend and supabse for dtabse also this is a mibile app not web app 
 Mean whole fix this error that is cpizing my build to fail
 

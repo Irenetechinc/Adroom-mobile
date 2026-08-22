@@ -1,13 +1,13 @@
 Build a landing page for this app that I can past I can run on my afeeshost.com hosting
 
-First landing page is the countdown to app lunch this should contain all the app dose but do not expose app secret just all the abilities adroom. Ai poses how it can help anyone with product servicde or brand a hive thier goal by 100%, how it's the futufe of integent automated marketing butake adroom ai better than it competitors and unmatched any time any where 
+First landing page is the countdown to app lunch this should contain all the app dose but do not expose app secret just all the abilities adirum. Ai poses how it can help anyone with product servicde or brand a hive thier goal by 100%, how it's the futufe of integent automated marketing butake Adirum AI better than it competitors and unmatched any time any where 
 
 The another landing page that will upload when app is lunched 
 
 The another one for our special program early investors window where 
 Which entails this, this page also should feature on the countdown page 
 
-📊 ADROOM AI - Early Investor Convertible Structure (₦1M Minimum)
+📊 Adirum AI - Early Investor Convertible Structure (₦1M Minimum)
 
 🎯 Investment Summary
 
@@ -94,7 +94,7 @@ Exit (100x):         ███████████████████�
 
 📄 Early Investor Term Sheet
 
-ADROOM AI
+Adirum AI
 
 Convertible Early Investment Agreement
 
@@ -102,7 +102,7 @@ Convertible Early Investment Agreement
 
 1. The Opportunity
 
-AdRoom AI is a fully autonomous marketing intelligence platform with:
+Adirum AI is a fully autonomous marketing intelligence platform with:
 
 · 5 completed AI agents (Sales, Launch, Promotion, Leads, Awareness)
 · Website connector with auto-product scraping
@@ -145,7 +145,7 @@ Reason Explanation
 Same price as main round You get in at the same ₦1/share as large investors
 Lower minimum Main round minimum may be ₦5M+. Early minimum is ₦1M
 First access You invest before the main round opens to the public
-Believer status You become a founding supporter of AdRoom AI
+Believer status You become a founding supporter of Adirum AI
 Future priority Early investors get priority in future funding rounds
 
 ---
@@ -164,7 +164,7 @@ Company Valuation Your ₦1M Becomes Your ₦10M Becomes Your ₦50M Becomes
 6. Simple Agreement Text
 
 ```
-ADROOM AI - EARLY INVESTMENT CONVERTIBLE NOTE
+Adirum AI - EARLY INVESTMENT CONVERTIBLE NOTE
 
 Date: ______________
 
@@ -174,9 +174,9 @@ Investment Amount: ₦______________ (Minimum ₦1,000,000)
 TERMS:
 
 1. The investor receives the right to convert this investment into 
-   equity shares of AdRoom AI at a fixed price of ₦1 per share.
+   equity shares of Adirum AI at a fixed price of ₦1 per share.
 
-2. Conversion will occur automatically when AdRoom AI closes its 
+2. Conversion will occur automatically when Adirum AI closes its 
    main pre-seed funding round (target: ₦1,000,000,000 for 10% equity).
 
 3. At conversion, the investor receives:
@@ -189,7 +189,7 @@ TERMS:
 
 6. This agreement is governed by the laws of Nigeria.
 
-FOR ADROOM AI:
+FOR Adirum AI:
 
 Signature: ______________
 Name: ______________
@@ -206,7 +206,7 @@ Date: ______________
 
 7. Pitch Script for Investors
 
-"AdRoom AI is valued at $5 million. Our main pre-seed round is ₦1 billion for 10% equity at ₦1 per share.
+"Adirum AI is valued at $5 million. Our main pre-seed round is ₦1 billion for 10% equity at ₦1 per share.
 
 We are opening an early investor window for believers who want to get in before the main round.
 
@@ -258,7 +258,7 @@ A: ₦1,000,000 (One Million Naira).
 9. Sample Message to Investors
 
 ```
-🚀 ADROOM AI - Early Investment Opportunity (₦1M Minimum)
+🚀 Adirum AI - Early Investment Opportunity (₦1M Minimum)
 
 We are building the future of autonomous marketing.
 Product: COMPLETE ✅
@@ -283,7 +283,7 @@ This is for believers who want to be part of something big.
 
 Interested? Reply for the full term sheet.
 
-AdRoom AI Team
+Adirum AI Team
 ```
 
 ---
