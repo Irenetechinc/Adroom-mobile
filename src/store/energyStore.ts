@@ -296,13 +296,10 @@ export const useEnergyStore = create<EnergyState>((set, get) => ({
   toggleOnDemand: async (enabled: boolean) => {
     const { data: { session } } = await supabase.auth.getSession();
     if (!session) return;
-    const update: Record<string, any> = { on_demand_enabled: enabled };
-    // Clearing the retry timestamp when user turns off so pending retries don't fire
-    if (!enabled) update.on_demand_top_up_retry_at = null;
-    await supabase
-      .from('energy_accounts')
-      .update(update)
-      .eq('user_id', session.user.id);
+    await supabase.rpc('set_on_demand_preferences', {
+      p_enabled: enabled,
+      p_pack_id: null,
+    });
     set((s) => ({
       account: s.account
         ? { ...s.account, on_demand_enabled: enabled }
@@ -313,15 +310,10 @@ export const useEnergyStore = create<EnergyState>((set, get) => ({
   setOnDemandPack: async (packId: string) => {
     const { data: { session } } = await supabase.auth.getSession();
     if (!session) return;
-    // Also clear any pending retry when user changes pack (fresh start)
-    await supabase
-      .from('energy_accounts')
-      .update({
-        on_demand_top_up_amount: packId,
-        on_demand_enabled: true,
-        on_demand_top_up_retry_at: null,
-      })
-      .eq('user_id', session.user.id);
+    await supabase.rpc('set_on_demand_preferences', {
+      p_enabled: true,
+      p_pack_id: packId,
+    });
     set((s) => ({
       account: s.account
         ? { ...s.account, on_demand_top_up_amount: packId, on_demand_enabled: true }

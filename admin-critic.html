@@ -279,6 +279,17 @@ body { background: var(--bg); color: var(--txt); font-family: -apple-system, Bli
 <script>
 // ── Config ────────────────────────────────────────────────────────────────────
 const API = '';  // same origin — backend serves this HTML
+const fragmentToken = new URLSearchParams(window.location.hash.slice(1)).get('token');
+if (fragmentToken) {
+  sessionStorage.setItem('admin_token', fragmentToken);
+  history.replaceState(null, '', window.location.pathname);
+}
+const ADMIN_TOKEN = sessionStorage.getItem('admin_token') || '';
+function adminFetch(url, options = {}) {
+  const headers = new Headers(options.headers || {});
+  if (ADMIN_TOKEN) headers.set('Authorization', `Bearer ${ADMIN_TOKEN}`);
+  return fetch(url, { ...options, headers });
+}
 const AGENTS = [
   { key:'SALESMAN',      label:'SALESMAN',      type:'adroom' },
   { key:'AWARENESS',     label:'AWARENESS',     type:'adroom' },
@@ -320,7 +331,7 @@ async function refreshAll() {
 // ── Stats ─────────────────────────────────────────────────────────────────────
 async function fetchStats() {
   try {
-    const r = await fetch(`${API}/api/admin/critic/stats`);
+    const r = await adminFetch(`${API}/api/admin/critic/stats`);
     if (!r.ok) return;
     const d = await r.json();
     const total = d.total || 0;
@@ -381,7 +392,7 @@ function renderAgentSummary(byAgent) {
 // ── Heatmap ───────────────────────────────────────────────────────────────────
 async function fetchHeatmap() {
   try {
-    const r = await fetch(`${API}/api/admin/critic/heatmap`);
+    const r = await adminFetch(`${API}/api/admin/critic/heatmap`);
     if (!r.ok) return;
     const cells = await r.json();
     renderHeatmap(cells);
@@ -419,7 +430,7 @@ function renderHeatmap(cells) {
 async function fetchLogs() {
   try {
     const vParam = activeFilter !== 'all' ? `&verdict=${activeFilter}` : '';
-    const r = await fetch(`${API}/api/admin/critic/logs?limit=60${vParam}`);
+    const r = await adminFetch(`${API}/api/admin/critic/logs?limit=60${vParam}`);
     if (!r.ok) return;
     allLogs = await r.json();
     renderLogs(allLogs);
@@ -468,7 +479,7 @@ async function openImprove(agentType, agentLabel) {
   document.getElementById('improve-content').innerHTML = '<span class="improve-loading">Analysing recent failures and generating improvement recommendations…</span>';
   document.getElementById('improve-modal').classList.add('open');
   try {
-    const r = await fetch(`${API}/api/admin/critic/improve/${agentType}`, { method:'POST' });
+    const r = await adminFetch(`${API}/api/admin/critic/improve/${agentType}`, { method:'POST' });
     const d = await r.json();
     if (d.recommendation) {
       document.getElementById('improve-content').textContent = d.recommendation;
