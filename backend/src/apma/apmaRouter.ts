@@ -15,7 +15,7 @@ export const apmaClientRouter = Router();  // mounted at /api/apma/client  (APMA
 
 // ─── APMA CLIENT AUTH MIDDLEWARE ──────────────────────────────────────────────
 async function apmaClientAuth(req: any, res: any, next: any) {
-  const apiKey = req.headers['x-apma-key'] as string;
+  const apiKey = req.headers['x-apma-key'] as string || req.query.key as string;
   if (!apiKey) return res.status(401).json({ error: 'API key required' });
   const sb = getServiceSupabaseClient();
   const hash = crypto.createHash('sha256').update(apiKey).digest('hex');

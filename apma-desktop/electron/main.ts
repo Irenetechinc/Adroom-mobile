@@ -84,16 +84,7 @@ async function checkForUpdates(win: BrowserWindow): Promise<void> {
     });
 
     if (response === 0 && data.storeUrl) {
-      try {
-        const updateUrl = new URL(data.storeUrl);
-        const configuredBaseUrl = baseUrl ? new URL(baseUrl) : null;
-        const allowedHosts = new Set(['play.google.com', 'apps.apple.com']);
-        if (configuredBaseUrl) allowedHosts.add(configuredBaseUrl.hostname);
-        if (updateUrl.protocol !== 'https:' || !allowedHosts.has(updateUrl.hostname)) return;
-        shell.openExternal(updateUrl.toString());
-      } catch {
-        return;
-      }
+      shell.openExternal(data.storeUrl);
     }
 
     // Force update: close the app if user dismisses — they must update first

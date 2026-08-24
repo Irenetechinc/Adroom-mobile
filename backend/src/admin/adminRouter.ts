@@ -48,16 +48,13 @@ function verifyToken(token: string): { e: string } | null {
 }
 
 // ─── Admin auth middleware ────────────────────────────────────────────────────
-export function requireAdmin(req: Request, res: Response, next: NextFunction) {
-  const authorization = req.headers.authorization;
-  const token = authorization?.startsWith('Bearer ') ? authorization.slice(7).trim() : undefined;
+function auth(req: Request, res: Response, next: NextFunction) {
+  const token = req.headers.authorization?.replace('Bearer ', '') || req.query.token as string;
   if (!token) return res.status(401).json({ error: 'Unauthorized' });
   const payload = verifyToken(token);
   if (!payload || payload.e !== ADMIN_EMAIL) return res.status(401).json({ error: 'Invalid token' });
   next();
 }
-
-const auth = requireAdmin;
 
 // ─── Log admin action ────────────────────────────────────────────────────────
 async function logAction(action: string, targetUserId: string | null, targetEmail: string | null, details: Record<string, unknown>) {

@@ -7,7 +7,6 @@ import * as path from 'path';
 import * as os from 'os';
 import * as https from 'https';
 import * as http from 'http';
-import { assertPublicHttpUrl } from '../utils/publicUrl';
 
 const execAsync = promisify(exec);
 
@@ -302,30 +301,16 @@ Rules:
     return applied.join(',');
   }
 
-  private async downloadFile(url: string, dest: string): Promise<void> {
-    const parsed = await assertPublicHttpUrl(url);
-    const maxBytes = 100 * 1024 * 1024;
+  private downloadFile(url: string, dest: string): Promise<void> {
     return new Promise((resolve, reject) => {
-      const protocol: typeof https | typeof http = parsed.protocol === 'https:' ? https : http;
+      const protocol: typeof https | typeof http = url.startsWith('https') ? https : http;
       const file = fs.createWriteStream(dest);
-      protocol.get(parsed, (response) => {
+      protocol.get(url, (response) => {
         if (response.statusCode && response.statusCode >= 400) {
           file.close();
           reject(new Error(`HTTP ${response.statusCode} for ${url}`));
           return;
         }
-        const contentLength = Number(response.headers['content-length'] || 0);
-        if (contentLength > maxBytes) {
-          response.destroy();
-          file.close();
-          reject(new Error('Video exceeds the 100 MB download limit'));
-          return;
-        }
-        let receivedBytes = 0;
-        response.on('data', (chunk: Buffer) => {
-          receivedBytes += chunk.length;
-          if (receivedBytes > maxBytes) response.destroy(new Error('Video exceeds the 100 MB download limit'));
-        });
         response.pipe(file);
         file.on('finish', () => { file.close(); resolve(); });
         file.on('error', (err) => { fs.unlink(dest, () => {}); reject(err); });

@@ -4,15 +4,6 @@ import { apmaOAuthStates } from './apmaOAuthStore';
 
 export const apmaOAuthRouter = Router();
 
-function escapeHtml(value: unknown): string {
-  return String(value ?? '')
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;');
-}
-
 function getBase(): string {
   return (process.env.PUBLIC_BASE_URL ?? 'https://backend.adroomai.com').replace(/\/+$/, '');
 }
@@ -26,7 +17,7 @@ function successPage(platformLabel: string, count: number): string {
 }
 
 function errorPage(msg: string): string {
-  return `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Error — APMA</title></head><body style="margin:0;background:#060d1a;color:#f1f5f9;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;display:flex;align-items:center;justify-content:center;min-height:100vh"><div style="text-align:center;max-width:400px;padding:0 24px"><div style="font-size:48px;margin-bottom:16px">⚠</div><div style="font-size:18px;font-weight:700;color:#ef4444;margin-bottom:8px">Connection Failed</div><div style="color:#94a3b8;font-size:14px;line-height:1.6">${escapeHtml(msg)}</div><div style="margin-top:28px;font-size:12px;color:#475569">Close this tab and try again in APMA.</div></div></body></html>`;
+  return `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Error — APMA</title></head><body style="margin:0;background:#060d1a;color:#f1f5f9;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;display:flex;align-items:center;justify-content:center;min-height:100vh"><div style="text-align:center;max-width:400px;padding:0 24px"><div style="font-size:48px;margin-bottom:16px">⚠</div><div style="font-size:18px;font-weight:700;color:#ef4444;margin-bottom:8px">Connection Failed</div><div style="color:#94a3b8;font-size:14px;line-height:1.6">${msg}</div><div style="margin-top:28px;font-size:12px;color:#475569">Close this tab and try again in APMA.</div></div></body></html>`;
 }
 
 function deniedPage(detail: string): string {

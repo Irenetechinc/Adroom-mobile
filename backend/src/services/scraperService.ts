@@ -1,6 +1,5 @@
 import { getServiceSupabaseClient } from '../config/supabase';
 import { AIEngine } from '../config/ai-models';
-import { assertPublicHttpUrl } from '../utils/publicUrl';
 
 export interface ScrapedProduct {
     name: string;
@@ -49,7 +48,6 @@ async function fetchWithJina(url: string): Promise<string> {
 }
 
 async function fetchRawHtml(url: string): Promise<{ text: string; rawHtml: string }> {
-    await assertPublicHttpUrl(url);
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), DIRECT_TIMEOUT_MS);
     try {
@@ -168,14 +166,6 @@ export class ScraperService {
 
         if (!parsedUrl) {
             const fb = this.buildFallback(url, 'Invalid URL');
-            await this.storeProduct(fb, userId);
-            return [fb];
-        }
-
-        try {
-            await assertPublicHttpUrl(parsedUrl.href);
-        } catch {
-            const fb = this.buildFallback(url, 'Private or invalid URL');
             await this.storeProduct(fb, userId);
             return [fb];
         }
