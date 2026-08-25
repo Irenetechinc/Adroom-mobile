@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "494299983866",
+    "project_id": "adroom-ai",
+    "storage_bucket": "adroom-ai.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:494299983866:android:5ec2a23f9d12cca9cd7e43",
+        "android_client_info": {
+          "package_name": "com.adroom.mobile"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBm7LVPFHlgNXfit_f9wD5DvNtNT_F664U"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
