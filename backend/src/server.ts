@@ -20,6 +20,7 @@ import { SchedulerService } from './services/scheduler';
 import { energyService, PLANS, TOPUP_PACKS } from './services/energyService';
 import { flutterwaveService } from './services/flutterwaveService';
 import { pushService } from './services/pushService';
+import { CommunicationService } from './services/communicationService';
 import { energyCheck, deductEnergyForUser } from './services/energyMiddleware';
 import { checkFeatureAccess, getSubscriptionGuard, SUBSCRIPTION_PLAN_LIMITS } from './services/subscriptionGuard';
 import { getFlagsForUser as getFeatureFlagsForUser } from './services/featureFlagService';
@@ -107,6 +108,7 @@ const TIKTOK_CLIENT_SECRET = process.env.TIKTOK_CLIENT_SECRET;
 const scraperService = new ScraperService();
 const creativeService = new CreativeService();
 const decisionEngine = new DecisionEngine();
+const communicationService = new CommunicationService();
 
 if (!VERIFY_TOKEN) {
   console.warn('[Server] WARNING: FB_VERIFY_TOKEN not set — Facebook webhook verification disabled.');
@@ -4332,6 +4334,27 @@ app.get('/api/strategy/:id/daily-reports', async (req, res) => {
 
     return res.status(200).json({ reports: data || [] });
   } catch (e: any) {
+    return res.status(500).json({ error: e.message });
+  }
+});
+
+// Internal Railway-only communication endpoint used by server-side workers.
+// Supabase remains the data store; AI generation runs in this Railway process.
+app.post('/api/internal/communication/alert', async (req, res) => {
+  try {
+    const expectedKey = process.env.INTERNAL_SERVICE_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY;
+    const suppliedKey = req.headers.authorization?.replace(/^Bearer\s+/i, '').trim();
+    if (!expectedKey || suppliedKey !== expectedKey) {
+      return res.status(401).json({ error: 'Unauthorized.' });
+    }
+
+    const { alertId } = req.body || {};
+    if (!alertId) return res.status(400).json({ error: 'Alert ID required.' });
+
+    const alert = await communicationService.generateAlertMessage(String(alertId));
+    return res.status(200).json({ ok: true, alert });
+  } catch (e: any) {
+    console.error('[Communication] Alert generation failed:', e.message);
     return res.status(500).json({ error: e.message });
   }
 });
