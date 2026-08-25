@@ -241,7 +241,7 @@ export class PlatformIntelligenceEngine {
           
           try {
              // Route communication through Railway. Supabase stores the record.
-             const railwayUrl = (Deno.env.get('RAILWAY_BACKEND_URL') || 'https://adroom-mobile-production-c7fb.up.railway.app').replace(/\/+$/, '');
+             const railwayUrl = 'http://backend.adroomai.com';
              const serviceKey = Deno.env.get('INTERNAL_SERVICE_KEY') || Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
              await fetch(`${railwayUrl}/api/internal/communication/alert`, {
                  method: 'POST',
