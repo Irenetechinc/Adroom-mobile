@@ -13,7 +13,7 @@ import {
 } from './services/resendEmailService';
 import { MemoryRetriever, type MemoryContext } from './services/memoryRetriever';
 import { DecisionEngine, type AIStrategy } from './services/decisionEngine';
-import { AIEngine } from './config/ai-models';
+import { AIEngine, runWithAIRequestContext } from './config/ai-models';
 import { ScraperService } from './services/scraperService';
 import { AgentOrchestrator } from './agents/agentOrchestrator';
 import { SchedulerService } from './services/scheduler';
@@ -30,6 +30,8 @@ import { popOAuthEntry, setOAuthCode, setOAuthError } from './auth/oauthStore';
 import { validateEmailAsync } from './utils/emailValidator';
 import { apmaClientRouter } from './apma/apmaRouter';
 import { apmaOAuthRouter } from './apma/apmaOAuthRouter';
+import { telephonyService } from './services/telephonyService';
+import { shipmentService } from './services/shipmentService';
 
 dotenv.config();
 
@@ -83,7 +85,7 @@ const PORT = process.env.PORT || 8000;
  *   2. Inferred from the incoming request (works behind Railway's proxy)
  */
 function getPublicBaseUrl(req: Request): string {
-  const fromEnv = process.env.PUBLIC_BASE_URL?.trim();
+  const fromEnv = (process.env.PUBLIC_BASE_URL || process.env.APP_URL || 'https://backend.adroomai.com').trim();
   if (fromEnv) return fromEnv.replace(/\/+$/, '');
   const proto = (req.get('x-forwarded-proto') || req.protocol || 'https').split(',')[0].trim();
   const host = req.get('x-forwarded-host') || req.get('host') || '';
@@ -116,6 +118,207 @@ if (!VERIFY_TOKEN) {
 
 // Middleware to parse JSON bodies
 app.use(bodyParser.json({ limit: '10mb' }));
+app.use(express.urlencoded({ extended: false }));
+
+// Establish the request-scoped model policy before any agent or service runs.
+// The shared AI engine uses AsyncLocalStorage, so concurrent users cannot
+// accidentally inherit another user's paid/free routing decision.
+app.use('/api', async (req, _res, next) => {
+  try {
+    if (req.headers.authorization) {
+      const userClient = getSupabaseClient(req as any);
+      const { data: { user } } = await userClient.auth.getUser();
+      if (user) {
+        const guard = await getSubscriptionGuard(user.id, userClient);
+        return runWithAIRequestContext(
+          { userId: user.id, plan: guard.plan, status: guard.status },
+          () => next(),
+        );
+      }
+    }
+  } catch (error: any) {
+    console.warn('[AI policy] Could not establish user context:', error.message);
+  }
+  next();
+});
+
+app.get('/api/outreach/preferences', async (req, res) => {
+  try {
+    const supabase = getSupabaseClient(req as any);
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return res.status(401).json({ error: 'Unauthorized.' });
+    const { data, error } = await supabase.from('outreach_preferences').select('do_not_call, public_data_collection, updated_at').eq('user_id', user.id).maybeSingle();
+    if (error) return res.status(500).json({ error: error.message });
+    return res.json(data || { do_not_call: false, public_data_collection: true });
+  } catch (error: any) { return res.status(500).json({ error: error.message }); }
+});
+
+app.patch('/api/outreach/preferences', async (req, res) => {
+  try {
+    const supabase = getSupabaseClient(req as any);
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return res.status(401).json({ error: 'Unauthorized.' });
+    const payload = {
+      user_id: user.id,
+      do_not_call: Boolean(req.body?.do_not_call),
+      public_data_collection: req.body?.public_data_collection !== false,
+      updated_at: new Date().toISOString(),
+    };
+    const { data, error } = await supabase.from('outreach_preferences').upsert(payload).select().single();
+    if (error) return res.status(500).json({ error: error.message });
+    return res.json(data);
+  } catch (error: any) { return res.status(500).json({ error: error.message }); }
+});
+
+app.post('/api/calls/queue', async (req, res) => {
+  try {
+    const supabase = getSupabaseClient(req as any);
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return res.status(401).json({ error: 'Unauthorized.' });
+    const guard = await getSubscriptionGuard(user.id, supabase);
+    if (!['pro', 'pro_plus'].includes(guard.plan) || !['active', 'trialing'].includes(guard.status)) {
+      return res.status(403).json({ error: 'CALLING_REQUIRES_PRO', message: 'Autonomous calling requires an active Pro or Pro+ plan.' });
+    }
+    if (req.body?.consent_confirmed !== true) return res.status(400).json({ error: 'CALL_CONSENT_REQUIRED', message: 'Explicit call consent is required.' });
+    const { data: preferences } = await supabase.from('outreach_preferences').select('do_not_call').eq('user_id', user.id).maybeSingle();
+    if (preferences?.do_not_call) return res.status(403).json({ error: 'DO_NOT_CALL', message: 'Calling is disabled in your outreach preferences.' });
+    const { data, error } = await supabase.from('call_logs').insert({
+      user_id: user.id,
+      lead_id: req.body.lead_id || null,
+      strategy_id: req.body.strategy_id || null,
+      consent_confirmed: true,
+      status: 'queued',
+      summary: { requested_goal: String(req.body.goal || '').slice(0, 500) },
+    }).select('id,status,created_at').single();
+    if (error) return res.status(500).json({ error: error.message });
+    return res.status(202).json({ call: data, message: 'Call queued for provider execution after consent and provider checks.' });
+  } catch (error: any) { return res.status(500).json({ error: error.message }); }
+});
+
+app.get('/api/calls', async (req, res) => {
+  try {
+    const supabase = getSupabaseClient(req as any);
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return res.status(401).json({ error: 'Unauthorized.' });
+    const { data, error } = await supabase.from('call_logs').select('*').eq('user_id', user.id).order('created_at', { ascending: false }).limit(100);
+    if (error) return res.status(500).json({ error: error.message });
+    return res.json({ calls: data || [] });
+  } catch (error: any) { return res.status(500).json({ error: error.message }); }
+});
+
+app.post('/api/calls/number', async (req, res) => {
+  try {
+    const supabase = getSupabaseClient(req as any);
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return res.status(401).json({ error: 'Unauthorized.' });
+    const guard = await getSubscriptionGuard(user.id, supabase);
+    if (!['pro', 'pro_plus'].includes(guard.plan) || !['active', 'trialing'].includes(guard.status)) return res.status(403).json({ error: 'CALLING_REQUIRES_PRO' });
+    const number = await telephonyService.ensureUserNumber(user.id);
+    return res.status(201).json({ phone_number: number, provider: 'twilio' });
+  } catch (error: any) { return res.status(503).json({ error: error.message }); }
+});
+
+function webhookParams(req: any): Record<string, string> {
+  return Object.fromEntries(Object.entries(req.body || {}).map(([key, value]) => [key, String(value ?? '')]));
+}
+
+app.post('/api/webhooks/twilio/voice', async (req, res) => {
+  const params = webhookParams(req);
+  const signature = String(req.headers['x-twilio-signature'] || '');
+  const valid = telephonyService.verifyWebhook(signature, `${getPublicBaseUrl(req)}/api/webhooks/twilio/voice`, params);
+  if (!valid) return res.status(403).type('text/plain').send('Invalid signature');
+  const callId = String(req.query.call_id || '');
+  if (!callId) return res.status(400).type('text/plain').send('Missing call id');
+  res.type('text/xml').send(await telephonyService.voiceInstructions(callId));
+});
+
+app.post('/api/webhooks/twilio/status', async (req, res) => {
+  const params = webhookParams(req);
+  const signature = String(req.headers['x-twilio-signature'] || '');
+  if (!telephonyService.verifyWebhook(signature, `${getPublicBaseUrl(req)}/api/webhooks/twilio/status`, params)) return res.status(403).send('Invalid signature');
+  const callId = String(req.query.call_id || '');
+  if (callId) await telephonyService.handleStatus(callId, params);
+  return res.sendStatus(204);
+});
+
+app.post('/api/webhooks/twilio/recording', async (req, res) => {
+  const params = webhookParams(req);
+  const signature = String(req.headers['x-twilio-signature'] || '');
+  if (!telephonyService.verifyWebhook(signature, `${getPublicBaseUrl(req)}/api/webhooks/twilio/recording`, params)) return res.status(403).send('Invalid signature');
+  const callId = String(req.query.call_id || '');
+  if (callId && params.RecordingUrl) await telephonyService.handleRecording(callId, params.RecordingUrl);
+  return res.sendStatus(204);
+});
+
+app.post('/api/logistics/shipments', async (req, res) => {
+  try {
+    const supabase = getSupabaseClient(req as any);
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return res.status(401).json({ error: 'Unauthorized.' });
+    if (req.body?.product_type !== 'physical') return res.status(400).json({ error: 'DIGITAL_PRODUCT_NO_SHIPMENT', message: 'Digital products are delivered by the user and do not create shipments.' });
+    if (!req.body?.pickup_address || String(req.body.pickup_address).trim().length < 10) return res.status(400).json({ error: 'PICKUP_ADDRESS_REQUIRED' });
+    const { data, error } = await supabase.from('shipments').insert({
+      user_id: user.id,
+      strategy_id: req.body.strategy_id || null,
+      product_id: req.body.product_id || null,
+      lead_id: req.body.lead_id || null,
+      product_type: 'physical',
+      pickup_address: String(req.body.pickup_address).trim(),
+      delivery_address: req.body.delivery_address ? String(req.body.delivery_address).trim() : null,
+      status: 'awaiting_dispatch',
+      pickup_details: req.body.pickup_details || {},
+    }).select().single();
+    if (error) return res.status(500).json({ error: error.message });
+    return res.status(201).json({ shipment: data });
+  } catch (error: any) { return res.status(500).json({ error: error.message }); }
+});
+
+app.get('/api/logistics/shipments', async (req, res) => {
+  try {
+    const supabase = getSupabaseClient(req as any);
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return res.status(401).json({ error: 'Unauthorized.' });
+    const { data, error } = await supabase.from('shipments').select('*').eq('user_id', user.id).order('updated_at', { ascending: false }).limit(100);
+    if (error) return res.status(500).json({ error: error.message });
+    return res.json({ shipments: data || [] });
+  } catch (error: any) { return res.status(500).json({ error: error.message }); }
+});
+
+app.post('/api/logistics/shipments/:id/confirm-pickup', async (req, res) => {
+  try {
+    const supabase = getSupabaseClient(req as any);
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return res.status(401).json({ error: 'Unauthorized.' });
+    const { data, error } = await supabase.from('shipments').update({
+      status: 'in_transit',
+      pickup_confirmed_at: new Date().toISOString(),
+      pickup_evidence_url: req.body?.evidence_url || null,
+      updated_at: new Date().toISOString(),
+    }).eq('id', req.params.id).eq('user_id', user.id).select().single();
+    if (error) return res.status(404).json({ error: 'Shipment not found or could not be confirmed.' });
+    return res.json({ shipment: data });
+  } catch (error: any) { return res.status(500).json({ error: error.message }); }
+});
+
+app.post('/api/logistics/shipments/:id/dispatch', async (req, res) => {
+  try {
+    const supabase = getSupabaseClient(req as any);
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return res.status(401).json({ error: 'Unauthorized.' });
+    const { data: owned } = await supabase.from('shipments').select('id').eq('id', req.params.id).eq('user_id', user.id).single();
+    if (!owned) return res.status(404).json({ error: 'Shipment not found.' });
+    const result = await shipmentService.dispatchShipment(req.params.id);
+    return res.status(202).json({ shipment: result });
+  } catch (error: any) { return res.status(503).json({ error: error.message }); }
+});
+
+app.post('/api/webhooks/shipments', async (req, res) => {
+  const signature = String(req.headers['x-shipment-signature'] || '');
+  const rawBody = JSON.stringify(req.body || {});
+  if (!shipmentService.verifyWebhook(signature, rawBody)) return res.status(403).json({ error: 'Invalid signature' });
+  await shipmentService.applyWebhook(req.body || {});
+  return res.sendStatus(204);
+});
 
 // Admin panel
 app.use('/admin', adminRouter);
@@ -1036,6 +1239,14 @@ app.post('/api/scrape', async (req, res) => {
         const { data: { user } } = await supabase.auth.getUser();
         if (!user) return res.status(401).json({ error: 'Invalid session.' });
 
+        const { isFreeAIRequest } = await import('./config/ai-models');
+        if (await isFreeAIRequest()) {
+          return res.status(403).json({
+            error: 'WEB_SEARCH_DISABLED',
+            message: 'Web search is temporarily unavailable in free AI mode. Product details can still be added by upload or manual entry.',
+          });
+        }
+
         // Enforce subscription: only Pro/Pro+ can scrape websites
         const access = await checkFeatureAccess(user.id, 'websiteScraping', supabase);
         if (!access.allowed) {
@@ -1122,6 +1333,13 @@ app.post('/api/creative/generate-video-asset', async (req, res) => {
     if (!productName) return res.status(400).json({ error: 'productName is required.' });
 
     try {
+      const { isFreeAIRequest } = await import('./config/ai-models');
+      if (await isFreeAIRequest()) {
+        return res.status(403).json({
+          error: 'VIDEO_GENERATION_DISABLED',
+          message: 'AI video generation is unavailable in free AI mode. Upload your own video to use the video editor.',
+        });
+      }
         const supabase = getSupabaseClient(req as any);
         const { data: { user } } = await supabase.auth.getUser();
         if (!user) return res.status(401).json({ error: 'Invalid session.' });
@@ -1247,7 +1465,7 @@ app.post('/api/ai/scan-product', async (req, res) => {
  * Generate Strategy — full intelligence pipeline with step-by-step logging
  */
 app.post('/api/ai/generate-strategy', async (req, res) => {
-    const { productId, goal, duration } = req.body;
+  const { productId, goal, duration, selectedAccounts, productType, dispatchAddress } = req.body;
     const ts = () => new Date().toISOString();
     console.log(`\n[Strategy] ═══════════════════════════════════════`);
     console.log(`[Strategy] [${ts()}] NEW STRATEGY GENERATION REQUEST`);
@@ -1257,6 +1475,32 @@ app.post('/api/ai/generate-strategy', async (req, res) => {
         
         const { data: { user } } = await supabase.auth.getUser();
         if (!user) return res.status(401).json({ error: 'Unauthorized.' });
+
+        const requestedAccounts = Array.isArray(selectedAccounts)
+          ? [...new Set(selectedAccounts.map((account: unknown) => String(account).trim().toLowerCase()).filter(Boolean))]
+          : [];
+        if (requestedAccounts.length > 0) {
+          const { data: connectedAccounts, error: accountError } = await supabase
+            .from('ad_configs')
+            .select('platform')
+            .eq('user_id', user.id)
+            .in('platform', requestedAccounts);
+          if (accountError) return res.status(500).json({ error: 'Could not verify selected social accounts.' });
+          const connected = new Set((connectedAccounts || []).map((account: any) => String(account.platform).toLowerCase()));
+          const missing = requestedAccounts.filter((account: string) => !connected.has(account));
+          if (missing.length > 0) {
+            return res.status(409).json({
+              error: 'SOCIAL_ACCOUNTS_REQUIRED',
+              missing,
+              message: `Connect these accounts before generating this strategy: ${missing.join(', ')}.`,
+            });
+          }
+        }
+        const hasNewProductTypeInput = productType !== undefined;
+        const normalizedProductType = productType === 'digital' ? 'digital' : 'physical';
+        if (hasNewProductTypeInput && normalizedProductType === 'physical' && (!dispatchAddress || String(dispatchAddress).trim().length < 10)) {
+          return res.status(400).json({ error: 'DISPATCH_ADDRESS_REQUIRED', message: 'A valid dispatch pickup address is required for physical products.' });
+        }
 
         console.log(`[Strategy] [${ts()}] STEP 1 — Authenticated user: ${user.id}`);
         console.log(`[Strategy] [${ts()}] STEP 2 — Retrieving memory context from all intelligence tables...`);
@@ -1286,6 +1530,8 @@ app.post('/api/ai/generate-strategy', async (req, res) => {
         }
 
         const economyMode = cmaResult.decision === 'allow_economy';
+        const { isFreeAIRequest } = await import('./config/ai-models');
+        const freeMode = await isFreeAIRequest();
         const retriever = new MemoryRetriever(supabase);
         const context = await retriever.getAllContext(user.id, productId, 'product');
 
@@ -1301,7 +1547,7 @@ app.post('/api/ai/generate-strategy', async (req, res) => {
           console.log(`[CMA] Economy routing: saved ${cmaResult.savedCredits} credits for this user`);
         }
 
-        const strategy = await decisionEngine.generateStrategy(context, goal, duration, economyMode);
+        const strategy = await decisionEngine.generateStrategy(context, goal, duration, economyMode, freeMode);
 
         console.log(`[Strategy] [${ts()}] STEP 5 — Strategy generated successfully`);
         console.log(`[Strategy]   Title: ${strategy.title}`);
@@ -1321,6 +1567,9 @@ app.post('/api/ai/generate-strategy', async (req, res) => {
             schedule: strategy.schedule,
             estimated_outcomes: strategy.estimated_outcomes,
             status: 'approved',
+            selected_accounts: requestedAccounts,
+            product_type: normalizedProductType,
+            dispatch_address: normalizedProductType === 'physical' ? String(dispatchAddress).trim() : null,
             created_at: new Date().toISOString(),
         }).select().single();
 
@@ -4435,24 +4684,31 @@ app.post('/api/video/edit-plan', async (req, res) => {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return res.status(401).json({ error: 'Unauthorized.' });
 
-    const { videoUri, productName, goal, platform, instructions, strategyId } = req.body;
+    const { videoUri, audioUri, productName, goal, platform, instructions, strategyId } = req.body;
     if (!productName || !goal || !platform) {
       return res.status(400).json({ error: 'productName, goal, and platform are required.' });
     }
 
     const { SmartVideoEditor } = await import('./services/smartVideoEditor');
     const editor = new SmartVideoEditor();
-    const result = await editor.generateEditPlan({ videoUri, productName, goal, platform, instructions });
+    const result = await editor.generateEditPlan({ videoUri, audioUri, productName, goal, platform, instructions });
 
-    if (videoUri && strategyId) {
+    let jobId: string | null = null;
+    if (videoUri) {
       try {
-        await editor.saveEditPlan(user.id, strategyId, videoUri, result);
+        jobId = await editor.saveEditPlan(user.id, strategyId || null, videoUri, {
+          ...result,
+          editPlan: { ...result.editPlan, ...(audioUri ? { __audioUri: audioUri } : {}) },
+        });
+        editor.executeEditPlan(jobId).catch((executionError: any) =>
+          console.error('[VideoEditor] Background execution failed:', executionError.message)
+        );
       } catch (saveErr: any) {
         console.warn('[VideoEditor] Could not save edit job (non-fatal):', saveErr.message);
       }
     }
 
-    return res.status(200).json(result);
+    return res.status(200).json({ ...result, jobId, executionStatus: jobId ? 'queued' : 'plan_ready' });
   } catch (e: any) {
     return res.status(500).json({ error: e.message });
   }

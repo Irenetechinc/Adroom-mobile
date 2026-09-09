@@ -475,6 +475,7 @@ export const useAgentStore = create<AgentState>()(
                   },
                   body: JSON.stringify({
                     videoUri: videoUrl,
+                    ...(typeof (data as any).audioUri === 'string' ? { audioUri: (data as any).audioUri } : {}),
                     productName: validatedData.name,
                     goal: 'Campaign video optimization',
                     platform: 'tiktok',

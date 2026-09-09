@@ -14,6 +14,7 @@ import {
   ChevronRight, ChevronDown, X, Sparkles, Trash2,
 } from 'lucide-react-native';
 import { useEnergyStore, PLAN_DETAILS } from '../../store/energyStore';
+import { useAgentStore } from '../../store/agentStore';
 import { CURRENCIES } from '../../constants/currencies';
 
 const COLORS = {
@@ -25,10 +26,12 @@ const COLORS = {
 export default function ProductIntakeScreen() {
   const navigation = useNavigation<any>();
   const { productData, setProductData } = useStrategyCreationStore();
+  const connectedPlatforms = useAgentStore((state) => state.connectedPlatforms);
   const { subscription, planLimitsUsage, fetchPlanLimits } = useEnergyStore();
   const [loading, setLoading] = useState(false);
   const [generatingVideo, setGeneratingVideo] = useState(false);
   const [showCurrencyPicker, setShowCurrencyPicker] = useState(false);
+  const [productType, setProductType] = useState<'physical' | 'digital'>(productData.productType || 'physical');
   const selectedCurrency = CURRENCIES.find(c => c.code === (productData.currency || 'USD')) ?? CURRENCIES[0];
 
   const plan = subscription?.plan ?? 'none';
@@ -159,6 +162,11 @@ export default function ProductIntakeScreen() {
       Alert.alert('Missing Information', 'Please provide at least a product name and description.');
       return;
     }
+    if (productType === 'physical' && !productData.dispatchAddress?.trim()) {
+      Alert.alert('Dispatch Address Required', 'Enter the address where the dispatch agent should collect this physical product.');
+      return;
+    }
+    setProductData({ productType, dispatchAddress: productType === 'physical' ? productData.dispatchAddress.trim() : '' });
     navigation.navigate('StrategyWizard_GoalSelection');
   };
 
@@ -297,6 +305,24 @@ export default function ProductIntakeScreen() {
 
         {/* ── Form Fields ─────────────────────────────────────── */}
         <View style={styles.formSection}>
+          <Text style={styles.fieldLabel}>Product Type</Text>
+          <View style={{ flexDirection: 'row', gap: 8, marginBottom: 16 }}>
+            {(['physical', 'digital'] as const).map((type) => (
+              <TouchableOpacity key={type} onPress={() => setProductType(type)} style={[styles.input, { flex: 1, borderColor: productType === type ? COLORS.neon : COLORS.border }]}>
+                <Text style={{ color: productType === type ? COLORS.neon : COLORS.text, textAlign: 'center', fontWeight: '700' }}>{type === 'physical' ? 'Physical product' : 'Digital product'}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+          {productType === 'physical' && (
+            <FormField
+              label="Dispatch Pickup Address"
+              value={productData.dispatchAddress}
+              onChangeText={(text) => setProductData({ dispatchAddress: text })}
+              placeholder="Full address for dispatch collection"
+              multiline
+              height={88}
+            />
+          )}
           <FormField
             label="Product Name"
             value={productData.name}
@@ -389,6 +415,26 @@ export default function ProductIntakeScreen() {
               <ChevronRight size={18} color={COLORS.purple} />
             </TouchableOpacity>
           )}
+        </View>
+
+        <View style={styles.websiteSection}>
+          <Text style={styles.websiteTitle}>Preferred Social Accounts</Text>
+          <Text style={styles.websiteDesc}>Optionally choose connected accounts for this strategy. Existing account connections are unchanged.</Text>
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+            {Object.keys(connectedPlatforms || {}).map((platform) => {
+              const selected = productData.selectedAccounts?.includes(platform);
+              return (
+                <TouchableOpacity
+                  key={platform}
+                  onPress={() => setProductData({ selectedAccounts: selected ? productData.selectedAccounts.filter(item => item !== platform) : [...(productData.selectedAccounts || []), platform] })}
+                  style={[styles.input, { paddingHorizontal: 12, paddingVertical: 9, borderColor: selected ? COLORS.neon : COLORS.border }]}
+                >
+                  <Text style={{ color: selected ? COLORS.neon : COLORS.text, fontWeight: '700' }}>{selected ? '✓ ' : ''}{platform}</Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+          {Object.keys(connectedPlatforms || {}).length === 0 && <Text style={styles.websiteDesc}>No connected accounts yet. You can connect them after reviewing the strategy.</Text>}
         </View>
       </ScrollView>
 

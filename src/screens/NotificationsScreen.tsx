@@ -265,6 +265,12 @@ export default function NotificationsScreen() {
   function openDetail(item: UserNotification) {
     const type = (item.data as any)?.type;
     const leadId = (item.data as any)?.lead_id;
+    const targetScreen = (item.data as any)?.screen;
+    if (targetScreen === 'AgentChat' || targetScreen === 'Shipments') {
+      if (!item.is_read) markOneRead(item.id);
+      (navigation as any).navigate(targetScreen);
+      return;
+    }
     // Lead activity → navigate directly into the lead's conversation
     if (leadId && !['payment_proof', 'discount_approval'].includes(type || '')) {
       if (!item.is_read) markOneRead(item.id);

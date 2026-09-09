@@ -63,7 +63,11 @@ export default function DurationSelectionScreen() {
     try {
       const productId = await ProductService.saveProduct(productData);
       setLoadingMessage('AI Brain is generating your strategy...');
-      const strategies = await StrategyService.generateStrategies(productId, selectedGoal!, selectedDuration);
+      const strategies = await StrategyService.generateStrategies(productId, selectedGoal!, selectedDuration, {
+        selectedAccounts: productData.selectedAccounts,
+        productType: productData.productType,
+        dispatchAddress: productData.dispatchAddress,
+      });
       setGeneratedStrategies(strategies);
       navigation.navigate('StrategyWizard_Comparison');
     } catch (error: any) {

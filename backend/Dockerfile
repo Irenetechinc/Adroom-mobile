@@ -1,5 +1,10 @@
 # Use official Node.js image
-FROM node:18-alpine
+FROM node:18-bookworm-slim
+
+# Required by the deterministic uploaded-video editing pipeline.
+RUN apt-get update \
+	&& apt-get install -y --no-install-recommends ffmpeg python3 python3-pip \
+	&& rm -rf /var/lib/apt/lists/*
 
 # Set working directory
 WORKDIR /app
@@ -13,6 +18,10 @@ RUN npm install --legacy-peer-deps
 
 # Copy source code
 COPY src ./src
+COPY vendor ./vendor
+
+# Runtime dependencies for the vendored deterministic beat-sync pipeline.
+RUN python3 -m pip install --no-cache-dir --break-system-packages -r vendor/video-tools/beat-synced-edit/requirements.txt
 
 # Build TypeScript code
 RUN npm run build

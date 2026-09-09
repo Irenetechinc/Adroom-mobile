@@ -31,6 +31,9 @@ import NotificationsScreen from '../screens/NotificationsScreen';
 import AboutScreen from '../screens/AboutScreen';
 import ReferralScreen from '../screens/ReferralScreen';
 import LeadsScreen from '../screens/LeadsScreen';
+import CallLogsScreen from '../screens/CallLogsScreen';
+import ShipmentsScreen from '../screens/ShipmentsScreen';
+import OutreachPreferencesScreen from '../screens/OutreachPreferencesScreen';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
@@ -67,6 +70,9 @@ const linking: LinkingOptions<RootStackParamList> = {
       ConnectedAccounts: 'connected-accounts',
       StrategyApproval: 'strategy-approval',
       Leads: 'leads',
+      CallLogs: 'call-logs',
+      Shipments: 'shipments',
+      OutreachPreferences: 'outreach-preferences',
       Notifications: 'notifications',
       Login: 'login',
       Signup: 'signup',
@@ -182,6 +188,9 @@ export default function AppNavigator() {
               component={LeadsScreen}
               options={{ headerShown: false }}
             />
+            <Stack.Screen name="CallLogs" component={CallLogsScreen} options={{ headerShown: false }} />
+            <Stack.Screen name="Shipments" component={ShipmentsScreen} options={{ headerShown: false }} />
+            <Stack.Screen name="OutreachPreferences" component={OutreachPreferencesScreen} options={{ headerShown: false }} />
           </>
         )}
       </Stack.Navigator>

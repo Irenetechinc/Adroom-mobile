@@ -1410,6 +1410,14 @@ export default function AgentChatScreen({ navigation, route }: Props) {
   // was already on screen at mount) and renders instantly. Anything newer
   // is a freshly-arrived agent reply and animates in character-by-character.
   const mountedAtRef = useRef<number>(Date.now());
+  const shipmentPromptShown = useRef(false);
+
+  useEffect(() => {
+    if (route.params?.shipmentId && !shipmentPromptShown.current) {
+      shipmentPromptShown.current = true;
+      addMessage('Your dispatch has been arranged. Please confirm here when the product has been handed to the delivery company. You can attach a photo of the handover as proof.', 'agent');
+    }
+  }, [addMessage, route.params?.shipmentId]);
 
   // True while any newly-arrived agent message is still mid-stream.
   // Used to prevent the ThinkingIndicator / TypingIndicator from overlapping

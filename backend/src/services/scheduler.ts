@@ -14,6 +14,7 @@ import { DailySummaryService } from './dailySummaryService';
 import { RadarAgent } from '../agents/radarAgent';
 import { apmaOrchestrator } from '../apma/apmaOrchestrator';
 import { tokenRefreshService } from './tokenRefreshService';
+import { telephonyService } from './telephonyService';
 
 async function hasActiveStrategies(): Promise<boolean> {
     const supabase = getServiceSupabaseClient();
@@ -49,6 +50,7 @@ const SCHED_RENEWAL_RETRY_CRON= process.env.SCHED_RENEWAL_RETRY_CRON || '30 * * 
 const SCHED_TOKEN_REFRESH_CRON    = process.env.SCHED_TOKEN_REFRESH_CRON    || '0 */6 * * *';   // Proactive OAuth token refresh every 6 hours
 const SCHED_LEAD_DISCOVERY_CRON   = process.env.SCHED_LEAD_DISCOVERY_CRON   || '0 */3 * * *';   // Multi-source lead discovery every 3 hours
 const SCHED_PRODUCT_MANAGER_CRON  = process.env.SCHED_PRODUCT_MANAGER_CRON  || '0 */4 * * *';   // Product Manager Agent every 4 hours
+const SCHED_CALLS_CRON             = process.env.SCHED_CALLS_CRON             || '* * * * *';   // Provider call queue every minute
 
 export class SchedulerService {
     private ipe: PlatformIntelligenceEngine;
@@ -445,6 +447,11 @@ export class SchedulerService {
             } catch (e: any) {
                 console.error('[Scheduler] Video edit execution error:', e.message);
             }
+        });
+
+        cron.schedule(SCHED_CALLS_CRON, async () => {
+            try { await telephonyService.processQueuedCalls(10); }
+            catch (e: any) { console.error('[Scheduler] Call queue error:', e.message); }
         });
 
         // APMA — Autonomous Political Marketing Agent cycle every 15 minutes

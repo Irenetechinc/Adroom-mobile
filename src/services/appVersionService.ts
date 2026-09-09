@@ -140,11 +140,11 @@ export async function getUnseenChangelog(
 }
 
 export function shouldForceUpdate(info: AppVersionInfo): boolean {
-  if (!info.minSupportedVersion) return Boolean(info.forceUpdate);
-  return (
-    Boolean(info.forceUpdate) ||
-    compareSemver(info.currentVersion, info.minSupportedVersion) < 0
-  );
+  if (Boolean(info.forceUpdate)) return true;
+  if (Boolean(info.updateAvailable) && Boolean(info.storeUrl)) return true;
+  if (Boolean(info.updateAvailable) && !!info.latestVersion) return true;
+  if (!info.minSupportedVersion) return false;
+  return compareSemver(info.currentVersion, info.minSupportedVersion) < 0;
 }
 
 export function shouldOfferOptionalUpdate(info: AppVersionInfo): boolean {

@@ -548,6 +548,29 @@ Return JSON:
             .map(m => `[${m.direction === 'outbound' ? 'Agent' : 'Lead'}]: ${m.message}`)
             .join('\n');
 
+        const { leadProfileBuilder } = await import('../services/leadProfileBuilder');
+        const leadProfile = await leadProfileBuilder.buildForLead(task.user_id, lead_id).catch(() => null);
+
+        try {
+            const { data: prefs } = await this.supabase.from('outreach_preferences').select('do_not_call').eq('user_id', task.user_id).maybeSingle();
+            const callDecision = await this.ai.generateJson(`Decide whether a phone call is warranted for this current sales conversation. Return only {"should_call": boolean, "reason": string}. Use only the supplied evidence. Never call merely to increase contact volume.
+LEAD: ${JSON.stringify({ platform: lead.platform, intent_score: lead.intent_score, phone_present: Boolean(lead.phone || lead.phone_number || lead.contact_phone), call_consent: lead.call_consent === true })}
+PROFILE: ${JSON.stringify(leadProfile)}
+MESSAGE: ${inbound_message}
+HISTORY: ${conversationThread}`);
+            if (callDecision?.should_call && lead.call_consent === true && !prefs?.do_not_call && (lead.phone || lead.phone_number || lead.contact_phone)) {
+                const { data: existingCall } = await this.supabase.from('call_logs').select('id').eq('lead_id', lead_id).in('status', ['queued', 'provider_started', 'ringing', 'in_progress']).maybeSingle();
+                if (!existingCall) await this.supabase.from('call_logs').insert({
+                    user_id: task.user_id,
+                    lead_id,
+                    strategy_id: task.strategy_id,
+                    consent_confirmed: true,
+                    status: 'queued',
+                    summary: { requested_goal: callDecision.reason, source: 'salesman_ai_decision' },
+                });
+            }
+        } catch (error: any) { this.log(`Call recommendation skipped: ${error.message}`); }
+
         // ── Guardrail check before anything else ──────────────────────────────
         const { analyzeIncomingMessage } = await import('../services/guardrailService');
         const guard = await analyzeIncomingMessage(
@@ -661,6 +684,9 @@ WHAT THE LEAD JUST SAID:
 
 FULL CONVERSATION HISTORY (most recent context):
 ${conversationThread || '(this is the first exchange)'}
+
+SALES PREPARATION PROFILE (evidence-based; use only to improve relevance):
+${JSON.stringify(leadProfile || { status: 'unavailable' })}
 
 PRODUCT:
 Name: ${product?.product_name || product?.name || 'the product'}
@@ -882,7 +908,7 @@ Return JSON: { "title": "short title (max 6 words)", "body": "1 sentence body sa
 
         const [leadRes, strategyRes] = await Promise.all([
             this.supabase.from('agent_leads').select('*').eq('id', lead_id).single(),
-            this.supabase.from('strategies').select('product_id, goal').eq('id', task.strategy_id).single(),
+            this.supabase.from('strategies').select('product_id, goal, product_type, dispatch_address').eq('id', task.strategy_id).single(),
         ]);
 
         const lead = leadRes.data;
@@ -926,7 +952,8 @@ Return JSON: { "message": "the reply" }`;
 
         // If confirmed, create a deal record
         if (user_action === 'confirm' && product) {
-            await this.supabase.from('agent_deals').insert({
+            const productType = strategyRes.data?.product_type === 'digital' ? 'digital' : 'physical';
+            const { data: deal } = await this.supabase.from('agent_deals').insert({
                 strategy_id: task.strategy_id, user_id: task.user_id,
                 lead_id: lead.id, platform: lead.platform,
                 buyer_name: lead.platform_username, buyer_contact: lead.platform_user_id,
@@ -935,8 +962,33 @@ Return JSON: { "message": "the reply" }`;
                 deal_value: parseFloat(product.price) || 0,
                 currency: 'USD',
                 payment_details: { bank: product.bank_account_details, proof_id },
-                status: 'pending_delivery',
-            }).then(null, () => {});
+                status: productType === 'physical' ? 'pending_delivery' : 'closed_won',
+            }).select('id').single().then(r => r, () => ({ data: null }));
+
+            if (productType === 'physical' && deal?.id) {
+                try {
+                    const { shipmentService } = await import('../services/shipmentService');
+                    const { data: existingShipment } = await this.supabase.from('shipments')
+                        .select('id').eq('user_id', task.user_id).eq('lead_id', lead.id).eq('strategy_id', task.strategy_id).maybeSingle();
+                    if (!existingShipment) {
+                        const { data: shipment } = await this.supabase.from('shipments').insert({
+                            user_id: task.user_id,
+                            strategy_id: task.strategy_id,
+                            product_id: strategyRes.data?.product_id || null,
+                            lead_id: lead.id,
+                            product_type: 'physical',
+                            pickup_address: strategyRes.data?.dispatch_address || product.dispatch_address || null,
+                            delivery_address: lead.delivery_address || lead.address || null,
+                            status: 'awaiting_dispatch',
+                            pickup_details: { deal_id: deal.id, requested_at: new Date().toISOString() },
+                        }).select('id').single();
+                        if (shipment?.id) await shipmentService.dispatchShipment(shipment.id);
+                    }
+                } catch (shipmentError: any) {
+                    this.log(`Shipment dispatch pending for deal ${deal.id}: ${shipmentError.message}`);
+                    await this.supabase.from('agent_deals').update({ status: 'pending_delivery' }).eq('id', deal.id);
+                }
+            }
         }
 
         await this.supabase.from('agent_tasks').update({

@@ -94,10 +94,10 @@ export default function ForceUpdateModal({
 
             <Text style={styles.body}>
               {required
-                ? `This version of Adirum AI (v${currentVersion}) is no longer supported. Please update to continue using the app.`
+                ? `This version of Adirum AI (v${currentVersion}) is no longer supported. Please update from Google Play to continue using the app.`
                 : `A newer version of Adirum AI is available${
                     latestVersion ? ` (v${latestVersion})` : ''
-                  }. You're on v${currentVersion}.`}
+                  }. You're on v${currentVersion}. Update now to keep everything running smoothly.`}
             </Text>
 
             <TouchableOpacity

@@ -943,8 +943,17 @@ router.get('/api/models/status', auth, async (_req, res) => {
       .order('created_at', { ascending: false })
       .limit(1)
       .single();
+    const { data: policy } = await sb.from('model_override_config')
+      .select('forced_model, override_active, reason, updated_at')
+      .eq('operation', 'all').maybeSingle();
+    const { data: quota } = await sb.from('free_ai_usage')
+      .select('request_count, token_count, updated_at')
+      .eq('usage_date', new Date().toISOString().slice(0, 10)).maybeSingle();
+    const persistedMode = policy?.override_active === false || !policy?.forced_model ? 'tiered' : policy.forced_model;
     res.json({
-      override,
+      override: { ...override, mode: persistedMode, reason: policy?.reason || override.reason, setAt: policy?.updated_at || override.setAt },
+      policy: persistedMode,
+      quota: { requests: quota?.request_count ?? 0, requestLimit: 500, tokens: quota?.token_count ?? 0, tokenLimit: 1000000, updatedAt: quota?.updated_at ?? null },
       cma: {
         systemBurnRate:        (cmaStats as any)?.system_burn_rate ?? null,
         dynamicEconomyActive:  (cmaStats as any)?.dynamic_economy_active ?? false,
@@ -952,11 +961,18 @@ router.get('/api/models/status', auth, async (_req, res) => {
       models: {
         premium:  process.env.OPENAI_TEXT_MODEL || 'gpt-4o',
         economy:  'gemini-2.0-flash',
+        freeText: 'gpt-4.1-free',
+        freeSmallTask: 'gpt-4.1-nano-free',
+        freeVision: 'gemini-3.1-flash-image-preview-free',
+        freeImage: 'gpt-image-2-free',
       },
       description: {
         auto:    'CMA decides per-user based on subscription tier and burn rate',
         economy: 'All AI operations routed to Gemini Flash (cheaper, faster)',
         premium: 'All AI operations routed to GPT-4o (highest quality)',
+        tiered:  'Trial users use free models; active subscribers use paid models',
+        free:    'All users use free models; web search and AI video generation are disabled',
+        paid:    'All users use the configured paid models',
       },
     });
   } catch (err: any) {
@@ -968,23 +984,24 @@ router.get('/api/models/status', auth, async (_req, res) => {
 router.post('/api/models/override', auth, async (req, res) => {
   try {
     const { mode, reason } = req.body as { mode: string; reason?: string };
-    if (!['auto', 'economy', 'premium'].includes(mode)) {
-      return res.status(400).json({ error: 'mode must be "auto", "economy", or "premium"' });
+    if (!['auto', 'economy', 'premium', 'free', 'tiered', 'paid'].includes(mode)) {
+      return res.status(400).json({ error: 'mode must be "free", "tiered", or "paid" (legacy auto/economy/premium are also accepted)' });
     }
     const { setModelOverride } = await import('../config/ai-models');
-    setModelOverride(mode as 'auto' | 'economy' | 'premium', reason || '');
+    const legacyMode = mode === 'free' ? 'economy' : mode === 'tiered' ? 'auto' : mode === 'paid' ? 'premium' : mode;
+    setModelOverride(legacyMode as 'auto' | 'economy' | 'premium', reason || '');
 
     // Also persist to DB so override survives server restart if needed
     const sb = getServiceSupabaseClient();
     await sb.from('model_override_config').upsert({
       operation: 'all',
       forced_model: mode,
-      override_active: mode !== 'auto',
+      override_active: !['auto', 'tiered'].includes(mode),
       reason: reason || '',
       updated_at: new Date().toISOString(),
     }, { onConflict: 'operation' });
 
-    res.json({ ok: true, mode, reason: reason || '', message: `Model override set to '${mode}'` });
+    res.json({ ok: true, mode: mode === 'auto' ? 'tiered' : mode, reason: reason || '', message: `Model policy set to '${mode}'` });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
@@ -2333,6 +2350,25 @@ label{font-size:11px;color:var(--text2);font-weight:600}
             <button class="btn btn-ghost btn-sm" onclick="loadCMAStats()">↺ Refresh</button>
           </div>
         </div>
+        <div class="card" style="margin-bottom:16px;border:1px solid #00F0FF44">
+          <div class="section-header" style="margin-bottom:8px">
+            <div>
+              <div class="section-title" style="font-size:14px">AI Model Policy</div>
+              <div style="font-size:12px;color:#64748B;margin-top:3px">Controls routing for AdRoom mobile and APMA.</div>
+            </div>
+            <span id="model-policy-status" style="font-size:12px;color:#22C55E">Loading…</span>
+          </div>
+          <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+            <select id="model-policy-select" class="input" style="min-width:260px">
+              <option value="tiered">Tiered: trial/free users free, subscribers paid</option>
+              <option value="free">Universal free models</option>
+              <option value="paid">Universal paid models</option>
+            </select>
+            <input id="model-policy-reason" class="input" style="flex:1;min-width:180px" placeholder="Reason (optional)" maxlength="200" />
+            <button class="btn btn-primary btn-sm" onclick="saveModelPolicy()">Apply Policy</button>
+          </div>
+          <div id="model-policy-quota" style="font-size:11px;color:#94A3B8;margin-top:10px">Free quota: loading…</div>
+        </div>
         <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:16px">
           <div class="stat-card">
             <div class="stat-label">Credits Saved</div>
@@ -2862,6 +2898,7 @@ function showSection(name) {
   });
   document.getElementById('page-title').textContent = TITLES[name] || name;
   if (name === 'cma') { loadCMAStats(); loadModelCredits(); }
+  if (name === 'cma') { loadModelPolicy(); }
   if (name === 'trials') { loadTrials(); }
   if (name === 'apma') { loadAPMASection(); startAPMAMonitor(); } else { stopAPMAMonitor(); }
   if (name === 'agentnet') { startAgentNetPolling(); } else { stopAgentNetPolling(); }
@@ -3586,6 +3623,32 @@ async function loadCMAStats() {
   } catch (e) {
     console.error('CMA stats error:', e);
   }
+}
+
+async function loadModelPolicy() {
+  try {
+    const d = await api('GET', '/api/models/status');
+    const mode = ['free', 'paid', 'tiered'].includes(d.policy) ? d.policy : 'tiered';
+    const select = document.getElementById('model-policy-select');
+    if (select) select.value = mode;
+    const status = document.getElementById('model-policy-status');
+    if (status) status.textContent = 'Active: ' + mode;
+    const quota = document.getElementById('model-policy-quota');
+    if (quota) quota.textContent = 'Free quota today: ' + (d.quota?.requests || 0).toLocaleString() + ' / ' + (d.quota?.requestLimit || 500).toLocaleString() + ' requests · ' + (d.quota?.tokens || 0).toLocaleString() + ' / ' + (d.quota?.tokenLimit || 1000000).toLocaleString() + ' tokens';
+  } catch (e) {
+    const status = document.getElementById('model-policy-status');
+    if (status) status.textContent = 'Unavailable';
+  }
+}
+
+async function saveModelPolicy() {
+  const mode = document.getElementById('model-policy-select')?.value || 'tiered';
+  const reason = document.getElementById('model-policy-reason')?.value || '';
+  try {
+    await api('POST', '/api/models/override', { mode, reason });
+    toast('AI model policy applied: ' + mode, 'success');
+    await loadModelPolicy();
+  } catch (e) { toast('Could not apply model policy: ' + e.message, 'error'); }
 }
 
 // ── AI PROVIDER MODEL CREDITS ─────────────────────────────────────────────────

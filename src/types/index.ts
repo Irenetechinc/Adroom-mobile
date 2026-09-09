@@ -8,7 +8,8 @@ export type RootStackParamList = {
   // AgentChat moved to MainTab
   StrategyApproval: { strategy: any };
   AgentChat: { 
-    fromStrategyApproval?: boolean; 
+    fromStrategyApproval?: boolean;
+    shipmentId?: string;
     connectFacebook?: boolean;
     connectInstagram?: boolean;
     connectTikTok?: boolean;
@@ -23,6 +24,9 @@ export type RootStackParamList = {
   Notifications: undefined;
   About: undefined;
   Leads: { strategyId?: string; platform?: string; leadId?: string } | undefined;
+  CallLogs: undefined;
+  Shipments: undefined;
+  OutreachPreferences: undefined;
   
   // Strategy Creation Wizard
   StrategyWizard_ProductIntake: undefined;

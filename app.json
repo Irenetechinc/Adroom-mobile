@@ -4,7 +4,6 @@
     "slug": "adroom-mobile",
     "scheme": "adroom",
     "version": "4.2.0",
-    "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
     "ios": {
@@ -17,6 +16,7 @@
         "backgroundColor": "#ffffff"
       },
       "package": "com.adroom.mobile",
+      "resizeableActivity": true,
       "versionCode": 66,
       "googleServicesFile": "./google-services.json",
       "permissions": [

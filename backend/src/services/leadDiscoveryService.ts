@@ -21,6 +21,7 @@ import { AIEngine } from '../config/ai-models';
 import { getServiceSupabaseClient } from '../config/supabase';
 import { dynamicProblemSolver } from './dynamicProblemSolver';
 import fetch from 'node-fetch';
+import { publicDataCollectionService } from './publicDataCollectionService';
 
 const REDDIT_CLIENT_ID     = process.env.REDDIT_CLIENT_ID     || '';
 const REDDIT_CLIENT_SECRET = process.env.REDDIT_CLIENT_SECRET || '';
@@ -124,6 +125,11 @@ export class LeadDiscoveryService {
 
     if (allLeads.length > 0) {
       await this.scoreAndUpsertLeads(userId, product, allLeads);
+      await publicDataCollectionService.collectForProduct(
+        userId,
+        product,
+        allLeads.map(lead => lead.sourceUrl || '').filter(Boolean),
+      ).catch(error => console.warn(`[LeadDiscovery] Public data collector skipped: ${error.message}`));
     }
   }
 

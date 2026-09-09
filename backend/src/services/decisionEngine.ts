@@ -22,7 +22,7 @@ export class DecisionEngine {
     this.supabase = getServiceSupabaseClient();
   }
 
-  async generateStrategy(memory: MemoryContext, goal: string, duration: number, economyMode = false): Promise<AIStrategy> {
+  async generateStrategy(memory: MemoryContext, goal: string, duration: number, economyMode = false, freeMode = false): Promise<AIStrategy> {
     console.log('AI Brain: Generating Dynamic Strategy with Intelligent Weighting...');
 
     // 1. GATHER all relevant intelligence sources
@@ -46,10 +46,12 @@ export class DecisionEngine {
       DYNAMIC WEIGHTS: ${JSON.stringify(weights)}
       GOAL: ${goal}
       DURATION: ${duration} days
+      ${freeMode ? 'FREE AI MODE: Do not recommend AI-generated video or web search. Video content is allowed only when the user supplies an uploaded video; use that uploaded video in the director/edit plan.' : ''}
 
       STRATEGIC FOCUS:
       - AdRoom's USP is achieving paid-ad results through organic automation.
       - Use Platform Intelligence to find current "Organic Boost" hacks (e.g., TikTok SEO, LinkedIn Video priority).
+      ${freeMode ? '- Do not schedule generated video assets. Prefer image, carousel, text, and user-uploaded-video edit tasks.' : ''}
       - Use Emotional Intelligence to "own" the category conversation.
       - Use Social Listening to "hijack" trending topics with high-relevance replies.
 

@@ -1,6 +1,8 @@
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import OpenAI from 'openai';
 import dotenv from 'dotenv';
+import { AsyncLocalStorage } from 'async_hooks';
+import { getServiceSupabaseClient } from './supabase';
 
 dotenv.config();
 
@@ -8,10 +10,123 @@ const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '');
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY || '',
 });
+const freeOpenAI = new OpenAI({
+  apiKey: process.env.FREE_MODELS_API || '',
+  baseURL: process.env.FREE_MODELS_BASE_URL || 'https://aihubmix.com/v1',
+});
+const freeFallbackOpenAI = new OpenAI({
+  apiKey: process.env.FREE_MODELS_API || '',
+  baseURL: process.env.FREE_MODELS_FALLBACK_BASE_URL || 'https://api.inferera.com',
+});
 
 const GEMINI_FLASH_MODEL = 'gemini-2.0-flash';
 const GEMINI_VISION_MODEL = 'gemini-2.0-flash';
 const OPENAI_STRATEGY_MODEL = process.env.OPENAI_TEXT_MODEL || 'gpt-4o';
+const FREE_TEXT_MODEL = 'gpt-4.1-free';
+const FREE_SMALL_MODEL = 'gpt-4.1-nano-free';
+const FREE_VISION_MODEL = 'gemini-3.1-flash-image-preview-free';
+const FREE_IMAGE_MODEL = 'gpt-image-2-free';
+
+export type AIRequestContext = { userId: string; plan: string; status: string };
+const aiRequestContext = new AsyncLocalStorage<AIRequestContext>();
+let persistedModeCache: { mode: 'tiered' | 'free' | 'paid'; expiresAt: number } | null = null;
+const freeRequestTimes: number[] = [];
+const freeDailyRequestTimes: number[] = [];
+
+export function getAIRequestContext() {
+  return aiRequestContext.getStore();
+}
+
+export function runWithAIRequestContext<T>(context: AIRequestContext, fn: () => T): T {
+  return aiRequestContext.run(context, fn);
+}
+
+export type AIPolicyMode = 'tiered' | 'free' | 'paid';
+
+async function getPersistedPolicyMode(): Promise<AIPolicyMode> {
+  if (persistedModeCache && persistedModeCache.expiresAt > Date.now()) return persistedModeCache.mode;
+  try {
+    const { data } = await getServiceSupabaseClient()
+      .from('model_override_config')
+      .select('forced_model, override_active')
+      .eq('operation', 'all')
+      .maybeSingle();
+    const forced = String(data?.forced_model || 'auto');
+    const mode: AIPolicyMode = forced === 'free' || forced === 'economy'
+      ? 'free'
+      : forced === 'paid' || forced === 'premium' ? 'paid' : 'tiered';
+    persistedModeCache = { mode: data?.override_active === false ? 'tiered' : mode, expiresAt: Date.now() + 5000 };
+  } catch {
+    persistedModeCache = { mode: 'tiered', expiresAt: Date.now() + 5000 };
+  }
+  return persistedModeCache.mode;
+}
+
+async function useFreeModels() {
+  const mode = await getPersistedPolicyMode();
+  const context = getAIRequestContext();
+  if (mode === 'free') return true;
+  if (mode === 'paid') return false;
+  return !context || context.status === 'trialing' || context.plan === 'none' || context.plan === 'trial';
+}
+
+export async function isFreeAIRequest() {
+  return useFreeModels();
+}
+
+function providerError(error: any): Error {
+  const status = Number(error?.status || error?.response?.status || 0);
+  if ([404, 429, 503].includes(status)) return new Error('The free AI service is busy right now. Please try again shortly.');
+  return new Error(error?.message || 'AI service temporarily unavailable.');
+}
+
+async function reserveFreeQuota(estimatedTokens: number) {
+  let reservation: any = null;
+  try {
+    const result = await getServiceSupabaseClient().rpc('reserve_free_ai_request', { p_tokens: estimatedTokens });
+    if (result.error) throw result.error;
+    reservation = result.data;
+    if (!reservation?.allowed) {
+      const active = Number(reservation.active || 5);
+      const minutes = Math.max(1, Math.ceil(active / 5));
+      throw Object.assign(new Error(`Free AI capacity is currently full (${active} users in use). Estimated wait: about ${minutes} minute${minutes === 1 ? '' : 's'}.`), { status: 429 });
+    }
+  } catch (error: any) {
+    // Keep older deployments usable until the migration is applied; the local
+    // limiter is conservative and is replaced automatically once RPC exists.
+    if (!String(error?.message || '').includes('reserve_free_ai_request')) throw error;
+    const now = Date.now();
+    while (freeRequestTimes[0] && now - freeRequestTimes[0] >= 60_000) freeRequestTimes.shift();
+    while (freeDailyRequestTimes[0] && now - freeDailyRequestTimes[0] >= 86_400_000) freeDailyRequestTimes.shift();
+    if (freeRequestTimes.length >= 5 || freeDailyRequestTimes.length >= 500) {
+      const minutes = Math.max(1, Math.ceil(freeRequestTimes.length / 5));
+      throw Object.assign(new Error(`Free AI capacity is currently full (${freeRequestTimes.length} users in use). Estimated wait: about ${minutes} minute${minutes === 1 ? '' : 's'}.`), { status: 429 });
+    }
+    freeRequestTimes.push(now);
+    freeDailyRequestTimes.push(now);
+  }
+  return reservation;
+}
+
+async function freeChat(params: any) {
+  const reservation = await reserveFreeQuota(Number(params.max_tokens || 4096));
+  try {
+    const response = await freeOpenAI.chat.completions.create(params);
+    const usage = Number((response as any).usage?.total_tokens || 0);
+    await getServiceSupabaseClient().from('ai_usage_logs').insert({
+      user_id: getAIRequestContext()?.userId || null,
+      model: params.model,
+      operation: 'free_ai_request',
+      actual_cost_usd: 0,
+      energy_debited: 0,
+      metadata: { tokens: usage, quota: reservation },
+    });
+    return response;
+  } catch (error: any) {
+    if (!error?.status || error.status >= 500) return freeFallbackOpenAI.chat.completions.create(params);
+    throw error;
+  }
+}
 
 // ── Global admin model override ────────────────────────────────────────────────
 // Admin can switch the entire system between 'auto' | 'economy' | 'premium'.
@@ -30,6 +145,7 @@ export function setModelOverride(mode: 'auto' | 'economy' | 'premium', reason = 
   _globalModelOverride = mode;
   _modelOverrideReason = reason;
   _modelOverrideSetAt = mode === 'auto' ? null : new Date().toISOString();
+  persistedModeCache = { mode: mode === 'economy' ? 'free' : mode === 'premium' ? 'paid' : 'tiered', expiresAt: Date.now() + 5000 };
   console.log(`[AI:ModelOverride] Set to '${mode}'${reason ? ` — ${reason}` : ''}`);
 }
 
@@ -61,6 +177,7 @@ export class AIEngine {
   }
 
   async analyzeImage(imageBase64: string, prompt: string): Promise<AIResponse> {
+    if (await useFreeModels()) return this.analyzeImageFree(imageBase64, prompt);
     aiLog('GEMINI-VISION', `analyzeImage START — model: ${GEMINI_VISION_MODEL}`);
     try {
       const model = genAI.getGenerativeModel({ model: GEMINI_VISION_MODEL });
@@ -98,6 +215,7 @@ export class AIEngine {
   }
 
   async generateStrategy(context: any, prompt: string): Promise<AIResponse> {
+    if (await useFreeModels()) return this.generateStrategyFree(context, prompt);
     // Admin economy override: route premium request to Gemini Flash
     if (_globalModelOverride === 'economy') {
       aiLog('GPT-4o', 'generateStrategy OVERRIDE→economy (admin forced)');
@@ -135,6 +253,41 @@ export class AIEngine {
       aiLog('GPT-4o', 'generateStrategy ERROR', error.message);
       throw new Error(`OpenAI Strategy Generation Failed: ${error.message}`);
     }
+  }
+
+  private async generateStrategyFree(context: any, prompt: string): Promise<AIResponse> {
+    try {
+      const completion = await freeChat({
+        model: FREE_TEXT_MODEL,
+        messages: [
+          { role: 'system', content: 'You are Adirum AI Core Brain. Return valid JSON only, without markdown.' },
+          { role: 'user', content: `Context: ${JSON.stringify(context)}\n\nTask: ${prompt}` },
+        ],
+        response_format: { type: 'json_object' },
+        temperature: 0.7,
+      });
+      const text = completion.choices[0]?.message?.content || '';
+      let parsedJson: any;
+      try { parsedJson = JSON.parse(text); } catch { /* caller can handle raw text */ }
+      return { text, parsedJson };
+    } catch (error: any) { throw providerError(error); }
+  }
+
+  private async analyzeImageFree(imageBase64: string, prompt: string): Promise<AIResponse> {
+    try {
+      const completion = await freeChat({
+        model: FREE_VISION_MODEL,
+        messages: [{ role: 'user', content: [
+          { type: 'text', text: prompt },
+          { type: 'image_url', image_url: { url: `data:image/jpeg;base64,${imageBase64}` } },
+        ] as any }],
+        response_format: { type: 'json_object' },
+      });
+      const text = completion.choices[0]?.message?.content || '';
+      let parsedJson: any;
+      try { parsedJson = JSON.parse(text); } catch { /* caller can handle raw text */ }
+      return { text, parsedJson };
+    } catch (error: any) { throw providerError(error); }
   }
 
   /**
@@ -197,6 +350,7 @@ export class AIEngine {
   }
 
   async generateJson(prompt: string): Promise<any> {
+    if (await useFreeModels()) return (await this.generateStrategyFree({}, prompt)).parsedJson ?? null;
     aiLog('GEMINI-FLASH', `generateJson START — model: ${GEMINI_FLASH_MODEL}`);
     try {
       const model = genAI.getGenerativeModel({ model: GEMINI_FLASH_MODEL });
@@ -216,6 +370,12 @@ export class AIEngine {
   }
 
   async generateText(prompt: string): Promise<string> {
+    if (await useFreeModels()) {
+      try {
+        const result = await freeChat({ model: FREE_SMALL_MODEL, messages: [{ role: 'user', content: prompt }] });
+        return result.choices[0]?.message?.content || '';
+      } catch (error: any) { throw providerError(error); }
+    }
     aiLog('GEMINI-FLASH', `generateText START — model: ${GEMINI_FLASH_MODEL}`);
     try {
       const model = genAI.getGenerativeModel({ model: GEMINI_FLASH_MODEL });
@@ -231,6 +391,38 @@ export class AIEngine {
   }
 
   async generateImage(imagePrompt: string): Promise<{ base64: string; mimeType: string } | null> {
+    if (await useFreeModels()) {
+      try {
+        await reserveFreeQuota(0);
+        const mediaUrls = [
+          `${(process.env.FREE_MODELS_MEDIA_BASE_URL || 'https://aihubmix.com/ai/v1').replace(/\/$/, '')}/images/generations`,
+          `${(process.env.FREE_MODELS_FALLBACK_MEDIA_BASE_URL || 'https://api.inferera.com/ai/v1').replace(/\/$/, '')}/images/generations`,
+        ];
+        let response: Response | null = null;
+        let data: any = {};
+        for (const url of mediaUrls) {
+          response = await fetch(url, {
+            method: 'POST',
+            headers: { Authorization: `Bearer ${process.env.FREE_MODELS_API || ''}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ model: FREE_IMAGE_MODEL, prompt: imagePrompt, n: 1, response_format: 'b64_json' }),
+          });
+          data = await response.json().catch(() => ({}));
+          if (response.ok) break;
+        }
+        if (!response?.ok) throw Object.assign(new Error(data?.error?.message || `Provider error ${response?.status || 503}`), { status: response?.status || 503 });
+        const base64 = data?.data?.[0]?.b64_json;
+        if (!base64) throw new Error('No image data returned by the free image model');
+        await getServiceSupabaseClient().from('ai_usage_logs').insert({
+          user_id: getAIRequestContext()?.userId || null,
+          model: FREE_IMAGE_MODEL,
+          operation: 'free_ai_request',
+          actual_cost_usd: 0,
+          energy_debited: 0,
+          metadata: { tokens: 0 },
+        });
+        return { base64, mimeType: 'image/png' };
+      } catch (error: any) { aiLog('AIHUBMIX-IMAGE', 'generateImage ERROR', error.message); return null; }
+    }
     const GEMINI_API_KEY = process.env.GEMINI_API_KEY || '';
     aiLog('GEMINI-IMAGEN', `generateImage START — prompt: ${imagePrompt.substring(0, 80)}...`);
 
@@ -271,6 +463,10 @@ export class AIEngine {
     imageBase64?: string | null,
     imageMime = 'image/png',
   ): Promise<{ url: string; taskId: string } | null> {
+    if (await useFreeModels()) {
+      aiLog('AIHUBMIX', 'generateVideo SKIP — video generation is disabled in free AI mode');
+      return null;
+    }
     const key = process.env.RUNWAY_API_KEY || '';
     if (!key) { aiLog('RUNWAY', 'generateVideo SKIP — RUNWAY_API_KEY not set'); return null; }
     aiLog('RUNWAY', `generateVideo START — prompt: ${promptText.slice(0, 80)}...`);

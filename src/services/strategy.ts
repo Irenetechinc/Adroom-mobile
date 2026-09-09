@@ -11,10 +11,28 @@ export interface GeneratedStrategy {
 }
 
 export const StrategyService = {
+  async getConnectedAccounts(): Promise<Array<{ platform: string; name?: string }>> {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session?.access_token || !BACKEND_URL) throw new Error('User not authenticated');
+    const response = await fetch(`${BACKEND_URL}/api/platform-configs`, {
+      headers: { Authorization: `Bearer ${session.access_token}` },
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || 'Could not load connected accounts');
+    return Object.values(data.configs || {}).map((config: any) => ({
+      platform: config.platform,
+      name: config.page_name || config.account_name || config.platform,
+    }));
+  },
+
   /**
    * Generates comprehensive marketing strategies using the AI Brain.
    */
-  async generateStrategies(productId: string, goal: string, duration: number): Promise<GeneratedStrategy> {
+  async generateStrategies(productId: string, goal: string, duration: number, options?: {
+    selectedAccounts?: string[];
+    productType?: 'physical' | 'digital';
+    dispatchAddress?: string;
+  }): Promise<GeneratedStrategy> {
     RemoteLogger.log('STRATEGY', `Generating strategies for product ${productId}, goal: ${goal}, duration: ${duration}`);
 
     try {
@@ -42,6 +60,9 @@ export const StrategyService = {
           goal,
           duration,
           contextType: 'product',
+          selectedAccounts: options?.selectedAccounts,
+          productType: options?.productType,
+          dispatchAddress: options?.dispatchAddress,
         }),
       });
 

@@ -11,6 +11,9 @@ interface ProductData {
   currency: string;
   category: string;
   targetAudience: string;
+  productType: 'physical' | 'digital';
+  dispatchAddress: string;
+  selectedAccounts: string[];
 }
 
 interface StrategyCreationState {
@@ -46,6 +49,9 @@ const defaultProductData: ProductData = {
   currency: 'USD',
   category: '',
   targetAudience: '',
+  productType: 'physical',
+  dispatchAddress: '',
+  selectedAccounts: [],
 };
 
 export const useStrategyCreationStore = create<StrategyCreationState>((set) => ({

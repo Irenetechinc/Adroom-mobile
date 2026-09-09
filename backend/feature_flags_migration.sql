@@ -37,7 +37,12 @@ INSERT INTO feature_flags (flag_key, label, description, enabled) VALUES
   ('dm_detection',          'Inbound DM Detection',     'Poll platforms for incoming DM replies from leads',         true),
   ('token_refresh',         'OAuth Token Refresh',      'Automatically refresh expiring platform OAuth tokens',      true),
   ('product_manager',       'AI Product Manager',       'Autonomous product improvement agent (every 4 hrs)',        true),
-  ('performance_monitoring','Performance Monitoring',   'Fetch real post metrics from connected platforms',          true)
+  ('performance_monitoring','Performance Monitoring',   'Fetch real post metrics from connected platforms',          true),
+  ('lead_profile_builder',  'Lead Sales Profile Builder','Build sales preparation profiles from permitted evidence', true),
+  ('lead_profile_public_mentions','Public Mention Evidence','Allow public prospect excerpts in sales profiles',     true),
+  ('calling_ui',            'Calling UI',               'Show call activity and calling controls in the app',         true),
+  ('shipping_ui',           'Shipping UI',              'Show order and shipment tracking in the app',                true),
+  ('outreach_preferences_ui','Outreach Preferences UI', 'Show outreach preference controls in the app',               true)
 ON CONFLICT (flag_key) DO NOTHING;
 
 NOTIFY pgrst, 'reload schema';

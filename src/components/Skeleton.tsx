@@ -68,7 +68,7 @@ export const AuthLoadingSkeleton = () => {
   useEffect(() => {
     scale.value = withRepeat(
       withSequence(
-        withTiming(1.06, { duration: 1400, easing: Easing.inOut(Easing.ease) }),
+        withTiming(1.08, { duration: 1400, easing: Easing.inOut(Easing.ease) }),
         withTiming(1, { duration: 1400, easing: Easing.inOut(Easing.ease) }),
       ),
       -1,
@@ -76,7 +76,7 @@ export const AuthLoadingSkeleton = () => {
     );
     glow.value = withRepeat(
       withSequence(
-        withTiming(0.9, { duration: 1400, easing: Easing.inOut(Easing.ease) }),
+        withTiming(0.95, { duration: 1400, easing: Easing.inOut(Easing.ease) }),
         withTiming(0.45, { duration: 1400, easing: Easing.inOut(Easing.ease) }),
       ),
       -1,
@@ -89,8 +89,11 @@ export const AuthLoadingSkeleton = () => {
 
   return (
     <View style={splashStyles.root}>
+      <Animated.View style={[splashStyles.backdropGlow, { opacity: 0.9 }, ringStyle]} />
+      <Animated.View style={[splashStyles.backdropGlowSecondary, { opacity: 0.8 }, ringStyle]} />
+      <Animated.View style={[splashStyles.backdropGlowTertiary, { opacity: 0.7 }, ringStyle]} />
+
       <View style={splashStyles.center}>
-        <Animated.View style={[splashStyles.glowRing, ringStyle]} />
         <Animated.View style={[splashStyles.logoWrap, logoStyle]}>
           <Image
             source={require('../../assets/icon.png')}
@@ -98,19 +101,28 @@ export const AuthLoadingSkeleton = () => {
             resizeMode="contain"
           />
         </Animated.View>
+
         <Text style={splashStyles.brand}>Adirum AI</Text>
-        <Text style={splashStyles.tagline}>Autonomous Marketing Workforce</Text>
+        <Text style={splashStyles.tagline}>Momentum, strategy, conversion</Text>
+
+        <View style={splashStyles.metaRow}>
+          <Text style={splashStyles.metaPill}>Strategy</Text>
+          <Text style={splashStyles.metaPill}>Automation</Text>
+          <Text style={splashStyles.metaPill}>Insights</Text>
+        </View>
+
+        <View style={splashStyles.loaderShell}>
+          <Animated.View style={[splashStyles.loaderBar, ringStyle]} />
+        </View>
       </View>
+
       <View style={splashStyles.footer}>
         <View style={splashStyles.dotRow}>
           <PulseDot delay={0} />
           <PulseDot delay={200} />
           <PulseDot delay={400} />
         </View>
-        <Text style={splashStyles.poweredBy}>
-          powered by{' '}
-          <Text style={splashStyles.poweredByBrand}>Adirum Ltd</Text>
-        </Text>
+        <Text style={splashStyles.poweredBy}>Powered by Adirum</Text>
       </View>
     </View>
   );
@@ -134,7 +146,6 @@ function PulseDot({ delay }: { delay: number }) {
       style={[
         { width: 6, height: 6, borderRadius: 3, backgroundColor: '#00F0FF', marginHorizontal: 3 },
         animStyle,
-        { transform: [{ translateX: 0 }] },
       ]}
     />
   );
@@ -208,28 +219,131 @@ export const AgentChatSkeleton = () => {
 };
 
 const splashStyles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: '#0B0F19', alignItems: 'center', justifyContent: 'center' },
-  center: { alignItems: 'center', justifyContent: 'center' },
-  glowRing: {
+  root: {
+    flex: 1,
+    backgroundColor: '#07111C',
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'hidden',
+  },
+  backdropGlow: {
     position: 'absolute',
-    width: 180, height: 180, borderRadius: 90,
-    backgroundColor: 'rgba(0,240,255,0.10)',
-    borderWidth: 1, borderColor: 'rgba(0,240,255,0.25)',
+    width: 340,
+    height: 340,
+    borderRadius: 170,
+    backgroundColor: 'rgba(0, 240, 255, 0.16)',
+    borderWidth: 1,
+    borderColor: 'rgba(0, 240, 255, 0.22)',
+    top: -100,
+    right: -80,
+  },
+  backdropGlowSecondary: {
+    position: 'absolute',
+    width: 300,
+    height: 300,
+    borderRadius: 150,
+    backgroundColor: 'rgba(96, 165, 250, 0.12)',
+    borderWidth: 1,
+    borderColor: 'rgba(96, 165, 250, 0.15)',
+    bottom: -90,
+    left: -60,
+  },
+  backdropGlowTertiary: {
+    position: 'absolute',
+    width: 220,
+    height: 220,
+    borderRadius: 110,
+    backgroundColor: 'rgba(167, 139, 250, 0.10)',
+    borderWidth: 1,
+    borderColor: 'rgba(167, 139, 250, 0.18)',
+    top: '56%',
+    left: '55%',
+  },
+  center: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 28,
+    zIndex: 1,
   },
   logoWrap: {
-    width: 110, height: 110, borderRadius: 32,
-    backgroundColor: '#151B2B',
-    borderWidth: 1.5, borderColor: 'rgba(0,240,255,0.25)',
-    alignItems: 'center', justifyContent: 'center',
-    marginBottom: 28, overflow: 'hidden',
+    width: 130,
+    height: 130,
+    borderRadius: 36,
+    backgroundColor: '#0F1B2A',
+    borderWidth: 1.5,
+    borderColor: 'rgba(0, 240, 255, 0.22)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 26,
+    overflow: 'hidden',
+    shadowColor: '#00F0FF',
+    shadowOpacity: 0.22,
+    shadowRadius: 28,
+    shadowOffset: { width: 0, height: 12 },
   },
-  logo: { width: 88, height: 88, borderRadius: 24 },
-  brand: { color: '#FFFFFF', fontSize: 26, fontWeight: '900', letterSpacing: -0.4 },
-  tagline: { color: '#64748B', fontSize: 13, marginTop: 8, fontWeight: '500', letterSpacing: 0.2 },
-  footer: { position: 'absolute', bottom: 44, alignItems: 'center' },
+  logo: { width: 92, height: 92, borderRadius: 24 },
+  brand: {
+    color: '#F8FAFC',
+    fontSize: 30,
+    fontWeight: '900',
+    letterSpacing: -0.7,
+    marginBottom: 8,
+  },
+  tagline: {
+    color: '#B2C7DA',
+    fontSize: 13,
+    fontWeight: '700',
+    letterSpacing: 1.05,
+    textTransform: 'uppercase',
+  },
+  metaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexWrap: 'wrap',
+    marginTop: 18,
+    marginBottom: 28,
+  },
+  metaPill: {
+    color: '#D7E7F8',
+    backgroundColor: 'rgba(148, 163, 184, 0.08)',
+    borderWidth: 1,
+    borderColor: 'rgba(148, 163, 184, 0.12)',
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    marginHorizontal: 4,
+    marginVertical: 4,
+    fontSize: 10,
+    fontWeight: '700',
+    letterSpacing: 0.8,
+    textTransform: 'uppercase',
+  },
+  loaderShell: {
+    width: 180,
+    height: 6,
+    borderRadius: 999,
+    backgroundColor: 'rgba(148, 163, 184, 0.15)',
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: 'rgba(0, 240, 255, 0.12)',
+  },
+  loaderBar: {
+    flex: 1,
+    backgroundColor: '#00F0FF',
+    borderRadius: 999,
+    minWidth: 26,
+  },
+  footer: { position: 'absolute', bottom: 44, alignItems: 'center', zIndex: 1 },
   dotRow: { flexDirection: 'row', marginBottom: 14 },
-  poweredBy: { color: '#334155', fontSize: 11, letterSpacing: 0.6, textTransform: 'uppercase', fontWeight: '500' },
-  poweredByBrand: { color: '#00F0FF', fontWeight: '700', letterSpacing: 1.2 },
+  poweredBy: {
+    color: '#64748B',
+    fontSize: 11,
+    letterSpacing: 0.7,
+    textTransform: 'uppercase',
+    fontWeight: '600',
+  },
+  poweredByBrand: { color: '#00F0FF', fontWeight: '800', letterSpacing: 1.2 },
 });
 
 const chatStyles = StyleSheet.create({

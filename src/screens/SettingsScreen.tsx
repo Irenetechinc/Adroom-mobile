@@ -13,11 +13,13 @@ import { DrawerActions } from '@react-navigation/native';
 import {
   Menu, Link, LogOut, User, Shield, ChevronRight,
   Bell, HelpCircle, Info, Settings as SettingsIcon, Zap, Gift,
+  Phone, Truck,
 } from 'lucide-react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import Animated, { FadeInDown } from 'react-native-reanimated';
 import { useEnergyStore, PLAN_DETAILS } from '../store/energyStore';
 import { Skeleton } from '../components/Skeleton';
+import { useFeatureFlags } from '../hooks/useFeatureFlags';
 
 function SettingsSkeleton({ insets }: { insets: { bottom: number } }) {
   return (
@@ -60,6 +62,7 @@ export default function SettingsScreen() {
   const insets = useSafeAreaInsets();
   const { account, subscription, fetchEnergy, isLoading: energyLoading } = useEnergyStore();
   const [ready, setReady] = useState(false);
+  const { isEnabled } = useFeatureFlags();
 
   // Single source of truth for unread notifications — App.tsx attaches the
   // realtime subscription as soon as we have a session, so this badge stays
@@ -149,6 +152,27 @@ export default function SettingsScreen() {
           badge: unreadCount,
           onPress: () => navigation.navigate('Notifications'),
         },
+        ...(isEnabled('calling_ui') ? [{
+          icon: Phone,
+          label: 'Call Activity',
+          sublabel: 'Call activity and outcomes',
+          color: '#00F0FF',
+          onPress: () => navigation.navigate('CallLogs'),
+        }] : []),
+        ...(isEnabled('shipping_ui') ? [{
+          icon: Truck,
+          label: 'Orders & Shipping',
+          sublabel: 'Dispatch and delivery tracking',
+          color: '#F59E0B',
+          onPress: () => navigation.navigate('Shipments'),
+        }] : []),
+        ...(isEnabled('outreach_preferences_ui') ? [{
+          icon: Shield,
+          label: 'Outreach Privacy',
+          sublabel: 'Calls and public mention evidence',
+          color: '#10B981',
+          onPress: () => navigation.navigate('OutreachPreferences'),
+        }] : []),
         {
           icon: Shield,
           label: 'Privacy & Security',

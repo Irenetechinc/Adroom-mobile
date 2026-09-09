@@ -117,7 +117,7 @@ export default function App() {
           ) {
             navigate('Notifications');
           } else if (screen === 'AgentChat') {
-            navigate('AgentChat', {});
+            navigate('AgentChat', { shipmentId: data.shipment_id as string | undefined });
           }
         } catch {}
       },

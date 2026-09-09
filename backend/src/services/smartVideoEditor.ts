@@ -1,6 +1,6 @@
 import { AIEngine } from '../config/ai-models';
 import { getServiceSupabaseClient } from '../config/supabase';
-import { exec } from 'child_process';
+import { execFile } from 'child_process';
 import { promisify } from 'util';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -8,10 +8,11 @@ import * as os from 'os';
 import * as https from 'https';
 import * as http from 'http';
 
-const execAsync = promisify(exec);
+const execFileAsync = promisify(execFile);
 
 export interface VideoEditRequest {
   videoUri: string;
+  audioUri?: string;
   productName: string;
   goal: string;
   platform: string;
@@ -125,7 +126,7 @@ Rules:
     };
   }
 
-  async saveEditPlan(userId: string, strategyId: string, videoUri: string, editResult: VideoEditResult, extras?: { platform?: string; productId?: string; directorProfileId?: string }): Promise<string> {
+  async saveEditPlan(userId: string, strategyId: string | null, videoUri: string, editResult: VideoEditResult, extras?: { platform?: string; productId?: string; directorProfileId?: string }): Promise<string> {
     const { data, error } = await this.supabase
       .from('video_edit_jobs')
       .insert({
@@ -187,9 +188,23 @@ Rules:
       const plan = job.edit_plan || {};
       const outputPath = path.join(tmpDir, 'edited_output.mp4');
       const sourceVideoPath = path.join(tmpDir, 'source_video.mp4');
+      let renderInputPath = sourceVideoPath;
 
       console.log(`[SmartVideoEditor] Downloading source video from ${job.source_video_uri}`);
       await this.downloadFile(job.source_video_uri, sourceVideoPath);
+
+      const audioUri = typeof plan.__audioUri === 'string' ? plan.__audioUri : null;
+      const audioPath = path.join(tmpDir, 'music_track');
+      const beatOutputPath = path.join(tmpDir, 'beat_output.mp4');
+      if (audioUri) await this.downloadFile(audioUri, audioPath);
+      const beatAdapter = path.resolve(__dirname, '../../vendor/video-tools/run-beat-edit.py');
+      const python = process.env.VIDEO_TOOLS_PYTHON || 'python3';
+      const beatArgs = [beatAdapter, '--video', sourceVideoPath, '--output', beatOutputPath,
+        '--beat-stride', String(Math.min(16, Math.max(1, Number(plan.__beatStride) || 1)))];
+      if (audioUri) beatArgs.push('--audio', audioPath);
+      console.log(`[SmartVideoEditor] Running video edit pipeline for job ${jobId}...`);
+      await execFileAsync(python, beatArgs, { maxBuffer: 100 * 1024 * 1024 });
+      renderInputPath = beatOutputPath;
 
       const aspectRatioFilter = this.buildAspectRatioFilter(plan.aspectRatio || '9:16');
       const colorFilter = this.buildColorFilter(plan.filters || []);
@@ -197,18 +212,22 @@ Rules:
       const allFilters = [aspectRatioFilter, colorFilter].filter(Boolean).join(',');
       const videoFilter = allFilters || 'scale=1080:1920:force_original_aspect_ratio=decrease,pad=1080:1920:(ow-iw)/2:(oh-ih)/2:black,setsar=1';
 
-      const totalDuration = plan.scenes?.reduce((sum: number, s: any) => sum + (s.duration || 5), 0) || job.estimated_duration || 30;
+      const requestedDuration = plan.scenes?.reduce((sum: number, s: any) => {
+        const duration = Number(s?.duration);
+        return sum + (Number.isFinite(duration) ? duration : 5);
+      }, 0) || Number(job.estimated_duration) || 30;
+      const totalDuration = Math.min(600, Math.max(1, Math.round(requestedDuration)));
 
-      const ffmpegCmd =
-        `ffmpeg -y -i "${sourceVideoPath}" ` +
-        `-vf "${videoFilter}" ` +
-        `-t ${totalDuration} ` +
-        `-c:v libx264 -pix_fmt yuv420p -crf 23 -r 30 ` +
-        `-c:a aac -b:a 128k ` +
-        `"${outputPath}"`;
-
-      console.log(`[SmartVideoEditor] Running ffmpeg for job ${jobId}...`);
-      await execAsync(ffmpegCmd, { maxBuffer: 100 * 1024 * 1024 });
+      console.log(`[SmartVideoEditor] Running FFmpeg finishing pass for job ${jobId}...`);
+      await execFileAsync('ffmpeg', [
+        '-y', '-i', renderInputPath,
+        '-vf', videoFilter,
+        '-t', String(totalDuration),
+        '-map', '0:v:0', '-map', '0:a?',
+        '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-crf', '23', '-r', '30',
+        '-c:a', 'aac', '-b:a', '128k',
+        outputPath,
+      ], { maxBuffer: 100 * 1024 * 1024 });
 
       const fileName = `edited_${jobId}_${Date.now()}.mp4`;
       const videoBuffer = await fs.promises.readFile(outputPath);
@@ -303,14 +322,29 @@ Rules:
 
   private downloadFile(url: string, dest: string): Promise<void> {
     return new Promise((resolve, reject) => {
-      const protocol: typeof https | typeof http = url.startsWith('https') ? https : http;
+      let parsed: URL;
+      try { parsed = new URL(url); } catch { reject(new Error('Invalid source video URL')); return; }
+      const isDevelopmentHttp = process.env.NODE_ENV !== 'production' && parsed.protocol === 'http:';
+      if (parsed.protocol !== 'https:' && !isDevelopmentHttp) {
+        reject(new Error('Source video must use HTTPS')); return;
+      }
+      if (['localhost', '127.0.0.1', '0.0.0.0', '::1'].includes(parsed.hostname) ||
+          /^(10\.|192\.168\.|172\.(1[6-9]|2\d|3[0-1])\.)/.test(parsed.hostname)) {
+        reject(new Error('Private source video hosts are not allowed')); return;
+      }
+      const protocol: typeof https | typeof http = parsed.protocol === 'https:' ? https : http;
       const file = fs.createWriteStream(dest);
-      protocol.get(url, (response) => {
+      let bytes = 0;
+      protocol.get(parsed, (response) => {
         if (response.statusCode && response.statusCode >= 400) {
           file.close();
           reject(new Error(`HTTP ${response.statusCode} for ${url}`));
           return;
         }
+        response.on('data', (chunk: Buffer) => {
+          bytes += chunk.length;
+          if (bytes > 250 * 1024 * 1024) response.destroy(new Error('Source video exceeds 250 MB'));
+        });
         response.pipe(file);
         file.on('finish', () => { file.close(); resolve(); });
         file.on('error', (err) => { fs.unlink(dest, () => {}); reject(err); });
