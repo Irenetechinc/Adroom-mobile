@@ -123,7 +123,7 @@ export default function CampaignListScreen() {
               </View>
               <Text style={styles.emptyTitle}>No campaigns yet</Text>
               <Text style={styles.emptySubtitle}>
-                Ask the AdRoom Agent to create your first campaign strategy.
+                Ask the Adirum AI Agent to create your first campaign strategy.
               </Text>
               <TouchableOpacity
                 onPress={() => navigation.navigate('AgentChat', { fromStrategyApproval: false })}

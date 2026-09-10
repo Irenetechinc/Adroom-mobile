@@ -45,6 +45,7 @@ export interface ChatMessage {
     | 'brand_intake_form'
     | 'product_manual_form'
     | 'strategy_type_selection'
+    | 'strategy_account_selection'
     | 'goal_selection'
     | 'duration_selection'
     | 'strategy_comparison'

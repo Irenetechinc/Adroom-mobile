@@ -1465,7 +1465,7 @@ app.post('/api/ai/scan-product', async (req, res) => {
  * Generate Strategy — full intelligence pipeline with step-by-step logging
  */
 app.post('/api/ai/generate-strategy', async (req, res) => {
-  const { productId, goal, duration, selectedAccounts, productType, dispatchAddress } = req.body;
+  const { productId, goal, duration, selectedAccounts, productType, dispatchAddress, product: submittedProduct } = req.body;
     const ts = () => new Date().toISOString();
     console.log(`\n[Strategy] ═══════════════════════════════════════`);
     console.log(`[Strategy] [${ts()}] NEW STRATEGY GENERATION REQUEST`);
@@ -1479,6 +1479,12 @@ app.post('/api/ai/generate-strategy', async (req, res) => {
         const requestedAccounts = Array.isArray(selectedAccounts)
           ? [...new Set(selectedAccounts.map((account: unknown) => String(account).trim().toLowerCase()).filter(Boolean))]
           : [];
+        if (requestedAccounts.length === 0) {
+          return res.status(400).json({
+            error: 'SOCIAL_ACCOUNTS_REQUIRED',
+            message: 'Select at least one connected social account before generating this strategy.',
+          });
+        }
         if (requestedAccounts.length > 0) {
           const { data: connectedAccounts, error: accountError } = await supabase
             .from('ad_configs')
@@ -1534,6 +1540,13 @@ app.post('/api/ai/generate-strategy', async (req, res) => {
         const freeMode = await isFreeAIRequest();
         const retriever = new MemoryRetriever(supabase);
         const context = await retriever.getAllContext(user.id, productId, 'product');
+        const { data: savedProduct } = await supabase
+          .from('product_memory')
+          .select('*')
+          .eq('product_id', productId)
+          .eq('user_id', user.id)
+          .maybeSingle();
+        context.product = savedProduct || submittedProduct || context.product || {};
 
         console.log(`[Strategy] [${ts()}] STEP 3 — Memory context assembled:`);
         console.log(`[Strategy]   Platform Intelligence: ${context.platformIntelligence?.length || 0} signals`);
@@ -1547,7 +1560,11 @@ app.post('/api/ai/generate-strategy', async (req, res) => {
           console.log(`[CMA] Economy routing: saved ${cmaResult.savedCredits} credits for this user`);
         }
 
-        const strategy = await decisionEngine.generateStrategy(context, goal, duration, economyMode, freeMode);
+        const strategy = await decisionEngine.generateStrategy(context, goal, duration, economyMode, freeMode, {
+          selectedAccounts: requestedAccounts,
+          productType: normalizedProductType,
+          dispatchAddress: normalizedProductType === 'physical' ? String(dispatchAddress).trim() : null,
+        });
 
         console.log(`[Strategy] [${ts()}] STEP 5 — Strategy generated successfully`);
         console.log(`[Strategy]   Title: ${strategy.title}`);
@@ -1580,7 +1597,11 @@ app.post('/api/ai/generate-strategy', async (req, res) => {
         }
 
         // Deduct energy after successful generation (CMA-routed — uses economy cost if applicable)
-        await deductEnergyForUser(user.id, 'generate_strategy', { economy_mode: economyMode });
+        await deductEnergyForUser(user.id, 'generate_strategy', {
+          economy_mode: economyMode,
+          cma_model: cmaResult.model,
+          cma_credits: cmaResult.credits,
+        }, cmaResult);
 
         // Generate 7-day content preview asynchronously (lightweight — text only, no images)
         let weekPreview: any[] = [];

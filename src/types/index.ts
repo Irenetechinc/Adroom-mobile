@@ -10,6 +10,7 @@ export type RootStackParamList = {
   AgentChat: { 
     fromStrategyApproval?: boolean;
     shipmentId?: string;
+    strategyAccountSelection?: boolean;
     connectFacebook?: boolean;
     connectInstagram?: boolean;
     connectTikTok?: boolean;
@@ -31,6 +32,7 @@ export type RootStackParamList = {
   // Strategy Creation Wizard
   StrategyWizard_ProductIntake: undefined;
   StrategyWizard_GoalSelection: undefined;
+  StrategyWizard_AccountSelection: undefined;
   StrategyWizard_DurationSelection: undefined;
   StrategyWizard_Comparison: undefined;
 

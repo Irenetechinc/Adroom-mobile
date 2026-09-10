@@ -67,6 +67,16 @@ export default function DurationSelectionScreen() {
         selectedAccounts: productData.selectedAccounts,
         productType: productData.productType,
         dispatchAddress: productData.dispatchAddress,
+        product: {
+          name: productData.name,
+          description: productData.description,
+          category: productData.category,
+          targetAudience: productData.targetAudience,
+          price: productData.price,
+          currency: productData.currency,
+          websiteUrl: productData.websiteUrl,
+          videoUri: productData.videoUri,
+        },
       });
       setGeneratedStrategies(strategies);
       navigation.navigate('StrategyWizard_Comparison');
@@ -150,7 +160,7 @@ export default function DurationSelectionScreen() {
                 onPress={() => setSelectedDuration(option.days)}
                 style={[
                   styles.durationCard,
-                  isSelected && { borderColor: option.color, backgroundColor: `${option.color}0D` },
+                  isSelected && { backgroundColor: `${option.color}14`, shadowColor: option.color, shadowOpacity: 0.16, shadowRadius: 12 },
                 ]}
                 activeOpacity={0.8}
               >
@@ -257,7 +267,7 @@ const styles = StyleSheet.create({
   durationCard: {
     flexDirection: 'row', alignItems: 'center', gap: 14,
     padding: 16, borderRadius: 16,
-    backgroundColor: `${COLORS.card}`, borderWidth: 1.5, borderColor: COLORS.border,
+    backgroundColor: `${COLORS.card}`, shadowColor: '#000', shadowOpacity: 0.18, shadowRadius: 10,
   },
   durationIcon: { width: 52, height: 52, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
   durationLabel: { fontWeight: '700', fontSize: 16, marginBottom: 4 },

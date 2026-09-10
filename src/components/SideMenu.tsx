@@ -17,7 +17,7 @@ const menuItems = [
   { label: 'Dashboard', icon: LayoutDashboard, route: 'Dashboard', description: 'Performance Overview' },
   { label: 'Strategy History', icon: History, route: 'StrategyHistory', description: 'Past Strategies' },
   { label: 'Interactions', icon: MessageSquare, route: 'Interactions', description: 'Real-time Comments & Messages' },
-  { label: 'Community', icon: Users, route: 'Community', description: 'AdRoom Global Network' },
+  { label: 'Community', icon: Users, route: 'Community', description: 'Adirum AI Global Network' },
   { label: 'Settings', icon: Settings, route: 'Settings', description: 'App Preferences' },
 ];
 
@@ -69,8 +69,8 @@ export default function SideMenu(props: DrawerContentComponentProps) {
             borderWidth: 1, borderColor: 'rgba(0,240,255,0.15)',
             borderRadius: 12, paddingHorizontal: 14, paddingVertical: 10,
           }}>
-            <Text style={{ color: '#FFFFFF', fontSize: 18, fontWeight: '800', letterSpacing: 1 }}>
-              AdRoom <Text style={{ color: '#00F0FF' }}>AI</Text>
+              <Text style={{ color: '#FFFFFF', fontSize: 18, fontWeight: '800', letterSpacing: 1 }}>
+                Adirum <Text style={{ color: '#00F0FF' }}>AI</Text>
             </Text>
             <Text style={{ color: '#64748B', fontSize: 10, letterSpacing: 2, textTransform: 'uppercase', marginTop: 2 }}>
               Autonomous Marketing

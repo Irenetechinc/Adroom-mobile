@@ -345,7 +345,7 @@ export default function NotificationsScreen() {
           </View>
           <Text style={styles.emptyTitle}>No notifications yet</Text>
           <Text style={styles.emptySubtitle}>
-            You'll receive alerts here when AdRoom has important updates for you.
+            You'll receive alerts here when Adirum AI has important updates for you.
           </Text>
         </View>
       ) : (

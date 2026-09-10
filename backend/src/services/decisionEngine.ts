@@ -22,7 +22,7 @@ export class DecisionEngine {
     this.supabase = getServiceSupabaseClient();
   }
 
-  async generateStrategy(memory: MemoryContext, goal: string, duration: number, economyMode = false, freeMode = false): Promise<AIStrategy> {
+  async generateStrategy(memory: MemoryContext, goal: string, duration: number, economyMode = false, freeMode = false, executionContext?: any): Promise<AIStrategy> {
     console.log('AI Brain: Generating Dynamic Strategy with Intelligent Weighting...');
 
     // 1. GATHER all relevant intelligence sources
@@ -37,23 +37,27 @@ export class DecisionEngine {
 
     // 2. WEIGHT each source dynamically
     const weights = this.calculateDynamicWeights(intelligence);
+    const contextData: any = memory;
 
     const prompt = `
       You are the Adirum AI Core Brain. Generate the OPTIMAL organic strategy that outperforms paid ads.
       NO hard-coded rules. Use weighted intelligence to identify high-reach organic arbitrage.
 
       INTELLIGENCE: ${JSON.stringify(intelligence)}
+      PRODUCT / SERVICE / BRAND CONTEXT: ${JSON.stringify(contextData.product || contextData.service || contextData.brand || {})}
+      USER-SELECTED EXECUTION CONTEXT: ${JSON.stringify(executionContext || {})}
       DYNAMIC WEIGHTS: ${JSON.stringify(weights)}
       GOAL: ${goal}
       DURATION: ${duration} days
       ${freeMode ? 'FREE AI MODE: Do not recommend AI-generated video or web search. Video content is allowed only when the user supplies an uploaded video; use that uploaded video in the director/edit plan.' : ''}
 
       STRATEGIC FOCUS:
-      - AdRoom's USP is achieving paid-ad results through organic automation.
+      - Adirum's USP is achieving paid-ad results through organic automation.
       - Use Platform Intelligence to find current "Organic Boost" hacks (e.g., TikTok SEO, LinkedIn Video priority).
       ${freeMode ? '- Do not schedule generated video assets. Prefer image, carousel, text, and user-uploaded-video edit tasks.' : ''}
       - Use Emotional Intelligence to "own" the category conversation.
       - Use Social Listening to "hijack" trending topics with high-relevance replies.
+      - Autonomous execution capabilities include outreach, calling, fulfillment, and delivery coordination. Decide dynamically when any capability is warranted from live evidence and the strategy context; do not recommend a manual task list when Adirum can execute the action.
 
       OUTPUT JSON (Selected Strategy):
       {
@@ -342,7 +346,7 @@ export class DecisionEngine {
 
   async generateEngagementReply(input: string, context: 'comment' | 'message', userHistory: any[]): Promise<string> {
     const prompt = `
-      You are the AdRoom Engagement AI.
+      You are the Adirum AI Engagement AI.
       Task: Generate a reply to this ${context}.
       
       INPUT: "${input}"

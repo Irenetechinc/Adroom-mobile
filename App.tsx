@@ -1,6 +1,7 @@
 import './global.css';
 import React, { useEffect, useRef, useState } from 'react';
 import { Platform, AppState, AppStateStatus, Text, TextInput } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import AppNavigator from './src/navigation/AppNavigator';
 import { navigate } from './src/navigation/navigationRef';
@@ -13,6 +14,7 @@ import { supabase } from './src/services/supabase';
 import { useProfileStore } from './src/store/profileStore';
 import { useNotificationStore } from './src/store/notificationStore';
 import { useAgentStore } from './src/store/agentStore';
+import { useAuthStore } from './src/store/authStore';
 import {
   fetchAppVersionInfo,
   getCurrentAppVersion,
@@ -25,6 +27,7 @@ import {
 } from './src/services/appVersionService';
 import WhatsNewModal from './src/components/WhatsNewModal';
 import ForceUpdateModal from './src/components/ForceUpdateModal';
+import AchievementRatingCard from './src/components/AchievementRatingCard';
 
 // Disable system font-size scaling globally so the UI renders consistently
 // across all device sizes and accessibility font-scale settings.
@@ -166,6 +169,8 @@ export default function App() {
   const [unseenChangelog, setUnseenChangelog] = useState<ChangelogEntry[]>([]);
   const [whatsNewVisible, setWhatsNewVisible] = useState(false);
   const [optionalUpdateVisible, setOptionalUpdateVisible] = useState(false);
+  const [ratingVisible, setRatingVisible] = useState(false);
+  const { hasActiveStrategy } = useAuthStore();
   // Once dismissed in this session, don't keep nagging on every foreground.
   const optionalDismissedRef = useRef(false);
   const lastVersionCheckRef = useRef<number>(0);
@@ -231,6 +236,27 @@ export default function App() {
 
   const forceUpdateActive = !!versionInfo && shouldForceUpdate(versionInfo);
 
+  useEffect(() => {
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    supabase.auth.getSession().then(({ data }: any) => {
+      const userId = data.session?.user?.id;
+      if (!hasActiveStrategy || !userId || cancelled) return;
+      timer = setTimeout(async () => {
+        const state = await AsyncStorage.getItem(`adirum:rating:${userId}`).catch(() => null);
+        if (!cancelled && !state) setRatingVisible(true);
+      }, 5 * 60 * 1000);
+    });
+    return () => { cancelled = true; if (timer) clearTimeout(timer); };
+  }, [hasActiveStrategy]);
+
+  const dismissRating = async (state: 'dismissed' | 'rated') => {
+    setRatingVisible(false);
+    const { data } = await supabase.auth.getSession();
+    const userId = data.session?.user?.id;
+    if (userId) await AsyncStorage.setItem(`adirum:rating:${userId}`, state).catch(() => {});
+  };
+
   return (
     <SafeAreaProvider>
       <AppNavigator />
@@ -261,6 +287,12 @@ export default function App() {
         latestVersion={versionInfo?.latestVersion ?? null}
         storeUrl={versionInfo?.storeUrl ?? null}
       />
+      {ratingVisible && !forceUpdateActive && (
+        <AchievementRatingCard
+          onDismiss={() => { void dismissRating('dismissed'); }}
+          onRated={() => { void dismissRating('rated'); }}
+        />
+      )}
     </SafeAreaProvider>
   );
 }

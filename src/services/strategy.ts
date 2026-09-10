@@ -32,6 +32,16 @@ export const StrategyService = {
     selectedAccounts?: string[];
     productType?: 'physical' | 'digital';
     dispatchAddress?: string;
+    product?: {
+      name?: string;
+      description?: string;
+      category?: string;
+      targetAudience?: string;
+      price?: string;
+      currency?: string;
+      websiteUrl?: string;
+      videoUri?: string | null;
+    };
   }): Promise<GeneratedStrategy> {
     RemoteLogger.log('STRATEGY', `Generating strategies for product ${productId}, goal: ${goal}, duration: ${duration}`);
 
@@ -63,6 +73,7 @@ export const StrategyService = {
           selectedAccounts: options?.selectedAccounts,
           productType: options?.productType,
           dispatchAddress: options?.dispatchAddress,
+          product: options?.product,
         }),
       });
 

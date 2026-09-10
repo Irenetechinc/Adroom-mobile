@@ -34,6 +34,7 @@ import LeadsScreen from '../screens/LeadsScreen';
 import CallLogsScreen from '../screens/CallLogsScreen';
 import ShipmentsScreen from '../screens/ShipmentsScreen';
 import OutreachPreferencesScreen from '../screens/OutreachPreferencesScreen';
+import AccountSelectionScreen from '../screens/strategy/AccountSelectionScreen';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
@@ -191,6 +192,7 @@ export default function AppNavigator() {
             <Stack.Screen name="CallLogs" component={CallLogsScreen} options={{ headerShown: false }} />
             <Stack.Screen name="Shipments" component={ShipmentsScreen} options={{ headerShown: false }} />
             <Stack.Screen name="OutreachPreferences" component={OutreachPreferencesScreen} options={{ headerShown: false }} />
+            <Stack.Screen name="StrategyWizard_AccountSelection" component={AccountSelectionScreen} options={{ headerShown: false }} />
           </>
         )}
       </Stack.Navigator>

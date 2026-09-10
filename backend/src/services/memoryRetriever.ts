@@ -5,6 +5,7 @@ export interface MemoryContext {
   user: any;
   product?: any;
   service?: any;
+  brand?: any;
   history: any[];
   platformStatus: any;
   globalTrends: any;

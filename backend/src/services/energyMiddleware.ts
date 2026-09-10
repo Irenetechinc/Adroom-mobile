@@ -111,9 +111,9 @@ export function energyCheck(operation: string) {
  * Deduct energy AFTER a successful AI call, going through the CMA for routing.
  * Returns the CMA result (includes model used) so callers know which model ran.
  */
-export async function deductEnergyForUser(userId: string, operation: string, metadata?: any): Promise<void> {
+export async function deductEnergyForUser(userId: string, operation: string, metadata?: any, cmaResult?: any): Promise<void> {
   try {
-    await energyService.deductEnergyWithRouting(userId, operation, metadata);
+    await energyService.deductEnergyWithRouting(userId, operation, metadata, cmaResult);
   } catch (err: any) {
     // Log but don't break the response — the AI call already happened
     console.error(`[EnergyMiddleware] Deduction failed for ${operation}:`, err.message);

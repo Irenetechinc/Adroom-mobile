@@ -173,7 +173,7 @@ export default function OnboardingScreen({ navigation }: Props) {
             We find the buyer.{'\n'}We close the deal.
           </Text>
           <Text style={styles.subtitle}>
-            Adirum AI is a 100% autonomous marketing workforce built to identify demand, advance the right pipeline, and deliver measurable sales outcomes without requiring manual intervention.
+            Adirum AI autonomously finds demand, reaches the right opportunities, and delivers measurable sales outcomes without requiring manual intervention.
           </Text>
 
           <View style={styles.heroActions}>

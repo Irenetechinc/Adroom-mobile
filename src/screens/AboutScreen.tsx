@@ -314,7 +314,7 @@ const styles = StyleSheet.create({
   hero: {
     alignItems: 'center', paddingVertical: 36, paddingHorizontal: 20,
     backgroundColor: '#0D1526', borderRadius: 24,
-    borderWidth: 1, borderColor: 'rgba(0,240,255,0.14)', marginBottom: 16,
+    marginBottom: 16, shadowColor: '#000', shadowOpacity: 0.22, shadowRadius: 18,
   },
   heroIconWrap: {
     width: 88, height: 88, borderRadius: 28,
@@ -339,7 +339,7 @@ const styles = StyleSheet.create({
 
   resultsRow: {
     flexDirection: 'row', backgroundColor: COLORS.card,
-    borderRadius: 20, borderWidth: 1, borderColor: COLORS.border,
+    borderRadius: 20, shadowColor: '#000', shadowOpacity: 0.18, shadowRadius: 14,
     marginBottom: 16, overflow: 'hidden',
   },
   resultItem: { flex: 1, alignItems: 'center', paddingVertical: 18, paddingHorizontal: 4 },
@@ -349,8 +349,8 @@ const styles = StyleSheet.create({
   resultSub: { color: COLORS.muted, fontSize: 9, textAlign: 'center', lineHeight: 13 },
 
   diffCard: {
-    backgroundColor: 'rgba(0,240,255,0.04)', borderWidth: 1, borderColor: 'rgba(0,240,255,0.14)',
-    borderRadius: 20, padding: 20, marginBottom: 16,
+    backgroundColor: 'rgba(0,240,255,0.06)', borderRadius: 20, padding: 20, marginBottom: 16,
+    shadowColor: '#00F0FF', shadowOpacity: 0.08, shadowRadius: 16,
   },
   diffHeader: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 14 },
   diffIcon: { width: 42, height: 42, borderRadius: 12, alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
@@ -358,8 +358,8 @@ const styles = StyleSheet.create({
   diffBody: { color: COLORS.sub, fontSize: 13, lineHeight: 22 },
 
   platformCard: {
-    backgroundColor: COLORS.card, borderRadius: 20, borderWidth: 1, borderColor: COLORS.border,
-    padding: 20, marginBottom: 16,
+    backgroundColor: COLORS.card, borderRadius: 20, padding: 20, marginBottom: 16,
+    shadowColor: '#000', shadowOpacity: 0.18, shadowRadius: 14,
   },
   platformRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 12 },
   platformTag: {
@@ -369,8 +369,8 @@ const styles = StyleSheet.create({
   platformTagText: { color: COLORS.neon, fontSize: 12, fontWeight: '700' },
 
   section: {
-    backgroundColor: COLORS.card, borderRadius: 20, borderWidth: 1, borderColor: COLORS.border,
-    padding: 20, marginBottom: 16,
+    backgroundColor: COLORS.card, borderRadius: 20, padding: 20, marginBottom: 16,
+    shadowColor: '#000', shadowOpacity: 0.18, shadowRadius: 14,
   },
   sectionEyebrow: {
     color: COLORS.neon, fontSize: 10, fontWeight: '700', letterSpacing: 1.2,

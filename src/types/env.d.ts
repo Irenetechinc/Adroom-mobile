@@ -8,3 +8,5 @@ declare namespace NodeJS {
     EXPO_PUBLIC_ADROOM_FEE: string;
   }
 }
+
+declare module '*.css';

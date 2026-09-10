@@ -587,7 +587,7 @@ export default function SubscriptionScreen() {
         </TouchableOpacity>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
           <Zap size={20} color={COLORS.amber} />
-          <Text style={styles.headerTitle}>AdRoom Energy</Text>
+          <Text style={styles.headerTitle}>Adirum Energy</Text>
         </View>
         <TouchableOpacity onPress={onRefresh}>
           <RefreshCw size={18} color={COLORS.muted} />
@@ -802,8 +802,8 @@ export default function SubscriptionScreen() {
                     onPress={handleCardPress}
                     style={[
                       styles.planCard,
-                      isCurrent && { borderColor: p.color },
-                      isHighlighted && !isCurrent && { borderColor: p.color, borderWidth: 2 },
+                      isCurrent && { backgroundColor: `${p.color}12`, shadowColor: p.color, shadowOpacity: 0.20, shadowRadius: 16 },
+                      isHighlighted && !isCurrent && { backgroundColor: `${p.color}0D`, shadowColor: p.color, shadowOpacity: 0.16, shadowRadius: 16 },
                     ]}
                     activeOpacity={isCurrent ? 1 : 0.8}
                   >
@@ -1774,7 +1774,7 @@ const styles = StyleSheet.create({
   trialDesc: { color: COLORS.muted, fontSize: 12, lineHeight: 18 },
   trialBtn: { backgroundColor: COLORS.neon, paddingHorizontal: 16, paddingVertical: 10, borderRadius: 10 },
   trialBtnText: { color: '#000', fontWeight: '800', fontSize: 13 },
-  planCard: { marginHorizontal: 16, marginBottom: 12, backgroundColor: COLORS.card, borderRadius: 16, borderWidth: 1, borderColor: COLORS.border, padding: 16, overflow: 'hidden' },
+  planCard: { marginHorizontal: 16, marginBottom: 12, backgroundColor: COLORS.card, borderRadius: 20, padding: 16, overflow: 'hidden', shadowColor: '#000', shadowOpacity: 0.22, shadowRadius: 14 },
   popularBadge: { flexDirection: 'row', alignItems: 'center', gap: 4, position: 'absolute', top: 0, right: 0, paddingHorizontal: 10, paddingVertical: 5, borderBottomLeftRadius: 12 },
   popularText: { color: '#000', fontSize: 10, fontWeight: '800' },
   planName: { fontSize: 18, fontWeight: '800' },

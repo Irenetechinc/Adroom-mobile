@@ -211,8 +211,9 @@ export class EnergyService {
     userId: string,
     operation: string,
     metadata?: any,
+    cmaOverride?: CMAResult,
   ): Promise<{ newBalance: number; cma: CMAResult }> {
-    const cma = await creditManagementAgent.evaluate(userId, operation);
+    const cma = cmaOverride ?? await creditManagementAgent.evaluate(userId, operation);
 
     if (cma.decision === 'deny_cap') {
       throw new Error(`DAILY_CAP_REACHED: ${cma.reason}`);

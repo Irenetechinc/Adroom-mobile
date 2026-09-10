@@ -344,7 +344,7 @@ export default function ConnectedAccountsScreen() {
         contentContainerStyle={[styles.scroll, { paddingBottom: Math.max(40, insets.bottom + 20) }]}
       >
         <Text style={styles.pageDesc}>
-          Connect your social accounts so AdRoom can autonomously publish, reply, and engage on your behalf — across every platform.
+          Connect your social accounts so Adirum AI can autonomously publish, reply, and engage on your behalf — across every platform.
         </Text>
 
         {!isPro && (

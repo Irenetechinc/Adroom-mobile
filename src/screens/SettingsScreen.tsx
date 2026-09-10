@@ -117,7 +117,7 @@ export default function SettingsScreen() {
       items: [
         {
           icon: Zap,
-          label: 'AdRoom Energy',
+          label: 'Adirum Energy',
           sublabel: `${balance.toFixed(1)} credits • ${planInfo?.name ?? 'No plan'}`,
           color: balanceColor,
           onPress: () => navigation.navigate('Subscription'),
@@ -356,13 +356,14 @@ const styles = StyleSheet.create({
   headerTitle: { color: '#FFFFFF', fontSize: 22, fontWeight: '800', marginTop: 1 },
   headerIcon: {
     width: 36, height: 36, borderRadius: 10,
-    backgroundColor: '#151B2B', borderWidth: 1, borderColor: '#1E293B',
+    backgroundColor: '#151B2B', shadowColor: '#000', shadowOpacity: 0.18, shadowRadius: 8,
     alignItems: 'center', justifyContent: 'center',
   },
   scroll: { padding: 16, paddingBottom: 40 },
   profileCard: {
-    backgroundColor: '#151B2B', borderRadius: 18, borderWidth: 1, borderColor: '#1E293B',
+    backgroundColor: '#151B2B', borderRadius: 20,
     flexDirection: 'row', alignItems: 'center', padding: 16, marginBottom: 24,
+    shadowColor: '#000', shadowOpacity: 0.22, shadowRadius: 14,
   },
   avatar: {
     width: 52, height: 52, borderRadius: 16,
@@ -379,7 +380,7 @@ const styles = StyleSheet.create({
   group: { marginBottom: 20 },
   groupTitle: { color: '#475569', fontSize: 11, fontWeight: '700', letterSpacing: 1, textTransform: 'uppercase', marginBottom: 8, marginLeft: 4 },
   groupCard: {
-    backgroundColor: '#151B2B', borderRadius: 16, borderWidth: 1, borderColor: '#1E293B', overflow: 'hidden',
+    backgroundColor: '#151B2B', borderRadius: 18, overflow: 'hidden', shadowColor: '#000', shadowOpacity: 0.18, shadowRadius: 12,
   },
   groupItem: { flexDirection: 'row', alignItems: 'center', padding: 14 },
   groupItemBorder: { borderBottomWidth: 1, borderBottomColor: '#1E293B' },
@@ -421,8 +422,7 @@ const styles = StyleSheet.create({
   },
   soCard: {
     backgroundColor: '#151B2B', borderRadius: 24, width: '100%',
-    borderWidth: 1, borderColor: '#1E293B',
-    alignItems: 'center', padding: 28,
+    alignItems: 'center', padding: 28, shadowColor: '#000', shadowOpacity: 0.3, shadowRadius: 20,
   },
   soIconRing: {
     width: 64, height: 64, borderRadius: 20,

@@ -61,7 +61,7 @@ export default function GoalSelectionScreen() {
     setThinking(true);
     setTimeout(() => {
       setThinking(false);
-      navigation.navigate('StrategyWizard_DurationSelection');
+      navigation.navigate('AgentChat', { strategyAccountSelection: true });
     }, 1400);
   };
 
@@ -128,8 +128,8 @@ export default function GoalSelectionScreen() {
               activeOpacity={0.75}
               style={[
                 styles.goalCard,
-                isSelected && { borderColor: COLORS.neon, backgroundColor: 'rgba(0,240,255,0.05)' },
-                isLocked && { borderColor: COLORS.border, opacity: 0.65 },
+                isSelected && { backgroundColor: 'rgba(0,240,255,0.08)', shadowColor: COLORS.neon, shadowOpacity: 0.18, shadowRadius: 12 },
+                isLocked && { opacity: 0.65 },
               ]}
             >
               <View style={[styles.goalIconWrap, { backgroundColor: `${goal.color}20` }]}>
@@ -223,8 +223,7 @@ const styles = StyleSheet.create({
   goalCard: {
     flexDirection: 'row', alignItems: 'center',
     backgroundColor: COLORS.card, borderRadius: 16,
-    borderWidth: 1.5, borderColor: COLORS.border,
-    padding: 14, marginBottom: 10, gap: 12,
+    padding: 14, marginBottom: 10, gap: 12, shadowColor: '#000', shadowOpacity: 0.18, shadowRadius: 10,
   },
   goalIconWrap: {
     width: 48, height: 48, borderRadius: 14,

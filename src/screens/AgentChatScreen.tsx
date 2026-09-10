@@ -1041,6 +1041,40 @@ const SelectionList = ({ items, onSelect, type, onBack, onStepBack, disabled }: 
   </View>
 );
 
+const StrategyAccountSelectionCard = ({
+  accounts,
+  selected,
+  onToggle,
+  onConnect,
+  onContinue,
+  disabled,
+}: {
+  accounts: any[];
+  selected: string[];
+  onToggle: (platform: string) => void;
+  onConnect: (platform: string) => void;
+  onContinue: () => void;
+  disabled?: boolean;
+}) => (
+  <View style={[styles.card, disabled && styles.cardDisabled]}>
+    <Text style={styles.cardTitle}>Choose connected accounts</Text>
+    <Text style={styles.cardSub}>Select the accounts Adirum AI should use for this strategy.</Text>
+    {accounts.length === 0 ? (
+      <Text style={styles.cardSub}>No account is connected yet. Connect one through the existing account flow.</Text>
+    ) : accounts.map((account: any) => {
+      const platform = String(account.platform || account.id || '').toLowerCase();
+      const isSelected = selected.includes(platform);
+      return (
+        <TouchableOpacity key={platform} disabled={disabled} onPress={() => onToggle(platform)} style={[styles.selectionRow, isSelected && { backgroundColor: 'rgba(0,240,255,0.08)' }]}>
+          <View style={{ flex: 1 }}><Text style={styles.selectionName}>{account.page_name || account.account_name || platform}</Text><Text style={styles.selectionSub}>{platform}</Text></View>
+          <Text style={{ color: isSelected ? '#00F0FF' : '#64748B', fontWeight: '900' }}>{isSelected ? '✓' : '+'}</Text>
+        </TouchableOpacity>
+      );
+    })}
+    {!disabled && <View style={{ marginTop: 12 }}><Text style={styles.selectionSub}>Connect a platform through the existing Adirum AI connection flow:</Text>{['facebook', 'instagram', 'tiktok', 'linkedin', 'twitter', 'whatsapp'].map((platform) => <TouchableOpacity key={platform} onPress={() => onConnect(platform)} style={styles.retrySkipBtn}><Text style={{ color: '#CBD5E1', fontWeight: '700' }}>Connect {platform}</Text></TouchableOpacity>)}<TouchableOpacity onPress={onContinue} disabled={!selected.length} style={[styles.primaryBtn, { marginTop: 8 }, !selected.length && styles.cardDisabled]}><Text style={styles.primaryBtnText}>Continue</Text></TouchableOpacity></View>}
+  </View>
+);
+
 const RetryActionCard = ({ onRetry, onCancel, onBack, onStepBack, actionName, disabled }: { onRetry: () => void; onCancel: () => void; onBack?: () => void; onStepBack?: () => void; actionName: string; disabled?: boolean }) => (
   <View style={[styles.card, styles.retryCard, disabled && styles.cardDisabled]}>
     <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 14 }}>
@@ -1386,6 +1420,7 @@ export default function AgentChatScreen({ navigation, route }: Props) {
     goBackToMenu, goBackOneStep, dismissStrategyFlow, loadConnectedPlatforms,
     fetchRecentSessions, applySession, restoreLastSession, deleteSession,
   } = useAgentStore();
+  const { productData, setProductData } = useStrategyCreationStore();
 
   const { isEnabled } = useFeatureFlags();
 
@@ -1631,7 +1666,7 @@ export default function AgentChatScreen({ navigation, route }: Props) {
   // ────────────────────────────────────────────────────────────────────────────
 
   useEffect(() => {
-    const skipLoad = !!(route.params?.fromStrategyApproval || route.params?.connectFacebook ||
+    const skipLoad = !!(route.params?.fromStrategyApproval || route.params?.strategyAccountSelection || route.params?.connectFacebook ||
       route.params?.connectInstagram || route.params?.connectTikTok ||
       route.params?.connectLinkedIn || route.params?.connectTwitter ||
       route.params?.connectWhatsApp);
@@ -1679,6 +1714,14 @@ export default function AgentChatScreen({ navigation, route }: Props) {
   );
 
   useEffect(() => {
+    const hasRequestedConnection = !!(route.params?.connectFacebook || route.params?.connectInstagram || route.params?.connectTikTok || route.params?.connectLinkedIn || route.params?.connectTwitter || route.params?.connectWhatsApp);
+    if (route.params?.strategyAccountSelection && !hasRequestedConnection) {
+      loadConnectedPlatforms().then(() => {
+        const accounts = Object.values(useAgentStore.getState().connectedPlatforms || {});
+        addMessage('Select the connected accounts for this strategy. If an account is missing, connect it here and return to finish selection.', 'agent', undefined, 'strategy_account_selection', { accounts });
+      }).catch(() => {});
+      return;
+    }
     const hasConnectParam = !!(
       route.params?.fromStrategyApproval ||
       route.params?.connectFacebook ||
@@ -1763,7 +1806,7 @@ export default function AgentChatScreen({ navigation, route }: Props) {
     'product_intake_form', 'product_manual_form', 'website_intake_form',
     'service_intake_form', 'brand_intake_form', 'attribute_editor',
     'strategy_type_selection', 'goal_selection', 'duration_selection',
-    'strategy_preview', 'facebook_connect', 'page_selection',
+    'strategy_preview', 'strategy_account_selection', 'facebook_connect', 'page_selection',
     'retry_action', 'session_restore', 'session_restore_prompt', 'create_strategy_prompt',
   ];
 
@@ -1854,6 +1897,16 @@ export default function AgentChatScreen({ navigation, route }: Props) {
             price={item.uiData?.price}
             currencySymbol={item.uiData?.currencySymbol}
             currencyCode={item.uiData?.currencyCode}
+          />
+        )}
+        {item.uiType === 'strategy_account_selection' && (
+          <StrategyAccountSelectionCard
+            accounts={item.uiData?.accounts || []}
+            selected={productData.selectedAccounts || []}
+            onToggle={(platform) => setProductData({ selectedAccounts: productData.selectedAccounts.includes(platform) ? productData.selectedAccounts.filter(item => item !== platform) : [...productData.selectedAccounts, platform] })}
+            onConnect={(platform) => navigation.navigate('AgentChat', { strategyAccountSelection: true, ...(platform === 'facebook' ? { connectFacebook: true } : platform === 'instagram' ? { connectInstagram: true } : platform === 'tiktok' ? { connectTikTok: true } : platform === 'linkedin' ? { connectLinkedIn: true } : platform === 'twitter' ? { connectTwitter: true } : { connectWhatsApp: true }) })}
+            onContinue={() => navigation.navigate('StrategyWizard_DurationSelection')}
+            disabled={isDisabled}
           />
         )}
         {item.uiType === 'strategy_preview' && item.uiData?.strategy && (
@@ -2264,9 +2317,8 @@ const historyModalStyles = StyleSheet.create({
     maxWidth: 480,
     backgroundColor: '#0B0F19',
     borderRadius: 16,
-    borderWidth: 1,
-    borderColor: 'rgba(0,240,255,0.18)',
     padding: 20,
+    shadowColor: '#00F0FF', shadowOpacity: 0.12, shadowRadius: 20,
   },
   headerRow: {
     flexDirection: 'row',
@@ -2322,8 +2374,6 @@ const historyModalStyles = StyleSheet.create({
     paddingHorizontal: 12,
     borderRadius: 10,
     backgroundColor: 'rgba(255,255,255,0.03)',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.06)',
     marginBottom: 8,
   },
   sessionDate: {

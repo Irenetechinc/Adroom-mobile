@@ -154,7 +154,7 @@ export default function ResetPasswordScreen({ navigation }: Props) {
             <View style={styles.logoIcon}>
               <Image source={require('../../assets/logo.png')} style={{ width: 60, height: 60, borderRadius: 14 }} resizeMode="contain" />
             </View>
-            <Text style={styles.logoText}>AdRoom <Text style={{ color: '#00F0FF' }}>AI</Text></Text>
+            <Text style={styles.logoText}>Adirum <Text style={{ color: '#00F0FF' }}>AI</Text></Text>
           </Animated.View>
 
           {stage === 'verifying' && (

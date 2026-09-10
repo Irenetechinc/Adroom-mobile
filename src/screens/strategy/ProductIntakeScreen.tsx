@@ -27,6 +27,7 @@ export default function ProductIntakeScreen() {
   const navigation = useNavigation<any>();
   const { productData, setProductData } = useStrategyCreationStore();
   const connectedPlatforms = useAgentStore((state) => state.connectedPlatforms);
+  const loadConnectedPlatforms = useAgentStore((state) => state.loadConnectedPlatforms);
   const { subscription, planLimitsUsage, fetchPlanLimits } = useEnergyStore();
   const [loading, setLoading] = useState(false);
   const [generatingVideo, setGeneratingVideo] = useState(false);
@@ -39,6 +40,10 @@ export default function ProductIntakeScreen() {
   const planInfo = PLAN_DETAILS[plan];
   const canUseWebsiteScraping = isActive && planInfo?.websiteScraping;
   const canGenerateAiVideo = isActive && planInfo?.aiVideoGen;
+
+  useEffect(() => {
+    loadConnectedPlatforms();
+  }, [loadConnectedPlatforms]);
 
   // Real-time limits from backend
   const videoRemaining = planLimitsUsage?.remaining?.videoAssets ?? (canGenerateAiVideo ? planInfo?.videoAssets ?? 0 : 0);
@@ -313,6 +318,42 @@ export default function ProductIntakeScreen() {
               </TouchableOpacity>
             ))}
           </View>
+          <Text style={styles.fieldLabel}>Strategy Accounts</Text>
+          <Text style={styles.fieldHint}>Select the connected accounts Adirum AI should use for this strategy.</Text>
+          {Object.entries(connectedPlatforms).length === 0 ? (
+            <TouchableOpacity
+              onPress={() => navigation.navigate('ConnectedAccounts')}
+              style={[styles.connectAccountsBtn, { marginBottom: 16 }]}
+            >
+              <Text style={styles.connectAccountsText}>Connect a social account</Text>
+              <ChevronRight size={16} color={COLORS.neon} />
+            </TouchableOpacity>
+          ) : (
+            <View style={styles.accountChoices}>
+              {Object.entries(connectedPlatforms).map(([platform, config]: [string, any]) => {
+                const selected = productData.selectedAccounts.includes(platform);
+                const accountName = config?.page_name || config?.account_name || platform;
+                return (
+                  <TouchableOpacity
+                    key={platform}
+                    onPress={() => setProductData({
+                      selectedAccounts: selected
+                        ? productData.selectedAccounts.filter((item) => item !== platform)
+                        : [...productData.selectedAccounts, platform],
+                    })}
+                    style={[styles.accountChoice, selected && styles.accountChoiceSelected]}
+                  >
+                    <View style={[styles.accountChoiceDot, selected && styles.accountChoiceDotSelected]} />
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.accountChoiceName}>{accountName}</Text>
+                      <Text style={styles.accountChoicePlatform}>{platform}</Text>
+                    </View>
+                    {selected && <Text style={styles.accountChoiceCheck}>Selected</Text>}
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          )}
           {productType === 'physical' && (
             <FormField
               label="Dispatch Pickup Address"
@@ -417,25 +458,6 @@ export default function ProductIntakeScreen() {
           )}
         </View>
 
-        <View style={styles.websiteSection}>
-          <Text style={styles.websiteTitle}>Preferred Social Accounts</Text>
-          <Text style={styles.websiteDesc}>Optionally choose connected accounts for this strategy. Existing account connections are unchanged.</Text>
-          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
-            {Object.keys(connectedPlatforms || {}).map((platform) => {
-              const selected = productData.selectedAccounts?.includes(platform);
-              return (
-                <TouchableOpacity
-                  key={platform}
-                  onPress={() => setProductData({ selectedAccounts: selected ? productData.selectedAccounts.filter(item => item !== platform) : [...(productData.selectedAccounts || []), platform] })}
-                  style={[styles.input, { paddingHorizontal: 12, paddingVertical: 9, borderColor: selected ? COLORS.neon : COLORS.border }]}
-                >
-                  <Text style={{ color: selected ? COLORS.neon : COLORS.text, fontWeight: '700' }}>{selected ? '✓ ' : ''}{platform}</Text>
-                </TouchableOpacity>
-              );
-            })}
-          </View>
-          {Object.keys(connectedPlatforms || {}).length === 0 && <Text style={styles.websiteDesc}>No connected accounts yet. You can connect them after reviewing the strategy.</Text>}
-        </View>
       </ScrollView>
 
       {/* Footer */}
@@ -585,6 +607,25 @@ const styles = StyleSheet.create({
   proBadgeText: { color: COLORS.purple, fontSize: 11, fontWeight: '700' },
   formSection: { marginTop: 20, marginBottom: 8 },
   fieldLabel: { color: '#CBD5E1', fontWeight: '600', fontSize: 13, marginBottom: 8 },
+  fieldHint: { color: COLORS.muted, fontSize: 12, lineHeight: 18, marginBottom: 10 },
+  accountChoices: { marginBottom: 4 },
+  accountChoice: {
+    flexDirection: 'row', alignItems: 'center', gap: 10,
+    backgroundColor: COLORS.card, borderWidth: 1, borderColor: COLORS.border,
+    borderRadius: 12, paddingHorizontal: 12, paddingVertical: 11, marginBottom: 8,
+  },
+  accountChoiceSelected: { borderColor: COLORS.neon, backgroundColor: 'rgba(0,240,255,0.06)' },
+  accountChoiceDot: { width: 12, height: 12, borderRadius: 6, borderWidth: 1.5, borderColor: COLORS.muted },
+  accountChoiceDotSelected: { backgroundColor: COLORS.neon, borderColor: COLORS.neon },
+  accountChoiceName: { color: COLORS.text, fontSize: 13, fontWeight: '700' },
+  accountChoicePlatform: { color: COLORS.muted, fontSize: 11, marginTop: 2, textTransform: 'capitalize' },
+  accountChoiceCheck: { color: COLORS.neon, fontSize: 11, fontWeight: '700' },
+  connectAccountsBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    backgroundColor: 'rgba(0,240,255,0.06)', borderWidth: 1,
+    borderColor: 'rgba(0,240,255,0.25)', borderRadius: 12, padding: 14,
+  },
+  connectAccountsText: { color: COLORS.neon, fontSize: 13, fontWeight: '700' },
   input: {
     backgroundColor: COLORS.card, color: COLORS.text,
     paddingHorizontal: 16, paddingVertical: 14,
