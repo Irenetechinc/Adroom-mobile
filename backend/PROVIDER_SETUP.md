@@ -11,6 +11,9 @@ TWILIO_ACCOUNT_SID=AC...
 TWILIO_AUTH_TOKEN=...
 TWILIO_FROM_COUNTRY=US
 APP_URL=https://backend.adroomai.com
+ELEVENLABS_API_KEY=...
+ELEVENLABS_VOICE_ID=...
+ELEVENLABS_VOICE_IDS_BY_COUNTRY={"NG":"voice_id_for_nigeria","US":"voice_id_for_us","GB":"voice_id_for_uk"}
 ```
 
 The app's canonical backend URL is `https://backend.adroomai.com`. The backend uses `PUBLIC_BASE_URL` if explicitly set, then `APP_URL`, then this canonical domain. `EXPO_PUBLIC_API_URL` is the mobile client's API URL and should also be set to `https://backend.adroomai.com`; it is not used as a provider webhook secret or credential.
@@ -28,6 +31,8 @@ POST https://backend.adroomai.com/api/webhooks/twilio/recording
 The application verifies `X-Twilio-Signature`. Calls are rejected unless the user is Pro/Pro+, active or trialing, has not opted out, and the lead has explicit call consent plus a phone number. Recording is enabled only on that consent-gated call path. Confirm local recording/automated-call laws before production use.
 
 The backend scheduler must be running (`npm run start` runs the scheduler through the server startup) because queued calls are processed every minute.
+
+ElevenLabs is optional for call audio. `ELEVENLABS_API_KEY` enables server-side speech generation. `ELEVENLABS_VOICE_ID` is the fallback voice. `ELEVENLABS_VOICE_IDS_BY_COUNTRY` is optional JSON; when present, Adirum selects the destination-country voice automatically. If it is omitted, Adirum queries the ElevenLabs voice catalog and selects a voice whose public labels match the destination country, then falls back to `ELEVENLABS_VOICE_ID`.
 
 ## Shipment provider
 
