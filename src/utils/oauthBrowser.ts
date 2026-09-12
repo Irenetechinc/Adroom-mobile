@@ -1,4 +1,5 @@
 import * as WebBrowser from 'expo-web-browser';
+import * as Linking from 'expo-linking';
 
 // Ensure the auth session can be completed (important for some platforms/browsers)
 WebBrowser.maybeCompleteAuthSession();
@@ -43,16 +44,26 @@ export async function runOAuthBrowserFlow(
   console.log(`[OAuthBrowser] Attempting to open auth session for: ${authUrl.split('?')[0]}`);
 
   // Use openAuthSessionAsync which is more robust for OAuth flows than openBrowserAsync.
-  // It handles the redirect back to the app better and is less likely to be 
-  // intercepted by native apps in a way that fails silently.
+  // It handles the redirect back to the app better and is less likely to be
+  // intercepted by native apps in a way that fails silently. We also listen for
+  // adroom://oauth-done as a fallback so a fast close from Android/X custom tabs
+  // does not leave the auth flow stuck waiting forever.
+  let lastUrlHandler: ((event: { url: string }) => void) | null = null;
+  const handleRedirect = (event: { url: string }) => {
+    if (event.url && event.url.startsWith('adroom://oauth-done')) {
+      browserClosed = true;
+    }
+  };
+
+  const urlSub = Linking.addEventListener('url', handleRedirect);
   WebBrowser.openAuthSessionAsync(authUrl, 'adroom://oauth-done')
-    .then((result) => { 
+    .then((result) => {
       console.log(`[OAuthBrowser] Auth session closed with result:`, result);
-      browserClosed = true; 
+      browserClosed = true;
     })
-    .catch((err) => { 
+    .catch((err) => {
       console.error(`[OAuthBrowser] Auth session failed to open:`, err);
-      browserClosed = true; 
+      browserClosed = true;
     });
 
   const pollOnce = async (): Promise<string | 'error' | null> => {
@@ -112,5 +123,6 @@ export async function runOAuthBrowserFlow(
 
   // iOS cleanup — dismissBrowser is a no-op on Android.
   try { await WebBrowser.dismissBrowser(); } catch { /* ignore */ }
+  try { urlSub?.remove(); } catch { /* ignore */ }
   return null;
 }

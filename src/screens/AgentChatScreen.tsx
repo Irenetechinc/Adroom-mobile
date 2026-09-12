@@ -63,7 +63,7 @@ const CurrencySelector = ({ value, onChange, disabled }: { value: string; onChan
         onPress={() => !disabled && setVisible(true)}
         style={{
           flexDirection: 'row', alignItems: 'center', gap: 4,
-          backgroundColor: 'rgba(0,240,255,0.1)', borderWidth: 1, borderColor: 'rgba(0,240,255,0.25)',
+          backgroundColor: 'rgba(0,240,255,0.12)',
           borderRadius: 8, paddingHorizontal: 8, paddingVertical: 8, minWidth: 52,
         }}
         disabled={disabled}
@@ -73,14 +73,14 @@ const CurrencySelector = ({ value, onChange, disabled }: { value: string; onChan
       </TouchableOpacity>
       <Modal visible={visible} transparent animationType="fade" onRequestClose={() => setVisible(false)}>
         <TouchableOpacity style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'center', paddingHorizontal: 20 }} activeOpacity={1} onPress={() => setVisible(false)}>
-          <View style={{ backgroundColor: '#151B2B', borderRadius: 16, borderWidth: 1, borderColor: 'rgba(0,240,255,0.15)', overflow: 'hidden' }}>
-            <Text style={{ color: '#00F0FF', fontWeight: '800', fontSize: 13, letterSpacing: 1, padding: 14, borderBottomWidth: 1, borderBottomColor: 'rgba(0,240,255,0.08)' }}>SELECT CURRENCY</Text>
+          <View style={{ backgroundColor: '#151B2B', borderRadius: 16, overflow: 'hidden' }}>
+            <Text style={{ color: '#00F0FF', fontWeight: '800', fontSize: 13, letterSpacing: 1, padding: 14 }}>SELECT CURRENCY</Text>
             <ScrollView style={{ maxHeight: 300 }}>
               {CURRENCIES.map((c) => (
                 <TouchableOpacity
                   key={c.code}
                   onPress={() => { onChange(c.code); setVisible(false); }}
-                  style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.04)', backgroundColor: c.code === value ? 'rgba(0,240,255,0.07)' : 'transparent' }}
+                  style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 12, backgroundColor: c.code === value ? 'rgba(0,240,255,0.07)' : 'transparent' }}
                 >
                   <Text style={{ color: '#00F0FF', fontWeight: '700', width: 36 }}>{c.symbol}</Text>
                   <Text style={{ color: '#E2E8F0', fontSize: 14 }}>{c.name}</Text>
@@ -111,7 +111,7 @@ const SizeChips = ({ selected, onToggle, disabled }: { selected: string[]; onTog
           style={{
             paddingHorizontal: 10, paddingVertical: 5, borderRadius: 8,
             backgroundColor: isSelected ? 'rgba(0,240,255,0.15)' : '#0B0F19',
-            borderWidth: 1, borderColor: isSelected ? '#00F0FF' : '#1E293B',
+            elevation: isSelected ? 2 : 0,
           }}
         >
           <Text style={{ color: isSelected ? '#00F0FF' : '#64748B', fontSize: 12, fontWeight: '600' }}>{s}</Text>
@@ -139,7 +139,6 @@ const FormNavRow = ({
           style={{
             flexDirection: 'row', alignItems: 'center', gap: 5,
             paddingVertical: 7, paddingHorizontal: 11,
-            borderWidth: 1, borderColor: 'rgba(0,240,255,0.25)',
             borderRadius: 10, backgroundColor: 'rgba(0,240,255,0.06)',
           }}
           activeOpacity={0.7}
@@ -154,8 +153,7 @@ const FormNavRow = ({
           style={{
             flexDirection: 'row', alignItems: 'center', gap: 5,
             paddingVertical: 7, paddingHorizontal: 11,
-            borderWidth: 1, borderColor: 'rgba(100,116,139,0.3)',
-            borderRadius: 10,
+            borderRadius: 10, backgroundColor: 'rgba(255,255,255,0.04)',
           }}
           activeOpacity={0.7}
         >
@@ -181,7 +179,7 @@ const WATERMARK_PHRASES = [
 const WatermarkOverlay = ({ visible }: { visible: boolean }) => {
   const [phraseIndex, setPhraseIndex] = useState(0);
   const opacity = useSharedValue(0);
-  const intervalRef = useRef<NodeJS.Timeout | null>(null);
+  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const nextPhrase = useCallback(() => {
     setPhraseIndex((i) => (i + 1) % WATERMARK_PHRASES.length);
@@ -241,7 +239,6 @@ const ProductIntakeCard = ({ onUpload, onManual, onWebsite, onWebsiteUpgrade, is
         disabled={disabled}
         style={[
           styles.cardHalfBtn,
-          { borderRightWidth: 1, borderRightColor: 'rgba(0,240,255,0.1)' },
           disabled && { opacity: 0.4 },
           isWebsiteRestricted && { opacity: 0.5 },
         ]}
@@ -317,7 +314,7 @@ const AttributeEditorCard = ({ product, onSave, onBack, onStepBack, disabled }: 
             <Image
               key={idx}
               source={{ uri: imgUri }}
-              style={{ width: 80, height: 80, borderRadius: 8, marginRight: 8, borderWidth: 1, borderColor: 'rgba(0,240,255,0.2)' }}
+              style={{ width: 80, height: 80, borderRadius: 8, marginRight: 8 }}
               resizeMode="cover"
             />
           ))}
@@ -364,7 +361,7 @@ const AttributeEditorCard = ({ product, onSave, onBack, onStepBack, disabled }: 
           );
         })}
         {!disabled && (
-          <View style={{ borderTopWidth: 1, borderTopColor: 'rgba(0,240,255,0.1)', paddingTop: 10, marginTop: 4 }}>
+          <View style={{ backgroundColor: 'rgba(255,255,255,0.025)', borderRadius: 12, padding: 10, marginTop: 4 }}>
             <Text style={[styles.fieldLabel, { marginBottom: 6 }]}>ADD MISSING FIELD</Text>
             <View style={{ flexDirection: 'row', gap: 6 }}>
               <TextInput placeholder="Label" placeholderTextColor="#475569" style={[styles.input, { flex: 1 }]} value={newFieldKey} onChangeText={setNewFieldKey} />
@@ -419,7 +416,7 @@ const GoalSelectionCard = ({ onSelect, onBack, onStepBack, disabled, navigation 
               style={[
                 styles.goalCard,
                 disabled && styles.cardDisabled,
-                isLocked && { opacity: 0.55, borderColor: 'rgba(124,58,237,0.3)' },
+                isLocked && { opacity: 0.55, backgroundColor: 'rgba(124,58,237,0.08)' },
               ]}
               activeOpacity={0.75}
             >
@@ -466,7 +463,6 @@ const DurationSelectionCard = ({
     {(productName || price) && (
       <View style={{
         backgroundColor: 'rgba(0,240,255,0.06)', borderRadius: 12,
-        borderWidth: 1, borderColor: 'rgba(0,240,255,0.15)',
         padding: 10, marginBottom: 8, flexDirection: 'row', alignItems: 'center', gap: 8,
       }}>
         <View style={{ flex: 1 }}>
@@ -504,7 +500,7 @@ const DurationSelectionCard = ({
             key={d.days}
             onPress={() => onSelect(d.days)}
             disabled={disabled}
-            style={[styles.durationRow, i < arr.length - 1 && { borderBottomWidth: 1, borderBottomColor: 'rgba(0,240,255,0.08)' }, disabled && { opacity: 0.4 }]}
+            style={[styles.durationRow, disabled && { opacity: 0.4 }]}
           >
             <View style={{ flexDirection: 'row', alignItems: 'center' }}>
               <Icon size={18} color={disabled ? '#334155' : '#64748B'} />
@@ -579,7 +575,7 @@ const WeekDayCard = ({ day }: { day: any }) => {
   const [scriptExpanded, setScriptExpanded] = useState(false);
   const platformColor = PLATFORM_COLORS[day.platform?.toLowerCase()] || '#6366F1';
   return (
-    <View style={{ backgroundColor: '#0F172A', borderRadius: 10, padding: 12, marginBottom: 8, borderLeftWidth: 3, borderLeftColor: platformColor }}>
+    <View style={{ backgroundColor: '#0F172A', borderRadius: 10, padding: 12, marginBottom: 8 }}>
       <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 6 }}>
         <View style={{ backgroundColor: platformColor + '22', borderRadius: 6, paddingHorizontal: 8, paddingVertical: 2, marginRight: 8 }}>
           <Text style={{ color: platformColor, fontSize: 10, fontWeight: '700', textTransform: 'uppercase' }}>Day {day.day}</Text>
@@ -713,131 +709,151 @@ const ProductManualIntakeCard = ({ onSubmit, onBack, onStepBack, disabled }: { o
 
   const chipBase: any = {
     paddingHorizontal: 14, paddingVertical: 8, borderRadius: 10,
-    borderWidth: 1, marginRight: 8, marginBottom: 4,
+    marginRight: 8, marginBottom: 4,
   };
-  const chipActive: any = { backgroundColor: 'rgba(0,240,255,0.12)', borderColor: '#00F0FF' };
-  const chipInactive: any = { backgroundColor: 'rgba(30,41,59,0.7)', borderColor: '#334155' };
+  const chipActive: any = { backgroundColor: 'rgba(0,240,255,0.18)' };
+  const chipInactive: any = { backgroundColor: 'rgba(30,41,59,0.7)' };
 
   return (
     <View style={[styles.card, { padding: 14 }, disabled && styles.cardDisabled]}>
       <Text style={[styles.fieldLabel, { marginBottom: 8 }]}>PRODUCT DETAILS</Text>
       <ScrollView nestedScrollEnabled keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
-
-        {/* Product type toggle */}
-        <Text style={[styles.fieldLabel, { marginBottom: 6 }]}>PRODUCT TYPE</Text>
-        <View style={{ flexDirection: 'row', marginBottom: 12 }}>
-          {(['physical', 'digital'] as const).map(type => (
-            <TouchableOpacity
-              key={type}
-              onPress={() => !disabled && setProductType(type)}
-              style={[chipBase, productType === type ? chipActive : chipInactive]}
-            >
-              <Text style={{ color: productType === type ? '#00F0FF' : '#94A3B8', fontWeight: '600', fontSize: 13 }}>
-                {type === 'physical' ? 'Physical Product' : 'Digital Product'}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </View>
-
-        <TextInput placeholder="Product Name *" placeholderTextColor="#475569" style={[styles.input, { marginBottom: 10 }]} value={name} onChangeText={setName} editable={!disabled} />
-        <TextInput placeholder="Category (e.g. Fashion, Electronics)" placeholderTextColor="#475569" style={[styles.input, { marginBottom: 10 }]} value={category} onChangeText={setCategory} editable={!disabled} />
-
-        <Text style={[styles.fieldLabel, { marginBottom: 6 }]}>PRICE</Text>
-        <View style={{ flexDirection: 'row', gap: 8, marginBottom: 10 }}>
-          <CurrencySelector value={currency} onChange={setCurrency} disabled={disabled} />
-          <TextInput
-            placeholder="0.00"
-            placeholderTextColor="#475569"
-            keyboardType="numeric"
-            style={[styles.input, { flex: 1 }]}
-            value={price}
-            onChangeText={setPrice}
-            editable={!disabled}
-          />
-        </View>
-
-        <TextInput placeholder="Color (e.g. Red, Navy Blue)" placeholderTextColor="#475569" style={[styles.input, { marginBottom: 10 }]} value={color} onChangeText={setColor} editable={!disabled} />
-
-        <Text style={[styles.fieldLabel, { marginBottom: 6 }]}>AVAILABLE SIZES</Text>
         <View style={{ marginBottom: 10 }}>
-          <SizeChips selected={selectedSizes} onToggle={toggleSize} disabled={disabled} />
+          <Text style={[styles.fieldLabel, { marginBottom: 6 }]}>PRODUCT TYPE</Text>
+          <View style={{ flexDirection: 'row' }}>
+            {(['physical', 'digital'] as const).map(type => (
+              <TouchableOpacity
+                key={type}
+                onPress={() => !disabled && setProductType(type)}
+                style={[chipBase, productType === type ? chipActive : chipInactive]}
+              >
+                <Text style={{ color: productType === type ? '#00F0FF' : '#94A3B8', fontWeight: '600', fontSize: 13 }}>
+                  {type === 'physical' ? 'Physical Product' : 'Digital Product'}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
         </View>
 
-        <TextInput placeholder="Quantity in Stock" placeholderTextColor="#475569" keyboardType="numeric" style={[styles.input, { marginBottom: 10 }]} value={quantity} onChangeText={setQuantity} editable={!disabled} />
+        <View style={{ marginBottom: 10 }}>
+          <Text style={[styles.fieldLabel, { marginBottom: 6 }]}>PRODUCT NAME</Text>
+          <TextInput placeholder="Product Name *" placeholderTextColor="#475569" style={[styles.input]} value={name} onChangeText={setName} editable={!disabled} />
+        </View>
 
-        <TextInput placeholder="Product Description" placeholderTextColor="#475569" multiline style={[styles.input, { height: 70, marginBottom: 12 }]} value={description} onChangeText={setDescription} editable={!disabled} />
+        <View style={{ marginBottom: 10 }}>
+          <Text style={[styles.fieldLabel, { marginBottom: 6 }]}>CATEGORY</Text>
+          <TextInput placeholder="Category (e.g. Fashion, Electronics)" placeholderTextColor="#475569" style={[styles.input]} value={category} onChangeText={setCategory} editable={!disabled} />
+        </View>
 
-        {/* Physical-only fields */}
-        {productType === 'physical' && (
-          <>
-            <Text style={[styles.fieldLabel, { marginBottom: 6 }]}>DELIVERY TYPE</Text>
-            <View style={{ flexDirection: 'row', flexWrap: 'wrap', marginBottom: 12 }}>
-              {DELIVERY_TYPES.map(dt => (
-                <TouchableOpacity
-                  key={dt.key}
-                  onPress={() => !disabled && setDeliveryType(dt.key)}
-                  style={[chipBase, deliveryType === dt.key ? chipActive : chipInactive]}
-                >
-                  <Text style={{ color: deliveryType === dt.key ? '#00F0FF' : '#94A3B8', fontWeight: '600', fontSize: 12 }}>
-                    {dt.label}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-
+        <View style={{ marginBottom: 10 }}>
+          <Text style={[styles.fieldLabel, { marginBottom: 6 }]}>PRICING</Text>
+          <View style={{ flexDirection: 'row', gap: 8 }}>
+            <CurrencySelector value={currency} onChange={setCurrency} disabled={disabled} />
             <TextInput
-              placeholder="Delivery / Pickup Address"
+              placeholder="0.00"
               placeholderTextColor="#475569"
-              style={[styles.input, { marginBottom: 10 }]}
-              value={deliveryAddress}
-              onChangeText={setDeliveryAddress}
+              keyboardType="numeric"
+              style={[styles.input, { flex: 1 }]}
+              value={price}
+              onChangeText={setPrice}
               editable={!disabled}
             />
+          </View>
+        </View>
 
-            {deliveryType === 'pay_before_delivery' && (
+        <View style={{ marginBottom: 10 }}>
+          <Text style={[styles.fieldLabel, { marginBottom: 6 }]}>STOCK & VARIANTS</Text>
+          <TextInput placeholder="Color (e.g. Red, Navy Blue)" placeholderTextColor="#475569" style={[styles.input, { marginBottom: 10 }]} value={color} onChangeText={setColor} editable={!disabled} />
+          <View style={{ marginBottom: 10 }}>
+            <SizeChips selected={selectedSizes} onToggle={toggleSize} disabled={disabled} />
+          </View>
+          <TextInput placeholder="Quantity in Stock" placeholderTextColor="#475569" keyboardType="numeric" style={[styles.input]} value={quantity} onChangeText={setQuantity} editable={!disabled} />
+        </View>
+
+        <View style={{ marginBottom: 10 }}>
+          <Text style={[styles.fieldLabel, { marginBottom: 6 }]}>DESCRIPTION</Text>
+          <TextInput placeholder="Product Description" placeholderTextColor="#475569" multiline style={[styles.input, { height: 70 }]} value={description} onChangeText={setDescription} editable={!disabled} />
+        </View>
+
+        {productType === 'physical' && (
+          <>
+            <View style={{ marginBottom: 10 }}>
+              <Text style={[styles.fieldLabel, { marginBottom: 6 }]}>DELIVERY TYPE</Text>
+              <View style={{ flexDirection: 'row', flexWrap: 'wrap' }}>
+                {DELIVERY_TYPES.map(dt => (
+                  <TouchableOpacity
+                    key={dt.key}
+                    onPress={() => !disabled && setDeliveryType(dt.key)}
+                    style={[chipBase, deliveryType === dt.key ? chipActive : chipInactive]}
+                  >
+                    <Text style={{ color: deliveryType === dt.key ? '#00F0FF' : '#94A3B8', fontWeight: '600', fontSize: 12 }}>
+                      {dt.label}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </View>
+
+            <View style={{ marginBottom: 10 }}>
+              <Text style={[styles.fieldLabel, { marginBottom: 6 }]}>DISPATCH / PICKUP ADDRESS</Text>
               <TextInput
-                placeholder="Contact Phone *"
+                placeholder="Delivery / Pickup Address"
                 placeholderTextColor="#475569"
-                keyboardType="phone-pad"
-                style={[styles.input, { marginBottom: 10 }]}
-                value={phone}
-                onChangeText={setPhone}
+                style={[styles.input]}
+                value={deliveryAddress}
+                onChangeText={setDeliveryAddress}
                 editable={!disabled}
               />
+            </View>
+
+            {deliveryType === 'pay_before_delivery' && (
+              <View style={{ marginBottom: 10 }}>
+                <Text style={[styles.fieldLabel, { marginBottom: 6 }]}>CONTACT PHONE</Text>
+                <TextInput
+                  placeholder="Contact Phone *"
+                  placeholderTextColor="#475569"
+                  keyboardType="phone-pad"
+                  style={[styles.input]}
+                  value={phone}
+                  onChangeText={setPhone}
+                  editable={!disabled}
+                />
+              </View>
             )}
           </>
         )}
 
-        {/* ─── HOW WOULD YOU LIKE TO RECEIVE PAYMENT? ──────────────────────── */}
-        <Text style={[styles.fieldLabel, { marginBottom: 4, marginTop: 6, color: '#00F0FF' }]}>HOW WOULD YOU LIKE TO RECEIVE PAYMENT?</Text>
-        <Text style={{ color: '#64748B', fontSize: 11, marginBottom: 10 }}>
-          Your Salesman AI will use these details when closing deals with buyers.
-        </Text>
-        <TextInput
-          placeholder="Bank Name (e.g. Access Bank, GTBank, First Bank)"
-          placeholderTextColor="#475569"
-          style={[styles.input, { marginBottom: 10 }]}
-          value={bankName}
-          onChangeText={setBankName}
-          editable={!disabled}
-        />
-        <TextInput
-          placeholder="Account Name"
-          placeholderTextColor="#475569"
-          style={[styles.input, { marginBottom: 10 }]}
-          value={accountName}
-          onChangeText={setAccountName}
-          editable={!disabled}
-        />
-        <TextInput
-          placeholder="Account Number"
-          placeholderTextColor="#475569"
-          keyboardType="numeric"
-          style={[styles.input, { marginBottom: 14 }]}
-          value={accountNumber}
-          onChangeText={setAccountNumber}
-          editable={!disabled}
-        />
+        <View style={{ marginBottom: 10 }}>
+          <Text style={[styles.fieldLabel, { marginBottom: 4, color: '#00F0FF' }]}>HOW WOULD YOU LIKE TO RECEIVE PAYMENT?</Text>
+          <Text style={{ color: '#64748B', fontSize: 11, marginBottom: 10 }}>
+            Your Salesman AI will use these details when closing deals with buyers.
+          </Text>
+          <TextInput
+            placeholder="Bank Name (e.g. Access Bank, GTBank, First Bank)"
+            placeholderTextColor="#475569"
+            style={[styles.input, { marginBottom: 10 }]}
+            value={bankName}
+            onChangeText={setBankName}
+            editable={!disabled}
+          />
+          <TextInput
+            placeholder="Account Name"
+            placeholderTextColor="#475569"
+            style={[styles.input, { marginBottom: 10 }]}
+            value={accountName}
+            onChangeText={setAccountName}
+            editable={!disabled}
+          />
+          <TextInput
+            placeholder="Account Number"
+            placeholderTextColor="#475569"
+            keyboardType="numeric"
+            style={[styles.input, { marginBottom: 14 }]}
+            value={accountNumber}
+            onChangeText={setAccountNumber}
+            editable={!disabled}
+          />
+        </View>
 
         {!disabled && <ImageUploadComponent onImagesSelected={setImages} maxImages={5} />}
         {!disabled && (
@@ -890,55 +906,74 @@ const ServiceIntakeCard = ({ onSubmit, onBack, onStepBack, disabled }: { onSubmi
     <View style={[styles.card, { padding: 14 }, disabled && styles.cardDisabled]}>
       <Text style={[styles.fieldLabel, { marginBottom: 8 }]}>SERVICE DETAILS</Text>
       <ScrollView nestedScrollEnabled keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
-        <TextInput placeholder="Service Name *" placeholderTextColor="#475569" style={[styles.input, { marginBottom: 10 }]} value={name} onChangeText={setName} editable={!disabled} />
-        <TextInput placeholder="Category (e.g. Consulting, Design)" placeholderTextColor="#475569" style={[styles.input, { marginBottom: 10 }]} value={category} onChangeText={setCategory} editable={!disabled} />
-        <Text style={[styles.fieldLabel, { marginBottom: 6 }]}>PRICE / RATE</Text>
-        <View style={{ flexDirection: 'row', gap: 8, marginBottom: 10 }}>
-          <CurrencySelector value={currency} onChange={setCurrency} disabled={disabled} />
-          <TextInput placeholder="Amount or rate (e.g. 100/hr)" placeholderTextColor="#475569" style={[styles.input, { flex: 1 }]} value={price} onChangeText={setPrice} editable={!disabled} />
+        <View style={{ marginBottom: 10 }}>
+          <Text style={[styles.fieldLabel, { marginBottom: 6 }]}>SERVICE NAME</Text>
+          <TextInput placeholder="Service Name *" placeholderTextColor="#475569" style={[styles.input]} value={name} onChangeText={setName} editable={!disabled} />
         </View>
-        <TextInput placeholder="Service Description" placeholderTextColor="#475569" multiline style={[styles.input, { height: 70, marginBottom: 10 }]} value={description} onChangeText={setDescription} editable={!disabled} />
-        <TextInput
-          placeholder="Portfolio Link (optional — e.g. https://yourportfolio.com)"
-          placeholderTextColor="#475569"
-          keyboardType="url"
-          autoCapitalize="none"
-          style={[styles.input, { marginBottom: 12 }]}
-          value={portfolioUrl}
-          onChangeText={setPortfolioUrl}
-          editable={!disabled}
-        />
 
-        {/* ─── HOW WOULD YOU LIKE TO RECEIVE PAYMENT? ──────────────────────── */}
-        <Text style={[styles.fieldLabel, { marginBottom: 4, marginTop: 6, color: '#00F0FF' }]}>HOW WOULD YOU LIKE TO RECEIVE PAYMENT?</Text>
-        <Text style={{ color: '#64748B', fontSize: 11, marginBottom: 10 }}>
-          Your Salesman AI will use these details when closing service deals.
-        </Text>
-        <TextInput
-          placeholder="Bank Name (e.g. Access Bank, GTBank, First Bank)"
-          placeholderTextColor="#475569"
-          style={[styles.input, { marginBottom: 10 }]}
-          value={bankName}
-          onChangeText={setBankName}
-          editable={!disabled}
-        />
-        <TextInput
-          placeholder="Account Name"
-          placeholderTextColor="#475569"
-          style={[styles.input, { marginBottom: 10 }]}
-          value={accountName}
-          onChangeText={setAccountName}
-          editable={!disabled}
-        />
-        <TextInput
-          placeholder="Account Number"
-          placeholderTextColor="#475569"
-          keyboardType="numeric"
-          style={[styles.input, { marginBottom: 14 }]}
-          value={accountNumber}
-          onChangeText={setAccountNumber}
-          editable={!disabled}
-        />
+        <View style={{ marginBottom: 10 }}>
+          <Text style={[styles.fieldLabel, { marginBottom: 6 }]}>CATEGORY</Text>
+          <TextInput placeholder="Category (e.g. Consulting, Design)" placeholderTextColor="#475569" style={[styles.input]} value={category} onChangeText={setCategory} editable={!disabled} />
+        </View>
+
+        <View style={{ marginBottom: 10 }}>
+          <Text style={[styles.fieldLabel, { marginBottom: 6 }]}>PRICE / RATE</Text>
+          <View style={{ flexDirection: 'row', gap: 8 }}>
+            <CurrencySelector value={currency} onChange={setCurrency} disabled={disabled} />
+            <TextInput placeholder="Amount or rate (e.g. 100/hr)" placeholderTextColor="#475569" style={[styles.input, { flex: 1 }]} value={price} onChangeText={setPrice} editable={!disabled} />
+          </View>
+        </View>
+
+        <View style={{ marginBottom: 10 }}>
+          <Text style={[styles.fieldLabel, { marginBottom: 6 }]}>DESCRIPTION</Text>
+          <TextInput placeholder="Service Description" placeholderTextColor="#475569" multiline style={[styles.input, { height: 70 }]} value={description} onChangeText={setDescription} editable={!disabled} />
+        </View>
+
+        <View style={{ marginBottom: 10 }}>
+          <Text style={[styles.fieldLabel, { marginBottom: 6 }]}>PORTFOLIO</Text>
+          <TextInput
+            placeholder="Portfolio Link (optional — e.g. https://yourportfolio.com)"
+            placeholderTextColor="#475569"
+            keyboardType="url"
+            autoCapitalize="none"
+            style={[styles.input]}
+            value={portfolioUrl}
+            onChangeText={setPortfolioUrl}
+            editable={!disabled}
+          />
+        </View>
+
+        <View style={{ marginBottom: 10 }}>
+          <Text style={[styles.fieldLabel, { marginBottom: 4, color: '#00F0FF' }]}>HOW WOULD YOU LIKE TO RECEIVE PAYMENT?</Text>
+          <Text style={{ color: '#64748B', fontSize: 11, marginBottom: 10 }}>
+            Your Salesman AI will use these details when closing service deals.
+          </Text>
+          <TextInput
+            placeholder="Bank Name (e.g. Access Bank, GTBank, First Bank)"
+            placeholderTextColor="#475569"
+            style={[styles.input, { marginBottom: 10 }]}
+            value={bankName}
+            onChangeText={setBankName}
+            editable={!disabled}
+          />
+          <TextInput
+            placeholder="Account Name"
+            placeholderTextColor="#475569"
+            style={[styles.input, { marginBottom: 10 }]}
+            value={accountName}
+            onChangeText={setAccountName}
+            editable={!disabled}
+          />
+          <TextInput
+            placeholder="Account Number"
+            placeholderTextColor="#475569"
+            keyboardType="numeric"
+            style={[styles.input, { marginBottom: 14 }]}
+            value={accountNumber}
+            onChangeText={setAccountNumber}
+            editable={!disabled}
+          />
+        </View>
 
         {!disabled && <ImageUploadComponent onImagesSelected={setImages} maxImages={5} />}
         {!disabled && (
@@ -979,9 +1014,18 @@ const BrandIntakeCard = ({ onSubmit, onBack, onStepBack, disabled }: { onSubmit:
     <View style={[styles.card, { padding: 14 }, disabled && styles.cardDisabled]}>
       <Text style={[styles.fieldLabel, { marginBottom: 8 }]}>BRAND DETAILS</Text>
       <ScrollView nestedScrollEnabled keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
-        <TextInput placeholder="Brand Name *" placeholderTextColor="#475569" style={[styles.input, { marginBottom: 10 }]} value={name} onChangeText={setName} editable={!disabled} />
-        <TextInput placeholder="Mission Statement" placeholderTextColor="#475569" style={[styles.input, { marginBottom: 10 }]} value={mission} onChangeText={setMission} editable={!disabled} />
-        <TextInput placeholder="Core Values (e.g. Quality, Innovation)" placeholderTextColor="#475569" multiline style={[styles.input, { height: 70, marginBottom: 12 }]} value={values} onChangeText={setValues} editable={!disabled} />
+        <View style={{ marginBottom: 10 }}>
+          <Text style={[styles.fieldLabel, { marginBottom: 6 }]}>BRAND NAME</Text>
+          <TextInput placeholder="Brand Name *" placeholderTextColor="#475569" style={[styles.input]} value={name} onChangeText={setName} editable={!disabled} />
+        </View>
+        <View style={{ marginBottom: 10 }}>
+          <Text style={[styles.fieldLabel, { marginBottom: 6 }]}>MISSION</Text>
+          <TextInput placeholder="Mission Statement" placeholderTextColor="#475569" style={[styles.input]} value={mission} onChangeText={setMission} editable={!disabled} />
+        </View>
+        <View style={{ marginBottom: 12 }}>
+          <Text style={[styles.fieldLabel, { marginBottom: 6 }]}>CORE VALUES</Text>
+          <TextInput placeholder="Core Values (e.g. Quality, Innovation)" placeholderTextColor="#475569" multiline style={[styles.input, { height: 70 }]} value={values} onChangeText={setValues} editable={!disabled} />
+        </View>
         {!disabled && <ImageUploadComponent onImagesSelected={setImages} maxImages={5} />}
         {!disabled && (
           <VideoUploadComponent onVideoSelected={setVideo} selectedVideo={video} disabled={disabled} />
@@ -1027,7 +1071,7 @@ const SelectionList = ({ items, onSelect, type, onBack, onStepBack, disabled }: 
           key={item.id || index}
           onPress={() => onSelect(item)}
           disabled={disabled}
-          style={[styles.selectionRow, index < items.length - 1 && { borderBottomWidth: 1, borderBottomColor: 'rgba(0,240,255,0.08)' }]}
+          style={styles.selectionRow}
         >
           <View style={{ flex: 1 }}>
             <Text style={styles.selectionName}>{item.name}</Text>
@@ -1071,7 +1115,7 @@ const StrategyAccountSelectionCard = ({
         </TouchableOpacity>
       );
     })}
-    {!disabled && <View style={{ marginTop: 12 }}><Text style={styles.selectionSub}>Connect a platform through the existing Adirum AI connection flow:</Text>{['facebook', 'instagram', 'tiktok', 'linkedin', 'twitter', 'whatsapp'].map((platform) => <TouchableOpacity key={platform} onPress={() => onConnect(platform)} style={styles.retrySkipBtn}><Text style={{ color: '#CBD5E1', fontWeight: '700' }}>Connect {platform}</Text></TouchableOpacity>)}<TouchableOpacity onPress={onContinue} disabled={!selected.length} style={[styles.primaryBtn, { marginTop: 8 }, !selected.length && styles.cardDisabled]}><Text style={styles.primaryBtnText}>Continue</Text></TouchableOpacity></View>}
+{!disabled && <View style={{ marginTop: 12 }}><Text style={styles.selectionSub}>Connect a platform through the existing Adirum AI connection flow:</Text>{['facebook', 'instagram', 'tiktok', 'linkedin', 'twitter', 'whatsapp'].map((platform) => <TouchableOpacity key={platform} onPress={() => onConnect(platform)} style={styles.retrySkipBtn}><Text style={{ color: '#CBD5E1', fontWeight: '700' }}>Connect {platform}</Text></TouchableOpacity>)}<TouchableOpacity onPress={onContinue} disabled={!selected.length} style={[styles.primaryBtn, { marginTop: 8 }, !selected.length && styles.cardDisabled]}><Text style={styles.primaryBtnText}>Continue with selected accounts</Text></TouchableOpacity></View>}
   </View>
 );
 
@@ -1170,7 +1214,7 @@ const SessionRestorePromptCard = ({
         style={{
           marginTop: 10, flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
           paddingVertical: 12, paddingHorizontal: 16, borderRadius: 12,
-          borderWidth: 1, borderColor: 'rgba(0,240,255,0.3)', backgroundColor: 'transparent',
+          backgroundColor: 'rgba(0,240,255,0.06)',
           opacity: (disabled || busy) ? 0.5 : 1,
         }}
       >
@@ -1238,6 +1282,7 @@ const TypewriterText = ({
   onTick,
   onDone,
   enabled = true,
+  displayAsFullText = false,
 }: {
   text: string;
   style: any;
@@ -1246,23 +1291,33 @@ const TypewriterText = ({
   onTick?: () => void;
   onDone?: () => void;
   enabled?: boolean;
+  displayAsFullText?: boolean;
 }) => {
-  const [displayed, setDisplayed] = useState<string>(enabled ? '' : text);
-  const indexRef = useRef<number>(enabled ? 0 : text.length);
-  const doneRef = useRef<boolean>(!enabled);
+  const [displayed, setDisplayed] = useState<string>(enabled ? '' : (displayAsFullText ? text : ''));
+  const indexRef = useRef<number>(enabled ? 0 : (displayAsFullText ? text.length : 0));
+  const doneRef = useRef<boolean>(!enabled && displayAsFullText);
   const onDoneRef = useRef(onDone);
   onDoneRef.current = onDone;
 
   useEffect(() => {
-    if (!enabled || doneRef.current) {
-      setDisplayed(text);
-      indexRef.current = text.length;
-      if (!doneRef.current) {
-        doneRef.current = true;
+    if (!enabled) {
+      setDisplayed(displayAsFullText ? text : '');
+      indexRef.current = displayAsFullText ? text.length : 0;
+      doneRef.current = displayAsFullText;
+      if (displayAsFullText) {
         onDoneRef.current?.();
       }
       return;
     }
+
+    if (doneRef.current) {
+      setDisplayed(text);
+      indexRef.current = text.length;
+      return;
+    }
+
+    setDisplayed('');
+    indexRef.current = 0;
     let cancelled = false;
     const tick = () => {
       if (cancelled) return;
@@ -1284,14 +1339,9 @@ const TypewriterText = ({
       cancelled = true;
       clearTimeout(t);
     };
-    // We intentionally do NOT depend on `text` changing — the text passed
-    // in for an existing message id is immutable once added, and changing
-    // the dependency would re-trigger the typewriter on every parent
-    // re-render.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [enabled, text, speedMs, startDelay, displayAsFullText]);
 
-  return <Text style={style}>{displayed || (enabled ? ' ' : text)}</Text>;
+  return <Text style={style}>{displayed || (enabled ? ' ' : (displayAsFullText ? text : ''))}</Text>;
 };
 
 // Card fade-in wrapper — animates opacity 0→1 when mounted.
@@ -1390,11 +1440,9 @@ function CreditTicker({ balance, onPress }: { balance: number; onPress: () => vo
 
   const color = balance <= 0 ? '#EF4444' : balance <= 5 ? '#F59E0B' : '#10B981';
   const bg = balance <= 0 ? 'rgba(239,68,68,0.12)' : balance <= 5 ? 'rgba(245,158,11,0.12)' : 'rgba(16,185,129,0.1)';
-  const border = balance <= 0 ? 'rgba(239,68,68,0.3)' : balance <= 5 ? 'rgba(245,158,11,0.3)' : 'rgba(16,185,129,0.25)';
-
   return (
     <TouchableOpacity onPress={onPress} activeOpacity={0.75}>
-      <Animated.View style={[{ flexDirection: 'row', alignItems: 'center', backgroundColor: bg, borderWidth: 1, borderColor: border, borderRadius: 20, paddingHorizontal: 9, paddingVertical: 5, gap: 4 }, animStyle]}>
+      <Animated.View style={[{ flexDirection: 'row', alignItems: 'center', backgroundColor: bg, borderRadius: 20, paddingHorizontal: 9, paddingVertical: 5, gap: 4 }, animStyle]}>
         <Zap size={11} color={color} fill={color} />
         <Text style={{ color, fontSize: 11, fontWeight: '800', letterSpacing: 0.3 }}>
           {balance <= 0 ? '0' : balance < 10 ? balance.toFixed(1) : Math.floor(balance).toString()}
@@ -1581,12 +1629,12 @@ export default function AgentChatScreen({ navigation, route }: Props) {
   const [historyLoaded, setHistoryLoaded] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [isActive, setIsActive] = useState(false);
-  const activityTimer = useRef<NodeJS.Timeout | null>(null);
+  const activityTimer = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // ── 48-hour free-trial countdown ────────────────────────────────────────────
   const [trialCountdown, setTrialCountdown] = useState('');
   const [trialWindowExpired, setTrialWindowExpired] = useState(false);
-  const trialTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const trialTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
     if (!user?.created_at) return;
@@ -1835,6 +1883,10 @@ export default function AgentChatScreen({ navigation, route }: Props) {
     // Sequential streaming: count chars from preceding new agent messages so
     // each message waits for the previous one to finish before it starts.
     const isNewAgentMsg = item.sender === 'agent' && item.timestamp > mountedAtRef.current;
+    const hasEarlierUnfinishedAgent = isNewAgentMsg && messages.some((m, i) => {
+      if (i >= index) return false;
+      return m.sender === 'agent' && m.timestamp > mountedAtRef.current && !doneTextIds.has(m.id);
+    });
     const charsBeforeMe = isNewAgentMsg
       ? messages
           .filter(m => m.sender === 'agent' && m.timestamp > mountedAtRef.current && m.text && m.id !== item.id && m.timestamp <= item.timestamp)
@@ -1846,6 +1898,7 @@ export default function AgentChatScreen({ navigation, route }: Props) {
     // chat history is long.  Plain text bubbles keep the natural delay so they
     // still feel like a flowing conversation.
     const streamDelay = (item.uiType && INTERACTIVE_TYPES.includes(item.uiType)) ? 0 : charsBeforeMe * 2;
+    const shouldStreamText = isNewAgentMsg && !hasEarlierUnfinishedAgent;
 
     // Cards and forms only appear after the text in this bubble finishes
     // streaming. History messages (not new) are always immediately visible.
@@ -1980,7 +2033,8 @@ export default function AgentChatScreen({ navigation, route }: Props) {
             <TypewriterText
               text={item.text}
               style={styles.agentBubbleText}
-              enabled={isNewAgentMsg}
+              enabled={shouldStreamText}
+              displayAsFullText={!isNewAgentMsg}
               startDelay={streamDelay}
               onDone={() => markTextDone(item.id)}
               onTick={() => {
@@ -2125,7 +2179,7 @@ export default function AgentChatScreen({ navigation, route }: Props) {
             // Within 48h window → show trial CTA with live countdown
             if (!trialWindowExpired) {
               return (
-                <View style={{ backgroundColor: 'rgba(245,158,11,0.10)', borderTopWidth: 1, borderTopColor: 'rgba(245,158,11,0.30)', paddingHorizontal: 16, paddingTop: 12, paddingBottom: Math.max(12, insets.bottom + 8), flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                <View style={{ backgroundColor: 'rgba(245,158,11,0.10)', paddingHorizontal: 16, paddingTop: 12, paddingBottom: Math.max(12, insets.bottom + 8), flexDirection: 'row', alignItems: 'center', gap: 10 }}>
                   <View style={{ width: 32, height: 32, borderRadius: 10, backgroundColor: 'rgba(245,158,11,0.15)', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                     <Text style={{ fontSize: 16 }}>👑</Text>
                   </View>
@@ -2147,7 +2201,7 @@ export default function AgentChatScreen({ navigation, route }: Props) {
 
             // Past 48h → show regular subscribe banner
             return (
-              <View style={{ backgroundColor: 'rgba(0,240,255,0.06)', borderTopWidth: 1, borderTopColor: 'rgba(0,240,255,0.15)', paddingHorizontal: 16, paddingTop: 12, paddingBottom: Math.max(12, insets.bottom + 8), flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+              <View style={{ backgroundColor: 'rgba(0,240,255,0.06)', paddingHorizontal: 16, paddingTop: 12, paddingBottom: Math.max(12, insets.bottom + 8), flexDirection: 'row', alignItems: 'center', gap: 10 }}>
                 <View style={{ width: 32, height: 32, borderRadius: 10, backgroundColor: 'rgba(0,240,255,0.10)', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                   <Text style={{ fontSize: 16 }}>⚡</Text>
                 </View>
@@ -2168,7 +2222,7 @@ export default function AgentChatScreen({ navigation, route }: Props) {
           // Trialing user who used up all 50 trial credits
           if (isCurrentlyTrialing) {
             return (
-              <View style={{ backgroundColor: 'rgba(245,158,11,0.08)', borderTopWidth: 1, borderTopColor: 'rgba(245,158,11,0.2)', paddingHorizontal: 16, paddingTop: 12, paddingBottom: Math.max(12, insets.bottom + 8), flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+              <View style={{ backgroundColor: 'rgba(245,158,11,0.08)', paddingHorizontal: 16, paddingTop: 12, paddingBottom: Math.max(12, insets.bottom + 8), flexDirection: 'row', alignItems: 'center', gap: 10 }}>
                 <View style={{ width: 32, height: 32, borderRadius: 10, backgroundColor: 'rgba(245,158,11,0.12)', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                   <Text style={{ fontSize: 16 }}>⚡</Text>
                 </View>
@@ -2188,7 +2242,7 @@ export default function AgentChatScreen({ navigation, route }: Props) {
 
           // Subscribed user who exhausted their credits
           return (
-            <View style={{ backgroundColor: 'rgba(239,68,68,0.08)', borderTopWidth: 1, borderTopColor: 'rgba(239,68,68,0.2)', paddingHorizontal: 16, paddingTop: 12, paddingBottom: Math.max(12, insets.bottom + 8), flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+            <View style={{ backgroundColor: 'rgba(239,68,68,0.08)', paddingHorizontal: 16, paddingTop: 12, paddingBottom: Math.max(12, insets.bottom + 8), flexDirection: 'row', alignItems: 'center', gap: 10 }}>
               <View style={{ width: 32, height: 32, borderRadius: 10, backgroundColor: 'rgba(239,68,68,0.12)', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                 <Text style={{ fontSize: 16 }}>⚡</Text>
               </View>
@@ -2398,7 +2452,6 @@ const historyModalStyles = StyleSheet.create({
     borderRadius: 8,
     alignItems: 'center', justifyContent: 'center',
     backgroundColor: 'rgba(239,68,68,0.08)',
-    borderWidth: 1, borderColor: 'rgba(239,68,68,0.25)',
     marginLeft: 8,
   },
 });
@@ -2410,7 +2463,6 @@ const styles = StyleSheet.create({
   header: {
     flexDirection: 'row', alignItems: 'center',
     paddingHorizontal: 16, paddingVertical: 12,
-    borderBottomWidth: 1, borderBottomColor: 'rgba(0,240,255,0.08)',
     backgroundColor: '#0B0F19',
   },
   headerMenuBtn: { marginRight: 14, padding: 4 },
@@ -2419,7 +2471,7 @@ const styles = StyleSheet.create({
   headerRight: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   resetBtn: {
     width: 36, height: 36, borderRadius: 10,
-    backgroundColor: '#151B2B', borderWidth: 1, borderColor: '#1E293B',
+    backgroundColor: '#151B2B',
     alignItems: 'center', justifyContent: 'center',
   },
   historyBadge: {
@@ -2429,7 +2481,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 4,
     borderRadius: 9,
     backgroundColor: '#00F0FF',
-    borderWidth: 2, borderColor: '#0B0F19',
     alignItems: 'center', justifyContent: 'center',
   },
   historyBadgeText: {
@@ -2453,16 +2504,16 @@ const styles = StyleSheet.create({
   messageRow: { flexDirection: 'row', marginBottom: 14, alignItems: 'flex-end' },
   agentAvatar: {
     width: 30, height: 30, borderRadius: 15,
-    backgroundColor: '#151B2B', borderWidth: 1, borderColor: '#00F0FF',
+    backgroundColor: 'rgba(0,240,255,0.14)',
     alignItems: 'center', justifyContent: 'center', marginRight: 8, marginBottom: 2,
   },
   messageBubble: { maxWidth: '85%', borderRadius: 18, padding: 14 },
   userBubble: {
-    backgroundColor: 'rgba(0,240,255,0.08)', borderWidth: 1, borderColor: 'rgba(0,240,255,0.25)',
+    backgroundColor: 'rgba(0,240,255,0.10)',
     borderTopRightRadius: 4,
   },
   agentBubble: {
-    backgroundColor: '#151B2B', borderWidth: 1, borderColor: '#1E293B',
+    backgroundColor: '#151B2B',
     borderTopLeftRadius: 4,
   },
   agentBubbleStreaming: {
@@ -2470,7 +2521,7 @@ const styles = StyleSheet.create({
   },
   userBubbleText: { color: '#00F0FF', fontSize: 14, lineHeight: 20 },
   agentBubbleText: { color: '#E2E8F0', fontSize: 14, lineHeight: 20 },
-  messageImage: { width: 180, height: 120, borderRadius: 10, marginBottom: 8, borderWidth: 1, borderColor: 'rgba(0,240,255,0.2)' },
+  messageImage: { width: 180, height: 120, borderRadius: 10, marginBottom: 8 },
 
   // Typing
   typingWrap: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 20, paddingVertical: 10 },
@@ -2480,16 +2531,16 @@ const styles = StyleSheet.create({
   inputBar: {
     flexDirection: 'row', alignItems: 'flex-end',
     paddingHorizontal: 12, paddingTop: 10,
-    backgroundColor: '#0B0F19', borderTopWidth: 1, borderTopColor: '#1E293B',
+    backgroundColor: '#0B0F19',
     gap: 8,
   },
   inputCameraBtn: {
     width: 40, height: 40, borderRadius: 12,
-    backgroundColor: '#151B2B', borderWidth: 1, borderColor: '#1E293B',
+    backgroundColor: '#151B2B',
     alignItems: 'center', justifyContent: 'center',
   },
   inputField: {
-    flex: 1, backgroundColor: '#151B2B', borderWidth: 1, borderColor: '#1E293B',
+    flex: 1, backgroundColor: '#151B2B',
     borderRadius: 16, paddingHorizontal: 14, paddingTop: 10, paddingBottom: 10,
     color: '#E2E8F0', fontSize: 15, maxHeight: 100, minHeight: 40,
   },
@@ -2502,14 +2553,14 @@ const styles = StyleSheet.create({
   // Cards
   card: {
     marginTop: 10, backgroundColor: '#0F1520',
-    borderRadius: 16, borderWidth: 1, borderColor: 'rgba(0,240,255,0.15)',
+    borderRadius: 16,
     overflow: 'hidden',
   },
-  cardDisabled: { borderColor: '#1E293B', opacity: 0.55 },
-  cardUploadBtn: { padding: 20, alignItems: 'center', borderBottomWidth: 1, borderBottomColor: 'rgba(0,240,255,0.08)' },
+  cardDisabled: { opacity: 0.55 },
+  cardUploadBtn: { padding: 20, alignItems: 'center' },
   uploadIconWrap: {
     width: 64, height: 64, borderRadius: 32,
-    backgroundColor: 'rgba(0,240,255,0.08)', borderWidth: 1, borderColor: 'rgba(0,240,255,0.25)',
+    backgroundColor: 'rgba(0,240,255,0.12)',
     alignItems: 'center', justifyContent: 'center', marginBottom: 10,
   },
   cardHalfBtn: { flex: 1, padding: 14, alignItems: 'center' },
@@ -2518,14 +2569,14 @@ const styles = StyleSheet.create({
   cardSub: { color: '#64748B', fontSize: 12, textAlign: 'center' },
 
   input: {
-    backgroundColor: '#0B0F19', borderWidth: 1, borderColor: '#1E293B',
+    backgroundColor: '#0B0F19',
     borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10,
     color: '#E2E8F0', fontSize: 14,
   },
   fieldLabel: { color: '#00F0FF', fontSize: 10, fontWeight: '700', textTransform: 'uppercase', marginBottom: 4, letterSpacing: 0.5 },
   addFieldBtn: {
     backgroundColor: 'rgba(0,240,255,0.1)', paddingHorizontal: 12,
-    borderRadius: 8, justifyContent: 'center', borderWidth: 1, borderColor: 'rgba(0,240,255,0.2)',
+    borderRadius: 8, justifyContent: 'center',
   },
 
   primaryBtn: {
@@ -2537,7 +2588,7 @@ const styles = StyleSheet.create({
   // Goal cards
   goalCard: {
     width: '48%', backgroundColor: '#0F1520', padding: 14,
-    borderRadius: 14, borderWidth: 1, borderColor: 'rgba(0,240,255,0.15)',
+    borderRadius: 14,
     alignItems: 'center',
   },
   goalIcon: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center', marginBottom: 8 },
@@ -2546,7 +2597,7 @@ const styles = StyleSheet.create({
   // Duration
   durationRecommendedRow: {
     padding: 14, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    backgroundColor: 'rgba(0,240,255,0.04)', borderBottomWidth: 1, borderBottomColor: 'rgba(0,240,255,0.08)',
+    backgroundColor: 'rgba(0,240,255,0.06)',
   },
   durationRow: { padding: 14, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   durationText: { color: '#FFFFFF', fontWeight: '700', marginLeft: 12 },
@@ -2554,7 +2605,7 @@ const styles = StyleSheet.create({
   // Strategy type
   stratTypeRow: {
     flexDirection: 'row', alignItems: 'center', padding: 14,
-    backgroundColor: '#0F1520', borderRadius: 14, borderWidth: 1, borderColor: 'rgba(0,240,255,0.15)',
+    backgroundColor: '#0F1520', borderRadius: 14,
   },
   stratTypeIcon: {
     width: 40, height: 40, borderRadius: 20,
@@ -2565,14 +2616,14 @@ const styles = StyleSheet.create({
 
   // Strategy preview
   stratReach: { color: '#FFFFFF', fontSize: 26, fontWeight: '800' },
-  stratRationale: { backgroundColor: '#0B0F19', borderRadius: 10, padding: 12, marginBottom: 14, borderWidth: 1, borderColor: '#1E293B' },
-  platformTag: { backgroundColor: 'rgba(0,240,255,0.08)', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 20, borderWidth: 1, borderColor: 'rgba(0,240,255,0.2)' },
+  stratRationale: { backgroundColor: '#0B0F19', borderRadius: 10, padding: 12, marginBottom: 14 },
+  platformTag: { backgroundColor: 'rgba(0,240,255,0.10)', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 20 },
   platformTagText: { color: '#00F0FF', fontSize: 11, textTransform: 'capitalize' },
 
   // Connect button
   connectBtn: { marginTop: 10, borderRadius: 14, paddingVertical: 13, paddingHorizontal: 20, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10 },
   connectBtnPrimary: { backgroundColor: '#00F0FF' },
-  connectBtnConnected: { backgroundColor: 'rgba(239,68,68,0.15)', borderWidth: 1, borderColor: 'rgba(239,68,68,0.4)' },
+  connectBtnConnected: { backgroundColor: 'rgba(239,68,68,0.18)' },
   connectBtnLetter: { color: '#0B0F19', fontWeight: '900', fontSize: 16 },
   connectBtnText: { color: '#0B0F19', fontWeight: '800', fontSize: 14 },
 
@@ -2582,18 +2633,18 @@ const styles = StyleSheet.create({
   selectionSub: { color: '#64748B', fontSize: 11, marginTop: 2 },
 
   // Retry
-  retryCard: { borderColor: 'rgba(239,68,68,0.4)', padding: 14 },
+  retryCard: { padding: 14 },
   retryIcon: {
     width: 40, height: 40, backgroundColor: 'rgba(239,68,68,0.1)',
     borderRadius: 20, alignItems: 'center', justifyContent: 'center', marginRight: 12,
   },
   retrySkipBtn: {
     flex: 1, backgroundColor: '#151B2B', paddingVertical: 12,
-    borderRadius: 12, alignItems: 'center', borderWidth: 1, borderColor: '#1E293B',
+    borderRadius: 12, alignItems: 'center',
   },
 
   // Completion
-  completionCard: { alignItems: 'center', padding: 20, borderColor: 'rgba(16,185,129,0.3)' },
+  completionCard: { alignItems: 'center', padding: 20 },
   completionIcon: {
     width: 52, height: 52, borderRadius: 26,
     backgroundColor: 'rgba(16,185,129,0.1)', alignItems: 'center', justifyContent: 'center', marginBottom: 12,

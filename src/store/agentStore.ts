@@ -797,12 +797,30 @@ export const useAgentStore = create<AgentState>()(
   handleDurationSelection: async (duration: number) => {
       const { addMessage, updateProductDetails, productDetails, messages } = get();
       updateProductDetails({ selectedDuration: duration });
+
+      const strategyStore = useStrategyCreationStore.getState();
+      const selectedAccounts = strategyStore.productData.selectedAccounts || [];
+      const connectedPlatforms = get().connectedPlatforms || {};
+      const connectedNames = Object.keys(connectedPlatforms);
+      const normalizedSelected = selectedAccounts.map((p: string) => String(p).trim().toLowerCase());
+      const isValidAccountSelection = normalizedSelected.length > 0 && normalizedSelected.every((platform) => connectedNames.includes(platform));
+
+      if (!isValidAccountSelection) {
+        set({ flowState: 'DURATION_SELECTION', isTyping: false, isInputDisabled: false });
+        addMessage(`${duration} days`, 'user');
+        addMessage(
+          'Before I generate this strategy, select the connected social accounts Adirum AI should use, or connect any missing ones and come back here.',
+          'agent',
+          undefined,
+          'strategy_account_selection',
+          { accounts: Object.values(connectedPlatforms || {}) }
+        );
+        return;
+      }
+
       set({ flowState: 'STRATEGY_GENERATION', isTyping: true, isInputDisabled: true });
 
       addMessage(`${duration} days`, 'user');
-      // Generic, user-friendly framing only — the rotating ThinkingIndicator
-      // below the chat list will surface the in-progress phrases. We
-      // intentionally do not name any internal pipeline stage here.
       addMessage("Got it. Crafting your strategy now — this usually takes a few seconds.", 'agent');
 
       // Recover productId and selectedGoal from duration_selection uiData if missing (session restore)
@@ -827,7 +845,22 @@ export const useAgentStore = create<AgentState>()(
           const strategies = await StrategyService.generateStrategies(
               resolvedProductId,
               resolvedGoal,
-              duration
+              duration,
+              {
+                selectedAccounts: normalizedSelected,
+                productType: strategyStore.productData.productType,
+                dispatchAddress: strategyStore.productData.dispatchAddress,
+                product: {
+                  name: strategyStore.productData.name,
+                  description: strategyStore.productData.description,
+                  category: strategyStore.productData.category,
+                  targetAudience: strategyStore.productData.targetAudience,
+                  price: strategyStore.productData.price,
+                  currency: strategyStore.productData.currency,
+                  websiteUrl: strategyStore.productData.websiteUrl,
+                  videoUri: strategyStore.productData.videoUri,
+                },
+              }
           );
           
           set({ 

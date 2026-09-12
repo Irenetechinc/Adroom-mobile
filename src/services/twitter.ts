@@ -20,6 +20,9 @@ export const TwitterService = {
 
       const callbackUrl = `${BACKEND_URL}/auth/twitter/callback`;
 
+      // X OAuth is sensitive to browser lifecycle issues on mobile. Keep the
+      // browser open until the backend has stored the code, and also allow the
+      // app to detect the redirect as a fallback if the browser closes early.
       const base64Url = (b64: string) => b64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
       const codeVerifier = (Crypto.randomUUID() + Crypto.randomUUID()).replace(/-/g, '');
       const codeChallengeBase64 = await Crypto.digestStringAsync(

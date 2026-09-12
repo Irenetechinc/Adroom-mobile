@@ -57,6 +57,15 @@ export default function DurationSelectionScreen() {
       return;
     }
 
+    if (!productData.selectedAccounts?.length) {
+      Alert.alert(
+        'Connect an account first',
+        'Select at least one connected social account or connect a missing account before generating this strategy.'
+      );
+      navigation.navigate('AgentChat', { strategyAccountSelection: true });
+      return;
+    }
+
     setLoading(true);
     setLoadingMessage('Saving product details...');
 
