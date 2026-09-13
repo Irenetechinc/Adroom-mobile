@@ -64,7 +64,6 @@ export interface PreviewAsset {
   body: string;
   hashtags: string[];
   hook?: string;
-  tiktokScript?: any;
   imageUrl?: string;
   designStyle?: string;
   fingerprint?: string;
@@ -527,7 +526,6 @@ Return ONLY the image prompt text, nothing else.
               body: day.body,
               hashtags: day.hashtags || [],
               hook: day.hook,
-              tiktokScript: day.tiktok_script,
               imageUrl: asset.url || undefined,
               designStyle: asset.designStyle,
               fingerprint: asset.fingerprint,
@@ -542,7 +540,6 @@ Return ONLY the image prompt text, nothing else.
               body: day.body,
               hashtags: day.hashtags || [],
               hook: day.hook,
-              tiktokScript: day.tiktok_script,
               error: e.message,
             } as PreviewAsset;
           }

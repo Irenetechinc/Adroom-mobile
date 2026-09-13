@@ -13,6 +13,8 @@ const GOAL_MAP: Record<string, 'SALESMAN' | 'AWARENESS' | 'PROMOTION' | 'LAUNCH'
     sales: 'SALESMAN',
     salesman: 'SALESMAN',
     conversion: 'SALESMAN',
+    lead: 'SALESMAN',
+    leads: 'SALESMAN',
     awareness: 'AWARENESS',
     reach: 'AWARENESS',
     brand: 'AWARENESS',
@@ -108,6 +110,20 @@ export class AgentOrchestrator {
             .eq('strategy_id', params.strategyId);
 
         const tasksScheduled = count || 0;
+        if (tasksScheduled === 0) {
+            throw new Error(`${agentType} did not schedule any executable tasks for strategy ${params.strategyId}`);
+        }
+
+        // All engines and the scheduler use this canonical active state.
+        // Specialized agents update their own execution plan, while the
+        // orchestrator owns the lifecycle transition shared by every goal.
+        const { error: activationError } = await this.supabase
+            .from('strategies')
+            .update({ is_active: true, status: 'active', agent_type: agentType, updated_at: new Date().toISOString() })
+            .eq('id', params.strategyId)
+            .eq('user_id', params.userId);
+        if (activationError) throw new Error(`Could not mark strategy active: ${activationError.message}`);
+
         const activatedAt = new Date().toISOString();
 
         // Record in goal_progress

@@ -1539,6 +1539,16 @@ app.post('/api/ai/generate-strategy', async (req, res) => {
         const { isFreeAIRequest } = await import('./config/ai-models');
         const freeMode = await isFreeAIRequest();
         const retriever = new MemoryRetriever(supabase);
+        // Refresh live intelligence before assembling context. Each engine is
+        // independent: a provider outage must not erase the other fresh
+        // signals or block strategy creation.
+        const [ipeResult, socialResult, emotionalResult, geoResult] = await Promise.allSettled([
+          (async () => { const { PlatformIntelligenceEngine } = await import('./services/ipeEngine'); return new PlatformIntelligenceEngine().runCycle(); })(),
+          (async () => { const { SocialListeningEngine } = await import('./services/socialListening'); return new SocialListeningEngine().runCycle(); })(),
+          (async () => { const { EmotionalIntelligenceEngine } = await import('./services/emotionalIntelligence'); return new EmotionalIntelligenceEngine().runCycle(); })(),
+          (async () => { const { GeoMonitoringEngine } = await import('./services/geoMonitoring'); return new GeoMonitoringEngine().runCycle(); })(),
+        ]);
+        console.log(`[Strategy] Live intelligence refresh: IPE=${ipeResult.status}, social=${socialResult.status}, emotional=${emotionalResult.status}, GEO=${geoResult.status}`);
         const context = await retriever.getAllContext(user.id, productId, 'product');
         const { data: savedProduct } = await supabase
           .from('product_memory')
@@ -1590,11 +1600,14 @@ app.post('/api/ai/generate-strategy', async (req, res) => {
             created_at: new Date().toISOString(),
         }).select().single();
 
-        if (saveErr) {
-            console.warn(`[Strategy] [${ts()}] Save warning: ${saveErr.message}`);
-        } else {
-            console.log(`[Strategy] [${ts()}] STEP 7 — Strategy saved with ID: ${savedStrategy?.id}`);
+        if (saveErr || !savedStrategy?.id) {
+          console.error(`[Strategy] [${ts()}] Strategy persistence failed: ${saveErr?.message || 'No strategy id returned'}`);
+          return res.status(500).json({
+            error: 'STRATEGY_PERSISTENCE_FAILED',
+            message: 'The strategy was generated but could not be saved. Please retry before approving it.',
+          });
         }
+        console.log(`[Strategy] [${ts()}] STEP 7 — Strategy saved with ID: ${savedStrategy.id}`);
 
         // Deduct energy after successful generation (CMA-routed — uses economy cost if applicable)
         await deductEnergyForUser(user.id, 'generate_strategy', {
@@ -1619,7 +1632,6 @@ Rationale: ${strategy.rationale}
 Campaign Duration: ${duration} days
 
 Generate 7 days of preview content. Assign 1 post per day, rotating through platforms.
-For TikTok days, include a video script preview.
 Make the content feel REAL and ready-to-post.
 
 OUTPUT JSON:
@@ -1632,17 +1644,9 @@ OUTPUT JSON:
       "headline": "Attention-grabbing headline",
       "body": "Full caption text, 2-4 sentences, ready to post. Include relevant details about the product/service.",
       "hashtags": ["tag1", "tag2", "tag3"],
-      "hook": "First 3 seconds hook (for video/reel content)",
-      "tiktok_script": null
+      "hook": "Opening creative hook for video or reel content"
     }
   ]
-}
-For any TikTok day, set tiktok_script to:
-{
-  "hook": "Opening hook text",
-  "scene_1": "What to show in first 5 seconds",
-  "scene_2": "Middle section content",
-  "cta": "Call to action"
 }
 `;
             const { AIEngine: AIEngineForPreview } = await import('./config/ai-models');
@@ -1653,8 +1657,41 @@ For any TikTok day, set tiktok_script to:
             console.warn(`[Strategy] Week preview generation failed (non-fatal): ${previewErr.message}`);
         }
 
+        // Generate the real visual assets used by the preview. Keep this
+        // non-blocking so a provider outage still leaves the user with a
+        // usable strategy and a retryable preview path.
+        let previewAssets: any[] = [];
+        if (weekPreview.length > 0) {
+          try {
+            const { GraphicsDesignerAgent } = await import('./agents/graphicsDesignerAgent');
+            const designer = new GraphicsDesignerAgent();
+            const goalMap: Record<string, 'SALESMAN' | 'AWARENESS' | 'PROMOTION' | 'LAUNCH'> = {
+              sales: 'SALESMAN', salesman: 'SALESMAN', conversion: 'SALESMAN', lead: 'SALESMAN', leads: 'SALESMAN',
+              awareness: 'AWARENESS', reach: 'AWARENESS', brand: 'AWARENESS',
+              promotion: 'PROMOTION', promotional: 'PROMOTION', offer: 'PROMOTION', discount: 'PROMOTION',
+              launch: 'LAUNCH', product_launch: 'LAUNCH', new_product: 'LAUNCH',
+            };
+            const previewGoal = goalMap[String(goal || '').toLowerCase().trim()] || 'AWARENESS';
+            previewAssets = await designer.generateStrategyPreviewAssets({
+              userId: user.id,
+              strategyId: savedStrategy.id,
+              productId,
+              product: savedProduct || submittedProduct || context.product || {},
+              goal: previewGoal,
+              weekPreview,
+            });
+          } catch (assetErr: any) {
+            console.warn(`[Strategy] Preview asset generation failed (non-fatal): ${assetErr.message}`);
+          }
+        }
+        const assetsByDay = new Map(previewAssets.map((asset: any) => [asset.day, asset]));
+        const previewWithAssets = weekPreview.map((day: any) => ({
+          ...day,
+          ...(assetsByDay.get(day.day) || {}),
+        }));
+
         console.log(`[Strategy] ═══════════════════════════════════════\n`);
-        res.status(200).json({ strategy: { ...strategy, week_preview: weekPreview }, strategyId: savedStrategy?.id });
+        res.status(200).json({ strategy: { ...strategy, week_preview: previewWithAssets, preview_assets: previewAssets }, strategyId: savedStrategy.id });
     } catch (error: any) {
         console.error(`[Strategy] [${ts()}] FATAL ERROR:`, error.message);
         console.log(`[Strategy] ═══════════════════════════════════════\n`);
@@ -1819,8 +1856,15 @@ app.post('/api/ai/activate-agents', async (req, res) => {
             .eq('id', strategyId)
             .single();
 
-        const activeStrategy = strategy || { id: strategyId, goal, platforms, user_id: user.id, duration: 30 };
-        const activePlatforms = (platforms || strategy?.platforms || ['facebook']).slice(0, planLimits.platforms);
+        if (!strategy) {
+            return res.status(409).json({
+              error: 'STRATEGY_NOT_FOUND',
+              message: 'This strategy is no longer available. Return to strategy creation and generate it again before approving.',
+            });
+        }
+
+        const activeStrategy = strategy;
+        const activePlatforms = (platforms || strategy.platforms || ['facebook']).slice(0, planLimits.platforms);
 
         // Store user-supplied video URL in strategy so agents can retrieve it at execution time
         if (videoUrl) {

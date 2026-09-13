@@ -690,7 +690,7 @@ export const useAgentStore = create<AgentState>()(
   },
 
   handleRetry: async (action: string, data: any) => {
-    const { addMessage, handleWebsiteIntake, handleLogin, handleDurationSelection } = get();
+    const { addMessage, handleWebsiteIntake, handleLogin, handleDurationSelection, handleStrategySelection } = get();
     addMessage("Retrying...", 'agent');
 
     switch (action) {
@@ -726,6 +726,9 @@ export const useAgentStore = create<AgentState>()(
         break;
       case 'STRATEGY_GENERATION':
         await handleDurationSelection(Number(data?.duration) || get().productDetails.selectedDuration || 7);
+        break;
+      case 'ACTIVATE_AGENTS':
+        await handleStrategySelection();
         break;
       default:
         addMessage("Let's try again. Please provide your product or website URL:", 'agent', undefined, 'website_intake_form');
@@ -928,7 +931,7 @@ export const useAgentStore = create<AgentState>()(
                   headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
                   body: JSON.stringify({
                       strategyId,
-                      goal: strategy.goal || strategy.title,
+                      goal: strategy.goal || get().productDetails.selectedGoal || strategy.title,
                       platforms: strategy.platforms,
                       videoUrl: get().productDetails.videoUrl,
                   }),
@@ -944,17 +947,28 @@ export const useAgentStore = create<AgentState>()(
                       'agent'
                   );
               } else {
-                  addMessage(`Agents activated. Your campaign is running autonomously. Check the Dashboard for real-time updates.`, 'agent');
+                  const errorBody = await response.json().catch(() => ({}));
+                  set({ isInputDisabled: false });
+                  addMessage(
+                    errorBody.message || errorBody.error || 'Activation could not be completed yet. Retry when you are ready.',
+                    'agent',
+                    undefined,
+                    'retry_action',
+                    { action: 'ACTIVATE_AGENTS' },
+                  );
               }
           } catch (err: any) {
-              addMessage(`Agents activated. Your campaign is running autonomously. Check the Dashboard for real-time updates.`, 'agent');
+              set({ isInputDisabled: false });
+              addMessage(
+                err.message || 'Activation could not be completed yet. Check your connection and retry.',
+                'agent',
+                undefined,
+                'retry_action',
+                { action: 'ACTIVATE_AGENTS' },
+              );
           }
-      } else {
-          addMessage(`Your campaign is set up. Connect your social accounts to begin autonomous execution.`, 'agent');
-          setTimeout(() => {
-              const platforms = strategy.platforms || ['facebook'];
-              initiateConnection(platforms[0], true);
-          }, 1000);
+        } else {
+          addMessage(`Your campaign is set up and running autonomously. Track its live activity from your Dashboard.`, 'agent');
       }
   },
 

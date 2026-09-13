@@ -122,7 +122,6 @@ export default function StrategyApprovalScreen({ navigation }: Props) {
       body: item.reason || item.caption || item.body || '',
       hashtags: item.hashtags || [],
       hook: item.hook,
-      tiktok_script: item.tiktok_script,
     }));
 
     const generateAssets = async () => {

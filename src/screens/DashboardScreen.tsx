@@ -257,11 +257,11 @@ export default function DashboardScreen() {
         gmapsRes, achievementsRes, perfRes, leadsCountRes,
       ] = await Promise.all([
         supabase
-          .from('strategy_memory')
-          .select('*')
+          .from('strategies')
+          .select('id, strategy_id:id, title, goal, agent_type, current_execution_plan, platforms, is_active, updated_at, created_at')
           .eq('user_id', session.user.id)
-          .eq('status', 'active')
-          .order('created_at', { ascending: false }),
+          .eq('is_active', true)
+          .order('updated_at', { ascending: false }),
         supabase
           .from('ipe_intelligence_log')
           .select('*')
@@ -391,6 +391,20 @@ export default function DashboardScreen() {
       .subscribe();
     agentSubRef.current = channel;
     return () => { supabase.removeChannel(channel); };
+  }, [session?.user?.id]);
+
+  useEffect(() => {
+    if (!session?.user) return;
+    const strategyChannel = supabase
+      .channel('strategies_live')
+      .on('postgres_changes', {
+        event: '*',
+        schema: 'public',
+        table: 'strategies',
+        filter: `user_id=eq.${session.user.id}`,
+      }, () => { fetchData(); })
+      .subscribe();
+    return () => { supabase.removeChannel(strategyChannel); };
   }, [session?.user?.id]);
 
   // Realtime subscription for closed deals
