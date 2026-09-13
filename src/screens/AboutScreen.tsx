@@ -303,7 +303,6 @@ const styles = StyleSheet.create({
   header: {
     flexDirection: 'row', alignItems: 'center',
     paddingHorizontal: 20, paddingVertical: 14,
-    borderBottomWidth: 1, borderBottomColor: 'rgba(0,240,255,0.08)',
   },
   backBtn: { marginRight: 14, padding: 4 },
   headerLabel: { color: COLORS.muted, fontSize: 11, fontWeight: '600', letterSpacing: 1, textTransform: 'uppercase' },
@@ -318,7 +317,7 @@ const styles = StyleSheet.create({
   },
   heroIconWrap: {
     width: 88, height: 88, borderRadius: 28,
-    backgroundColor: '#151B2B', borderWidth: 1.5, borderColor: 'rgba(245,158,11,0.25)',
+    backgroundColor: '#151B2B',
     alignItems: 'center', justifyContent: 'center', marginBottom: 20, overflow: 'hidden',
   },
   heroTitle: {
@@ -331,7 +330,7 @@ const styles = StyleSheet.create({
   },
   heroBadge: {
     flexDirection: 'row', alignItems: 'center', gap: 8,
-    backgroundColor: 'rgba(0,240,255,0.07)', borderWidth: 1, borderColor: 'rgba(0,240,255,0.18)',
+    backgroundColor: 'rgba(0,240,255,0.07)',
     borderRadius: 50, paddingHorizontal: 14, paddingVertical: 7,
   },
   liveDot: { width: 7, height: 7, borderRadius: 4, backgroundColor: COLORS.neon },
@@ -343,7 +342,7 @@ const styles = StyleSheet.create({
     marginBottom: 16, overflow: 'hidden',
   },
   resultItem: { flex: 1, alignItems: 'center', paddingVertical: 18, paddingHorizontal: 4 },
-  resultBorder: { borderRightWidth: 1, borderRightColor: COLORS.border },
+  resultBorder: {},
   resultValue: { color: COLORS.neon, fontSize: 20, fontWeight: '900', marginBottom: 3 },
   resultLabel: { color: COLORS.text, fontSize: 10, fontWeight: '700', textAlign: 'center', marginBottom: 3 },
   resultSub: { color: COLORS.muted, fontSize: 9, textAlign: 'center', lineHeight: 13 },
@@ -363,7 +362,7 @@ const styles = StyleSheet.create({
   },
   platformRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 12 },
   platformTag: {
-    backgroundColor: 'rgba(0,240,255,0.08)', borderWidth: 1, borderColor: 'rgba(0,240,255,0.2)',
+    backgroundColor: 'rgba(0,240,255,0.08)',
     borderRadius: 20, paddingHorizontal: 14, paddingVertical: 6,
   },
   platformTagText: { color: COLORS.neon, fontSize: 12, fontWeight: '700' },
@@ -389,7 +388,7 @@ const styles = StyleSheet.create({
   capBody: { color: COLORS.muted, fontSize: 12, lineHeight: 20 },
 
   calloutCard: {
-    backgroundColor: 'rgba(245,158,11,0.06)', borderWidth: 1, borderColor: 'rgba(245,158,11,0.18)',
+    backgroundColor: 'rgba(245,158,11,0.06)',
     borderRadius: 20, padding: 20, marginBottom: 16,
   },
   calloutHeader: { flexDirection: 'row', alignItems: 'flex-start', gap: 10, marginBottom: 14 },
@@ -404,7 +403,7 @@ const styles = StyleSheet.create({
   promiseText: { color: '#CBD5E1', fontSize: 13, lineHeight: 20, flex: 1 },
 
   missionCard: {
-    backgroundColor: 'rgba(0,240,255,0.04)', borderWidth: 1, borderColor: 'rgba(0,240,255,0.1)',
+    backgroundColor: 'rgba(0,240,255,0.04)',
     borderRadius: 20, padding: 22, marginBottom: 16, alignItems: 'center',
   },
   missionQuote: {
@@ -415,7 +414,7 @@ const styles = StyleSheet.create({
 
   contactCard: {
     flexDirection: 'row', alignItems: 'center', gap: 12,
-    backgroundColor: 'rgba(0,240,255,0.04)', borderWidth: 1, borderColor: 'rgba(0,240,255,0.14)',
+    backgroundColor: 'rgba(0,240,255,0.04)',
     borderRadius: 16, padding: 16, marginBottom: 24,
   },
   contactLeft: {
@@ -426,7 +425,7 @@ const styles = StyleSheet.create({
   contactSub: { color: COLORS.muted, fontSize: 11 },
   contactBtn: {
     flexDirection: 'row', alignItems: 'center', gap: 5,
-    backgroundColor: 'rgba(0,240,255,0.1)', borderWidth: 1, borderColor: 'rgba(0,240,255,0.22)',
+    backgroundColor: 'rgba(0,240,255,0.1)',
     borderRadius: 10, paddingHorizontal: 12, paddingVertical: 8,
   },
   contactBtnText: { color: COLORS.neon, fontWeight: '700', fontSize: 12 },

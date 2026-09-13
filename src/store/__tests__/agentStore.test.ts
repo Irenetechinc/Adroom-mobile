@@ -11,6 +11,12 @@ jest.mock('../../services/strategy', () => ({
   },
 }));
 
+jest.mock('../../services/product', () => ({
+  ProductService: {
+    saveProduct: jest.fn().mockResolvedValue('prod_test'),
+  },
+}));
+
 describe('useAgentStore', () => {
   beforeEach(() => {
     useAgentStore.setState({
@@ -95,5 +101,54 @@ describe('useAgentStore', () => {
     expect(generatedStrategies).toBeTruthy();
     expect((generatedStrategies as any)!.strategy).toBeTruthy();
     expect((generatedStrategies as any)!.strategy.title).toBe('Organic Plan');
+  });
+
+  it('should carry product dispatch address into strategy creation', async () => {
+    await useAgentStore.getState().handleProductIntake({
+      name: 'Test Product',
+      description: 'A product',
+      category: 'Home',
+      price: '$20',
+      currency: 'USD',
+      productType: 'physical',
+      deliveryAddress: '12 Test Street',
+    } as any);
+
+    expect(useStrategyCreationStore.getState().productData.dispatchAddress).toBe('12 Test Street');
+    expect(useStrategyCreationStore.getState().productData.productType).toBe('physical');
+  });
+
+  it('should move service and brand intake into the shared strategy model', async () => {
+    await useAgentStore.getState().handleServiceIntake({
+      name: 'Design Service',
+      description: 'Design work',
+      category: 'Creative',
+      price: '100',
+      currency: 'USD',
+    });
+    expect(useStrategyCreationStore.getState().productData.name).toBe('Design Service');
+
+    await useAgentStore.getState().handleBrandIntake({
+      name: 'Test Brand',
+      mission: 'Make useful things',
+      values: 'Quality',
+    });
+    expect(useStrategyCreationStore.getState().productData.name).toBe('Test Brand');
+    expect(useStrategyCreationStore.getState().productData.category).toBe('Brand');
+  });
+
+  it('should expose a retry action when strategy generation fails', async () => {
+    const strategyService = require('../../services/strategy').StrategyService;
+    strategyService.generateStrategies.mockRejectedValueOnce(new Error('Temporary AI failure'));
+    useAgentStore.setState({
+      connectedPlatforms: { twitter: { platform: 'twitter', page_name: 'My X account' } },
+      productDetails: { id: 'prod_1', selectedGoal: 'sales', selectedDuration: 7, name: 'Test Product', description: 'Test' },
+    });
+
+    await useAgentStore.getState().handleDurationSelection(7);
+    const message = useAgentStore.getState().messages.at(-1);
+    expect(message?.uiType).toBe('retry_action');
+    expect(message?.uiData?.action).toBe('STRATEGY_GENERATION');
+    expect(useAgentStore.getState().flowState).toBe('DURATION_SELECTION');
   });
 });

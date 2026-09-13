@@ -180,7 +180,6 @@ const s = StyleSheet.create({
   header: {
     flexDirection: 'row', alignItems: 'center',
     paddingHorizontal: 20, paddingVertical: 14,
-    borderBottomWidth: 1, borderBottomColor: 'rgba(0,240,255,0.07)',
   },
   menuBtn: { marginRight: 14, padding: 6 },
   headerEyebrow: {
@@ -190,8 +189,7 @@ const s = StyleSheet.create({
   headerTitle: { color: '#F1F5F9', fontSize: 22, fontWeight: '800', letterSpacing: -0.3, marginTop: 1 },
   headerPill: {
     flexDirection: 'row', alignItems: 'center', gap: 5,
-    backgroundColor: 'rgba(0,240,255,0.07)', borderWidth: 1,
-    borderColor: 'rgba(0,240,255,0.18)', borderRadius: 20,
+    backgroundColor: 'rgba(0,240,255,0.07)', borderRadius: 20,
     paddingHorizontal: 11, paddingVertical: 6,
   },
   headerPillText: { color: '#00F0FF', fontSize: 12, fontWeight: '700' },
@@ -199,7 +197,6 @@ const s = StyleSheet.create({
   heroBanner: {
     flexDirection: 'row', alignItems: 'center',
     backgroundColor: 'rgba(0,240,255,0.04)',
-    borderWidth: 1, borderColor: 'rgba(0,240,255,0.12)',
     borderRadius: 18, padding: 18, marginBottom: 24,
   },
   heroIconCircle: {
@@ -219,7 +216,7 @@ const s = StyleSheet.create({
 
   channelCard: {
     flexDirection: 'row', alignItems: 'center',
-    backgroundColor: '#0F1623', borderWidth: 1,
+    backgroundColor: '#0F1623',
     borderRadius: 18, padding: 16, marginBottom: 10,
   },
   channelLogo: {
@@ -238,21 +235,20 @@ const s = StyleSheet.create({
   ctaWrap: { alignItems: 'center', gap: 3, marginLeft: 8, flexShrink: 0 },
   ctaText: { color: '#00F0FF', fontSize: 11, fontWeight: '700' },
   soonBadge: {
-    backgroundColor: 'rgba(124,58,237,0.1)', borderWidth: 1,
-    borderColor: 'rgba(124,58,237,0.25)', borderRadius: 20,
+    backgroundColor: 'rgba(124,58,237,0.1)', borderRadius: 20,
     paddingHorizontal: 10, paddingVertical: 5,
   },
   soonText: { color: '#A78BFA', fontSize: 10, fontWeight: '800', letterSpacing: 0.5 },
 
   supportCard: {
     backgroundColor: '#0F1623', borderRadius: 18,
-    borderWidth: 1, borderColor: '#1E293B', overflow: 'hidden',
+    overflow: 'hidden',
   },
   supportRow: {
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
     paddingHorizontal: 18, paddingVertical: 15,
   },
-  supportDivider: { borderBottomWidth: 1, borderBottomColor: '#1A2235' },
+  supportDivider: {},
   supportLabel: { color: '#CBD5E1', fontSize: 14, fontWeight: '500' },
 
   footerNote: {

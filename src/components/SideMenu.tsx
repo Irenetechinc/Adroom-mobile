@@ -38,13 +38,12 @@ export default function SideMenu(props: DrawerContentComponentProps) {
     <View style={{ flex: 1, backgroundColor: '#050B14' }}>
       <SafeAreaView style={{ flex: 1 }}>
         {/* Header */}
-        <View style={{ paddingHorizontal: 20, paddingTop: 20, paddingBottom: 24, borderBottomWidth: 1, borderBottomColor: 'rgba(0,240,255,0.08)', marginBottom: 8 }}>
+        <View style={{ paddingHorizontal: 20, paddingTop: 20, paddingBottom: 24, marginBottom: 8 }}>
           <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
             <View style={{ flexDirection: 'row', alignItems: 'center' }}>
               <View style={{
                 width: 40, height: 40, borderRadius: 20,
                 backgroundColor: 'rgba(0,240,255,0.12)',
-                borderWidth: 1.5, borderColor: '#00F0FF',
                 alignItems: 'center', justifyContent: 'center',
               }}>
                 <Text style={{ color: '#00F0FF', fontWeight: '800', fontSize: 16 }}>{userInitial}</Text>
@@ -66,7 +65,6 @@ export default function SideMenu(props: DrawerContentComponentProps) {
           {/* Brand */}
           <View style={{
             backgroundColor: 'rgba(0,240,255,0.06)',
-            borderWidth: 1, borderColor: 'rgba(0,240,255,0.15)',
             borderRadius: 12, paddingHorizontal: 14, paddingVertical: 10,
           }}>
               <Text style={{ color: '#FFFFFF', fontSize: 18, fontWeight: '800', letterSpacing: 1 }}>
@@ -100,10 +98,6 @@ export default function SideMenu(props: DrawerContentComponentProps) {
                     paddingHorizontal: 14, paddingVertical: 13,
                     borderRadius: 14, marginBottom: 4,
                     backgroundColor: isFocused ? 'rgba(0,240,255,0.08)' : 'transparent',
-                    borderWidth: isFocused ? 1 : 0,
-                    borderColor: isFocused ? 'rgba(0,240,255,0.25)' : 'transparent',
-                    borderLeftWidth: isFocused ? 3 : 0,
-                    borderLeftColor: isFocused ? '#00F0FF' : 'transparent',
                   }}
                   activeOpacity={0.7}
                 >
@@ -138,7 +132,6 @@ export default function SideMenu(props: DrawerContentComponentProps) {
                 paddingHorizontal: 14, paddingVertical: 13,
                 borderRadius: 14, marginBottom: 4,
                 backgroundColor: 'rgba(16,185,129,0.04)',
-                borderWidth: 1, borderColor: 'rgba(16,185,129,0.12)',
               }}
               activeOpacity={0.7}
             >
@@ -171,7 +164,6 @@ export default function SideMenu(props: DrawerContentComponentProps) {
                 paddingHorizontal: 14, paddingVertical: 13,
                 borderRadius: 14, marginBottom: 4,
                 backgroundColor: 'rgba(245,158,11,0.07)',
-                borderWidth: 1, borderColor: 'rgba(245,158,11,0.2)',
               }}
               activeOpacity={0.7}
             >
@@ -196,14 +188,13 @@ export default function SideMenu(props: DrawerContentComponentProps) {
         </ScrollView>
 
         {/* Footer */}
-        <View style={{ paddingHorizontal: 12, paddingBottom: 24, borderTopWidth: 1, borderTopColor: 'rgba(0,240,255,0.06)', paddingTop: 12 }}>
+        <View style={{ paddingHorizontal: 12, paddingBottom: 24, paddingTop: 12 }}>
           <TouchableOpacity
             onPress={signOut}
             style={{
               flexDirection: 'row', alignItems: 'center',
               paddingHorizontal: 14, paddingVertical: 13, borderRadius: 14,
               backgroundColor: 'rgba(239,68,68,0.07)',
-              borderWidth: 1, borderColor: 'rgba(239,68,68,0.2)',
             }}
             activeOpacity={0.7}
           >

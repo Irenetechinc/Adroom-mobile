@@ -244,8 +244,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 7,
     borderRadius: 999,
-    borderWidth: 1,
-    borderColor: 'rgba(0,240,255,0.18)',
     backgroundColor: 'rgba(15, 23, 42, 0.95)',
   },
   brandChipText: {
@@ -263,11 +261,7 @@ const styles = StyleSheet.create({
   heroCard: {
     backgroundColor: '#0F1B2A',
     borderRadius: 28,
-    borderWidth: 1,
-    borderColor: 'rgba(148,163,184,0.12)',
     paddingHorizontal: 20,
-    paddingTop: 18,
-    paddingBottom: 20,
     shadowColor: '#000000',
     shadowOpacity: 0.32,
     shadowRadius: 18,
@@ -282,20 +276,15 @@ const styles = StyleSheet.create({
   },
   badgeRow: {
     flexDirection: 'column',
-    alignItems: 'flex-end',
-    gap: 8,
   },
   outerOrb: {
     width: 86,
     height: 86,
     borderRadius: 26,
     backgroundColor: '#111E2D',
-    borderWidth: 1,
-    borderColor: 'rgba(0,240,255,0.24)',
     alignItems: 'center',
     justifyContent: 'center',
     overflow: 'hidden',
-    position: 'relative',
   },
   orbHalo: {
     position: 'absolute',
@@ -303,8 +292,6 @@ const styles = StyleSheet.create({
     height: 110,
     borderRadius: 38,
     backgroundColor: 'rgba(0,240,255,0.10)',
-    borderWidth: 1,
-    borderColor: 'rgba(0,240,255,0.18)',
   },
   logoImage: {
     width: 66,
@@ -317,16 +304,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     paddingVertical: 6,
     borderRadius: 999,
-    borderWidth: 1,
-    borderColor: 'rgba(52,211,153,0.24)',
     backgroundColor: 'rgba(52,211,153,0.08)',
   },
   statusPill: {
     paddingHorizontal: 10,
     paddingVertical: 5,
     borderRadius: 999,
-    borderWidth: 1,
-    borderColor: 'rgba(96,165,250,0.28)',
     backgroundColor: 'rgba(96,165,250,0.08)',
   },
   badgeText: {
@@ -395,8 +378,6 @@ const styles = StyleSheet.create({
   },
   statsRow: {
     backgroundColor: '#0F1B2A',
-    borderWidth: 1,
-    borderColor: 'rgba(148,163,184,0.10)',
     borderRadius: 18,
     flexDirection: 'row',
     overflow: 'hidden',
@@ -408,8 +389,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     alignItems: 'center',
     justifyContent: 'center',
-    borderRightWidth: 1,
-    borderRightColor: 'rgba(148,163,184,0.08)',
   },
   statValue: {
     color: '#F8FAFC',
@@ -450,7 +429,6 @@ const styles = StyleSheet.create({
   featureCard: {
     flexDirection: 'row',
     alignItems: 'flex-start',
-    borderWidth: 1,
     borderRadius: 18,
     padding: 16,
     marginBottom: 12,
@@ -485,8 +463,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingTop: 12,
     backgroundColor: 'rgba(7,17,28,0.92)',
-    borderTopWidth: 1,
-    borderTopColor: 'rgba(148,163,184,0.10)',
   },
   ctaNote: {
     color: '#8E9EB4',
@@ -496,8 +472,6 @@ const styles = StyleSheet.create({
   },
   ctaButton: {
     backgroundColor: '#101A2A',
-    borderWidth: 1,
-    borderColor: 'rgba(0,240,255,0.18)',
     borderRadius: 14,
     height: 52,
     alignItems: 'center',

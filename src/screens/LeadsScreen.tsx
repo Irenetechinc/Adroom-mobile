@@ -508,7 +508,6 @@ const styles = StyleSheet.create({
   header: {
     flexDirection: 'row', alignItems: 'center',
     paddingHorizontal: 16, paddingVertical: 12,
-    borderBottomWidth: 1, borderBottomColor: 'rgba(0,240,255,0.07)',
   },
   backBtn: { padding: 8, marginRight: 8 },
   headerTitle: { color: '#FFFFFF', fontWeight: '800', fontSize: 18 },
@@ -521,7 +520,7 @@ const styles = StyleSheet.create({
     marginHorizontal: 16, marginTop: 8, marginBottom: 2,
     paddingHorizontal: 12, paddingVertical: 8,
     backgroundColor: 'rgba(0,240,255,0.05)',
-    borderRadius: 10, borderWidth: 1, borderColor: 'rgba(0,240,255,0.15)',
+    borderRadius: 10,
   },
   filterBannerLeft: { flexDirection: 'row', alignItems: 'center', gap: 8, flex: 1 },
   filterBannerDot: { width: 8, height: 8, borderRadius: 4 },
@@ -533,7 +532,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row', alignItems: 'center', gap: 10,
     marginHorizontal: 16, marginTop: 10, marginBottom: 6,
     backgroundColor: '#151B2B', borderRadius: 12,
-    borderWidth: 1, borderColor: '#1E293B',
     paddingHorizontal: 14, paddingVertical: 10,
   },
   searchInput: { flex: 1, color: '#E2E8F0', fontSize: 14 },
@@ -544,11 +542,10 @@ const styles = StyleSheet.create({
   filterTab: {
     flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
     gap: 5, paddingVertical: 8, borderRadius: 10,
-    backgroundColor: '#151B2B', borderWidth: 1, borderColor: '#1E293B',
+    backgroundColor: '#151B2B',
   },
   filterTabActive: {
     backgroundColor: 'rgba(0,240,255,0.08)',
-    borderColor: 'rgba(0,240,255,0.3)',
   },
   filterTabText: { color: '#64748B', fontSize: 12, fontWeight: '600' },
   filterTabTextActive: { color: '#00F0FF' },
@@ -561,7 +558,6 @@ const styles = StyleSheet.create({
   summaryBar: {
     flexDirection: 'row', marginHorizontal: 16, marginBottom: 12,
     backgroundColor: '#151B2B', borderRadius: 12,
-    borderWidth: 1, borderColor: '#1E293B',
   },
   summaryItem: {
     flex: 1, alignItems: 'center', paddingVertical: 10, gap: 3,
@@ -574,14 +570,13 @@ const styles = StyleSheet.create({
   // ── Card ──
   card: {
     backgroundColor: '#151B2B', borderRadius: 16,
-    borderWidth: 1, borderColor: '#1E293B', marginBottom: 10,
+    marginBottom: 10,
     overflow: 'hidden', padding: 14,
   },
   cardTop: { flexDirection: 'row', alignItems: 'flex-start', gap: 12, marginBottom: 10 },
   avatar: {
     width: 38, height: 38, borderRadius: 12,
     alignItems: 'center', justifyContent: 'center',
-    borderWidth: 1,
   },
   avatarText: { fontSize: 16, fontWeight: '800' },
   leadName: { color: '#E2E8F0', fontWeight: '700', fontSize: 14 },

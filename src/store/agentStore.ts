@@ -449,6 +449,8 @@ export const useAgentStore = create<AgentState>()(
           currency: (validatedData as any).currency || 'USD',
           price: String((validatedData as any).price || ''),
           category: (validatedData as any).category || '',
+          productType: (validatedData as any).productType || 'physical',
+          dispatchAddress: (validatedData as any).deliveryAddress || '',
         });
 
         // Upload video file to storage if user provided one
@@ -543,6 +545,7 @@ export const useAgentStore = create<AgentState>()(
           currency: validatedData.currency || 'USD',
           price: String(validatedData.price || ''),
           category: validatedData.category || '',
+          productType: 'physical',
         });
         set({ flowState: 'GOAL_SELECTION', isInputDisabled: true });
         
@@ -594,6 +597,14 @@ export const useAgentStore = create<AgentState>()(
             baseImageUri: ''
         });
         updateProductDetails({ ...validatedData, id: brandId });
+        useStrategyCreationStore.getState().setProductData({
+          name: validatedData.name || data.name || '',
+          description: `${validatedData.mission || data.mission || ''}\n\nValues: ${data.values || ''}`,
+          category: 'Brand',
+          productType: 'digital',
+          currency: 'USD',
+          price: '0',
+        });
         set({ flowState: 'GOAL_SELECTION', isInputDisabled: true });
         
         setTimeout(() => {
@@ -679,7 +690,7 @@ export const useAgentStore = create<AgentState>()(
   },
 
   handleRetry: async (action: string, data: any) => {
-    const { addMessage, handleWebsiteIntake, handleLogin } = get();
+    const { addMessage, handleWebsiteIntake, handleLogin, handleDurationSelection } = get();
     addMessage("Retrying...", 'agent');
 
     switch (action) {
@@ -712,6 +723,9 @@ export const useAgentStore = create<AgentState>()(
         } else {
           addMessage("Please enter the product URL you'd like to scan:", 'agent', undefined, 'website_intake_form');
         }
+        break;
+      case 'STRATEGY_GENERATION':
+        await handleDurationSelection(Number(data?.duration) || get().productDetails.selectedDuration || 7);
         break;
       default:
         addMessage("Let's try again. Please provide your product or website URL:", 'agent', undefined, 'website_intake_form');
@@ -801,7 +815,7 @@ export const useAgentStore = create<AgentState>()(
       const strategyStore = useStrategyCreationStore.getState();
       const selectedAccounts = strategyStore.productData.selectedAccounts || [];
       const connectedPlatforms = get().connectedPlatforms || {};
-      const connectedNames = Object.keys(connectedPlatforms);
+      const connectedNames = Object.keys(connectedPlatforms).map((platform) => platform.toLowerCase());
       const normalizedSelected = selectedAccounts.map((p: string) => String(p).trim().toLowerCase());
       const isValidAccountSelection = normalizedSelected.length > 0 && normalizedSelected.every((platform) => connectedNames.includes(platform));
 
@@ -878,8 +892,14 @@ export const useAgentStore = create<AgentState>()(
           );
 
       } catch (error: any) {
-          set({ isTyping: false, flowState: 'IDLE', isInputDisabled: false });
-          addMessage(`Sorry — I couldn't put together a strategy just now. ${error.message}`, 'agent');
+          set({ isTyping: false, flowState: 'DURATION_SELECTION', isInputDisabled: false });
+          addMessage(
+            `I couldn't finish the strategy yet. ${error.message || 'The strategy service is temporarily unavailable.'}`,
+            'agent',
+            undefined,
+            'retry_action',
+            { action: 'STRATEGY_GENERATION', data: { duration } },
+          );
       }
   },
 
@@ -1247,6 +1267,8 @@ export const useAgentStore = create<AgentState>()(
       selectedAccounts: {},
     });
 
+    useStrategyCreationStore.getState().reset();
+
     // ── Step 2: refresh connection state from backend in background ──────────
     get().loadConnectedPlatforms().catch(() => {});
 
@@ -1492,7 +1514,15 @@ export const useAgentStore = create<AgentState>()(
                       { pages: accounts, platform }
                   );
               } else {
-                  addMessage(`Connected, but no ${platform} accounts were found.`, 'agent');
+                  addMessage(
+                    platform === 'whatsapp'
+                      ? 'WhatsApp connected, but no phone number is attached to this account yet. You can continue and choose another connected account, or connect WhatsApp again after adding a number.'
+                      : `Connected, but no ${platform} accounts were found. You can choose another connected account or try connecting again.`,
+                    'agent',
+                    undefined,
+                    'strategy_account_selection',
+                    { accounts: Object.values(get().connectedPlatforms || {}) },
+                  );
               }
           } else {
               set({ isTyping: false, connectionState: 'IDLE', isInputDisabled: false });
@@ -1604,6 +1634,17 @@ export const useAgentStore = create<AgentState>()(
               } else {
                   addMessage('All systems connected. Strategy is launching now!', 'agent', undefined, 'completion_card');
               }
+          } else if (connectionSource === 'flow') {
+              await get().loadConnectedPlatforms();
+              const accounts = Object.values(useAgentStore.getState().connectedPlatforms || {});
+              addMessage(
+                'Account connected. Select the accounts for this strategy, then continue.',
+                'agent',
+                undefined,
+                'strategy_account_selection',
+                { accounts },
+              );
+              set({ isInputDisabled: false, connectionState: 'IDLE' });
           } else {
               addMessage(`Successfully connected to ${platform}!`, 'agent');
               set({ isInputDisabled: false });

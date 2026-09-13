@@ -598,7 +598,7 @@ export default function SubscriptionScreen() {
       {isLoading && !account && (
         <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 16 }} scrollEnabled={false}>
           {/* Balance card skeleton */}
-          <View style={{ backgroundColor: '#151B2B', borderRadius: 20, borderWidth: 1, borderColor: '#1E293B', padding: 20, marginBottom: 16 }}>
+          <View style={{ backgroundColor: '#151B2B', borderRadius: 20, padding: 20, marginBottom: 16 }}>
             <Skeleton width="40%" height={12} borderRadius={4} style={{ marginBottom: 10 }} />
             <Skeleton width="55%" height={40} borderRadius={6} style={{ marginBottom: 6 }} />
             <Skeleton width="30%" height={12} borderRadius={4} style={{ marginBottom: 16 }} />
@@ -613,7 +613,7 @@ export default function SubscriptionScreen() {
           </View>
           {/* Plan cards skeleton */}
           {[...Array(3)].map((_, i) => (
-            <View key={i} style={{ backgroundColor: '#151B2B', borderRadius: 18, borderWidth: 1, borderColor: '#1E293B', padding: 18, marginBottom: 12 }}>
+            <View key={i} style={{ backgroundColor: '#151B2B', borderRadius: 18, padding: 18, marginBottom: 12 }}>
               <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 12 }}>
                 <Skeleton width="45%" height={18} borderRadius={4} />
                 <Skeleton width="30%" height={26} borderRadius={8} />
@@ -832,7 +832,7 @@ export default function SubscriptionScreen() {
 
                     {/* During trial: clarify what credits they'll get on day 15 vs now */}
                     {isTrialing && !isCurrent && (
-                      <View style={{ backgroundColor: '#F59E0B10', borderRadius: 8, paddingHorizontal: 10, paddingVertical: 6, marginTop: 8, borderWidth: 1, borderColor: '#F59E0B30' }}>
+                      <View style={{ backgroundColor: '#F59E0B10', borderRadius: 8, paddingHorizontal: 10, paddingVertical: 6, marginTop: 8 }}>
                         <Text style={{ color: COLORS.amber, fontSize: 11 }}>
                           Skip trial → charge ${p.price} now · get {p.credits} full credits immediately
                         </Text>
@@ -918,7 +918,7 @@ export default function SubscriptionScreen() {
               {account?.on_demand_enabled && account?.on_demand_top_up_retry_at && (
                 <View style={{
                   flexDirection: 'row', alignItems: 'center',
-                  backgroundColor: 'rgba(239,68,68,0.1)', borderWidth: 1, borderColor: 'rgba(239,68,68,0.35)',
+                  backgroundColor: 'rgba(239,68,68,0.1)',
                   borderRadius: 12, padding: 12, marginTop: 12, marginBottom: 4,
                 }}>
                   <AlertCircle size={15} color={COLORS.danger} />
@@ -971,7 +971,7 @@ export default function SubscriptionScreen() {
                     {!showAutoTopUpPicker && (
                       <View style={{
                         flexDirection: 'row', alignItems: 'center',
-                        backgroundColor: 'rgba(0,240,255,0.06)', borderWidth: 1, borderColor: 'rgba(0,240,255,0.18)',
+                        backgroundColor: 'rgba(0,240,255,0.06)',
                         borderRadius: 12, padding: 12, marginBottom: 10,
                       }}>
                         <Zap size={16} color={COLORS.neon} />
@@ -986,7 +986,7 @@ export default function SubscriptionScreen() {
                         <TouchableOpacity
                           onPress={() => setShowAutoTopUpPicker(v => !v)}
                           style={{
-                            backgroundColor: 'rgba(0,240,255,0.1)', borderWidth: 1, borderColor: 'rgba(0,240,255,0.2)',
+                            backgroundColor: 'rgba(0,240,255,0.1)',
                             borderRadius: 8, paddingHorizontal: 12, paddingVertical: 6,
                           }}
                         >
@@ -1021,8 +1021,6 @@ export default function SubscriptionScreen() {
                               style={{
                                 flexDirection: 'row', alignItems: 'center',
                                 backgroundColor: selected ? 'rgba(0,240,255,0.1)' : 'rgba(255,255,255,0.02)',
-                                borderWidth: 1.5,
-                                borderColor: selected ? COLORS.neon : COLORS.border,
                                 borderRadius: 12, padding: 14, marginBottom: 8,
                               }}
                               activeOpacity={0.8}
@@ -1045,7 +1043,6 @@ export default function SubscriptionScreen() {
                               </Text>
                               <View style={{
                                 width: 20, height: 20, borderRadius: 10,
-                                borderWidth: 2, borderColor: selected ? COLORS.neon : COLORS.border,
                                 backgroundColor: selected ? COLORS.neon : 'transparent',
                                 alignItems: 'center', justifyContent: 'center',
                               }}>
@@ -1091,7 +1088,6 @@ export default function SubscriptionScreen() {
                         style={{
                           flexDirection: 'row', alignItems: 'center',
                           backgroundColor: 'rgba(255,255,255,0.02)',
-                          borderWidth: 1.5, borderColor: COLORS.border,
                           borderRadius: 12, padding: 14, marginBottom: 8,
                         }}
                         activeOpacity={0.8}
@@ -1289,7 +1285,6 @@ export default function SubscriptionScreen() {
               <View style={{
                 width: 64, height: 64, borderRadius: 20,
                 backgroundColor: confirmPayload?.color ? `${confirmPayload.color}15` : COLORS.border,
-                borderWidth: 1.5, borderColor: confirmPayload?.color ? `${confirmPayload.color}35` : COLORS.border,
                 alignItems: 'center', justifyContent: 'center',
               }}>
                 {confirmPayload?.type === 'topup'
@@ -1741,14 +1736,14 @@ function UsageStat({ label, value, unit }: { label: string; value: string; unit:
 }
 
 const styles = StyleSheet.create({
-  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20, paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: COLORS.border },
+  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20, paddingVertical: 14 },
   backBtn: { width: 36, height: 36, borderRadius: 18, backgroundColor: COLORS.card, justifyContent: 'center', alignItems: 'center' },
   headerTitle: { color: COLORS.text, fontSize: 16, fontWeight: '700' },
-  balanceCard: { margin: 16, padding: 20, backgroundColor: COLORS.card, borderRadius: 16, borderWidth: 1, borderColor: COLORS.border },
+  balanceCard: { margin: 16, padding: 20, backgroundColor: COLORS.card, borderRadius: 16 },
   balanceLabel: { color: COLORS.muted, fontSize: 11, textTransform: 'uppercase', letterSpacing: 1 },
   balanceValue: { color: COLORS.amber, fontSize: 48, fontWeight: '900', letterSpacing: -2, marginTop: 2 },
   balanceUnit: { color: COLORS.muted, fontSize: 13, marginTop: -4 },
-  planBadge: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: COLORS.bg, paddingHorizontal: 10, paddingVertical: 5, borderRadius: 20, borderWidth: 1, borderColor: COLORS.border },
+  planBadge: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: COLORS.bg, paddingHorizontal: 10, paddingVertical: 5, borderRadius: 20 },
   planBadgeText: { fontSize: 11, fontWeight: '700', textTransform: 'uppercase' },
   balanceMeta: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 8 },
   metaText: { color: COLORS.muted, fontSize: 12 },
@@ -1757,19 +1752,18 @@ const styles = StyleSheet.create({
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
     marginTop: 12, paddingHorizontal: 12, paddingVertical: 10,
     borderRadius: 10, backgroundColor: 'rgba(15,23,42,0.6)',
-    borderWidth: 1, borderColor: 'rgba(0,240,255,0.12)',
   },
   billingLabel: { color: '#64748B', fontSize: 12, fontWeight: '600', letterSpacing: 0.5, textTransform: 'uppercase' },
   billingValue: { color: '#E2E8F0', fontSize: 13, fontWeight: '700' },
   trialBadgeText: { color: COLORS.amber, fontSize: 11, fontWeight: '600' },
-  warningBox: { flexDirection: 'row', alignItems: 'flex-start', gap: 8, backgroundColor: '#F59E0B15', borderWidth: 1, borderColor: '#F59E0B40', borderRadius: 8, padding: 10, marginTop: 12 },
+  warningBox: { flexDirection: 'row', alignItems: 'flex-start', gap: 8, backgroundColor: '#F59E0B15', borderRadius: 8, padding: 10, marginTop: 12 },
   warningText: { color: COLORS.amber, fontSize: 12, flex: 1 },
-  tabs: { flexDirection: 'row', marginHorizontal: 16, marginBottom: 8, backgroundColor: COLORS.card, borderRadius: 12, padding: 4, borderWidth: 1, borderColor: COLORS.border },
+  tabs: { flexDirection: 'row', marginHorizontal: 16, marginBottom: 8, backgroundColor: COLORS.card, borderRadius: 12, padding: 4 },
   tab: { flex: 1, paddingVertical: 8, alignItems: 'center', borderRadius: 10 },
   tabActive: { backgroundColor: COLORS.bg },
   tabText: { color: COLORS.muted, fontSize: 13, fontWeight: '600' },
   tabTextActive: { color: COLORS.text },
-  trialBanner: { flexDirection: 'row', alignItems: 'center', marginHorizontal: 16, marginBottom: 12, backgroundColor: '#00F0FF10', borderWidth: 1, borderColor: '#00F0FF30', borderRadius: 16, padding: 16, gap: 12 },
+  trialBanner: { flexDirection: 'row', alignItems: 'center', marginHorizontal: 16, marginBottom: 12, backgroundColor: '#00F0FF10', borderRadius: 16, padding: 16, gap: 12 },
   trialTitle: { color: COLORS.neon, fontWeight: '800', fontSize: 15, marginBottom: 4 },
   trialDesc: { color: COLORS.muted, fontSize: 12, lineHeight: 18 },
   trialBtn: { backgroundColor: COLORS.neon, paddingHorizontal: 16, paddingVertical: 10, borderRadius: 10 },
@@ -1780,18 +1774,18 @@ const styles = StyleSheet.create({
   planName: { fontSize: 18, fontWeight: '800' },
   planPrice: { color: COLORS.text, fontSize: 24, fontWeight: '900', marginTop: 2 },
   planPer: { color: COLORS.muted, fontSize: 13, fontWeight: '400' },
-  energyBadge: { flexDirection: 'row', alignItems: 'center', gap: 4, borderWidth: 1, borderColor: COLORS.border, borderRadius: 20, paddingHorizontal: 10, paddingVertical: 4 },
+  energyBadge: { flexDirection: 'row', alignItems: 'center', gap: 4, borderRadius: 20, paddingHorizontal: 10, paddingVertical: 4 },
   energyBadgeText: { fontSize: 12, fontWeight: '700' },
   planFeatures: { marginTop: 14, paddingTop: 14, borderTopWidth: 1, borderTopColor: COLORS.border },
-  planBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, marginTop: 14, paddingVertical: 12, borderRadius: 10, borderWidth: 1 },
+  planBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, marginTop: 14, paddingVertical: 12, borderRadius: 10 },
   planBtnText: { fontWeight: '700', fontSize: 14 },
-  sectionCard: { marginHorizontal: 16, marginBottom: 12, backgroundColor: COLORS.card, borderRadius: 14, borderWidth: 1, borderColor: COLORS.border, padding: 16 },
+  sectionCard: { marginHorizontal: 16, marginBottom: 12, backgroundColor: COLORS.card, borderRadius: 14, padding: 16 },
   sectionTitle: { color: COLORS.text, fontWeight: '700', fontSize: 14, marginBottom: 6 },
   sectionDesc: { color: COLORS.muted, fontSize: 12, lineHeight: 18 },
   sectionHeader: { color: COLORS.muted, fontSize: 11, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 1, marginHorizontal: 16, marginBottom: 10, marginTop: 4 },
   cancelLink: { alignItems: 'center', paddingVertical: 14, marginHorizontal: 16 },
   cancelText: { color: COLORS.danger, fontSize: 13, fontWeight: '600' },
-  topupCard: { flexDirection: 'row', alignItems: 'center', marginHorizontal: 16, marginBottom: 10, backgroundColor: COLORS.card, borderRadius: 14, borderWidth: 1, borderColor: COLORS.border, padding: 14 },
+  topupCard: { flexDirection: 'row', alignItems: 'center', marginHorizontal: 16, marginBottom: 10, backgroundColor: COLORS.card, borderRadius: 14, padding: 14 },
   topupIcon: { width: 44, height: 44, borderRadius: 12, backgroundColor: '#F59E0B15', alignItems: 'center', justifyContent: 'center' },
   topupLabel: { color: COLORS.text, fontWeight: '700', fontSize: 15 },
   topupValue: { color: COLORS.muted, fontSize: 12, marginTop: 2 },
@@ -1799,23 +1793,22 @@ const styles = StyleSheet.create({
   bestBadge: { backgroundColor: '#F59E0B20', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4, marginTop: 4 },
   bestBadgeText: { color: COLORS.amber, fontSize: 10, fontWeight: '700' },
   usageStats: { flexDirection: 'row', justifyContent: 'space-between', marginHorizontal: 16, marginBottom: 16, gap: 8 },
-  usageStatItem: { flex: 1, backgroundColor: COLORS.card, borderRadius: 12, borderWidth: 1, borderColor: COLORS.border, padding: 14, alignItems: 'center' },
+  usageStatItem: { flex: 1, backgroundColor: COLORS.card, borderRadius: 12, padding: 14, alignItems: 'center' },
   usageStatValue: { color: COLORS.neon, fontSize: 20, fontWeight: '900' },
   usageStatUnit: { color: COLORS.muted, fontSize: 11, fontWeight: '400' },
   usageStatLabel: { color: COLORS.muted, fontSize: 11, marginTop: 4, textAlign: 'center' },
   emptyState: { alignItems: 'center', padding: 32, gap: 10 },
   emptyText: { color: COLORS.muted, fontSize: 14 },
-  txRow: { flexDirection: 'row', alignItems: 'center', marginHorizontal: 16, marginBottom: 8, backgroundColor: COLORS.card, borderRadius: 10, borderWidth: 1, borderColor: COLORS.border, padding: 12 },
+  txRow: { flexDirection: 'row', alignItems: 'center', marginHorizontal: 16, marginBottom: 8, backgroundColor: COLORS.card, borderRadius: 10, padding: 12 },
   txDesc: { color: COLORS.text, fontSize: 13, fontWeight: '500' },
   txDate: { color: COLORS.muted, fontSize: 11, marginTop: 2 },
   txAmount: { fontSize: 15, fontWeight: '800', marginLeft: 8 },
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.75)', justifyContent: 'center', alignItems: 'center', padding: 20 },
-  modalCard: { backgroundColor: COLORS.card, borderRadius: 20, padding: 24, width: '100%', borderWidth: 1, borderColor: COLORS.border },
+  modalCard: { backgroundColor: COLORS.card, borderRadius: 20, padding: 24, width: '100%' },
 
   // Trial Confirmation Modal
   trialModalCard: {
     backgroundColor: COLORS.card, borderRadius: 24, width: '100%',
-    borderWidth: 1, borderColor: 'rgba(112,0,255,0.3)',
     overflow: 'hidden',
   },
   trialModalHeader: {
@@ -1824,7 +1817,7 @@ const styles = StyleSheet.create({
   },
   trialModalIconWrap: {
     width: 44, height: 44, borderRadius: 14,
-    backgroundColor: 'rgba(245,158,11,0.12)', borderWidth: 1, borderColor: 'rgba(245,158,11,0.3)',
+    backgroundColor: 'rgba(245,158,11,0.12)',
     alignItems: 'center', justifyContent: 'center',
   },
   trialModalBadge: {
@@ -1838,14 +1831,14 @@ const styles = StyleSheet.create({
   trialFeatureBox: {
     marginHorizontal: 20, marginBottom: 16,
     backgroundColor: 'rgba(0,240,255,0.04)', borderRadius: 14,
-    borderWidth: 1, borderColor: 'rgba(0,240,255,0.1)', padding: 14, gap: 10,
+    padding: 14, gap: 10,
   },
   trialFeatureRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 10 },
   trialFeatureText: { color: '#CBD5E1', fontSize: 13, flex: 1, lineHeight: 18 },
   trialPriceNote: {
     marginHorizontal: 20, marginBottom: 20,
     backgroundColor: 'rgba(245,158,11,0.07)', borderRadius: 10,
-    borderWidth: 1, borderColor: 'rgba(245,158,11,0.18)', padding: 12,
+    padding: 12,
   },
   trialPriceNoteText: { color: '#94A3B8', fontSize: 12, lineHeight: 17, textAlign: 'center' },
   trialCTA: {
@@ -1860,7 +1853,7 @@ const styles = StyleSheet.create({
   // Session-Expired / Auth Modal
   authModalIconRing: {
     width: 64, height: 64, borderRadius: 20,
-    backgroundColor: 'rgba(245,158,11,0.1)', borderWidth: 1.5, borderColor: 'rgba(245,158,11,0.3)',
+    backgroundColor: 'rgba(245,158,11,0.1)',
     alignItems: 'center', justifyContent: 'center',
   },
   authModalSignInBtn: {
@@ -1873,12 +1866,12 @@ const styles = StyleSheet.create({
   modalDesc: { color: COLORS.muted, fontSize: 13, textAlign: 'center', lineHeight: 20, marginBottom: 20 },
   modalDanger: { backgroundColor: COLORS.danger, paddingVertical: 14, borderRadius: 12, alignItems: 'center', marginBottom: 10 },
   modalDangerText: { color: '#fff', fontWeight: '800', fontSize: 15 },
-  modalSecondary: { paddingVertical: 14, borderRadius: 12, alignItems: 'center', borderWidth: 1, borderColor: COLORS.border },
+  modalSecondary: { paddingVertical: 14, borderRadius: 12, alignItems: 'center' },
   modalSecondaryText: { color: COLORS.text, fontWeight: '600', fontSize: 14 },
   cardLabel: { color: COLORS.muted, fontSize: 11, fontWeight: '600', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 6, marginTop: 12 },
   cardInputRow: {
     flexDirection: 'row', alignItems: 'center',
-    backgroundColor: COLORS.bg, borderWidth: 1, borderColor: COLORS.border,
+    backgroundColor: COLORS.bg,
     borderRadius: 10, paddingHorizontal: 12, height: 48,
     color: COLORS.text, fontSize: 15,
   },

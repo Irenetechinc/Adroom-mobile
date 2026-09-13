@@ -12,6 +12,7 @@ import { useAgentStore, type ChatSession } from '../store/agentStore';
 import useFeatureFlags from '../hooks/useFeatureFlags';
 import FeatureGate from '../components/FeatureGate';
 import * as ImagePicker from 'expo-image-picker';
+import { VideoView, useVideoPlayer } from 'expo-video';
 import Animated, {
   FadeInUp, FadeInRight, FadeInLeft, Layout,
   useSharedValue, withTiming, withSequence, withDelay,
@@ -572,8 +573,13 @@ const PLATFORM_COLORS: Record<string, string> = {
 };
 
 const WeekDayCard = ({ day }: { day: any }) => {
-  const [scriptExpanded, setScriptExpanded] = useState(false);
   const platformColor = PLATFORM_COLORS[day.platform?.toLowerCase()] || '#6366F1';
+  const mediaUrl = day.video_url || day.videoUrl || day.image_url || day.imageUrl || day.asset_url || day.assetUrl || day.creative_url || day.creativeUrl;
+  const mediaType = String(day.media_type || day.mediaType || '').toLowerCase();
+  const isVideo = mediaType.startsWith('video') || /\.(mp4|mov|m4v|webm)(\?|$)/i.test(String(mediaUrl || ''));
+  const videoPlayer = useVideoPlayer(isVideo && typeof mediaUrl === 'string' ? mediaUrl : null, (player) => {
+    player.loop = false;
+  });
   return (
     <View style={{ backgroundColor: '#0F172A', borderRadius: 10, padding: 12, marginBottom: 8 }}>
       <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 6 }}>
@@ -596,20 +602,12 @@ const WeekDayCard = ({ day }: { day: any }) => {
       {day.hashtags?.length > 0 ? (
         <Text style={{ color: '#6366F1', fontSize: 11, marginBottom: 4 }}>{day.hashtags.map((h: string) => `#${h}`).join(' ')}</Text>
       ) : null}
-      {day.tiktok_script ? (
-        <TouchableOpacity onPress={() => setScriptExpanded(p => !p)} style={{ flexDirection: 'row', alignItems: 'center', marginTop: 4 }}>
-          <Text style={{ color: '#F43F5E', fontSize: 11, fontWeight: '700', marginRight: 4 }}>VIDEO SCRIPT</Text>
-          <ChevronDown size={12} color="#F43F5E" style={scriptExpanded ? { transform: [{ rotate: '180deg' }] } : {}} />
-        </TouchableOpacity>
-      ) : null}
-      {day.tiktok_script && scriptExpanded ? (
-        <View style={{ backgroundColor: '#1E293B', borderRadius: 8, padding: 10, marginTop: 6 }}>
-          <Text style={{ color: '#F43F5E', fontSize: 10, fontWeight: '700', marginBottom: 4 }}>HOOK</Text>
-          <Text style={{ color: '#E2E8F0', fontSize: 12, marginBottom: 8 }}>{day.tiktok_script.hook}</Text>
-          {day.tiktok_script.scene_1 ? <><Text style={{ color: '#94A3B8', fontSize: 10, fontWeight: '700', marginBottom: 2 }}>SCENE 1</Text><Text style={{ color: '#CBD5E1', fontSize: 12, marginBottom: 6 }}>{day.tiktok_script.scene_1}</Text></> : null}
-          {day.tiktok_script.scene_2 ? <><Text style={{ color: '#94A3B8', fontSize: 10, fontWeight: '700', marginBottom: 2 }}>SCENE 2</Text><Text style={{ color: '#CBD5E1', fontSize: 12, marginBottom: 6 }}>{day.tiktok_script.scene_2}</Text></> : null}
-          {day.tiktok_script.cta ? <><Text style={{ color: '#10B981', fontSize: 10, fontWeight: '700', marginBottom: 2 }}>CTA</Text><Text style={{ color: '#6EE7B7', fontSize: 12 }}>{day.tiktok_script.cta}</Text></> : null}
-        </View>
+      {typeof mediaUrl === 'string' && mediaUrl.length > 0 ? (
+        isVideo ? (
+          <VideoView player={videoPlayer} style={{ width: '100%', height: 190, borderRadius: 10, marginTop: 8 }} nativeControls contentFit="contain" />
+        ) : (
+          <Image source={{ uri: mediaUrl }} style={{ width: '100%', height: 190, borderRadius: 10, marginTop: 8 }} resizeMode="contain" />
+        )
       ) : null}
     </View>
   );
@@ -1115,7 +1113,7 @@ const StrategyAccountSelectionCard = ({
         </TouchableOpacity>
       );
     })}
-{!disabled && <View style={{ marginTop: 12 }}><Text style={styles.selectionSub}>Connect a platform through the existing Adirum AI connection flow:</Text>{['facebook', 'instagram', 'tiktok', 'linkedin', 'twitter', 'whatsapp'].map((platform) => <TouchableOpacity key={platform} onPress={() => onConnect(platform)} style={styles.retrySkipBtn}><Text style={{ color: '#CBD5E1', fontWeight: '700' }}>Connect {platform}</Text></TouchableOpacity>)}<TouchableOpacity onPress={onContinue} disabled={!selected.length} style={[styles.primaryBtn, { marginTop: 8 }, !selected.length && styles.cardDisabled]}><Text style={styles.primaryBtnText}>Continue with selected accounts</Text></TouchableOpacity></View>}
+{!disabled && <View style={{ marginTop: 12 }}><Text style={styles.selectionSub}>Connect another platform:</Text>{['facebook', 'instagram', 'tiktok', 'linkedin', 'twitter', 'whatsapp'].filter((platform) => !accounts.some((account: any) => String(account.platform || '').toLowerCase() === platform)).map((platform) => <TouchableOpacity key={platform} onPress={() => onConnect(platform)} style={styles.retrySkipBtn}><Text style={{ color: '#CBD5E1', fontWeight: '700' }}>Connect {platform}</Text></TouchableOpacity>)}<TouchableOpacity onPress={onContinue} disabled={!selected.length} style={[styles.primaryBtn, { marginTop: 8 }, !selected.length && styles.cardDisabled]}><Text style={styles.primaryBtnText}>Continue with selected accounts</Text></TouchableOpacity></View>}
   </View>
 );
 
@@ -1461,7 +1459,7 @@ export default function AgentChatScreen({ navigation, route }: Props) {
     messages, addMessage, isTyping, setTyping, isInputDisabled, setInputDisabled,
     flowState, handleProductIntake, handleGoalSelection, handleDurationSelection,
     handleStrategySelection, initiateConnection, handleLogin, handleAccountSelection,
-    connectionState, loadMessages, restoreSession, startNewSession, tokens,
+    connectionState, loadMessages, restoreSession, startNewSession, tokens, productDetails,
     disconnectPlatform, handleStrategyTypeSelection, handleServiceIntake,
     handleBrandIntake, handleManualProductSubmit, handleRetry,
     handleImageUpload: handleImageUploadStore, startStrategyFlow, handleWebsiteIntake,
@@ -1794,12 +1792,13 @@ export default function AgentChatScreen({ navigation, route }: Props) {
       initiateConnection('facebook', true);
       return;
     }
-    if (route.params?.connectFacebook) initiateConnection('facebook', false);
-    if (route.params?.connectInstagram) initiateConnection('instagram', false);
-    if (route.params?.connectTikTok) initiateConnection('tiktok', false);
-    if (route.params?.connectLinkedIn) initiateConnection('linkedin', false);
-    if (route.params?.connectTwitter) initiateConnection('twitter', false);
-    if (route.params?.connectWhatsApp) initiateConnection('whatsapp', false);
+    const fromStrategyFlow = !!route.params?.strategyAccountSelection;
+    if (route.params?.connectFacebook) initiateConnection('facebook', fromStrategyFlow);
+    if (route.params?.connectInstagram) initiateConnection('instagram', fromStrategyFlow);
+    if (route.params?.connectTikTok) initiateConnection('tiktok', fromStrategyFlow);
+    if (route.params?.connectLinkedIn) initiateConnection('linkedin', fromStrategyFlow);
+    if (route.params?.connectTwitter) initiateConnection('twitter', fromStrategyFlow);
+    if (route.params?.connectWhatsApp) initiateConnection('whatsapp', fromStrategyFlow);
   }, [route.params]);
 
   useEffect(() => {
@@ -1958,7 +1957,7 @@ export default function AgentChatScreen({ navigation, route }: Props) {
             selected={productData.selectedAccounts || []}
             onToggle={(platform) => setProductData({ selectedAccounts: productData.selectedAccounts.includes(platform) ? productData.selectedAccounts.filter(item => item !== platform) : [...productData.selectedAccounts, platform] })}
             onConnect={(platform) => navigation.navigate('AgentChat', { strategyAccountSelection: true, ...(platform === 'facebook' ? { connectFacebook: true } : platform === 'instagram' ? { connectInstagram: true } : platform === 'tiktok' ? { connectTikTok: true } : platform === 'linkedin' ? { connectLinkedIn: true } : platform === 'twitter' ? { connectTwitter: true } : { connectWhatsApp: true }) })}
-            onContinue={() => navigation.navigate('StrategyWizard_DurationSelection')}
+            onContinue={() => handleDurationSelection(productDetails.selectedDuration || 7)}
             disabled={isDisabled}
           />
         )}
@@ -2098,15 +2097,9 @@ export default function AgentChatScreen({ navigation, route }: Props) {
     <SafeAreaView style={styles.safe} edges={['top']}>
       {/* Header */}
       <View style={styles.header}>
-        {isStackEntry ? (
-          <TouchableOpacity onPress={() => navigation.goBack()} style={styles.headerMenuBtn}>
-            <ArrowLeft color="#E2E8F0" size={22} />
-          </TouchableOpacity>
-        ) : (
-          <TouchableOpacity onPress={() => navigation.dispatch(DrawerActions.openDrawer())} style={styles.headerMenuBtn}>
-            <Menu color="#E2E8F0" size={22} />
-          </TouchableOpacity>
-        )}
+        <TouchableOpacity onPress={() => navigation.dispatch(DrawerActions.openDrawer())} style={styles.headerMenuBtn} accessibilityLabel="Open navigation menu">
+          <Menu color="#E2E8F0" size={22} />
+        </TouchableOpacity>
         <View style={{ flex: 1 }}>
           <Text style={styles.headerLabel}>Adirum AI</Text>
           <Text style={styles.headerTitle}>Intelligence</Text>
