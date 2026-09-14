@@ -30,38 +30,49 @@ export class SalesmanAgent extends AgentBase {
             platformIntel[platform] = await this.getLatestPlatformIntelligence(platform);
         }
 
+        const liveContext = {
+            strategyId: params.strategyId,
+            goal: 'sales',
+            durationDays: params.durationDays,
+            product: params.product,
+            strategy: params.strategy,
+            selectedPlatforms: Array.isArray(params.platforms) ? params.platforms : [],
+            audience: params.strategy?.target_audience || params.product?.target_audience || params.strategy?.audience || {},
+            trends,
+            platformIntel,
+            generatedAt: new Date().toISOString(),
+        };
+
         const planPrompt = `
-You are the AdRoom SALESMAN Agent. Create a detailed ${params.durationDays}-day sales campaign execution plan.
+You are Adirum AI’s SALES agent.
 
-PRODUCT: ${JSON.stringify(params.product)}
-STRATEGY: ${JSON.stringify(params.strategy)}
-PLATFORMS: ${JSON.stringify(params.platforms)}
-TRENDS: ${JSON.stringify(trends)}
-PLATFORM INTELLIGENCE: ${JSON.stringify(platformIntel)}
+Use the live runtime context only. Never assume a fixed platform, fixed duration, fixed start time, fixed launch day, or a static template.
 
-SALES AGENT MANDATE:
-- Every piece of content must drive toward CONVERSION — sign-ups, purchases, DMs, link clicks
-- Day 1-3: Trust building (social proof, testimonials, problem awareness)
-- Day 4-7: Desire creation (demo, benefits, transformation)
-- Day 8-14: Urgency + offer (CTA-heavy, limited availability)
-- Day 15+: Retargeting engaged users, lead follow-up sequences
+RUNTIME CONTEXT:
+${JSON.stringify(liveContext, null, 2)}
 
-Create a specific post for EACH DAY per PLATFORM (max 3 platforms × days).
-Each task type must be one of: POST, REEL, STORY, DM_BLAST, THREAD, HASHTAG_CAMPAIGN
+Your job is to build a real execution plan for this exact strategy using the exact selected platforms, duration, product, brand/service details, and current live intelligence.
 
-Return JSON:
+Constraints:
+- Use only the platforms in selectedPlatforms.
+- Keep the schedule aligned to the actual durationDays value.
+- Do not hardcode platform names, day ranges, or start times.
+- Use the real product, strategy, trend, and platform intelligence to decide the order, timing, and content.
+- Return valid JSON only.
+
+Schema:
 {
   "campaign_theme": "string",
   "daily_tasks": [
     {
       "day": 1,
-      "platform": "facebook",
+      "platform": "selected-platform-name",
       "task_type": "POST",
       "hour": 9,
       "minute": 0,
       "headline": "string",
-      "body": "Ready-to-publish post text",
-      "image_prompt": "Imagen 3 prompt",
+      "body": "string",
+      "image_prompt": "string",
       "hashtags": ["tag1"],
       "cta": "string",
       "sales_tactic": "social_proof|urgency|benefit|demo|offer"
@@ -70,16 +81,48 @@ Return JSON:
 }
 `;
         const response = await this.ai.generateStrategy({}, planPrompt);
-        const plan = response.parsedJson;
+        let plan: any = response.parsedJson;
 
         if (!plan?.daily_tasks?.length) {
-            this.log('Plan generation returned empty tasks — building skill to handle this');
-            await this.buildSkill({
-                problem: 'Sales plan generation returned empty tasks',
-                context: `Product: ${params.product?.name}, Platforms: ${params.platforms.join(', ')}`,
-                strategyId: params.strategyId
-            });
-            return;
+            const retryPrompt = `
+You are Adirum AI’s SALES agent.
+
+Use the live strategy context, selected platform list, actual duration, and product details only. Never hardcode a platform, timing, or day bucket.
+
+RUNTIME CONTEXT:
+${JSON.stringify({
+    strategyId: params.strategyId,
+    durationDays: params.durationDays,
+    product: params.product,
+    strategy: params.strategy,
+    selectedPlatforms: Array.isArray(params.platforms) ? params.platforms : [],
+    generatedAt: new Date().toISOString(),
+}, null, 2)}
+
+Return valid JSON only with this schema:
+{
+  "campaign_theme": "string",
+  "daily_tasks": [{ "day": 1, "platform": "selected-platform-name", "task_type": "POST", "hour": 9, "minute": 0, "headline": "string", "body": "string", "image_prompt": "string", "hashtags": ["tag"], "cta": "string", "sales_tactic": "social_proof|urgency|benefit|demo|offer" }]
+}
+`;
+            const retry = await this.ai.generateStrategy({}, retryPrompt);
+            const retryPlan = retry.parsedJson;
+            if (!retryPlan?.daily_tasks?.length) {
+                const fallbackTasks = this.buildDynamicFallbackTasks({
+                    strategyId: params.strategyId,
+                    userId: params.userId,
+                    strategy: params.strategy,
+                    product: params.product,
+                    platforms: params.platforms,
+                    durationDays: params.durationDays,
+                    goalLabel: 'Sales',
+                });
+                const { error } = await this.supabase.from('agent_tasks').insert(fallbackTasks.map((task) => ({ ...task, status: 'pending' })));
+                if (error) throw new Error(`SALESMAN task generation failed and fallback scheduling also failed: ${error.message}`);
+                this.log(`SALESMAN: inserted ${fallbackTasks.length} fallback tasks from live product/platform context`);
+                return;
+            }
+            plan = retryPlan;
         }
 
         const now = new Date();

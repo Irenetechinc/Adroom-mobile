@@ -27,62 +27,51 @@ export class LaunchAgent extends AgentBase {
             platformIntel[platform] = await this.getLatestPlatformIntelligence(platform);
         }
 
-        const launchDay = Math.round(params.durationDays * 0.35); // Launch on 35% of campaign duration
+        const liveContext = {
+            strategyId: params.strategyId,
+            goal: 'launch',
+            durationDays: params.durationDays,
+            product: params.product,
+            strategy: params.strategy,
+            selectedPlatforms: Array.isArray(params.platforms) ? params.platforms : [],
+            trends,
+            platformIntel,
+            narrativeSnapshots,
+            generatedAt: new Date().toISOString(),
+        };
 
         const planPrompt = `
-You are the AdRoom LAUNCH Agent. Create a ${params.durationDays}-day PRODUCT LAUNCH campaign with zero paid budget.
+You are Adirum AI’s LAUNCH agent.
 
-PRODUCT: ${JSON.stringify(params.product)}
-STRATEGY: ${JSON.stringify(params.strategy)}
-PLATFORMS: ${JSON.stringify(params.platforms)}
-LAUNCH DAY: Day ${launchDay} of ${params.durationDays}
-TRENDING TOPICS: ${JSON.stringify(trends)}
-PLATFORM INTELLIGENCE: ${JSON.stringify(platformIntel)}
-NARRATIVE SNAPSHOTS (How AI sees this brand): ${JSON.stringify(narrativeSnapshots)}
+Use the live runtime context only. Never assume a fixed launch day, fixed platform list, fixed time window, or canned phase formula.
 
-LAUNCH AGENT MANDATE:
-- Build MAXIMUM PRE-LAUNCH HYPE through mystery, exclusivity, and social proof
-- Execute LAUNCH DAY BLITZ: coordinated posts across ALL platforms within 2-hour window
-- Sustain POST-LAUNCH MOMENTUM with testimonials, press coverage amplification, and UGC
-- Use GEO (Generative Engine Optimization) — flood AI models with positive brand narrative
+RUNTIME CONTEXT:
+${JSON.stringify(liveContext, null, 2)}
 
-CAMPAIGN PHASES:
-Phase 1 (Days 1 to ${launchDay - 3}): PRE-LAUNCH HYPE
-- Teaser content (mystery/reveal mechanic)
-- "Insider access" content for early followers
-- Behind-the-scenes content
-- Countdown posts starting at Day ${launchDay - 7}
+Build a launch plan from the real product, strategy, selected platforms, live narrative signals, and current platform intelligence only.
 
-Phase 2 (Days ${launchDay - 2} to ${launchDay + 1}): LAUNCH BLITZ  
-- SIMULTANEOUS multi-platform launch post (all platforms within 1 hour)
-- Live Q&A announcement
-- Early adopter offer post
-- Press/media outreach amplification
+Constraints:
+- Use only the selectedPlatforms values.
+- Let the exact strategy and live signals determine the launch timing and sequence.
+- Never hardcode a day percentage or platform-specific launch rule.
+- Return valid JSON only.
 
-Phase 3 (Days ${launchDay + 2} to ${params.durationDays}): POST-LAUNCH MOMENTUM
-- First customer testimonials
-- "This is what happened" recap (social proof)
-- "Still available" urgency
-- Trend hijacking with launch narrative
-
-Task types: TEASER, COUNTDOWN, LAUNCH_BLITZ, ANNOUNCEMENT, TESTIMONIAL, MOMENTUM_POST, UGC_REQUEST
-
-Return JSON:
+Schema:
 {
   "campaign_theme": "string",
-  "launch_narrative": "The core story/angle for the launch",
-  "hype_mechanics": ["mechanic 1", "mechanic 2"],
-  "launch_day": ${launchDay},
+  "launch_narrative": "string",
+  "hype_mechanics": ["string"],
+  "launch_day": 1,
   "daily_tasks": [
     {
       "day": 1,
-      "platform": "instagram",
+      "platform": "selected-platform-name",
       "task_type": "TEASER",
       "hour": 9,
       "minute": 0,
       "headline": "string",
-      "body": "Post text",
-      "image_prompt": "Imagen 3 prompt",
+      "body": "string",
+      "image_prompt": "string",
       "hashtags": ["tag1"],
       "cta": "string",
       "launch_phase": "pre_launch|launch_blitz|post_launch",
@@ -92,28 +81,60 @@ Return JSON:
 }
 `;
         const response = await this.ai.generateStrategy({}, planPrompt);
-        const plan = response.parsedJson;
+        let plan: any = response.parsedJson;
 
         if (!plan?.daily_tasks?.length) {
-            await this.buildSkill({
-                problem: 'Launch plan returned empty — need robust launch content fallback',
-                context: `Product: ${params.product?.name}, Platforms: ${params.platforms.join(', ')}`,
-                strategyId: params.strategyId
-            });
-            return;
+            const retryPrompt = `
+You are Adirum AI’s LAUNCH agent.
+
+Use the live product, strategy, current narrative, and selected platforms. Do not hardcode a launch day, platform, or time slot.
+
+RUNTIME CONTEXT:
+${JSON.stringify({
+    strategyId: params.strategyId,
+    durationDays: params.durationDays,
+    product: params.product,
+    strategy: params.strategy,
+    selectedPlatforms: Array.isArray(params.platforms) ? params.platforms : [],
+    generatedAt: new Date().toISOString(),
+}, null, 2)}
+
+Return valid JSON only with this schema:
+{
+  "campaign_theme": "string",
+  "launch_narrative": "string",
+  "hype_mechanics": ["string"],
+  "launch_day": 1,
+  "daily_tasks": [{ "day": 1, "platform": "selected-platform-name", "task_type": "TEASER", "hour": 9, "minute": 0, "headline": "string", "body": "string", "image_prompt": "string", "hashtags": ["tag"], "cta": "string", "launch_phase": "pre_launch|launch_blitz|post_launch", "narrative_angle": "mystery|social_proof|exclusivity|announcement" }]
+}
+`;
+            const retry = await this.ai.generateStrategy({}, retryPrompt);
+            const retryPlan = retry.parsedJson;
+            if (!retryPlan?.daily_tasks?.length) {
+                const fallbackTasks = this.buildDynamicFallbackTasks({
+                    strategyId: params.strategyId,
+                    userId: params.userId,
+                    strategy: params.strategy,
+                    product: params.product,
+                    platforms: params.platforms,
+                    durationDays: params.durationDays,
+                    goalLabel: 'Launch',
+                });
+                const { error } = await this.supabase.from('agent_tasks').insert(fallbackTasks.map((task) => ({ ...task, status: 'pending' })));
+                if (error) throw new Error(`LAUNCH task generation failed and fallback scheduling also failed: ${error.message}`);
+                this.log(`LAUNCH: inserted ${fallbackTasks.length} fallback tasks from live product/platform context`);
+                return;
+            }
+            plan = retryPlan;
         }
 
         const now = new Date();
         const tasks = plan.daily_tasks.map((task: any) => {
             const scheduleDate = new Date(now);
             scheduleDate.setDate(scheduleDate.getDate() + (task.day - 1));
-
-            // Launch blitz tasks on launch day all publish within 2-hour window
-            if (task.launch_phase === 'launch_blitz') {
-                scheduleDate.setHours(9, 0, 0, 0);
-            } else {
-                scheduleDate.setHours(task.hour || 9, task.minute || 0, 0, 0);
-            }
+            const hour = Number(task.hour) || 9;
+            const minute = Number(task.minute) || 0;
+            scheduleDate.setHours(hour, minute, 0, 0);
 
             return {
                 strategy_id: params.strategyId,

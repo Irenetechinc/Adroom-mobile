@@ -310,40 +310,69 @@ function DemographicPanel({ strategyId }: { strategyId: string }) {
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [activeSegIdx, setActiveSegIdx] = useState(0);
+  const [pollCount, setPollCount] = useState(0);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const clearPolling = useCallback(() => {
+    if (pollRef.current) {
+      clearInterval(pollRef.current);
+      pollRef.current = null;
+    }
+  }, []);
 
   const loadIntel = useCallback(async (isPolling = false) => {
     if (!isPolling) setLoading(true);
     try {
       const { data: { session } } = await supabase.auth.getSession();
-      if (!session?.access_token || !BACKEND_URL) return;
+      if (!session?.access_token || !BACKEND_URL) {
+        setError('Audience intelligence is unavailable until you are signed in.');
+        return;
+      }
+
       const res = await globalThis.fetch(`${BACKEND_URL}/api/strategy/${strategyId}/intelligence/demographics`, {
         headers: { Authorization: `Bearer ${session.access_token}` },
       });
+
       if (res.status === 202) {
         setGenerating(true);
+        const nextPollCount = (isPolling ? pollCount : pollCount + 1);
+        setPollCount(nextPollCount);
+        if (nextPollCount >= 8) {
+          clearPolling();
+          setGenerating(false);
+          setError('Audience intelligence is still being prepared. It will appear here once live platform data is available.');
+          return;
+        }
         if (!pollRef.current) {
           pollRef.current = setInterval(() => loadIntel(true), 8000);
         }
         return;
       }
+
       const data = await res.json();
-      if (data.intel) {
+      if (data?.intel) {
         setIntel(data.intel);
         setGenerating(false);
-        if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
+        setError(null);
+        setPollCount(0);
+        clearPolling();
+        return;
+      }
+
+      if (!data?.intel && !isPolling) {
+        setError('Audience intelligence is not available for this strategy yet.');
       }
     } catch {
       setError('Could not load audience intelligence.');
     } finally {
       if (!isPolling) setLoading(false);
     }
-  }, [strategyId]);
+  }, [clearPolling, pollCount, strategyId]);
 
   useEffect(() => {
     loadIntel();
-    return () => { if (pollRef.current) clearInterval(pollRef.current); };
-  }, [loadIntel]);
+    return () => { clearPolling(); };
+  }, [clearPolling, loadIntel]);
 
   if (loading) {
     return (
@@ -368,7 +397,7 @@ function DemographicPanel({ strategyId }: { strategyId: string }) {
       <View style={styles.intelError}>
         <AlertCircle size={16} color="#F87171" />
         <Text style={styles.intelErrorText}>{error}</Text>
-        <TouchableOpacity onPress={() => { setError(null); loadIntel(); }} style={styles.retryBtn}>
+        <TouchableOpacity onPress={() => { setError(null); setPollCount(0); loadIntel(); }} style={styles.retryBtn}>
           <RefreshCw size={12} color="#00F0FF" />
           <Text style={styles.retryText}>Retry</Text>
         </TouchableOpacity>
@@ -376,7 +405,14 @@ function DemographicPanel({ strategyId }: { strategyId: string }) {
     );
   }
 
-  if (!intel) return null;
+  if (!intel) {
+    return (
+      <View style={styles.intelError}>
+        <Users size={16} color="#94A3B8" />
+        <Text style={styles.intelErrorText}>No audience intelligence is available for this strategy yet.</Text>
+      </View>
+    );
+  }
 
   return (
     <View style={styles.intelPanel}>
@@ -634,9 +670,9 @@ function ConversionTrackerPanel({
     return (
       <View style={styles.convEmpty}>
         <Users size={20} color="#334155" />
-        <Text style={styles.convEmptyTitle}>No leads tracked yet</Text>
+        <Text style={styles.convEmptyTitle}>No live leads tracked yet</Text>
         <Text style={styles.convEmptyBody}>
-          Leads appear here as agents identify and engage prospects for this strategy.
+          Leads will appear here as soon as the live outreach flow starts identifying and engaging prospects for this strategy.
         </Text>
       </View>
     );

@@ -151,4 +151,74 @@ describe('useAgentStore', () => {
     expect(message?.uiData?.action).toBe('STRATEGY_GENERATION');
     expect(useAgentStore.getState().flowState).toBe('DURATION_SELECTION');
   });
+
+  it('should not mark service or brand strategies as physical-product flows', async () => {
+    await useAgentStore.getState().handleServiceIntake({
+      name: 'Design Service',
+      description: 'Branding service',
+      category: 'Creative',
+      price: '100',
+      currency: 'USD',
+    });
+    expect(useStrategyCreationStore.getState().productData.productType).toBe('digital');
+
+    await useAgentStore.getState().handleBrandIntake({
+      name: 'Test Brand',
+      mission: 'Make useful things',
+      values: 'Quality',
+    });
+    expect(useStrategyCreationStore.getState().productData.productType).toBe('digital');
+  });
+
+  it('should include selected social accounts in the activation request', async () => {
+    const fetchSpy = jest.spyOn(global, 'fetch' as any).mockResolvedValue({
+      ok: true,
+      json: async () => ({ agent_type: 'SALESMAN', tasks_scheduled: 2 }),
+    } as any);
+    const supabase = require('../../services/supabase').supabase;
+    jest.spyOn(supabase.auth, 'getSession').mockResolvedValue({
+      data: { session: { access_token: 'token_123' } },
+    } as any);
+
+    useAgentStore.setState({
+      generatedStrategies: {
+        strategy: { title: 'Organic Plan', goal: 'sales', platforms: ['twitter'] },
+        strategyId: 'strategy_123',
+      },
+      productDetails: { id: 'prod_1', selectedGoal: 'sales', selectedDuration: 7, name: 'Test Product', description: 'Test' },
+    });
+
+    await useAgentStore.getState().handleStrategySelection();
+
+    expect(fetchSpy).toHaveBeenCalledWith(
+      expect.stringContaining('/api/ai/activate-agents'),
+      expect.objectContaining({
+        body: expect.stringContaining('"selectedAccounts":["twitter"]'),
+      })
+    );
+
+    fetchSpy.mockRestore();
+  });
+
+  it('should not force dispatch-address validation on service and brand strategies', async () => {
+    await useAgentStore.getState().handleServiceIntake({
+      name: 'Design Service',
+      description: 'Design work',
+      category: 'Creative',
+      price: '100',
+      currency: 'USD',
+    });
+
+    expect(useStrategyCreationStore.getState().productData.productType).toBe('digital');
+    expect(useStrategyCreationStore.getState().productData.dispatchAddress).toBe('');
+
+    await useAgentStore.getState().handleBrandIntake({
+      name: 'Test Brand',
+      mission: 'Make useful things',
+      values: 'Quality',
+    });
+
+    expect(useStrategyCreationStore.getState().productData.productType).toBe('digital');
+    expect(useStrategyCreationStore.getState().productData.dispatchAddress).toBe('');
+  });
 });

@@ -1504,8 +1504,9 @@ app.post('/api/ai/generate-strategy', async (req, res) => {
         }
         const hasNewProductTypeInput = productType !== undefined;
         const normalizedProductType = productType === 'digital' ? 'digital' : 'physical';
-        if (hasNewProductTypeInput && normalizedProductType === 'physical' && (!dispatchAddress || String(dispatchAddress).trim().length < 10)) {
-          return res.status(400).json({ error: 'DISPATCH_ADDRESS_REQUIRED', message: 'A valid dispatch pickup address is required for physical products.' });
+        const isProductFlow = Boolean(submittedProduct || productId || (typeof productType !== 'undefined' && productType !== null));
+        if (isProductFlow && normalizedProductType === 'physical' && (!dispatchAddress || String(dispatchAddress).trim().length < 10)) {
+          return res.status(400).json({ error: 'DISPATCH_ADDRESS_REQUIRED', message: 'A valid dispatch pickup address is required for physical product strategies.' });
         }
 
         console.log(`[Strategy] [${ts()}] STEP 1 — Authenticated user: ${user.id}`);
@@ -1776,11 +1777,11 @@ app.post('/api/ai/generate-preview-assets', async (req, res) => {
  * Activate Goal Agents — full autonomous campaign execution begins after user approves strategy
  */
 app.post('/api/ai/activate-agents', async (req, res) => {
-    const { strategyId, goal, platforms, videoUrl } = req.body;
+    const { strategyId, goal, platforms, selectedAccounts, videoUrl } = req.body;
     const ts = () => new Date().toISOString();
     console.log(`\n[AgentActivation] ═══════════════════════════════════════`);
     console.log(`[AgentActivation] [${ts()}] ACTIVATING AUTONOMOUS AGENT`);
-    console.log(`[AgentActivation] Strategy: ${strategyId} | Goal: ${goal} | Platforms: ${JSON.stringify(platforms)}`);
+    console.log(`[AgentActivation] Strategy: ${strategyId} | Goal: ${goal} | Platforms: ${JSON.stringify(platforms)} | SelectedAccounts: ${JSON.stringify(selectedAccounts)}`);
 
     if (!strategyId || !goal) {
         return res.status(400).json({ error: 'strategyId and goal are required' });
@@ -1837,8 +1838,12 @@ app.post('/api/ai/activate-agents', async (req, res) => {
           }
         }
 
-        // Enforce: platform count limit
-        const requestedPlatforms: string[] = platforms || [];
+        const normalizedSelectedAccounts = Array.isArray(selectedAccounts)
+          ? selectedAccounts.map((account: unknown) => String(account).trim().toLowerCase()).filter(Boolean)
+          : [];
+        const requestedPlatforms: string[] = (normalizedSelectedAccounts.length > 0
+          ? normalizedSelectedAccounts
+          : Array.isArray(platforms) ? platforms.map((platform: unknown) => String(platform).trim().toLowerCase()).filter(Boolean) : []);
         if (requestedPlatforms.length > planLimits.platforms) {
           return res.status(403).json({
             error: 'PLAN_LIMIT_EXCEEDED',
@@ -1864,7 +1869,21 @@ app.post('/api/ai/activate-agents', async (req, res) => {
         }
 
         const activeStrategy = strategy;
-        const activePlatforms = (platforms || strategy.platforms || ['facebook']).slice(0, planLimits.platforms);
+        const safeStrategyAccounts = Array.isArray(strategy?.selected_accounts) ? strategy.selected_accounts : [];
+        const activePlatforms = (requestedPlatforms.length > 0
+          ? requestedPlatforms
+          : safeStrategyAccounts.length > 0
+            ? safeStrategyAccounts
+            : strategy.platforms || ['facebook']
+        ).slice(0, planLimits.platforms);
+
+        if (activePlatforms.length > 0) {
+            await supabase.from('strategies').update({
+                selected_accounts: activePlatforms,
+                platforms: activePlatforms,
+                updated_at: new Date().toISOString(),
+            }).eq('id', strategyId).eq('user_id', user.id);
+        }
 
         // Store user-supplied video URL in strategy so agents can retrieve it at execution time
         if (videoUrl) {

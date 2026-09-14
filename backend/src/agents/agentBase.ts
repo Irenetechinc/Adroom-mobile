@@ -1,5 +1,5 @@
 import { SupabaseClient } from '@supabase/supabase-js';
-import { AIEngine } from '../config/ai-models';
+import { AIEngine, parseStructuredJson } from '../config/ai-models';
 import fetch from 'node-fetch';
 
 export interface AgentTokens {
@@ -50,6 +50,63 @@ export class AgentBase {
         this.ai = AIEngine.getInstance();
         this.supabase = supabase;
         this.agentType = agentType;
+    }
+
+    protected normalizePlatforms(platforms: string[] = [], fallback: string[] = []): string[] {
+        const combined = [...(platforms || []), ...(fallback || [])];
+        return Array.from(new Set(
+            combined
+                .map((platform) => String(platform || '').trim().toLowerCase())
+                .filter(Boolean)
+        ));
+    }
+
+    protected buildDynamicFallbackTasks(params: {
+        strategyId: string;
+        userId: string;
+        strategy: any;
+        product: any;
+        platforms: string[];
+        durationDays: number;
+        goalLabel: string;
+    }): any[] {
+        const platformList = this.normalizePlatforms(params.platforms || params.strategy?.platforms || [], []);
+        const productName = params.product?.product_name || params.product?.name || params.strategy?.title || 'this offer';
+        const strategyTitle = params.strategy?.title || 'live campaign';
+        if (platformList.length === 0) {
+            return [];
+        }
+
+        const duration = Math.max(1, Number(params.durationDays) || 1);
+        const tasks: any[] = [];
+        const now = new Date();
+
+        for (let day = 1; day <= duration; day += 1) {
+            for (const platform of platformList) {
+                const scheduleDate = new Date(now);
+                scheduleDate.setDate(scheduleDate.getDate() + (day - 1));
+                scheduleDate.setHours(9 + ((day + platformList.indexOf(platform)) % 6), ((day * 7 + platformList.indexOf(platform) * 5) % 60), 0, 0);
+
+                tasks.push({
+                    strategy_id: params.strategyId,
+                    user_id: params.userId,
+                    agent_type: this.agentType,
+                    task_type: 'POST',
+                    platform,
+                    scheduled_at: scheduleDate.toISOString(),
+                    status: 'pending',
+                    content: {
+                        headline: `${productName} ${params.goalLabel.toLowerCase()} — ${strategyTitle}`,
+                        body: `Live campaign execution for ${productName} on ${platform}, using the current strategy context and platform signals for ${strategyTitle}.`,
+                        image_prompt: `Create a polished ${platform} social creative for ${productName} using the live product context and current audience signals.`,
+                        hashtags: [productName.toLowerCase().replace(/\s+/g, ''), platform, 'adiramai'],
+                        cta: 'Learn more',
+                    }
+                });
+            }
+        }
+
+        return tasks;
     }
 
     protected log(msg: string, data?: any) {
@@ -822,19 +879,29 @@ Return JSON — all fields must be prose descriptions, NOT templates with placeh
   "success_metric": "How to measure whether the skill execution was successful"
 }`;
         const response = await this.ai.generateStrategy({}, prompt);
-        const skill = response.parsedJson;
-        if (!skill?.skill_name) { this.log('Skill builder returned invalid response'); return ''; }
+        const skill = (response?.parsedJson && typeof response.parsedJson === 'object')
+            ? response.parsedJson
+            : parseStructuredJson(response?.text);
+
+        if (!skill || typeof skill !== 'object' || !skill.skill_name || !skill.skill_description || !skill.trigger_condition || !skill.what_data_to_use || !skill.what_to_produce) {
+            this.log('Skill builder returned invalid response; no synthetic fallback stored');
+            return '';
+        }
+
+        const normalizedSkillName = String(skill.skill_name).replace(/[^a-z0-9_]/gi, '').slice(0, 60);
+        if (!normalizedSkillName) {
+            this.log('Skill builder returned an invalid skill name; no fallback stored');
+            return '';
+        }
 
         const { error } = await this.supabase.from('agent_skills').upsert({
             agent_type: this.agentType,
-            skill_name: skill.skill_name,
-            skill_description: skill.skill_description,
-            trigger_condition: skill.trigger_condition,
-            // execution_prompt now stores a prose description — NOT a template.
-            // useSkill() will have the AI Brain write a fresh prompt from this each time.
+            skill_name: normalizedSkillName,
+            skill_description: String(skill.skill_description),
+            trigger_condition: String(skill.trigger_condition),
             execution_prompt: `SKILL GOAL: ${skill.skill_description}\n\nDATA TO USE: ${skill.what_data_to_use}\n\nOUTPUT EXPECTED: ${skill.what_to_produce}`,
             parameters: { what_data_to_use: skill.what_data_to_use, what_to_produce: skill.what_to_produce },
-            success_metric: skill.success_metric,
+            success_metric: String(skill.success_metric || 'Measure whether the action resolves the identified performance gap.'),
             created_by_agent_run: params.strategyId,
         }, { onConflict: 'skill_name' });
 

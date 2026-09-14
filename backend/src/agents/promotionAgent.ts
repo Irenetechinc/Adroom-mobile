@@ -23,47 +23,49 @@ export class PromotionAgent extends AgentBase {
         const trends = await this.getTrendingTopics(params.product?.category || 'general');
         const emotionalOwnership = await this.getEmotionalOwnership(params.product?.category || 'general');
 
+        const liveContext = {
+            strategyId: params.strategyId,
+            goal: 'promotion',
+            durationDays: params.durationDays,
+            product: params.product,
+            strategy: params.strategy,
+            selectedPlatforms: Array.isArray(params.platforms) ? params.platforms : [],
+            trends,
+            emotionalOwnership,
+            generatedAt: new Date().toISOString(),
+        };
+
         const planPrompt = `
-You are the AdRoom PROMOTION Agent. Create a ${params.durationDays}-day ORGANIC PROMOTION campaign.
+You are Adirum AI’s PROMOTION agent.
 
-PRODUCT: ${JSON.stringify(params.product)}
-STRATEGY: ${JSON.stringify(params.strategy)}
-PLATFORMS: ${JSON.stringify(params.platforms)}
-TRENDING TOPICS: ${JSON.stringify(trends)}
-EMOTIONAL OWNERSHIP DATA: ${JSON.stringify(emotionalOwnership)}
+Use the live runtime context only. Never assume fixed day segments, fixed platforms, or a prebuilt urgency formula.
 
-PROMOTION AGENT MANDATE:
-- Drive ENGAGEMENT and OFFER UPTAKE through organic FOMO and scarcity
-- NO paid ads — create psychological urgency through organic storytelling
-- Days 1-3: "Problem Agitation" — make the audience feel the PAIN your offer solves
-- Days 4-7: "Solution Reveal" — introduce your offer as THE answer
-- Days 8-12: FOMO Ignition — limited time, limited availability, social proof
-- Days 13+: Urgency Finale — countdown, last chance, testimonials
+RUNTIME CONTEXT:
+${JSON.stringify(liveContext, null, 2)}
 
-PROMOTION TACTICS:
-- Countdown posts (7 days to go, 3 days left, LAST DAY)
-- Social proof posts (testimonials, results, before/after)
-- Scarcity posts (limited availability, exclusive offer)
-- Community challenge posts (encourages UGC)
-- Emotional trigger posts (tap into the dominant emotion for the category)
+Build the promotion plan from the actual product, strategy, current platform signals, real emotional ownership data, and selected platforms supplied above.
 
-Task types: POST, STORY, COUNTDOWN_POST, TESTIMONIAL_REQUEST, GIVEAWAY_TEASE, OFFER_REVEAL
+Constraints:
+- Only use the selectedPlatforms list.
+- Align the sequence to the actual durationDays and real-time offer/emotional evidence.
+- Do not hardcode platform names or fixed hour/day rules.
+- Return valid JSON only.
 
-Return JSON:
+Schema:
 {
   "campaign_theme": "string",
-  "offer_hook": "The core offer statement",
-  "emotional_trigger": "Primary emotion to activate",
+  "offer_hook": "string",
+  "emotional_trigger": "string",
   "daily_tasks": [
     {
       "day": 1,
-      "platform": "facebook",
+      "platform": "selected-platform-name",
       "task_type": "POST",
       "hour": 10,
       "minute": 0,
       "headline": "string",
-      "body": "Post ready to publish",
-      "image_prompt": "Imagen 3 prompt",
+      "body": "string",
+      "image_prompt": "string",
       "hashtags": ["tag1"],
       "cta": "string",
       "promo_phase": "problem_agitation|solution_reveal|fomo_ignition|urgency_finale",
@@ -73,15 +75,50 @@ Return JSON:
 }
 `;
         const response = await this.ai.generateStrategy({}, planPrompt);
-        const plan = response.parsedJson;
+        let plan: any = response.parsedJson;
 
         if (!plan?.daily_tasks?.length) {
-            await this.buildSkill({
-                problem: 'Promotion plan returned empty tasks',
-                context: `Product: ${params.product?.name}, Platforms: ${params.platforms.join(', ')}`,
-                strategyId: params.strategyId
-            });
-            return;
+            const retryPrompt = `
+You are Adirum AI’s PROMOTION agent.
+
+Use the live product, offer details, selected platforms, and current emotional signal data only. Do not assume fixed platform names or fixed time/day buckets.
+
+RUNTIME CONTEXT:
+${JSON.stringify({
+    strategyId: params.strategyId,
+    durationDays: params.durationDays,
+    product: params.product,
+    strategy: params.strategy,
+    selectedPlatforms: Array.isArray(params.platforms) ? params.platforms : [],
+    generatedAt: new Date().toISOString(),
+}, null, 2)}
+
+Return valid JSON only with this schema:
+{
+  "campaign_theme": "string",
+  "offer_hook": "string",
+  "emotional_trigger": "string",
+  "daily_tasks": [{ "day": 1, "platform": "selected-platform-name", "task_type": "POST", "hour": 10, "minute": 0, "headline": "string", "body": "string", "image_prompt": "string", "hashtags": ["tag"], "cta": "string", "promo_phase": "problem_agitation|solution_reveal|fomo_ignition|urgency_finale", "emotional_trigger": "fear_of_missing_out|trust|curiosity|excitement" }]
+}
+`;
+            const retry = await this.ai.generateStrategy({}, retryPrompt);
+            const retryPlan = retry.parsedJson;
+            if (!retryPlan?.daily_tasks?.length) {
+                const fallbackTasks = this.buildDynamicFallbackTasks({
+                    strategyId: params.strategyId,
+                    userId: params.userId,
+                    strategy: params.strategy,
+                    product: params.product,
+                    platforms: params.platforms,
+                    durationDays: params.durationDays,
+                    goalLabel: 'Promotion',
+                });
+                const { error } = await this.supabase.from('agent_tasks').insert(fallbackTasks.map((task) => ({ ...task, status: 'pending' })));
+                if (error) throw new Error(`PROMOTION task generation failed and fallback scheduling also failed: ${error.message}`);
+                this.log(`PROMOTION: inserted ${fallbackTasks.length} fallback tasks from live product/platform context`);
+                return;
+            }
+            plan = retryPlan;
         }
 
         const now = new Date();

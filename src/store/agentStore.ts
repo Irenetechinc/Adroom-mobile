@@ -545,7 +545,8 @@ export const useAgentStore = create<AgentState>()(
           currency: validatedData.currency || 'USD',
           price: String(validatedData.price || ''),
           category: validatedData.category || '',
-          productType: 'physical',
+          productType: 'digital',
+          dispatchAddress: '',
         });
         set({ flowState: 'GOAL_SELECTION', isInputDisabled: true });
         
@@ -604,6 +605,7 @@ export const useAgentStore = create<AgentState>()(
           productType: 'digital',
           currency: 'USD',
           price: '0',
+          dispatchAddress: '',
         });
         set({ flowState: 'GOAL_SELECTION', isInputDisabled: true });
         
@@ -926,6 +928,12 @@ export const useAgentStore = create<AgentState>()(
               const token = session?.access_token;
               if (!token) throw new Error('No session token');
 
+              const requestedAccounts = Array.isArray(strategy.selected_accounts)
+                ? strategy.selected_accounts
+                : Array.isArray(strategy.platforms)
+                  ? strategy.platforms
+                  : (useStrategyCreationStore.getState().productData.selectedAccounts || []);
+
               const response = await fetch(`${BACKEND_URL}/api/ai/activate-agents`, {
                   method: 'POST',
                   headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
@@ -933,6 +941,7 @@ export const useAgentStore = create<AgentState>()(
                       strategyId,
                       goal: strategy.goal || get().productDetails.selectedGoal || strategy.title,
                       platforms: strategy.platforms,
+                      selectedAccounts: requestedAccounts,
                       videoUrl: get().productDetails.videoUrl,
                   }),
               });

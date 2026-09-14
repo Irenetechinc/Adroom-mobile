@@ -26,66 +26,100 @@ export class AwarenessAgent extends AgentBase {
             platformIntel[platform] = await this.getLatestPlatformIntelligence(platform);
         }
 
+        const liveContext = {
+            strategyId: params.strategyId,
+            goal: 'awareness',
+            durationDays: params.durationDays,
+            product: params.product,
+            strategy: params.strategy,
+            selectedPlatforms: Array.isArray(params.platforms) ? params.platforms : [],
+            trends,
+            platformIntel,
+            generatedAt: new Date().toISOString(),
+        };
+
         const planPrompt = `
-You are the AdRoom AWARENESS Agent. Create a ${params.durationDays}-day REACH MAXIMIZATION campaign.
+You are Adirum AI’s AWARENESS agent.
 
-PRODUCT: ${JSON.stringify(params.product)}
-STRATEGY: ${JSON.stringify(params.strategy)}
-PLATFORMS: ${JSON.stringify(params.platforms)}
-LIVE TRENDS: ${JSON.stringify(trends)}
-PLATFORM INTELLIGENCE: ${JSON.stringify(platformIntel)}
+Use the live runtime context only. Never assume a fixed platform, fixed duration, fixed start time, fixed day buckets, or a canned content formula.
 
-AWARENESS AGENT MANDATE:
-- Maximize REACH and BRAND VISIBILITY — zero paid budget
-- Use algorithm arbitrage: post when platforms boost organic content
-- Each post must be designed to be SHARED or SAVED (not just liked)
-- Days 1-5: Brand story & problem definition (highest reach formats: Reels, Carousels)
-- Days 6-12: Trend hijacking + viral hooks
-- Days 13-20: Community building + UGC encouragement  
-- Days 21+: Momentum posts that capitalize on existing reach
+RUNTIME CONTEXT:
+${JSON.stringify(liveContext, null, 2)}
 
-PLATFORM-SPECIFIC ALGORITHM HACKS TO APPLY:
-- TikTok: trending sounds, text overlays, fast cuts, POV hooks
-- Instagram: Reels get 3x more reach, carousel saves boost distribution
-- Facebook: video posts with captions get 135% more organic reach
-- LinkedIn: native document posts get highest reach, polls boost visibility
-- Twitter/X: thread starters with images get 313% more engagement
+Build the reach campaign using the exact product, strategy, selected platforms, real audience signals, live trends, and platform intelligence provided above.
 
-For each platform selected, create tasks that exploit its current algorithm priorities.
-Task types: POST, REEL, STORY, CAROUSEL, THREAD, HASHTAG_CAMPAIGN, POLL
+Constraints:
+- Use only the selectedPlatforms from the runtime context.
+- Decide timing and sequence based on the actual live data and the exact durationDays value.
+- Do not inject static platform rules or fixed day ranges.
+- Return valid JSON only.
 
-Return JSON:
+Schema:
 {
   "campaign_theme": "string",
-  "viral_hooks": ["hook 1", "hook 2"],
+  "viral_hooks": ["hook 1"],
   "daily_tasks": [
     {
       "day": 1,
-      "platform": "instagram",
+      "platform": "selected-platform-name",
       "task_type": "REEL",
       "hour": 7,
       "minute": 0,
       "headline": "string",
-      "body": "Caption text",
-      "image_prompt": "Imagen 3 visual prompt",
+      "body": "string",
+      "image_prompt": "string",
       "hashtags": ["tag1"],
       "cta": "string",
-      "virality_hook": "specific hook to maximize shares",
-      "algorithm_exploit": "which algorithm rule this exploits"
+      "virality_hook": "string",
+      "algorithm_exploit": "string"
     }
   ]
 }
 `;
         const response = await this.ai.generateStrategy({}, planPrompt);
-        const plan = response.parsedJson;
+        let plan: any = response.parsedJson;
 
         if (!plan?.daily_tasks?.length) {
-            await this.buildSkill({
-                problem: 'Awareness plan returned empty — need fallback viral content strategy',
-                context: `Product: ${params.product?.name}, Platforms: ${params.platforms.join(', ')}`,
-                strategyId: params.strategyId
-            });
-            return;
+            const retryPrompt = `
+You are Adirum AI’s AWARENESS agent.
+
+Use the live strategy, live product, selected platforms, and current intelligence only. Do not assume fixed platform names, fixed day buckets, or static timing.
+
+RUNTIME CONTEXT:
+${JSON.stringify({
+    strategyId: params.strategyId,
+    durationDays: params.durationDays,
+    product: params.product,
+    strategy: params.strategy,
+    selectedPlatforms: Array.isArray(params.platforms) ? params.platforms : [],
+    generatedAt: new Date().toISOString(),
+}, null, 2)}
+
+Return valid JSON only with this schema:
+{
+  "campaign_theme": "string",
+  "viral_hooks": ["string"],
+  "daily_tasks": [{ "day": 1, "platform": "selected-platform-name", "task_type": "REEL", "hour": 7, "minute": 0, "headline": "string", "body": "string", "image_prompt": "string", "hashtags": ["tag"], "cta": "string", "virality_hook": "string", "algorithm_exploit": "string" }]
+}
+`;
+            const retry = await this.ai.generateStrategy({}, retryPrompt);
+            const retryPlan = retry.parsedJson;
+            if (!retryPlan?.daily_tasks?.length) {
+                const fallbackTasks = this.buildDynamicFallbackTasks({
+                    strategyId: params.strategyId,
+                    userId: params.userId,
+                    strategy: params.strategy,
+                    product: params.product,
+                    platforms: params.platforms,
+                    durationDays: params.durationDays,
+                    goalLabel: 'Awareness',
+                });
+                const { error } = await this.supabase.from('agent_tasks').insert(fallbackTasks.map((task) => ({ ...task, status: 'pending' })));
+                if (error) throw new Error(`AWARENESS task generation failed and fallback scheduling also failed: ${error.message}`);
+                this.log(`AWARENESS: inserted ${fallbackTasks.length} fallback tasks from live product/platform context`);
+                return;
+            }
+            plan = retryPlan;
         }
 
         const now = new Date();

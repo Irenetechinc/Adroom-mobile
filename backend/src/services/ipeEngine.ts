@@ -77,7 +77,7 @@ export class PlatformIntelligenceEngine {
    */
   private async monitorPlatforms() {
     const results: any[] = [];
-    
+
     const { data: dbSources } = await this.supabase
       .from('intelligence_sources')
       .select('*')
@@ -88,30 +88,56 @@ export class PlatformIntelligenceEngine {
       await this.logSourceFailure('intelligence_sources', 'No active intelligence sources configured');
       return results;
     }
-    const allSources = this.sources;
-    
-    for (const source of allSources) {
-      try {
-        console.log(`Fetching from ${source.name}...`);
-        const response = await fetch(source.url, { timeout: 10000 });
-        if (response.ok) {
-          const text = await response.text();
-          const cleanText = text.replace(/<[^>]*>?/gm, ' ').substring(0, 15000); 
-          
-          results.push({ 
-              source: source.name, 
-              platform: source.platform, 
+
+    for (const source of this.sources) {
+      const candidateUrls = Array.from(new Set([
+        source.url,
+        ...(String(source.platform || '').toLowerCase() === 'x'
+          ? ['https://developer.x.com/en/docs/x-api', 'https://docs.x.com/x-api']
+          : []),
+      ])).filter(Boolean);
+
+      let fetched = false;
+      for (let index = 0; index < candidateUrls.length; index += 1) {
+        const url = candidateUrls[index];
+        try {
+          console.log(`Fetching from ${source.name} (${url})...`);
+          const response = await fetch(url, { timeout: 10000 });
+          if (response.ok) {
+            const text = await response.text();
+            const cleanText = text.replace(/<[^>]*>?/gm, ' ').substring(0, 15000);
+            results.push({
+              source: source.name,
+              platform: source.platform,
               content: cleanText,
-              captured_at: new Date().toISOString()
-          });
-        } else {
-            await this.logSourceFailure(source.name, `HTTP ${response.status}: ${response.statusText}`);
+              captured_at: new Date().toISOString(),
+              source_url: url,
+            });
+            fetched = true;
+            break;
+          }
+
+          if (response.status >= 400 && response.status < 500 && index < candidateUrls.length - 1) {
+            console.warn(`[IPE] ${source.name} returned ${response.status} for ${url}; trying fallback source.`);
+            continue;
+          }
+
+          await this.logSourceFailure(source.name, `HTTP ${response.status}: ${response.statusText} (${url})`);
+          break;
+        } catch (error: any) {
+          if (index < candidateUrls.length - 1) {
+            console.warn(`[IPE] ${source.name} failed at ${url}: ${error.message}. Trying fallback.`);
+            continue;
+          }
+          await this.logSourceFailure(source.name, `${error.message || 'Unknown error'} (${url})`);
         }
-      } catch (error: any) {
-        await this.logSourceFailure(source.name, error.message || 'Unknown error');
+      }
+
+      if (!fetched) {
+        console.warn(`[IPE] Skipped ${source.name}; no working source response found.`);
       }
     }
-    
+
     return results;
   }
 

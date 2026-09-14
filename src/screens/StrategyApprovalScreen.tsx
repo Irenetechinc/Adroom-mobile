@@ -58,15 +58,6 @@ interface PreviewAsset {
   error?: string;
 }
 
-function friendlyAction(action: string): string {
-  return action
-    .replace(/\b(SALESMAN|AWARENESS|PROMOTION|LAUNCH|IPE|orchestrat\w+|protocol\w*|agent\w*)\b/gi, '')
-    .replace(/\bconnection protocols?\b/gi, 'platform setup')
-    .replace(/\binitiating\b/gi, 'Starting')
-    .replace(/\s{2,}/g, ' ')
-    .trim();
-}
-
 function AssetSkeleton() {
   const anim = useRef(new Animated.Value(0.4)).current;
   useEffect(() => {
@@ -175,12 +166,6 @@ export default function StrategyApprovalScreen({ navigation }: Props) {
 
   const schedule: any[] = Array.isArray(activeStrategy.schedule) ? activeStrategy.schedule : [];
   const first7Days = schedule.filter((s: any) => s.day >= 1 && s.day <= 7);
-
-  const actions: string[] = Array.isArray(activeStrategy.actions)
-    ? activeStrategy.actions
-    : Array.isArray(activeStrategy.organic_leverage_points)
-    ? activeStrategy.organic_leverage_points
-    : [];
 
   const platforms: string[] = Array.isArray(activeStrategy.platforms) ? activeStrategy.platforms : [];
   const goal: string = (activeStrategy.goal || activeStrategy.agentType || 'AWARENESS').toUpperCase();
@@ -324,8 +309,7 @@ export default function StrategyApprovalScreen({ navigation }: Props) {
             ) : null}
           </View>
 
-          <Text style={{ color: '#FFFFFF', fontSize: 22, fontWeight: '800', marginBottom: 6, letterSpacing: 0.5 }}>{activeStrategy.title}</Text>
-          <Text style={{ color: '#94A3B8', fontSize: 14, lineHeight: 20, marginBottom: 12 }}>{activeStrategy.description || activeStrategy.rationale}</Text>
+          <Text style={{ color: '#FFFFFF', fontSize: 22, fontWeight: '800', marginBottom: 12, letterSpacing: 0.5 }}>{activeStrategy.title}</Text>
 
           <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
             {activeStrategy.targetAudience ? (
@@ -474,58 +458,6 @@ export default function StrategyApprovalScreen({ navigation }: Props) {
             </ScrollView>
           </View>
         )}
-
-        {/* What Adirum AI Will Do */}
-        {actions.length > 0 && (
-          <View style={{ backgroundColor: '#0F1623', borderRadius: 16, padding: 20, marginBottom: 16, borderWidth: 1, borderColor: 'rgba(255,255,255,0.06)' }}>
-            <Text style={{ color: goalColor, fontSize: 14, fontWeight: '800', letterSpacing: 1.5, textTransform: 'uppercase', marginBottom: 14 }}>What Adirum AI Will Do</Text>
-            {actions.map((action: string, idx: number) => {
-              const clean = friendlyAction(action);
-              if (!clean) return null;
-              return (
-                <View key={idx} style={{ flexDirection: 'row', alignItems: 'flex-start', marginBottom: 10 }}>
-                  <View style={{ width: 22, height: 22, borderRadius: 11, backgroundColor: 'rgba(16,185,129,0.15)', alignItems: 'center', justifyContent: 'center', marginRight: 10, marginTop: 1, borderWidth: 1, borderColor: 'rgba(16,185,129,0.4)' }}>
-                    <Text style={{ color: '#10B981', fontSize: 11, fontWeight: '700' }}>✓</Text>
-                  </View>
-                  <Text style={{ color: '#CBD5E1', flex: 1, fontSize: 14, lineHeight: 20 }}>{clean}</Text>
-                </View>
-              );
-            })}
-          </View>
-        )}
-
-        {/* Projected Results */}
-        {(activeStrategy.estimatedReach || activeStrategy.estimated_outcomes) ? (
-          <View style={{ backgroundColor: '#0F1623', borderRadius: 16, padding: 20, marginBottom: 20, borderWidth: 1, borderColor: `${goalColor}20` }}>
-            <Text style={{ color: goalColor, fontSize: 14, fontWeight: '800', letterSpacing: 1.5, textTransform: 'uppercase', marginBottom: 14 }}>Projected Results</Text>
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between', flexWrap: 'wrap' }}>
-              {activeStrategy.estimatedReach ? (
-                <View style={{ marginBottom: 12, marginRight: 16 }}>
-                  <Text style={{ color: '#64748B', fontSize: 11, textTransform: 'uppercase', fontWeight: '700', marginBottom: 2 }}>Est. Reach</Text>
-                  <Text style={{ color: '#FFFFFF', fontSize: 20, fontWeight: '800' }}>{activeStrategy.estimatedReach}</Text>
-                </View>
-              ) : null}
-              {activeStrategy.estimated_outcomes?.reach ? (
-                <View style={{ marginBottom: 12, marginRight: 16 }}>
-                  <Text style={{ color: '#64748B', fontSize: 11, textTransform: 'uppercase', fontWeight: '700', marginBottom: 2 }}>Reach</Text>
-                  <Text style={{ color: '#FFFFFF', fontSize: 20, fontWeight: '800' }}>{Number(activeStrategy.estimated_outcomes.reach).toLocaleString()}</Text>
-                </View>
-              ) : null}
-              {activeStrategy.estimated_outcomes?.engagement ? (
-                <View style={{ marginBottom: 12, marginRight: 16 }}>
-                  <Text style={{ color: '#64748B', fontSize: 11, textTransform: 'uppercase', fontWeight: '700', marginBottom: 2 }}>Engagement</Text>
-                  <Text style={{ color: '#FFFFFF', fontSize: 20, fontWeight: '800' }}>{Number(activeStrategy.estimated_outcomes.engagement).toLocaleString()}</Text>
-                </View>
-              ) : null}
-              {activeStrategy.estimated_outcomes?.paid_equivalent_value_usd ? (
-                <View style={{ marginBottom: 12 }}>
-                  <Text style={{ color: '#64748B', fontSize: 11, textTransform: 'uppercase', fontWeight: '700', marginBottom: 2 }}>Paid Ad Equivalent</Text>
-                  <Text style={{ color: goalColor, fontSize: 20, fontWeight: '800' }}>${Number(activeStrategy.estimated_outcomes.paid_equivalent_value_usd).toLocaleString()}</Text>
-                </View>
-              ) : null}
-            </View>
-          </View>
-        ) : null}
 
         {/* Approve & Launch CTA */}
         <TouchableOpacity
