@@ -16,7 +16,6 @@
         "backgroundColor": "#ffffff"
       },
       "package": "com.adroom.mobile",
-      "resizeableActivity": true,
       "versionCode": 66,
       "googleServicesFile": "./google-services.json",
       "permissions": [

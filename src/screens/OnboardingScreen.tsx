@@ -273,9 +273,26 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     marginBottom: 16,
+    gap: 12,
   },
   badgeRow: {
     flexDirection: 'column',
+    alignItems: 'flex-end',
+    gap: 8,
+  },
+  badge: {
+    alignSelf: 'flex-start',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 999,
+    backgroundColor: 'rgba(52,211,153,0.08)',
+  },
+  statusPill: {
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 999,
+    backgroundColor: 'rgba(96,165,250,0.08)',
+    alignSelf: 'flex-end',
   },
   outerOrb: {
     width: 86,
@@ -298,19 +315,6 @@ const styles = StyleSheet.create({
     height: 66,
     borderRadius: 20,
     zIndex: 1,
-  },
-  badge: {
-    alignSelf: 'flex-start',
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 999,
-    backgroundColor: 'rgba(52,211,153,0.08)',
-  },
-  statusPill: {
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 999,
-    backgroundColor: 'rgba(96,165,250,0.08)',
   },
   badgeText: {
     color: '#A7F3D0',

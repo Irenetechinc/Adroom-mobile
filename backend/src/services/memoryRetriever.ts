@@ -59,35 +59,37 @@ export class MemoryRetriever {
       .order('created_at', { ascending: false })
       .limit(5);
 
-    // 4. Fetch Platform Intelligence (Real-time)
+    const recentCutoff = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+
+    // 4. Fetch real-time platform intelligence, only recent entries.
     const { data: platformIntelligence } = await this.supabase
       .from('platform_intelligence')
       .select('*')
+      .gte('captured_at', recentCutoff)
       .order('captured_at', { ascending: false })
-      .limit(5);
+      .limit(20);
 
-    // 5. Fetch Social Listening (Last 24h or recent)
-    let socialQuery = this.supabase.from('social_conversations').select('*').order('collected_at', { ascending: false }).limit(20);
+    // 5. Fetch Social Listening from the last 7 days and filter by category if present.
+    let socialQuery = this.supabase.from('social_conversations').select('*').gte('collected_at', recentCutoff).order('collected_at', { ascending: false }).limit(50);
     if (category) {
         socialQuery = socialQuery.eq('category', category);
     }
     const { data: socialListening } = await socialQuery;
 
-    // 6. Fetch Emotional Intelligence
-    let emotionalQuery = this.supabase.from('emotional_ownership').select('*').order('detected_at', { ascending: false }).limit(10);
+    // 6. Fetch Emotional Intelligence from fresh signals only.
+    let emotionalQuery = this.supabase.from('emotional_ownership').select('*').gte('detected_at', recentCutoff).order('detected_at', { ascending: false }).limit(25);
     if (category) {
         emotionalQuery = emotionalQuery.eq('category', category);
     }
     const { data: emotionalIntelligence } = await emotionalQuery;
 
-    // 7. Fetch GEO Narrative (Narrative Snapshots)
-    // Assuming brand_id links to user_id or product
+    // 7. Fetch GEO Narrative only from recent snapshots.
     const { data: geoNarrative } = await this.supabase
         .from('narrative_snapshots')
         .select('*')
-        // .eq('brand_id', userId) // optional filter
+        .gte('captured_at', recentCutoff)
         .order('captured_at', { ascending: false })
-        .limit(5);
+        .limit(20);
 
     // 8. Global Trends (Keep existing if table exists, otherwise skip)
     // The spec doesn't mention removing global_strategy_memory, so we keep it if useful, 

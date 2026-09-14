@@ -1,5 +1,6 @@
 import { getServiceSupabaseClient } from '../config/supabase';
 import { AIEngine } from '../config/ai-models';
+import { agentReachWebRouter } from './agentReachWebRouter';
 
 export interface ScrapedProduct {
     name: string;
@@ -78,14 +79,21 @@ async function fetchRawHtml(url: string): Promise<{ text: string; rawHtml: strin
 }
 
 async function getPageContent(url: string): Promise<{ text: string; rawHtml?: string }> {
-    // Method 1: Jina AI reader (best for clean text extraction)
+    // Method 1: Agent Reach web router (shared internet capability layer)
+    try {
+        const text = await agentReachWebRouter.fetchText(url);
+        if (text && text.length > 300) return { text: text.substring(0, 14000) };
+    } catch (e: any) {
+        scraperLog(`Agent Reach fetch failed: ${e.message}`);
+    }
+    // Method 2: Jina AI reader (best for clean text extraction)
     try {
         const text = await fetchWithJina(url);
         if (text && text.length > 300) return { text: text.substring(0, 14000) };
     } catch (e: any) {
         scraperLog(`Jina failed: ${e.message}`);
     }
-    // Method 2: Raw HTML with our own cleaning
+    // Method 3: Raw HTML with our own cleaning
     try {
         const result = await fetchRawHtml(url);
         if (result.text && result.text.length > 50) return result;

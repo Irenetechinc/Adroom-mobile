@@ -319,7 +319,14 @@ export default function DashboardScreen() {
           .eq('user_id', session.user.id),
       ]);
 
-      setActiveStrategies(strategiesRes.data || []);
+      setActiveStrategies((strategiesRes.data || []).map((strategy: any) => ({
+        ...strategy,
+        strategy_name: strategy.title || strategy.current_execution_plan?.campaign_theme || 'Active Campaign',
+        strategy_version: strategy.status || 'active',
+        total_impressions: strategy.total_impressions || 0,
+        total_clicks: strategy.total_clicks || 0,
+        total_conversions: strategy.total_conversions || 0,
+      })));
       setAlerts(logsRes.data || []);
       setGmapsLeads((gmapsRes.data as GmapsLead[]) || []);
 

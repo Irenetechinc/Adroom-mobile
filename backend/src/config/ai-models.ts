@@ -164,6 +164,74 @@ export interface AIResponse {
   parsedJson?: any;
 }
 
+function stripCodeFences(value: string): string {
+  return value
+    .replace(/^```(?:json)?\s*/i, '')
+    .replace(/\s*```\s*$/i, '')
+    .trim();
+}
+
+function extractBalancedJson(value: string): string | null {
+  const firstJsonStart = value.search(/[\[{]/);
+  if (firstJsonStart < 0) return null;
+
+  const pairs: Record<string, string> = { '{': '}', '[': ']' };
+  const stack: string[] = [];
+  let start = -1;
+
+  for (let i = firstJsonStart; i < value.length; i += 1) {
+    const char = value[i];
+    if ((char === '{' || char === '[') && start < 0) {
+      start = i;
+      stack.push(char);
+      continue;
+    }
+    if (start < 0) continue;
+    if (char === '{' || char === '[') {
+      stack.push(char);
+      continue;
+    }
+    if (char === '}' || char === ']') {
+      const opener = stack.pop();
+      if (!opener || pairs[opener] !== char) {
+        return null;
+      }
+      if (stack.length === 0) {
+        return value.slice(start, i + 1);
+      }
+    }
+  }
+
+  return null;
+}
+
+export function parseStructuredJson(raw: string | undefined | null): any {
+  if (raw == null) return null;
+  const text = String(raw).trim();
+  if (!text) return null;
+
+  try {
+    return JSON.parse(stripCodeFences(text));
+  } catch (_e) {
+    // Try to recover from text that surrounds the JSON payload.
+  }
+
+  const candidateStart = text.search(/[\[{]/);
+  if (candidateStart >= 0) {
+    const candidate = text.slice(candidateStart);
+    const balanced = extractBalancedJson(candidate);
+    if (balanced) {
+      try {
+        return JSON.parse(stripCodeFences(balanced));
+      } catch (_e) {
+        // ignore and fall through
+      }
+    }
+  }
+
+  return null;
+}
+
 export class AIEngine {
   private static instance: AIEngine;
   
@@ -195,13 +263,7 @@ export class AIEngine {
       
       let parsedJson;
       try {
-        const jsonMatch = text.match(/```json\n?([\s\S]*?)\n?```/);
-        if (jsonMatch && jsonMatch[1]) {
-          parsedJson = JSON.parse(jsonMatch[1]);
-        } else {
-          const cleaned = text.trim().replace(/^```json?\s*/i, '').replace(/```\s*$/i, '');
-          parsedJson = JSON.parse(cleaned);
-        }
+        parsedJson = parseStructuredJson(text);
       } catch (_e) {
         console.warn('[AI:GEMINI-VISION] Could not parse JSON, returning raw text');
       }
@@ -242,7 +304,7 @@ export class AIEngine {
       const text = completion.choices[0].message.content || '';
       let parsedJson;
       try {
-        parsedJson = JSON.parse(text);
+        parsedJson = parseStructuredJson(text);
       } catch (_e) {
         console.warn('[AI:GPT-4o] Could not parse JSON from response');
       }
@@ -267,8 +329,7 @@ export class AIEngine {
         temperature: 0.7,
       });
       const text = completion.choices[0]?.message?.content || '';
-      let parsedJson: any;
-      try { parsedJson = JSON.parse(text); } catch { /* caller can handle raw text */ }
+      const parsedJson = parseStructuredJson(text);
       return { text, parsedJson };
     } catch (error: any) { throw providerError(error); }
   }
@@ -284,8 +345,7 @@ export class AIEngine {
         response_format: { type: 'json_object' },
       });
       const text = completion.choices[0]?.message?.content || '';
-      let parsedJson: any;
-      try { parsedJson = JSON.parse(text); } catch { /* caller can handle raw text */ }
+      const parsedJson = parseStructuredJson(text);
       return { text, parsedJson };
     } catch (error: any) { throw providerError(error); }
   }
@@ -312,11 +372,8 @@ export class AIEngine {
       ].join('\n\n');
       const result = await model.generateContent(fullPrompt);
       const response = await result.response;
-      const raw = response.text().trim();
-      const jsonMatch = raw.match(/```json?\s*([\s\S]*?)\s*```/);
-      const text = jsonMatch ? jsonMatch[1] : raw.replace(/^```json?\s*/i, '').replace(/```\s*$/i, '');
-      let parsedJson;
-      try { parsedJson = JSON.parse(text); } catch (_e) {}
+      const text = response.text().trim();
+      const parsedJson = parseStructuredJson(text);
       aiLog('GEMINI-FLASH', 'generateStrategyEconomy SUCCESS', { textLength: text.length });
       return { text, parsedJson };
     } catch (error: any) {
@@ -339,8 +396,7 @@ export class AIEngine {
         temperature: 0.7,
       });
       const text = completion.choices[0].message.content || '';
-      let parsedJson;
-      try { parsedJson = JSON.parse(text); } catch (_e) {}
+      const parsedJson = parseStructuredJson(text);
       aiLog('GPT-4o', '_generateStrategyOpenAI SUCCESS', { textLength: text.length });
       return { text, parsedJson };
     } catch (error: any) {
@@ -360,9 +416,7 @@ export class AIEngine {
       const response = await result.response;
       const text = response.text().trim();
       aiLog('GEMINI-FLASH', 'generateJson SUCCESS', { textLength: text.length });
-      const jsonMatch = text.match(/```json?\s*([\s\S]*?)\s*```/);
-      const cleaned = jsonMatch ? jsonMatch[1] : text.replace(/^```json?\s*/i, '').replace(/```\s*$/i, '');
-      return JSON.parse(cleaned);
+      return parseStructuredJson(text);
     } catch (error: any) {
       aiLog('GEMINI-FLASH', 'generateJson ERROR', error.message);
       return null;

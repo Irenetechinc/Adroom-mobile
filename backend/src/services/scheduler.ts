@@ -15,6 +15,8 @@ import { RadarAgent } from '../agents/radarAgent';
 import { apmaOrchestrator } from '../apma/apmaOrchestrator';
 import { tokenRefreshService } from './tokenRefreshService';
 import { telephonyService } from './telephonyService';
+import { DeepProductBrandAnalysisAgent } from './deepProductBrandAnalysisAgent';
+import { dataCollectionAgent } from './dataCollectionAgent';
 
 async function hasActiveStrategies(): Promise<boolean> {
     const supabase = getServiceSupabaseClient();
@@ -50,6 +52,8 @@ const SCHED_RENEWAL_RETRY_CRON= process.env.SCHED_RENEWAL_RETRY_CRON || '30 * * 
 const SCHED_TOKEN_REFRESH_CRON    = process.env.SCHED_TOKEN_REFRESH_CRON    || '0 */6 * * *';   // Proactive OAuth token refresh every 6 hours
 const SCHED_LEAD_DISCOVERY_CRON   = process.env.SCHED_LEAD_DISCOVERY_CRON   || '0 */3 * * *';   // Multi-source lead discovery every 3 hours
 const SCHED_PRODUCT_MANAGER_CRON  = process.env.SCHED_PRODUCT_MANAGER_CRON  || '0 */4 * * *';   // Product Manager Agent every 4 hours
+const SCHED_DEEP_ANALYSIS_CRON    = process.env.SCHED_DEEP_ANALYSIS_CRON    || '0 */6 * * *';   // Deep product + brand analysis every 6 hours
+const SCHED_DATA_COLLECTION_CRON   = process.env.SCHED_DATA_COLLECTION_CRON   || '*/20 * * * *'; // Shared live evidence collection every 20 minutes while active strategies exist
 const SCHED_CALLS_CRON             = process.env.SCHED_CALLS_CRON             || '* * * * *';   // Provider call queue every minute
 
 export class SchedulerService {
@@ -63,6 +67,7 @@ export class SchedulerService {
     private dailySummary: DailySummaryService;
     private radar: RadarAgent;
     private psychologist: PsychologistEngine;
+    private deepProductBrandAnalysis: DeepProductBrandAnalysisAgent;
 
     constructor() {
         this.ipe = new PlatformIntelligenceEngine();
@@ -75,6 +80,7 @@ export class SchedulerService {
         this.orchestrator = new AgentOrchestrator();
         this.dailySummary = new DailySummaryService();
         this.radar = new RadarAgent();
+        this.deepProductBrandAnalysis = new DeepProductBrandAnalysisAgent();
     }
 
     start() {
@@ -494,6 +500,18 @@ export class SchedulerService {
             await this.runProductManager();
         });
 
+        // ─── DEEP PRODUCT + BRAND ANALYSIS ──────────────────────────────────────
+        cron.schedule(SCHED_DEEP_ANALYSIS_CRON, async () => {
+            console.log('[Scheduler] Running Deep Product + Brand Analysis Agent...');
+            await this.runDeepProductBrandAnalysis();
+        });
+
+        // ─── SHARED LIVE DATA COLLECTION FOR ALL AGENTS ────────────────────────
+        cron.schedule(SCHED_DATA_COLLECTION_CRON, async () => {
+            console.log('[Scheduler] Running shared live data collection cycle...');
+            await this.runSharedDataCollection();
+        });
+
         console.log('[Scheduler] ✓ All loops started:');
         console.log('[Scheduler]   Intelligence: IPE, Social, Emotional, GEO — every 15 min');
         console.log('[Scheduler]   Agent Execution: Content posts — every 5 min');
@@ -509,6 +527,7 @@ export class SchedulerService {
         console.log('[Scheduler]   OAuth Token Refresh: All platforms — every 6 hours');
         console.log('[Scheduler]   Lead Discovery: Reddit + Twitter + NewsAPI + Forum — every 3 hours');
         console.log('[Scheduler]   Product Manager: Autonomous product improvement — every 4 hours');
+        console.log('[Scheduler]   Deep Product + Brand Analysis: Live market signal synthesis — every 6 hours');
         console.log('[Scheduler]   Inbound DM Detection: Lead reply polling (FB/IG/Twitter) — every 10 min');
     }
 
@@ -693,6 +712,58 @@ export class SchedulerService {
             await productManagerAgent.runCycle();
         } catch (e: any) {
             console.error('[Scheduler] Product manager error:', e.message);
+        }
+    }
+
+    // ─── DEEP PRODUCT + BRAND ANALYSIS ────────────────────────────────────────
+    private async runDeepProductBrandAnalysis() {
+        try {
+            const { deepProductBrandAnalysisAgent } = await import('./deepProductBrandAnalysisAgent');
+            await deepProductBrandAnalysisAgent.runCycle();
+        } catch (e: any) {
+            console.error('[Scheduler] Deep product + brand analysis error:', e.message);
+        }
+    }
+
+    private async runSharedDataCollection() {
+        try {
+            const supabase = getServiceSupabaseClient();
+            const { data: activeStrategies } = await supabase
+                .from('strategies')
+                .select('id, user_id, goal, product_id, product_memory(name, category, description)')
+                .eq('is_active', true)
+                .limit(10);
+
+            if (!activeStrategies?.length) return;
+
+            for (const strategy of activeStrategies) {
+                try {
+                    const productMemory = Array.isArray(strategy.product_memory)
+                        ? strategy.product_memory[0] || {}
+                        : strategy.product_memory || {};
+                    const product = productMemory as any;
+                    const result = await dataCollectionAgent.collectForStrategy({
+                        strategyId: strategy.id,
+                        strategyGoal: strategy.goal || 'live strategy refinement',
+                        productName: product.name || 'target product',
+                        category: product.category || 'general',
+                        dataNeed: 'fresh competitive, market, and audience evidence for the active strategy',
+                        audience: 'target market',
+                        marketContext: product.description || 'live strategy signal collection',
+                        userId: strategy.user_id,
+                        timeWindowHours: 24,
+                        sourceHints: ['search', 'social', 'news', 'reddit', 'forum'],
+                    });
+
+                    if (result.evidence.verified.length > 0) {
+                        console.log(`[Scheduler] Shared collection refreshed ${result.evidence.verified.length} evidence points for strategy ${strategy.id}`);
+                    }
+                } catch (e: any) {
+                    console.error('[Scheduler] Shared data collection error for strategy:', strategy.id, e.message);
+                }
+            }
+        } catch (e: any) {
+            console.error('[Scheduler] Shared data collection cycle error:', e.message);
         }
     }
 
