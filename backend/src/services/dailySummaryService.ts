@@ -49,7 +49,7 @@ export class DailySummaryService {
       const tasksPending = tasks?.filter(t => t.status === 'pending').length ?? 0;
 
       const prompt = `
-You are Adirum AI's Daily Strategy Analyst. Generate a concise, insightful daily performance summary.
+    You are Adirum AI's Daily Strategy Analyst. Generate a concise, truthful daily progress summary for the campaign owner.
 
 STRATEGY:
 - Name: ${strategy.strategy_name}
@@ -64,7 +64,7 @@ LAST 24H AGENT ACTIVITY:
 - Tasks completed: ${tasksCompleted}
 - Tasks failed: ${tasksFailed}
 - Tasks pending: ${tasksPending}
-- Task types: ${JSON.stringify([...new Set(tasks?.map((t: any) => t.agent_type) || [])])}
+- Work completed: ${JSON.stringify((tasks || []).filter((t: any) => t.status === 'completed').map((t: any) => t.content?.headline || t.content?.body || t.task_type).slice(0, 10))}
 
 RADAR INTEL (latest):
 ${JSON.stringify(radarIntel?.slice(0, 2) || [], null, 2)}
@@ -80,7 +80,7 @@ Generate a JSON summary:
   "push_body": "Push notification body summarizing the day (max 120 chars)"
 }
 
-Be encouraging but honest. Focus on what matters most for the user's goal.
+Be encouraging but honest. Focus on measurable progress and user-relevant outcomes. Never mention agents, AI systems, internal tools, prompts, orchestration, models, pipelines, task types, or implementation methods. Do not claim work that is not supported by the supplied data.
       `;
 
       const result = await this.ai.generateStrategy({}, prompt);
@@ -110,8 +110,8 @@ Be encouraging but honest. Focus on what matters most for the user's goal.
       });
 
       await pushService.send(userId, {
-        title: summary.push_title || `Daily Report: ${strategy.strategy_name}`,
-        body: summary.push_body || `Score: ${summary.performance_score}/100 · ${tasksCompleted} tasks done today`,
+        title: summary.push_title || `Daily report: ${strategy.strategy_name}`,
+        body: summary.push_body || `Today's progress score: ${summary.performance_score}/100.`,
         data: {
           type: 'daily_report',
           strategy_id: strategy.strategy_id,

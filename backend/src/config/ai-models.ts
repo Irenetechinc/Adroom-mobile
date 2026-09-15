@@ -19,8 +19,8 @@ const freeFallbackOpenAI = new OpenAI({
   baseURL: process.env.FREE_MODELS_FALLBACK_BASE_URL || 'https://api.inferera.com',
 });
 
-const GEMINI_FLASH_MODEL = 'gemini-2.0-flash';
-const GEMINI_VISION_MODEL = 'gemini-2.0-flash';
+const GEMINI_FLASH_MODEL = 'gemini-3.6-flash';
+const GEMINI_VISION_MODEL = 'gemini-3.6-flash';
 const OPENAI_STRATEGY_MODEL = process.env.OPENAI_TEXT_MODEL || 'gpt-4o';
 const FREE_TEXT_MODEL = 'gpt-4.1-free';
 const FREE_SMALL_MODEL = 'gpt-4.1-nano-free';
@@ -110,22 +110,39 @@ async function reserveFreeQuota(estimatedTokens: number) {
 
 async function freeChat(params: any) {
   const reservation = await reserveFreeQuota(Number(params.max_tokens || 4096));
-  try {
-    const response = await freeOpenAI.chat.completions.create(params);
-    const usage = Number((response as any).usage?.total_tokens || 0);
-    await getServiceSupabaseClient().from('ai_usage_logs').insert({
-      user_id: getAIRequestContext()?.userId || null,
-      model: params.model,
-      operation: 'free_ai_request',
-      actual_cost_usd: 0,
-      energy_debited: 0,
-      metadata: { tokens: usage, quota: reservation },
-    });
-    return response;
-  } catch (error: any) {
-    if (!error?.status || error.status >= 500) return freeFallbackOpenAI.chat.completions.create(params);
-    throw error;
+  const keys = Array.from(new Set([
+    process.env.FREE_MODELS_API,
+    ...Array.from({ length: 20 }, (_, index) => process.env[`FREE_MODELS_API_${index + 1}`]),
+  ].filter(Boolean))) as string[];
+  const baseUrls = Array.from(new Set([
+    process.env.FREE_MODELS_BASE_URL || 'https://aihubmix.com/v1',
+    process.env.FREE_MODELS_FALLBACK_BASE_URL || 'https://api.inferera.com',
+  ]));
+  let lastError: any;
+
+  for (const apiKey of keys) {
+    for (const baseURL of baseUrls) {
+      try {
+        const client = new OpenAI({ apiKey, baseURL });
+        const response = await client.chat.completions.create(params);
+        const usage = Number((response as any).usage?.total_tokens || 0);
+        await getServiceSupabaseClient().from('ai_usage_logs').insert({
+          user_id: getAIRequestContext()?.userId || null,
+          model: params.model,
+          operation: 'free_ai_request',
+          actual_cost_usd: 0,
+          energy_debited: 0,
+          metadata: { tokens: usage, quota: reservation },
+        });
+        return response;
+      } catch (error: any) {
+        lastError = error;
+        console.warn(`[AI:FREE] Provider failed; rotating free-model route (${baseURL}).`);
+      }
+    }
   }
+
+  throw lastError || new Error('Free AI service is unavailable.');
 }
 
 // ── Global admin model override ────────────────────────────────────────────────
@@ -382,6 +399,24 @@ export class AIEngine {
     }
   }
 
+  async generateDeepProductBrandAnalysis(prompt: string): Promise<AIResponse> {
+    if (await useFreeModels()) {
+      const response = await freeChat({
+        model: 'gemini-3.7-flash-free',
+        messages: [{ role: 'user', content: `Return ONLY valid JSON, no markdown fences, no explanation.\n\n${prompt}` }],
+        response_format: { type: 'json_object' },
+        temperature: 0.4,
+      });
+      const text = response.choices[0]?.message?.content || '';
+      return { text, parsedJson: parseStructuredJson(text) };
+    }
+
+    const model = genAI.getGenerativeModel({ model: 'gemini-3.6-flash' });
+    const result = await model.generateContent(`Return ONLY valid JSON, no markdown fences, no explanation.\n\n${prompt}`);
+    const text = (await result.response).text();
+    return { text, parsedJson: parseStructuredJson(text) };
+  }
+
   // Internal helper used when admin forces premium mode on economy calls
   private async _generateStrategyOpenAI(context: any, prompt: string): Promise<AIResponse> {
     aiLog('GPT-4o', `_generateStrategyOpenAI START (premium override)`);
@@ -454,14 +489,21 @@ export class AIEngine {
         ];
         let response: Response | null = null;
         let data: any = {};
-        for (const url of mediaUrls) {
-          response = await fetch(url, {
-            method: 'POST',
-            headers: { Authorization: `Bearer ${process.env.FREE_MODELS_API || ''}`, 'Content-Type': 'application/json' },
-            body: JSON.stringify({ model: FREE_IMAGE_MODEL, prompt: imagePrompt, n: 1, response_format: 'b64_json' }),
-          });
-          data = await response.json().catch(() => ({}));
-          if (response.ok) break;
+        const apiKeys = Array.from(new Set([
+          process.env.FREE_MODELS_API,
+          ...Array.from({ length: 20 }, (_, index) => process.env[`FREE_MODELS_API_${index + 1}`]),
+        ].filter(Boolean))) as string[];
+        for (const apiKey of apiKeys) {
+          for (const url of mediaUrls) {
+            response = await fetch(url, {
+              method: 'POST',
+              headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+              body: JSON.stringify({ model: FREE_IMAGE_MODEL, prompt: imagePrompt, n: 1, response_format: 'b64_json' }),
+            });
+            data = await response.json().catch(() => ({}));
+            if (response.ok) break;
+          }
+          if (response?.ok) break;
         }
         if (!response?.ok) throw Object.assign(new Error(data?.error?.message || `Provider error ${response?.status || 503}`), { status: response?.status || 503 });
         const base64 = data?.data?.[0]?.b64_json;

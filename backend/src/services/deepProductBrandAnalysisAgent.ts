@@ -298,7 +298,7 @@ export class DeepProductBrandAnalysisAgent {
       marketSignals: verifiedEvidence.length ? verifiedEvidence : ((social.data || []).slice(0, 10)),
     });
 
-    const response = await this.ai.generateStrategyEconomy({}, prompt);
+    const response = await this.ai.generateDeepProductBrandAnalysis(prompt);
     const raw = response.parsedJson || {};
     const analysis = normalizeDeepBrandAnalysis(raw);
 

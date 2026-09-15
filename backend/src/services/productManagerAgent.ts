@@ -30,29 +30,38 @@ export class ProductManagerAgent {
   async runCycle(): Promise<void> {
     console.log('[ProductManager] Running autonomous product monitoring cycle...');
 
-    const { data: products } = await this.supabase
-      .from('product_memory')
-      .select('*')
+    const { data: activeStrategies } = await this.supabase
+      .from('strategies')
+      .select('id, user_id, product_id, title, goal, platforms, current_execution_plan, estimated_outcomes, created_at')
+      .eq('is_active', true)
+      .eq('status', 'active')
+      .not('product_id', 'is', null)
       .limit(30);
 
-    if (!products?.length) return;
+    if (!activeStrategies?.length) return;
 
-    for (const product of products) {
+    for (const strategy of activeStrategies) {
       try {
-        await this.analyzeAndImprove(product);
+        const { data: product } = await this.supabase
+          .from('product_memory')
+          .select('*')
+          .eq('product_id', strategy.product_id)
+          .eq('user_id', strategy.user_id)
+          .single();
+        if (product) await this.analyzeAndImprove(product, strategy);
       } catch (err) {
         await dynamicProblemSolver.solve({
           error: err,
           agentType: 'PRODUCT_MANAGER',
-          userId: product.user_id,
+          userId: strategy.user_id,
           operation: 'analyzeAndImprove',
-          additionalContext: { productId: product.id },
+          additionalContext: { productId: strategy.product_id, strategyId: strategy.id },
         });
       }
     }
   }
 
-  private async analyzeAndImprove(product: any): Promise<void> {
+  private async analyzeAndImprove(product: any, strategy: any): Promise<void> {
     const userId = product.user_id;
     if (!userId) return;
 
@@ -60,10 +69,10 @@ export class ProductManagerAgent {
     const [feedback, competitors, performance] = await Promise.all([
       this.getFeedback(product),
       this.getCompetitorSignals(product),
-      this.getPerformanceSignals(userId, product),
+      this.getPerformanceSignals(userId, product, strategy),
     ]);
 
-    const totalSignals = feedback.length + competitors.length;
+    const totalSignals = feedback.length + competitors.length + (performance.signalCount || 0);
     if (totalSignals === 0) return; // Nothing to act on yet
 
     // 2. AI Brain generates improvements from live data
@@ -82,6 +91,16 @@ ${feedback.map(f => `- [${f.intent}] "${(f.content || '').slice(0, 150)}" (senti
 COMPETITOR SIGNALS (${competitors.length}):
 ${competitors.map(c => `- ${(c.content || '').slice(0, 100)}`).join('\n').slice(0, 1000)}
 
+ACTIVE STRATEGY PROGRESS:
+${JSON.stringify({
+  strategyId: strategy.id,
+  title: strategy.title,
+  goal: strategy.goal,
+  platforms: strategy.platforms,
+  currentExecutionPlan: strategy.current_execution_plan || {},
+  expectedOutcomes: strategy.estimated_outcomes || {},
+}).slice(0, 1500)}
+
 PERFORMANCE:
 ${JSON.stringify(performance).slice(0, 500)}
 
@@ -91,13 +110,15 @@ Return JSON:
 {
   "improvements": [
     {
-      "type": "description_update | tagline_update | feature_bullet | price_suggestion | positioning_shift",
+      "type": "description_update | tagline_update | feature_bullet | price_suggestion | positioning_shift | physical_refinement | brand_asset_refinement | service_process_refinement",
       "current": "what it is now (or null)",
       "suggested": "the exact new text or value",
       "rationale": "specific reason from the live data above",
       "requiresApproval": true | false,
       "approvalReason": "why approval needed (only for price changes)",
       "autoImplement": true | false
+      ,"requiresUserAction": true | false
+      ,"userAction": { "title": "what the user must do", "instructions": "where and when to do it", "submissionType": "text|image|video|document" }
     }
   ],
   "summary": "one-sentence summary of what the AI found and is doing about it"
@@ -105,8 +126,9 @@ Return JSON:
 
 RULES:
 - Only suggest improvements backed by the live data above
-- description_update, tagline_update, feature_bullet: autoImplement=true, requiresApproval=false
+- description_update, tagline_update, feature_bullet, positioning_shift: autoImplement=true, requiresApproval=false, requiresUserAction=false
 - price_suggestion: autoImplement=false, requiresApproval=true always
+- physical_refinement, brand_asset_refinement, service_process_refinement: autoImplement=false, requiresUserAction=true; use these only when physical user action or a new asset/process input is genuinely required
 - Limit to 3 highest-impact improvements max
 - If no meaningful improvements found, return { "improvements": [], "summary": "Product is performing well" }`;
 
@@ -118,10 +140,12 @@ RULES:
     for (const improvement of analysis.improvements) {
       if (improvement.requiresApproval) {
         // Only price changes require approval — send notification with approve button
-        await this.requestPriceApproval(userId, product, improvement);
+        await this.requestPriceApproval(userId, product, improvement, strategy);
+      } else if (improvement.requiresUserAction) {
+        await this.requestUserRefinement(userId, product, strategy, improvement);
       } else if (improvement.autoImplement) {
         // Auto-implement text changes immediately
-        await this.autoImplement(userId, product, improvement, analysis.summary);
+        await this.autoImplement(userId, product, strategy, improvement, analysis.summary);
       }
     }
   }
@@ -130,7 +154,7 @@ RULES:
    * Auto-implement text improvements without asking the user.
    * Logs what was changed so the user can see in the admin/campaign view.
    */
-  private async autoImplement(userId: string, product: any, improvement: any, summary: string): Promise<void> {
+  private async autoImplement(userId: string, product: any, strategy: any, improvement: any, summary: string): Promise<void> {
     const updates: Record<string, any> = {};
 
     if (improvement.type === 'description_update' && improvement.suggested) {
@@ -153,13 +177,34 @@ RULES:
       .update({ ...updates, updated_at: new Date().toISOString() })
       .eq('id', product.id);
 
+    const appliedAt = new Date().toISOString();
+    const executionPlan = strategy.current_execution_plan || {};
+    const refinements = Array.isArray(executionPlan.product_manager_refinements)
+      ? executionPlan.product_manager_refinements
+      : [];
+    await this.supabase.from('strategies').update({
+      current_execution_plan: {
+        ...executionPlan,
+        product_manager_refinements: [...refinements, {
+          type: improvement.type,
+          updates,
+          rationale: improvement.rationale,
+          applied_at: appliedAt,
+          source: 'product_manager',
+        }].slice(-20),
+        refinement_updated_at: appliedAt,
+      },
+      updated_at: appliedAt,
+    }).eq('id', strategy.id).eq('user_id', userId);
+
     // Log the change as an agent task completion for visibility
     await this.supabase.from('agent_tasks').insert({
       user_id: userId,
-      agent_type: 'SALESMAN',
+      strategy_id: strategy.id,
+      agent_type: 'PRODUCT_MANAGER',
       task_type: 'PRODUCT_UPDATE',
       platform: 'internal',
-      status: 'completed',
+      status: 'done',
       scheduled_at: new Date().toISOString(),
       executed_at: new Date().toISOString(),
       content: { body: `Product Manager AI updated ${improvement.type}: ${improvement.rationale}` },
@@ -194,14 +239,15 @@ Return JSON: { "title": "max 6 words", "body": "max 2 sentences" }`;
    * Sends push notification with approval context.
    * Creates a pending approval record in agent_interventions.
    */
-  private async requestPriceApproval(userId: string, product: any, improvement: any): Promise<void> {
+  private async requestPriceApproval(userId: string, product: any, improvement: any, strategy: any): Promise<void> {
     // Check if we already have a pending approval for this product
     const { data: existing } = await this.supabase
       .from('agent_interventions')
-      .select('id')
+      .select('id, context')
       .eq('user_id', userId)
       .eq('status', 'pending')
       .eq('intervention_type', 'price_approval')
+      .contains('context', { strategy_id: strategy.id })
       .contains('context', { product_id: product.id })
       .limit(1);
 
@@ -223,10 +269,13 @@ Return JSON: { "title": "max 6 words", "body": "max 2 sentences including the su
       // Create approval record
       await this.supabase.from('agent_interventions').insert({
         user_id: userId,
+        strategy_id: strategy.id,
+        agent_type: 'PRODUCT_MANAGER',
         intervention_type: 'price_approval',
         status: 'pending',
         context: {
           product_id: product.id,
+          strategy_id: strategy.id,
           product_name: product.name,
           current_price: product.price,
           suggested_price: improvement.suggested,
@@ -240,12 +289,72 @@ Return JSON: { "title": "max 6 words", "body": "max 2 sentences including the su
         await pushService.send(userId, {
           title: n.title,
           body: n.body,
-          data: { type: 'price_approval_required', productId: product.id, actionScreen: 'Notifications' },
+          data: { type: 'price_approval_required', productId: product.id, strategyId: strategy.id, actionScreen: 'Notifications' },
         });
       }
     } catch (err) {
       await dynamicProblemSolver.solve({ error: err, agentType: 'PRODUCT_MANAGER', userId, operation: 'requestPriceApproval' });
     }
+  }
+
+  private async requestUserRefinement(userId: string, product: any, strategy: any, improvement: any): Promise<void> {
+    const { data: existing } = await this.supabase
+      .from('agent_interventions')
+      .select('id, context')
+      .eq('user_id', userId)
+      .eq('status', 'pending')
+      .eq('intervention_type', 'product_refinement_required')
+      .contains('context', { strategy_id: strategy.id, type: improvement.type });
+    if (existing?.length) {
+      const pending = existing[0];
+      const lastReminder = pending.context?.last_reminded_at ? new Date(pending.context.last_reminded_at).getTime() : 0;
+      if (Date.now() - lastReminder < 24 * 60 * 60 * 1000) return;
+      const remindedAt = new Date().toISOString();
+      await this.supabase.from('agent_interventions').update({
+        context: { ...(pending.context || {}), last_reminded_at: remindedAt },
+      }).eq('id', pending.id);
+      await pushService.send(userId, {
+        title: improvement.userAction?.title || 'Refinement still needed',
+        body: `${improvement.userAction?.instructions || improvement.rationale} Open Agent Chat to submit it.`,
+        data: { type: 'product_refinement_required', interventionId: pending.id, strategyId: strategy.id, actionScreen: 'AgentChat' },
+        channelId: 'alerts',
+      });
+      return;
+    }
+
+    const context = {
+      strategy_id: strategy.id,
+      product_id: product.id,
+      product_name: product.name || product.product_name,
+      type: improvement.type,
+      title: improvement.userAction?.title || 'Product refinement required',
+      instructions: improvement.userAction?.instructions || improvement.rationale,
+      submission_type: improvement.userAction?.submissionType || 'text',
+      rationale: improvement.rationale,
+      created_at: new Date().toISOString(),
+    };
+    const { data: intervention, error } = await this.supabase
+      .from('agent_interventions')
+      .insert({ user_id: userId, strategy_id: strategy.id, agent_type: 'PRODUCT_MANAGER', intervention_type: 'product_refinement_required', status: 'pending', context })
+      .select('id')
+      .single();
+    if (error || !intervention) throw error || new Error('Could not create product refinement task.');
+
+    const now = new Date().toISOString();
+    await this.supabase.from('chat_history').insert({
+      user_id: userId,
+      sender: 'agent',
+      message: context.instructions,
+      ui_type: 'product_refinement_task',
+      ui_data: { interventionId: intervention.id, ...context },
+      created_at: now,
+    });
+    await pushService.send(userId, {
+      title: context.title,
+      body: `${context.instructions} Open Agent Chat to submit the required update.`,
+      data: { type: 'product_refinement_required', interventionId: intervention.id, strategyId: strategy.id, actionScreen: 'AgentChat' },
+      channelId: 'alerts',
+    });
   }
 
   // ── Data fetchers ──────────────────────────────────────────────────────────
@@ -270,15 +379,37 @@ Return JSON: { "title": "max 6 words", "body": "max 2 sentences including the su
     return data || [];
   }
 
-  private async getPerformanceSignals(userId: string, product: any): Promise<any> {
-    const { data } = await this.supabase
+  private async getPerformanceSignals(userId: string, product: any, strategy: any): Promise<any> {
+    const [{ data }, { data: tasks }] = await Promise.all([
+      this.supabase
       .from('agent_performance')
       .select('platform, reach, likes, comments, shares, fetched_at')
       .eq('user_id', userId)
+      .eq('strategy_id', strategy.id)
       .order('fetched_at', { ascending: false })
-      .limit(10);
+      .limit(10),
+      this.supabase
+        .from('agent_tasks')
+        .select('status')
+        .eq('strategy_id', strategy.id)
+        .gte('created_at', strategy.created_at || new Date(0).toISOString()),
+    ]);
 
-    if (!data?.length) return { reach: 0, engagement: 0, trend: 'insufficient_data' };
+    const completedTasks = (tasks || []).filter((task: any) => ['done', 'completed'].includes(task.status)).length;
+    const totalTasks = (tasks || []).length;
+    const taskProgress = {
+      completed: completedTasks,
+      total: totalTasks,
+      completionRate: totalTasks ? completedTasks / totalTasks : 0,
+    };
+    if (!data?.length) return {
+      reach: 0,
+      engagement: 0,
+      trend: 'insufficient_data',
+      signalCount: 0,
+      taskProgress,
+      progressStatus: totalTasks > 0 && completedTasks === 0 ? 'behind' : 'insufficient_data',
+    };
 
     const totalReach = data.reduce((s: number, r: any) => s + (r.reach || 0), 0);
     const totalEng = data.reduce((s: number, r: any) => s + (r.likes || 0) + (r.comments || 0) + (r.shares || 0), 0);
@@ -288,7 +419,56 @@ Return JSON: { "title": "max 6 words", "body": "max 2 sentences including the su
       engagement: totalEng,
       engagementRate: totalReach > 0 ? ((totalEng / totalReach) * 100).toFixed(2) + '%' : '0%',
       platformCount: [...new Set(data.map((r: any) => r.platform))].length,
+      signalCount: data.length,
+      taskProgress,
+      progressStatus: totalReach === 0 && completedTasks > 0 ? 'behind' : 'measured',
     };
+  }
+
+  async applyUserRefinement(userId: string, intervention: any, submission: { submission: string; assetUri?: string | null; submittedAt: string }): Promise<void> {
+    const context = intervention.context || {};
+    const { data: product } = await this.supabase
+      .from('product_memory')
+      .select('*')
+      .eq('product_id', context.product_id)
+      .eq('user_id', userId)
+      .single();
+    if (!product) throw new Error('The product connected to this refinement was not found.');
+
+    const prompt = `You are updating a real product, brand, or service after its owner submitted a required refinement.
+
+CURRENT INFORMATION:
+${JSON.stringify({ name: product.name || product.product_name, description: product.description, tagline: product.tagline, category: product.category, positioning: product.positioning }).slice(0, 3000)}
+
+REQUIRED REFINEMENT:
+${JSON.stringify(context)}
+
+OWNER SUBMISSION:
+${JSON.stringify(submission)}
+
+Return JSON with only the fields that should change. Do not invent facts. Use null for no change:
+{
+  "description": "string or null",
+  "tagline": "string or null",
+  "positioning": "string or null",
+  "refinement_note": "short factual note"
+}`;
+    const result = await this.ai.generateStrategyEconomy({}, prompt);
+    const proposed = result.parsedJson || {};
+    const updates: Record<string, any> = { updated_at: submission.submittedAt };
+    for (const field of ['description', 'tagline', 'positioning']) {
+      if (typeof proposed[field] === 'string' && proposed[field].trim()) updates[field] = proposed[field].trim();
+    }
+    if (submission.assetUri) updates.latest_refinement_asset_uri = submission.assetUri;
+    if (proposed.refinement_note) updates.latest_refinement_note = String(proposed.refinement_note).slice(0, 1000);
+    await this.supabase.from('product_memory').update(updates).eq('product_id', context.product_id).eq('user_id', userId);
+
+    const { data: strategy } = await this.supabase.from('strategies').select('current_execution_plan').eq('id', context.strategy_id).eq('user_id', userId).single();
+    const plan = strategy?.current_execution_plan || {};
+    await this.supabase.from('strategies').update({
+      current_execution_plan: { ...plan, product_refinement_status: 'applied', product_refinement_applied_at: submission.submittedAt, product_refinement_note: proposed.refinement_note || context.rationale },
+      updated_at: submission.submittedAt,
+    }).eq('id', context.strategy_id).eq('user_id', userId);
   }
 }
 

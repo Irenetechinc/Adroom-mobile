@@ -488,12 +488,14 @@ Return JSON:
                 }).eq('id', strategyId);
 
                 // Schedule a blitz post immediately
+                const selectedPlatform = (strategy.platforms || [])[0];
+                if (!selectedPlatform) return;
                 await this.supabase.from('agent_tasks').insert({
                     strategy_id: strategyId,
                     user_id: userId,
                     agent_type: 'AWARENESS',
                     task_type: 'HASHTAG_CAMPAIGN',
-                    platform: (strategy.platforms || ['facebook'])[0],
+                    platform: selectedPlatform,
                     scheduled_at: new Date(Date.now() + 5 * 60 * 1000).toISOString(),
                     status: 'pending',
                     content: {

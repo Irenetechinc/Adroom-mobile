@@ -103,6 +103,20 @@ export class AgentOrchestrator {
             durationDays
         });
 
+        const allowedPlatforms = new Set(params.platforms.map((platform) => platform.toLowerCase()));
+        const { data: plannedTasks } = await this.supabase
+            .from('agent_tasks')
+            .select('id, platform')
+            .eq('strategy_id', params.strategyId)
+            .in('status', ['pending', 'scheduled']);
+        const invalidTaskIds = (plannedTasks || [])
+            .filter((task: any) => task.platform !== 'internal' && !allowedPlatforms.has(String(task.platform || '').toLowerCase()))
+            .map((task: any) => task.id);
+        if (invalidTaskIds.length > 0) {
+            await this.supabase.from('agent_tasks').delete().in('id', invalidTaskIds);
+            console.warn(`[Orchestrator] Removed ${invalidTaskIds.length} task(s) outside the user's selected platforms.`);
+        }
+
         // Count scheduled tasks
         const { count } = await this.supabase
             .from('agent_tasks')
@@ -117,9 +131,10 @@ export class AgentOrchestrator {
         // All engines and the scheduler use this canonical active state.
         // Specialized agents update their own execution plan, while the
         // orchestrator owns the lifecycle transition shared by every goal.
+        const endsAt = new Date(Date.now() + Math.max(1, Number(durationDays) || 1) * 24 * 60 * 60 * 1000).toISOString();
         const { error: activationError } = await this.supabase
             .from('strategies')
-            .update({ is_active: true, status: 'active', agent_type: agentType, updated_at: new Date().toISOString() })
+            .update({ is_active: true, status: 'active', agent_type: agentType, duration_days: durationDays, ends_at: endsAt, updated_at: new Date().toISOString() })
             .eq('id', params.strategyId)
             .eq('user_id', params.userId);
         if (activationError) throw new Error(`Could not mark strategy active: ${activationError.message}`);
@@ -149,6 +164,8 @@ export class AgentOrchestrator {
      */
     async executeDueTasks(): Promise<{ executed: number; failed: number }> {
         const now = new Date().toISOString();
+
+        await this.expireDueStrategies(now);
 
         const { data: dueTasks, error } = await this.supabase
             .from('agent_tasks')
@@ -212,6 +229,14 @@ export class AgentOrchestrator {
                 executed++;
             } catch (err: any) {
                 console.error(`[Orchestrator] Task ${task.id} execution error: ${err.message}`);
+                if (/invalid|expired|unauthorized|401|access token|oauth/i.test(String(err.message || ''))) {
+                    try {
+                        const { pushService } = await import('../services/pushService');
+                        await pushService.notifyTokenRefreshFailed(task.user_id, task.platform);
+                    } catch (notificationError: any) {
+                        console.error(`[Orchestrator] Token reconnect notification failed for task ${task.id}:`, notificationError.message);
+                    }
+                }
                 try { const { adminBroadcast } = await import('../admin/adminRouter'); adminBroadcast('agent_task_failed', { task_id: task.id, agent_type: task.agent_type, platform: task.platform, error: err.message }); } catch {}
                 failed++;
             }
@@ -221,11 +246,33 @@ export class AgentOrchestrator {
         return { executed, failed };
     }
 
+    private async expireDueStrategies(now: string): Promise<void> {
+        const { data: expired } = await this.supabase
+            .from('strategies')
+            .select('id, user_id, title')
+            .eq('is_active', true)
+            .not('ends_at', 'is', null)
+            .lte('ends_at', now);
+        for (const strategy of expired || []) {
+            await this.supabase.from('strategies').update({ is_active: false, status: 'ended', updated_at: now }).eq('id', strategy.id);
+            await this.supabase.from('agent_tasks').update({ status: 'cancelled', error_message: 'Campaign duration completed.' }).eq('strategy_id', strategy.id).in('status', ['pending', 'scheduled']);
+            await this.supabase.from('goal_progress').update({ status: 'ended', completed_at: now }).eq('strategy_id', strategy.id);
+            try {
+                const { pushService } = await import('../services/pushService');
+                await pushService.notifyStrategyStopped(strategy.user_id, strategy.title || 'Your strategy', 'Campaign duration completed');
+            } catch (error: any) {
+                console.error(`[Orchestrator] Expiry notification failed for ${strategy.id}:`, error.message);
+            }
+        }
+    }
+
     /**
      * EXECUTE SPECIAL TASKS: Lead scans, performance checks, etc.
      */
     async executeSpecialTasks(): Promise<void> {
         const now = new Date().toISOString();
+
+        await this.expireDueStrategies(now);
 
         const { data: tasks } = await this.supabase
             .from('agent_tasks')

@@ -50,6 +50,7 @@ export interface ChatMessage {
     | 'duration_selection'
     | 'strategy_comparison'
     | 'retry_action'
+    | 'product_refinement_task'
     | 'create_strategy_prompt';
   uiData?: any; // Data for the custom UI
 }

@@ -1145,6 +1145,63 @@ const RetryActionCard = ({ onRetry, onCancel, onBack, onStepBack, actionName, di
   </View>
 );
 
+const ProductRefinementCard = ({ task, onSubmitted, disabled }: { task: any; onSubmitted: () => void; disabled?: boolean }) => {
+  const [submission, setSubmission] = useState('');
+  const [assetUri, setAssetUri] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const chooseAsset = async () => {
+    const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ImagePicker.MediaTypeOptions.Images, quality: 0.8 });
+    if (!result.canceled && result.assets?.[0]?.uri) setAssetUri(result.assets[0].uri);
+  };
+
+  const submit = async () => {
+    if (!submission.trim() && !assetUri) return;
+    setBusy(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.access_token) throw new Error('Your session has expired. Please sign in again.');
+      const response = await fetch(`${BACKEND_URL}/api/product-manager/refinements/${task.interventionId}/submit`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` },
+        body: JSON.stringify({ submission, assetUri }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.error || 'The refinement could not be submitted.');
+      onSubmitted();
+    } catch (error: any) {
+      Alert.alert('Submission failed', error.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <View style={styles.refinementCard}>
+      <Text style={styles.refinementTitle}>{task.title || 'Product refinement required'}</Text>
+      <Text style={styles.refinementBody}>{task.instructions || task.rationale}</Text>
+      <TextInput
+        value={submission}
+        onChangeText={setSubmission}
+        multiline
+        editable={!disabled && !busy}
+        placeholder="Add the requested details"
+        placeholderTextColor="#64748B"
+        style={styles.refinementInput}
+      />
+      {(task.submission_type === 'image' || task.submission_type === 'video' || task.submission_type === 'document') && (
+        <TouchableOpacity onPress={chooseAsset} disabled={disabled || busy} style={styles.refinementUpload}>
+          <Upload size={16} color="#00F0FF" />
+          <Text style={styles.refinementUploadText}>{assetUri ? 'Asset selected' : 'Attach requested asset'}</Text>
+        </TouchableOpacity>
+      )}
+      <TouchableOpacity onPress={submit} disabled={disabled || busy || (!submission.trim() && !assetUri)} style={[styles.refinementSubmit, (!submission.trim() && !assetUri) && { opacity: 0.45 }]}>
+        {busy ? <ActivityIndicator color="#0B0F19" /> : <Text style={styles.refinementSubmitText}>Submit refinement</Text>}
+      </TouchableOpacity>
+    </View>
+  );
+};
+
 const CompletionCard = ({ onDashboard, disabled }: { onDashboard: () => void; disabled?: boolean }) => (
   <View style={[styles.card, styles.completionCard]}>
     <View style={styles.completionIcon}>
@@ -1702,6 +1759,17 @@ export default function AgentChatScreen({ navigation, route }: Props) {
       // interrupted by this same pending task already in the current session
       const topError = data.errors?.[0] || data.interventions?.[0];
       const description = topError?.description || topError?.context?.message || 'a required setup step';
+      const refinement = data.interventions?.find((item: any) => item.intervention_type === 'product_refinement_required');
+      if (refinement) {
+        addMessage(
+          refinement.context?.instructions || 'A product refinement is required before the active campaign can continue.',
+          'agent',
+          undefined,
+          'product_refinement_task',
+          refinement.context,
+        );
+        return;
+      }
 
       addMessage(
         `Your campaign is currently paused — there's something that needs your attention before I can continue.\n\n${description}\n\nLet's get this sorted so your agents can get back to work.`,
@@ -1720,9 +1788,11 @@ export default function AgentChatScreen({ navigation, route }: Props) {
     if (!skipLoad) {
       loadMessages().then((result: any) => {
         setHistoryLoaded(true);
-        // Only check for pending tasks if there's no active conversation
+        // Re-check existing conversations too, unless the current history
+        // already contains the pending refinement card.
         const loadedMsgs = result?.messages ?? [];
-        if (loadedMsgs.length === 0) {
+        const hasPendingRefinementCard = loadedMsgs.some((message: any) => message.uiType === 'product_refinement_task');
+        if (loadedMsgs.length === 0 || !hasPendingRefinementCard) {
           checkPendingUserTasks();
         }
       });
@@ -1854,7 +1924,7 @@ export default function AgentChatScreen({ navigation, route }: Props) {
     'service_intake_form', 'brand_intake_form', 'attribute_editor',
     'strategy_type_selection', 'goal_selection', 'duration_selection',
     'strategy_preview', 'strategy_account_selection', 'facebook_connect', 'page_selection',
-    'retry_action', 'session_restore', 'session_restore_prompt', 'create_strategy_prompt',
+    'retry_action', 'product_refinement_task', 'session_restore', 'session_restore_prompt', 'create_strategy_prompt',
   ];
 
   const isLastInteractiveMessage = (index: number, uiType: string) => {
@@ -1973,6 +2043,9 @@ export default function AgentChatScreen({ navigation, route }: Props) {
             onStepBack={stepBackProp}
             disabled={isDisabled}
           />
+        )}
+        {item.uiType === 'product_refinement_task' && item.uiData && (
+          <ProductRefinementCard task={item.uiData} onSubmitted={() => addMessage('Thanks. I have received the refinement and will continue improving the active campaign.', 'agent')} disabled={isDisabled} />
         )}
         {item.uiType === 'facebook_connect' && (
           <FacebookConnectButton
@@ -2594,6 +2667,14 @@ const styles = StyleSheet.create({
     elevation: 2,
   },
   cardDisabled: { opacity: 0.55 },
+  refinementCard: { padding: 16, gap: 10 },
+  refinementTitle: { color: '#FFFFFF', fontWeight: '800', fontSize: 15 },
+  refinementBody: { color: '#CBD5E1', fontSize: 13, lineHeight: 19 },
+  refinementInput: { minHeight: 80, backgroundColor: '#0B0F19', borderRadius: 10, padding: 12, color: '#E2E8F0', textAlignVertical: 'top' },
+  refinementUpload: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 10 },
+  refinementUploadText: { color: '#00F0FF', fontWeight: '700', fontSize: 13 },
+  refinementSubmit: { backgroundColor: '#00F0FF', borderRadius: 10, paddingVertical: 12, alignItems: 'center' },
+  refinementSubmitText: { color: '#0B0F19', fontWeight: '800', fontSize: 13 },
   cardUploadBtn: { padding: 20, alignItems: 'center' },
   uploadIconWrap: {
     width: 64, height: 64, borderRadius: 32,

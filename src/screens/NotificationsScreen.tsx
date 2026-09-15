@@ -460,6 +460,23 @@ export default function NotificationsScreen() {
                     </View>
                   );
                 })()}
+
+                {(selected?.data as any)?.type === 'token_refresh_failed' && (
+                  <TouchableOpacity
+                    style={[styles.actionBtn, { backgroundColor: '#00F0FF', marginTop: 12 }]}
+                    onPress={() => {
+                      const notification = selected;
+                      if (!notification) return;
+                      const platform = notification.data?.platform;
+                      if (!notification.is_read) markOneRead(notification.id);
+                      setSelected(null);
+                      (navigation as any).navigate('ConnectedAccounts', { platform });
+                    }}
+                    activeOpacity={0.8}
+                  >
+                    <Text style={[styles.actionBtnText, { color: '#0B0F19' }]}>Reconnect account</Text>
+                  </TouchableOpacity>
+                )}
               </ScrollView>
 
               <TouchableOpacity style={styles.modalDoneBtn} onPress={() => setSelected(null)} activeOpacity={0.8}>

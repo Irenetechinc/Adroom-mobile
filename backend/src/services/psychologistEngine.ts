@@ -48,9 +48,22 @@ export class PsychologistEngine {
   async runCycle(): Promise<void> {
     console.log('[PsychologistEngine] Starting behavioral analysis cycle...');
 
+    const { data: activeStrategies } = await this.supabase
+      .from('strategies')
+      .select('product_id')
+      .eq('is_active', true)
+      .eq('status', 'active')
+      .not('product_id', 'is', null);
+    const productIds = Array.from(new Set((activeStrategies || []).map((row: any) => row.product_id).filter(Boolean)));
+    if (!productIds.length) {
+      console.log('[PsychologistEngine] No active strategies with products to analyze');
+      return;
+    }
+
     const { data: products } = await this.supabase
       .from('product_memory')
       .select('product_id, product_name, category, user_id')
+      .in('product_id', productIds)
       .limit(25);
 
     if (!products || products.length === 0) {

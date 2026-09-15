@@ -432,12 +432,14 @@ Return JSON:
                     });
 
                     // Schedule emergency hype post in 30 minutes
+                    const selectedPlatform = (strategy.platforms || [])[0];
+                    if (!selectedPlatform) return;
                     await this.supabase.from('agent_tasks').insert({
                         strategy_id: strategyId,
                         user_id: userId,
                         agent_type: 'LAUNCH',
                         task_type: 'TEASER',
-                        platform: (strategy.platforms || ['instagram'])[0],
+                        platform: selectedPlatform,
                         scheduled_at: new Date(Date.now() + 30 * 60 * 1000).toISOString(),
                         status: 'pending',
                         content: {

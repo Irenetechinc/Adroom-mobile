@@ -1577,6 +1577,22 @@ app.post('/api/ai/generate-strategy', async (req, res) => {
           dispatchAddress: normalizedProductType === 'physical' ? String(dispatchAddress).trim() : null,
         });
 
+        const selectedPlatformSet = new Set(requestedAccounts);
+        strategy.platforms = requestedAccounts;
+        strategy.schedule = Array.isArray(strategy.schedule)
+          ? strategy.schedule
+            .filter((item: any) => selectedPlatformSet.has(String(item.platform || '').trim().toLowerCase()))
+            .map((item: any) => ({ ...item, platform: String(item.platform).trim().toLowerCase() }))
+          : [];
+
+        // The user's connected-account selection is authoritative. The model may
+        // suggest platforms, but it must never widen or replace that selection.
+        strategy.platforms = requestedAccounts;
+        if (Array.isArray(strategy.schedule)) {
+          const selected = new Set(requestedAccounts);
+          strategy.schedule = strategy.schedule.filter((item: any) => selected.has(String(item.platform || '').toLowerCase()));
+        }
+
         console.log(`[Strategy] [${ts()}] STEP 5 — Strategy generated successfully`);
         console.log(`[Strategy]   Title: ${strategy.title}`);
         console.log(`[Strategy]   Platforms: ${JSON.stringify(strategy.platforms)}`);
@@ -3265,13 +3281,14 @@ app.get('/api/user/pending-tasks', async (req, res) => {
     const { data: { user }, error: authErr } = await supabase.auth.getUser();
     if (authErr || !user) return res.status(401).json({ error: 'Unauthorized' });
 
-    // Find any pending user_error interventions from the dynamic problem solver
+    // Include Product Manager refinements so Agent Chat can render the pending
+    // action card until the user submits the requested update.
     const { data: interventions } = await supabase
       .from('agent_interventions')
       .select('id, intervention_type, context, created_at')
       .eq('user_id', user.id)
       .eq('status', 'pending')
-      .in('intervention_type', ['user_error', 'user_setup_required', 'missing_config'])
+      .in('intervention_type', ['user_error', 'user_setup_required', 'missing_config', 'product_refinement_required'])
       .order('created_at', { ascending: false })
       .limit(5);
 
@@ -3294,6 +3311,51 @@ app.get('/api/user/pending-tasks', async (req, res) => {
       interventions: interventions || [],
       errors: errorLogs || [],
     });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/** Submit a Product Manager refinement and keep the strategy refinement history. */
+app.post('/api/product-manager/refinements/:id/submit', async (req, res) => {
+  try {
+    const supabase = getSupabaseClient(req);
+    const { data: { user }, error: authErr } = await supabase.auth.getUser();
+    if (authErr || !user) return res.status(401).json({ error: 'Unauthorized' });
+
+    const { id } = req.params;
+    const { submission, assetUri } = req.body || {};
+    const { data: intervention } = await supabase
+      .from('agent_interventions')
+      .select('*')
+      .eq('id', id)
+      .eq('user_id', user.id)
+      .eq('status', 'pending')
+      .eq('intervention_type', 'product_refinement_required')
+      .single();
+    if (!intervention) return res.status(404).json({ error: 'Refinement task not found or already completed.' });
+
+    const context = intervention.context || {};
+    const submitted = { submission: String(submission || '').trim(), assetUri: assetUri || null, submittedAt: new Date().toISOString() };
+    if (!submitted.submission && !submitted.assetUri) return res.status(400).json({ error: 'Submit the requested refinement before continuing.' });
+
+    const { productManagerAgent } = await import('./services/productManagerAgent');
+    await productManagerAgent.applyUserRefinement(user.id, intervention, submitted);
+    await supabase.from('agent_interventions').update({ status: 'submitted', resolved_at: submitted.submittedAt, context: { ...context, submitted } }).eq('id', id);
+    const { data: strategy } = await supabase.from('strategies').select('id, current_execution_plan').eq('id', context.strategy_id).eq('user_id', user.id).single();
+    if (strategy) {
+      const current = strategy.current_execution_plan || {};
+      const history = Array.isArray(current.product_manager_refinements) ? current.product_manager_refinements : [];
+      await supabase.from('strategies').update({
+        current_execution_plan: {
+          ...current,
+          product_manager_refinements: [...history, { ...context, submitted }].slice(-20),
+          refinement_updated_at: submitted.submittedAt,
+        },
+        updated_at: submitted.submittedAt,
+      }).eq('id', strategy.id).eq('user_id', user.id);
+    }
+    res.json({ ok: true, submitted: true, strategyId: context.strategy_id });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
