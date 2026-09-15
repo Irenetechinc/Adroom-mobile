@@ -75,7 +75,7 @@ export class AIEngine {
     try {
       const completion = await openai.chat.completions.create({
         messages: [
-          { role: "system", content: "You are the AdRoom AI Core Brain. You are an expert marketing strategist capable of generating comprehensive, data-driven marketing strategies." },
+          { role: "system", content: "You are the Adirum AI Core Brain. You are an expert marketing strategist capable of generating comprehensive, data-driven marketing strategies." },
           { role: "user", content: `Context: ${JSON.stringify(context)}\n\nTask: ${prompt}` }
         ],
         model: "gpt-4o", // Use GPT-4o for best reasoning/speed balance

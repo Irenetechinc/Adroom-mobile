@@ -1,5 +1,5 @@
 
-import { AIEngine } from '../config/ai-models';
+import { AIEngine, parseStructuredJson } from '../config/ai-models';
 import { MemoryContext } from './memoryRetriever';
 import { getServiceSupabaseClient } from '../config/supabase';
 
@@ -22,7 +22,7 @@ export class DecisionEngine {
     this.supabase = getServiceSupabaseClient();
   }
 
-  async generateStrategy(memory: MemoryContext, goal: string, duration: number): Promise<AIStrategy> {
+  async generateStrategy(memory: MemoryContext, goal: string, duration: number, economyMode = false, freeMode = false, executionContext?: any): Promise<AIStrategy> {
     console.log('AI Brain: Generating Dynamic Strategy with Intelligent Weighting...');
 
     // 1. GATHER all relevant intelligence sources
@@ -37,21 +37,27 @@ export class DecisionEngine {
 
     // 2. WEIGHT each source dynamically
     const weights = this.calculateDynamicWeights(intelligence);
+    const contextData: any = memory;
 
     const prompt = `
-      You are the AdRoom AI Core Brain. Generate the OPTIMAL organic strategy that outperforms paid ads.
+      You are the Adirum AI Core Brain. Generate the OPTIMAL organic strategy that outperforms paid ads.
       NO hard-coded rules. Use weighted intelligence to identify high-reach organic arbitrage.
 
       INTELLIGENCE: ${JSON.stringify(intelligence)}
+      PRODUCT / SERVICE / BRAND CONTEXT: ${JSON.stringify(contextData.product || contextData.service || contextData.brand || {})}
+      USER-SELECTED EXECUTION CONTEXT: ${JSON.stringify(executionContext || {})}
       DYNAMIC WEIGHTS: ${JSON.stringify(weights)}
       GOAL: ${goal}
       DURATION: ${duration} days
+      ${freeMode ? 'FREE AI MODE: Do not recommend AI-generated video or web search. Video content is allowed only when the user supplies an uploaded video; use that uploaded video in the director/edit plan.' : ''}
 
       STRATEGIC FOCUS:
-      - AdRoom's USP is achieving paid-ad results through organic automation.
+      - Adirum's USP is achieving paid-ad results through organic automation.
       - Use Platform Intelligence to find current "Organic Boost" hacks (e.g., TikTok SEO, LinkedIn Video priority).
+      ${freeMode ? '- Do not schedule generated video assets. Prefer image, carousel, text, and user-uploaded-video edit tasks.' : ''}
       - Use Emotional Intelligence to "own" the category conversation.
       - Use Social Listening to "hijack" trending topics with high-relevance replies.
+      - Autonomous execution capabilities include outreach, calling, fulfillment, and delivery coordination. Decide dynamically when any capability is warranted from live evidence and the strategy context; do not recommend a manual task list when Adirum can execute the action.
 
       OUTPUT JSON (Selected Strategy):
       {
@@ -76,14 +82,65 @@ export class DecisionEngine {
       }
     `;
 
-    const response = await this.ai.generateStrategy({}, prompt);
-    const strategy: AIStrategy = response.parsedJson;
+    const response = economyMode
+      ? await this.ai.generateStrategyEconomy({}, prompt)
+      : await this.ai.generateStrategy({}, prompt);
 
-    if (!strategy) throw new Error('AI Brain failed to generate strategy.');
+    const rawStrategy = response.parsedJson ?? parseStructuredJson(response.text) ?? {};
+    const strategy: AIStrategy = this.normalizeStrategy(rawStrategy, memory, goal, duration, weights);
 
     await this.storeDecision(memory, strategy, goal, weights);
 
     return strategy;
+  }
+
+  private normalizeStrategy(raw: any, memory: MemoryContext, goal: string, duration: number, weights: any): AIStrategy {
+    const strategy = raw && typeof raw === 'object' ? raw : {};
+    const platformOptions = Array.isArray(strategy.platforms) && strategy.platforms.length > 0
+      ? strategy.platforms
+      : ['instagram', 'tiktok', 'linkedin'];
+
+    const estimatedOutcomes = strategy.estimated_outcomes && typeof strategy.estimated_outcomes === 'object'
+      ? strategy.estimated_outcomes
+      : {};
+
+    const fallbackTitle = `${goal.charAt(0).toUpperCase()}${goal.slice(1)} growth sprint`;
+    const fallbackRationale = `Fresh live signals were combined with product context and recent campaign history to prioritize the highest-conviction growth path for ${goal} over the next ${duration} days.`;
+
+    return {
+      title: String(strategy.title || fallbackTitle),
+      rationale: String(strategy.rationale || fallbackRationale),
+      platforms: platformOptions.map((p: any) => String(p).toLowerCase()),
+      content_pillars: Array.isArray(strategy.content_pillars) && strategy.content_pillars.length > 0
+        ? strategy.content_pillars
+        : [{
+            title: 'Fresh demand capture',
+            purpose: 'Capture attention with recent market proof and product relevance.',
+            source_data: 'Live intelligence + product context',
+            formats: ['Reel', 'Carousel', 'Short-form text'],
+            virality_hooks: ['Product proof', 'Trend tie-in', 'Problem-first hook'],
+          }],
+      schedule: Array.isArray(strategy.schedule) && strategy.schedule.length > 0
+        ? strategy.schedule
+        : [{
+            day: 1,
+            platform: platformOptions[0],
+            content_type: 'Reel',
+            topic: 'Offer + pain-point hook',
+            time: '09:00',
+            reason: 'Priority campaign launch based on active demand signals.',
+          }],
+      estimated_outcomes: {
+        reach: Number(estimatedOutcomes.reach || 15000),
+        engagement: Number(estimatedOutcomes.engagement || 1800),
+        paid_equivalent_value_usd: Number(estimatedOutcomes.paid_equivalent_value_usd || 1200),
+        ...estimatedOutcomes,
+      },
+      risk_assessment: strategy.risk_assessment || {
+        overall_risk: 'medium',
+        notes: 'Fallback strategy generated from live signals and current product context because the model response was not fully structured.',
+      },
+    };
   }
 
   private calculateDynamicWeights(intelligence: any) {
@@ -183,7 +240,7 @@ export class DecisionEngine {
     if (!alerts || alerts.length === 0) return;
 
     const prompt = `
-      You are the AdRoom AI Core Brain. You received alerts from ${source}.
+      You are the Adirum AI Core Brain. You received alerts from ${source}.
       Decide what action to take next for active organic strategies and engagement workflows.
 
       ALERTS:
@@ -195,7 +252,8 @@ export class DecisionEngine {
           {
             "type": "strategy_adjustment" | "engagement_tuning" | "monitor_only" | "user_notification",
             "reason": "string",
-            "urgency": "low" | "medium" | "high"
+            "urgency": "low" | "medium" | "high",
+            "instruction_override": "Concrete single-sentence instruction agents must follow immediately (e.g. 'Prioritize Reels with trending audio — algorithm boosting short video 40%')"
           }
         ]
       }
@@ -215,11 +273,129 @@ export class DecisionEngine {
     } catch (e) {
       console.error('Failed to store alert decision:', e);
     }
+
+    // ── APPLY the recommendation to every active strategy immediately ───────
+    if (!recommendation?.recommended_actions?.length) return;
+
+    const highUrgency = (recommendation.recommended_actions as any[]).filter(
+      (a: any) => a.urgency === 'high' || a.urgency === 'medium'
+    );
+    if (highUrgency.length === 0) return;
+
+    const overrideText = highUrgency
+      .map((a: any) => a.instruction_override || a.reason)
+      .filter(Boolean)
+      .join(' | ');
+    if (!overrideText) return;
+
+    try {
+      // Fetch all active strategies
+      const { data: strategies } = await this.supabase
+        .from('strategies')
+        .select('id, current_execution_plan')
+        .eq('status', 'active');
+
+      if (!strategies?.length) return;
+
+      // Stamp intelligence_override into each strategy's execution plan
+      for (const s of strategies) {
+        const updatedPlan = {
+          ...(s.current_execution_plan || {}),
+          brain_instruction_override: overrideText,
+          brain_override_source: source,
+          brain_override_at: new Date().toISOString(),
+        };
+        await this.supabase
+          .from('strategies')
+          .update({ current_execution_plan: updatedPlan })
+          .eq('id', s.id);
+      }
+
+      console.log(`[AI Brain] Applied override to ${strategies.length} active strategies from ${source}: "${overrideText.slice(0, 80)}..."`);
+    } catch (e) {
+      console.error('[AI Brain] Failed to propagate override to strategies:', e);
+    }
+  }
+
+  /**
+   * Called after EVERY intelligence engine cycle.
+   * Fetches the freshest data from all 4 intelligence tables and writes it
+   * into every active strategy's current_execution_plan.live_intelligence.
+   * Agents read this field in executeTask so they always have real-time context.
+   */
+  async feedIntelligenceToActiveStrategies(): Promise<void> {
+    try {
+      const { data: strategies } = await this.supabase
+        .from('strategies')
+        .select('id, current_execution_plan, product_memory(name, category)')
+        .eq('status', 'active');
+
+      if (!strategies?.length) return;
+
+      // Determine relevant platforms from existing execution plan
+      for (const s of strategies) {
+        const plan = s.current_execution_plan || {};
+        const platforms: string[] = plan.platforms || ['facebook', 'instagram', 'twitter', 'linkedin', 'tiktok'];
+        const product = (s as any).product_memory;
+        const category = product?.category || 'general';
+        const productName = product?.name || '';
+
+        // Pull latest from all 4 intelligence tables in parallel
+        const [platformRows, socialRows, emotionalRows, geoRows] = await Promise.all([
+          this.supabase
+            .from('platform_intelligence')
+            .select('platform, algorithm_priorities, trending_formats, detected_shifts, predictions')
+            .in('platform', platforms)
+            .order('captured_at', { ascending: false })
+            .limit(platforms.length * 2),
+          this.supabase
+            .from('social_conversations')
+            .select('content, topics, sentiment, intent, entities')
+            .eq('category', category)
+            .order('collected_at', { ascending: false })
+            .limit(15),
+          this.supabase
+            .from('emotional_ownership')
+            .select('emotion, owner_brand, ownership_percentage, confidence')
+            .eq('category', category)
+            .order('ownership_percentage', { ascending: false })
+            .limit(10),
+          this.supabase
+            .from('narrative_snapshots')
+            .select('query, sentiment, claims, missing_claims, competitors')
+            .ilike('query', `%${productName}%`)
+            .order('captured_at', { ascending: false })
+            .limit(5),
+        ]);
+
+        const liveIntelligence = {
+          platform: platformRows.data || [],
+          social: socialRows.data || [],
+          emotional: emotionalRows.data || [],
+          geo: geoRows.data || [],
+          updated_at: new Date().toISOString(),
+        };
+
+        await this.supabase
+          .from('strategies')
+          .update({
+            current_execution_plan: {
+              ...plan,
+              live_intelligence: liveIntelligence,
+            },
+          })
+          .eq('id', s.id);
+      }
+
+      console.log(`[AI Brain] Fed live intelligence into ${strategies.length} active strategies`);
+    } catch (e) {
+      console.error('[AI Brain] feedIntelligenceToActiveStrategies error:', e);
+    }
   }
 
   async generateEngagementReply(input: string, context: 'comment' | 'message', userHistory: any[]): Promise<string> {
     const prompt = `
-      You are the AdRoom Engagement AI.
+      You are the Adirum AI Engagement AI.
       Task: Generate a reply to this ${context}.
       
       INPUT: "${input}"

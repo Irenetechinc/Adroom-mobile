@@ -7,7 +7,7 @@ dotenv.config();
 const SUPABASE_URL = process.env.SUPABASE_URL || process.env.EXPO_PUBLIC_SUPABASE_URL || '';
 const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_KEY || '';
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY || '';
-const FB_GRAPH_URL = 'https://graph.facebook.com/v18.0';
+const FB_GRAPH_URL = 'https://graph.facebook.com/v25.0';
 
 if (!SUPABASE_URL || !SUPABASE_SERVICE_KEY) {
     console.warn('Warning: Supabase credentials missing. Engagement features will be disabled.');

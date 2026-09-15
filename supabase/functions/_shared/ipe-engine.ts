@@ -240,11 +240,13 @@ export class PlatformIntelligenceEngine {
           console.log(`URGENT INTELLIGENCE DETECTED: ${item.summary}`);
           
           try {
-             // Call Communication Engine to send Alert
-             await fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/communication-engine`, {
+             // Route communication through Railway. Supabase stores the record.
+             const railwayUrl = 'http://backend.adroomai.com';
+             const serviceKey = Deno.env.get('INTERNAL_SERVICE_KEY') || Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+             await fetch(`${railwayUrl}/api/internal/communication/alert`, {
                  method: 'POST',
                  headers: {
-                     'Authorization': `Bearer ${Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')}`,
+                 'Authorization': `Bearer ${serviceKey}`,
                      'Content-Type': 'application/json'
                  },
                  body: JSON.stringify({

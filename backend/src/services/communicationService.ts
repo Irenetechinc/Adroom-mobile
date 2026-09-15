@@ -44,7 +44,7 @@ export class CommunicationService {
       .limit(3);
 
     const prompt = `
-        You are AdRoom AI. Generate a concise, professional, and encouraging daily ORGANIC marketing report for the user.
+        You are Adirum AI. Generate a concise, professional, and encouraging daily ORGANIC marketing report for the user.
 
         DATE: ${new Date().toLocaleDateString()}
         WINDOW: last 24 hours
@@ -80,7 +80,7 @@ export class CommunicationService {
     if (!alertId) throw new Error('Alert ID required');
 
     const { data: alert, error } = await this.supabase
-      .from('platform_intelligence')
+      .from('ipe_intelligence_log')
       .select('*')
       .eq('id', alertId)
       .single();
@@ -91,9 +91,9 @@ export class CommunicationService {
         Rephrase this technical alert into a short, urgent push notification for a marketing user.
         Keep it under 100 characters if possible.
         
-        PLATFORM: ${alert.platform}
-        DETECTED_SHIFTS: ${JSON.stringify(alert.detected_shifts)}
-        RISKS: ${JSON.stringify(alert.risks)}
+            PLATFORM: ${alert.platform}
+            ALERT SUMMARY: ${alert.summary}
+            DETAILS: ${JSON.stringify(alert.details)}
     `;
 
     const notificationText = await this.aiEngine.generateText(prompt);
