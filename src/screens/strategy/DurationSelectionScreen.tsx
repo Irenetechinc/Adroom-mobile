@@ -85,6 +85,9 @@ export default function DurationSelectionScreen() {
           currency: productData.currency,
           websiteUrl: productData.websiteUrl,
           videoUri: productData.videoUri,
+          paymentAccountName: productData.paymentAccountName,
+          paymentAccount: productData.paymentAccount,
+          paymentBank: productData.paymentBank,
         },
       });
       setGeneratedStrategies(strategies);

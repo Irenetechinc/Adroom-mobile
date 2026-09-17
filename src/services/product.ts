@@ -28,15 +28,21 @@ export const ProductService = {
             ? productData.images.map((img: { uri: string }) => img.uri)
             : productData.baseImageUri
               ? [productData.baseImageUri]
-              : [],
+              : productData.imageUri
+                ? [productData.imageUri]
+                : [],
           // Product type & delivery fields
           product_type: productData.productType || 'physical',
           delivery_type: productData.deliveryType || null,
-          delivery_address: productData.deliveryAddress || null,
+          delivery_address: productData.dispatchAddress || productData.deliveryAddress || null,
           contact_phone: productData.phone || null,
-          bank_account_details: productData.bankAccount || null,
+          bank_account_details: productData.bankAccount || {
+            account_name: productData.paymentAccountName || null,
+            account_number: productData.paymentAccount || null,
+            bank_name: productData.paymentBank || null,
+          },
           // Media & extras
-          video_url: productData.video?.uri || productData.videoUrl || null,
+          video_url: productData.video?.uri || productData.videoUrl || productData.videoUri || null,
           color: productData.color || null,
           available_sizes: (productData.sizes && productData.sizes.length > 0) ? productData.sizes : null,
         })

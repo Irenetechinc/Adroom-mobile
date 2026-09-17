@@ -1,6 +1,7 @@
 import './global.css';
 import React, { useEffect, useRef, useState } from 'react';
 import { Platform, AppState, AppStateStatus, Text, TextInput } from 'react-native';
+import * as SplashScreen from 'expo-splash-screen';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import AppNavigator from './src/navigation/AppNavigator';
@@ -28,6 +29,8 @@ import {
 import WhatsNewModal from './src/components/WhatsNewModal';
 import ForceUpdateModal from './src/components/ForceUpdateModal';
 import AchievementRatingCard from './src/components/AchievementRatingCard';
+
+void SplashScreen.preventAutoHideAsync().catch(() => {});
 
 // Disable system font-size scaling globally so the UI renders consistently
 // across all device sizes and accessibility font-scale settings.
@@ -171,6 +174,10 @@ export default function App() {
   const [optionalUpdateVisible, setOptionalUpdateVisible] = useState(false);
   const [ratingVisible, setRatingVisible] = useState(false);
   const { hasActiveStrategy } = useAuthStore();
+
+  useEffect(() => {
+    SplashScreen.hideAsync().catch(() => {});
+  }, []);
   // Once dismissed in this session, don't keep nagging on every foreground.
   const optionalDismissedRef = useRef(false);
   const lastVersionCheckRef = useRef<number>(0);

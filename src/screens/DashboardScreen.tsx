@@ -32,7 +32,7 @@ interface PerformanceChartProps { strategies: any[]; userId: string; }
 
 function PerformanceChart({ strategies, userId }: PerformanceChartProps) {
   const [perf, setPerf] = useState<PerfRow[]>([]);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     if (!strategies.length || !userId) return;
@@ -246,6 +246,7 @@ export default function DashboardScreen() {
   const agentSubRef = useRef<any>(null);
   const dealsSubRef = useRef<any>(null);
   const gmapsSubRef = useRef<any>(null);
+  const intelligenceSubRef = useRef<any>(null);
 
   const fetchData = async () => {
     if (!session?.user) return;
@@ -263,10 +264,9 @@ export default function DashboardScreen() {
           .eq('is_active', true)
           .order('updated_at', { ascending: false }),
         supabase
-          .from('ipe_intelligence_log')
-          .select('*')
-          .gte('priority', 1)
-          .order('timestamp', { ascending: false })
+          .from('platform_intelligence')
+          .select('id, platform, algorithm_priorities, trending_formats, detected_shifts, predictions, risks, captured_at')
+          .order('captured_at', { ascending: false })
           .limit(5),
         supabase
           .from('agent_tasks')
@@ -327,7 +327,11 @@ export default function DashboardScreen() {
         total_clicks: strategy.total_clicks || 0,
         total_conversions: strategy.total_conversions || 0,
       })));
-      setAlerts(logsRes.data || []);
+      setAlerts((logsRes.data || []).map((row: any) => ({
+        ...row,
+        timestamp: row.captured_at,
+        summary: `${row.platform || 'Platform'} intelligence refreshed${row.trending_formats?.length ? `: ${row.trending_formats.slice(0, 2).join(', ')}` : ''}`,
+      })));
       setGmapsLeads((gmapsRes.data as GmapsLead[]) || []);
 
       // Deals + revenue total
@@ -398,6 +402,18 @@ export default function DashboardScreen() {
       .subscribe();
     agentSubRef.current = channel;
     return () => { supabase.removeChannel(channel); };
+  }, [session?.user?.id]);
+
+  useEffect(() => {
+    if (!session?.user) return;
+    const intelligenceChannel = supabase
+      .channel('platform_intelligence_live')
+      .on('postgres_changes', {
+        event: '*', schema: 'public', table: 'platform_intelligence',
+      }, () => { fetchData(); })
+      .subscribe();
+    intelligenceSubRef.current = intelligenceChannel;
+    return () => { supabase.removeChannel(intelligenceChannel); };
   }, [session?.user?.id]);
 
   useEffect(() => {

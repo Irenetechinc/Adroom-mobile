@@ -1664,7 +1664,8 @@ Content Pillars: ${JSON.stringify(strategy.content_pillars)}
 Rationale: ${strategy.rationale}
 Campaign Duration: ${duration} days
 
-Generate 7 days of preview content. Assign 1 post per day, rotating through platforms.
+Generate exactly 7 days of preview content. Assign 1 post per day using ONLY the listed platforms, rotating through those platforms.
+Include the intended local posting time as 24-hour hour and minute fields.
 Make the content feel REAL and ready-to-post.
 
 OUTPUT JSON:
@@ -1674,6 +1675,8 @@ OUTPUT JSON:
       "day": 1,
       "platform": "instagram",
       "task_type": "REEL",
+      "hour": 9,
+      "minute": 0,
       "headline": "Attention-grabbing headline",
       "body": "Full caption text, 2-4 sentences, ready to post. Include relevant details about the product/service.",
       "hashtags": ["tag1", "tag2", "tag3"],
@@ -1685,7 +1688,27 @@ OUTPUT JSON:
             const { AIEngine: AIEngineForPreview } = await import('./config/ai-models');
             const aiForPreview = AIEngineForPreview.getInstance();
             const previewResult = await aiForPreview.generateStrategy({}, previewPrompt);
-            weekPreview = previewResult.parsedJson?.days || [];
+            const selectedPlatforms = new Set((strategy.platforms || []).map((platform: string) => String(platform).toLowerCase()));
+            const generatedDays = Array.isArray(previewResult.parsedJson?.days) ? previewResult.parsedJson.days : [];
+            const scheduledDays = Array.isArray(strategy.schedule) ? strategy.schedule : [];
+            const previewDays = generatedDays.length >= 7 ? generatedDays : [
+              ...generatedDays,
+              ...scheduledDays.filter((scheduled: any) => !generatedDays.some((day: any) => Number(day.day) === Number(scheduled.day))).slice(0, 7 - generatedDays.length),
+            ];
+            weekPreview = previewDays
+              .filter((day: any) => selectedPlatforms.has(String(day.platform || '').toLowerCase()))
+              .slice(0, 7)
+              .map((day: any, index: number) => ({
+                ...day,
+                day: index + 1,
+                platform: String(day.platform).toLowerCase(),
+                hour: Number.isFinite(Number(day.hour)) ? Number(day.hour) : 9,
+                minute: Number.isFinite(Number(day.minute)) ? Number(day.minute) : 0,
+                media_type: /reel|video|tiktok/i.test(String(day.task_type || '')) ? 'video' : 'image',
+                video_url: /reel|video|tiktok/i.test(String(day.task_type || ''))
+                  ? (submittedProduct?.videoUri || context.product?.video_url || null)
+                  : null,
+              }));
         } catch (previewErr: any) {
             console.warn(`[Strategy] Week preview generation failed (non-fatal): ${previewErr.message}`);
         }

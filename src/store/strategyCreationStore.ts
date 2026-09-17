@@ -13,6 +13,9 @@ interface ProductData {
   targetAudience: string;
   productType: 'physical' | 'digital';
   dispatchAddress: string;
+  paymentAccount: string;
+  paymentAccountName: string;
+  paymentBank: string;
   selectedAccounts: string[];
 }
 
@@ -51,6 +54,9 @@ const defaultProductData: ProductData = {
   targetAudience: '',
   productType: 'physical',
   dispatchAddress: '',
+  paymentAccount: '',
+  paymentAccountName: '',
+  paymentBank: '',
   selectedAccounts: [],
 };
 

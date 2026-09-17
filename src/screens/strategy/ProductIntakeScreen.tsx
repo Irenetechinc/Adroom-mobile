@@ -171,6 +171,10 @@ export default function ProductIntakeScreen() {
       Alert.alert('Dispatch Address Required', 'Enter the address where the dispatch agent should collect this physical product.');
       return;
     }
+    if (!productData.paymentAccountName?.trim() || !productData.paymentAccount?.trim() || !productData.paymentBank?.trim()) {
+      Alert.alert('Payment Details Required', 'Enter the account holder, account number or payment handle, and bank or payment provider.');
+      return;
+    }
     setProductData({ productType, dispatchAddress: productType === 'physical' ? productData.dispatchAddress.trim() : '' });
     navigation.navigate('StrategyWizard_GoalSelection');
   };
@@ -310,6 +314,15 @@ export default function ProductIntakeScreen() {
 
         {/* ── Form Fields ─────────────────────────────────────── */}
         <View style={styles.formSection}>
+          {productData.scanResult && !loading && (
+            <View style={styles.scanReview}>
+              <Text style={styles.scanReviewTitle}>Scanned product details</Text>
+              <Text style={styles.scanReviewText}>Review and edit the extracted details below before continuing.</Text>
+              <Text style={styles.scanReviewMeta}>
+                {[productData.scanResult.brand, productData.scanResult.category, productData.scanResult.condition].filter(Boolean).join(' • ') || 'Details extracted from your image'}
+              </Text>
+            </View>
+          )}
           <Text style={styles.fieldLabel}>Product Type</Text>
           <View style={{ flexDirection: 'row', gap: 8, marginBottom: 16 }}>
             {(['physical', 'digital'] as const).map((type) => (
@@ -364,6 +377,27 @@ export default function ProductIntakeScreen() {
               height={88}
             />
           )}
+          <Text style={styles.fieldLabel}>Payment collection account</Text>
+          <Text style={styles.fieldHint}>Used when a client completes payment. You can edit or remove these details before generating the strategy.</Text>
+          <FormField
+            label="Account holder name"
+            value={productData.paymentAccountName}
+            onChangeText={(text) => setProductData({ paymentAccountName: text })}
+            placeholder="Name on the payment account"
+          />
+          <FormField
+            label="Account number or payment handle"
+            value={productData.paymentAccount}
+            onChangeText={(text) => setProductData({ paymentAccount: text })}
+            placeholder="Bank account number or payment handle"
+            keyboardType="default"
+          />
+          <FormField
+            label="Bank or payment provider"
+            value={productData.paymentBank}
+            onChangeText={(text) => setProductData({ paymentBank: text })}
+            placeholder="Bank, wallet, or payment provider"
+          />
           <FormField
             label="Product Name"
             value={productData.name}
@@ -606,6 +640,10 @@ const styles = StyleSheet.create({
   },
   proBadgeText: { color: COLORS.purple, fontSize: 11, fontWeight: '700' },
   formSection: { marginTop: 20, marginBottom: 8 },
+  scanReview: { backgroundColor: 'rgba(16,185,129,0.08)', borderWidth: 1, borderColor: 'rgba(16,185,129,0.35)', borderRadius: 12, padding: 14, marginBottom: 18 },
+  scanReviewTitle: { color: COLORS.green, fontSize: 14, fontWeight: '800', marginBottom: 4 },
+  scanReviewText: { color: COLORS.muted, fontSize: 12, lineHeight: 18 },
+  scanReviewMeta: { color: COLORS.text, fontSize: 12, marginTop: 8 },
   fieldLabel: { color: '#CBD5E1', fontWeight: '600', fontSize: 13, marginBottom: 8 },
   fieldHint: { color: COLORS.muted, fontSize: 12, lineHeight: 18, marginBottom: 10 },
   accountChoices: { marginBottom: 4 },

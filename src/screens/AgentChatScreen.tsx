@@ -589,6 +589,9 @@ const WeekDayCard = ({ day }: { day: any }) => {
         <View style={{ backgroundColor: '#1E293B', borderRadius: 6, paddingHorizontal: 8, paddingVertical: 2, marginRight: 8 }}>
           <Text style={{ color: '#94A3B8', fontSize: 10, fontWeight: '600', textTransform: 'uppercase' }}>{day.platform}</Text>
         </View>
+        <Text style={{ color: '#64748B', fontSize: 10 }}>
+          {String(day.hour ?? 9).padStart(2, '0')}:{String(day.minute ?? 0).padStart(2, '0')}
+        </Text>
         <View style={{ backgroundColor: '#1E293B', borderRadius: 6, paddingHorizontal: 8, paddingVertical: 2 }}>
           <Text style={{ color: '#64748B', fontSize: 10, textTransform: 'uppercase' }}>{day.task_type}</Text>
         </View>
@@ -599,6 +602,9 @@ const WeekDayCard = ({ day }: { day: any }) => {
       {day.body ? (
         <Text style={{ color: '#94A3B8', fontSize: 12, lineHeight: 18, marginBottom: 6 }}>{day.body}</Text>
       ) : null}
+      <Text style={{ color: '#64748B', fontSize: 10, marginBottom: 4 }}>
+        Planned format: {String(day.media_type || (isVideo ? 'video' : 'image')).toUpperCase()}
+      </Text>
       {day.hashtags?.length > 0 ? (
         <Text style={{ color: '#6366F1', fontSize: 11, marginBottom: 4 }}>{day.hashtags.map((h: string) => `#${h}`).join(' ')}</Text>
       ) : null}
