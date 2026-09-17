@@ -551,10 +551,10 @@ export class SchedulerService {
         });
 
         // ─── STRATEGY CONVERSATION MONITORING ───────────────────────────────────
-        cron.schedule('*/20 * * * *', async () => {
+        cron.schedule(SCHED_AGENT_EXEC_CRON, async () => {
             console.log('[Scheduler] Running strategy conversation monitoring...');
             try {
-                await this.runConversationMonitoring();
+                await this.withCycleLock('strategy_conversation_monitoring', () => this.runConversationMonitoring(), 4 * 60 * 1000);
             } catch (e: any) {
                 console.error('[Scheduler] Strategy conversation monitoring error:', e.message);
             }

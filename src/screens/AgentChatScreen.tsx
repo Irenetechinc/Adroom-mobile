@@ -630,9 +630,7 @@ const StrategyPreviewCard = ({ strategy, onLaunch, onBack, onStepBack, disabled 
       </View>
     </View>
     <View style={styles.stratRationale}>
-      <Text style={{ color: '#94A3B8', fontSize: 13, lineHeight: 20 }}>
-        {strategy.rationale || 'Optimized strategy based on real-time intelligence.'}
-      </Text>
+      {strategy.rationale ? <Text style={{ color: '#94A3B8', fontSize: 13, lineHeight: 20 }}>{strategy.rationale}</Text> : null}
     </View>
     <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 14 }}>
       {strategy.platforms?.map((p: string) => (

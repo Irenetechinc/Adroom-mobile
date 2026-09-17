@@ -376,7 +376,8 @@ Return ONLY the image prompt text, nothing else.
 
       // 5. Generate image with Imagen 3
       const imageResult = await this.ai.generateImage(
-        `${imagePrompt}, ultra-high-quality, photorealistic, 8K, professional commercial photography, sharp focus`
+        `${imagePrompt}, ultra-high-quality, photorealistic, 8K, professional commercial photography, sharp focus`,
+        brief.userId,
       );
 
       if (!imageResult?.base64) {

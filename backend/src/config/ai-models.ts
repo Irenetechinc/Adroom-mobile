@@ -25,7 +25,7 @@ const OPENAI_STRATEGY_MODEL = process.env.OPENAI_TEXT_MODEL || 'gpt-4o';
 const FREE_TEXT_MODEL = 'gpt-4.1-free';
 const FREE_SMALL_MODEL = 'gpt-4.1-nano-free';
 const FREE_VISION_MODEL = 'gemini-3.1-flash-image-preview-free';
-const FREE_IMAGE_MODEL = 'gpt-image-2-free';
+const FREE_IMAGE_MODEL = FREE_VISION_MODEL;
 
 export type AIRequestContext = { userId: string; plan: string; status: string };
 const aiRequestContext = new AsyncLocalStorage<AIRequestContext>();
@@ -62,9 +62,23 @@ async function getPersistedPolicyMode(): Promise<AIPolicyMode> {
   return persistedModeCache.mode;
 }
 
-async function useFreeModels() {
+async function useFreeModels(userId?: string) {
   const mode = await getPersistedPolicyMode();
-  const context = getAIRequestContext();
+  let context = getAIRequestContext();
+  if (!context && userId) {
+    try {
+      const { data } = await getServiceSupabaseClient()
+        .from('subscriptions')
+        .select('plan, status')
+        .eq('user_id', userId)
+        .order('updated_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (data) context = { userId, plan: String(data.plan || 'none'), status: String(data.status || 'none') };
+    } catch (error: any) {
+      aiLog('POLICY', `Could not resolve subscription for background image request: ${error.message}`);
+    }
+  }
   if (mode === 'free') return true;
   if (mode === 'paid') return false;
   return !context || context.status === 'trialing' || context.plan === 'none' || context.plan === 'trial';
@@ -479,8 +493,9 @@ export class AIEngine {
     }
   }
 
-  async generateImage(imagePrompt: string): Promise<{ base64: string; mimeType: string } | null> {
-    if (await useFreeModels()) {
+  async generateImage(imagePrompt: string, userId?: string): Promise<{ base64: string; mimeType: string } | null> {
+    if (await useFreeModels(userId)) {
+      aiLog('AIHUBMIX-IMAGE', `generateImage FREE START — model: ${FREE_IMAGE_MODEL}`);
       try {
         await reserveFreeQuota(0);
         const mediaUrls = [

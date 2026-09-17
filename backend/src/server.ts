@@ -1871,7 +1871,7 @@ app.post('/api/ai/activate-agents', async (req, res) => {
         }
 
         const normalizedSelectedAccounts = Array.isArray(selectedAccounts)
-          ? selectedAccounts.map((account: unknown) => String(account).trim().toLowerCase()).filter(Boolean)
+          ? [...new Set(selectedAccounts.map((account: unknown) => String(account).trim().toLowerCase()).filter(Boolean))]
           : [];
         const requestedPlatforms: string[] = (normalizedSelectedAccounts.length > 0
           ? normalizedSelectedAccounts
@@ -1900,14 +1900,26 @@ app.post('/api/ai/activate-agents', async (req, res) => {
             });
         }
 
-        const activeStrategy = strategy;
         const safeStrategyAccounts = Array.isArray(strategy?.selected_accounts) ? strategy.selected_accounts : [];
-        const activePlatforms = (requestedPlatforms.length > 0
-          ? requestedPlatforms
-          : safeStrategyAccounts.length > 0
-            ? safeStrategyAccounts
-            : strategy.platforms || ['facebook']
-        ).slice(0, planLimits.platforms);
+        const persistedPlatforms = safeStrategyAccounts.length > 0 ? safeStrategyAccounts : (Array.isArray(strategy.platforms) ? strategy.platforms : []);
+        const activePlatforms = (persistedPlatforms.length > 0 ? persistedPlatforms : requestedPlatforms)
+          .map((platform: unknown) => String(platform).trim().toLowerCase())
+          .filter(Boolean)
+          .slice(0, planLimits.platforms);
+        if (activePlatforms.length === 0) {
+            return res.status(409).json({ error: 'SOCIAL_ACCOUNTS_REQUIRED', message: 'This strategy has no selected social accounts. Generate it again and select a connected account.' });
+        }
+        const { data: activeConfigs } = await supabase
+          .from('ad_configs')
+          .select('platform, access_token')
+          .eq('user_id', user.id)
+          .in('platform', activePlatforms);
+        const connectedPlatforms = new Set((activeConfigs || []).filter((config: any) => config.access_token).map((config: any) => String(config.platform).toLowerCase()));
+        const missingPlatforms = activePlatforms.filter((platform: string) => !connectedPlatforms.has(platform));
+        if (missingPlatforms.length > 0) {
+            return res.status(409).json({ error: 'SOCIAL_ACCOUNTS_REQUIRED', missing: missingPlatforms, message: `Reconnect these selected accounts before launching: ${missingPlatforms.join(', ')}.` });
+        }
+        const activeStrategy = { ...strategy, selected_accounts: activePlatforms, platforms: activePlatforms };
 
         if (activePlatforms.length > 0) {
             await supabase.from('strategies').update({

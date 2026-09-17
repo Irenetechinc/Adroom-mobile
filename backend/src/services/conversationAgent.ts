@@ -47,6 +47,7 @@ export class ConversationAgent {
   private readonly graph = new StateGraph(State)
     .addNode('discover', async (state: WorkflowState) => {
       const strategy = state.strategy;
+      console.log(`[ConversationAgent] discover start strategy=${strategy.id} goal=${strategy.goal}`);
       const goal = normalizeGoal(strategy.goal);
       const product = strategy.product_memory || {};
       const productName = product.name || strategy.title || 'product';
@@ -72,6 +73,7 @@ export class ConversationAgent {
       );
 
       const results = discovered.flat();
+      console.log(`[ConversationAgent] discover complete strategy=${strategy.id} results=${results.length}`);
       const signals = results.filter((item) => item.text.trim()).map((item) => {
         const intentScore = scoreSignal(item.text, goal, terms);
         return { ...item, strategyId: strategy.id, userId: strategy.user_id, goal, intentScore, status: intentScore >= 0.65 ? 'high_potential' : 'identified' } as Signal;
@@ -80,6 +82,7 @@ export class ConversationAgent {
       return { signals, identified: signals.length, highPotential: signals.filter((signal) => signal.status === 'high_potential').length };
     })
     .addNode('persist', async (state: WorkflowState) => {
+      console.log(`[ConversationAgent] persist strategy=${state.strategy.id} signals=${state.signals.length}`);
       if (state.signals.length) {
         await this.supabase.from('strategy_conversation_signals').upsert(state.signals.map((signal) => ({
           strategy_id: signal.strategyId,
@@ -115,6 +118,7 @@ export class ConversationAgent {
           content: { signal_id: signal.externalId, author_name: signal.authorName, text: signal.text, url: signal.url, goal: signal.goal },
         });
       }
+      console.log(`[ConversationAgent] route strategy=${state.strategy.id} routed=${topSignals.length}`);
       return { routed: topSignals.length, engaged: topSignals.length };
     })
     .addNode('notify', async (state: WorkflowState) => {
@@ -132,6 +136,7 @@ export class ConversationAgent {
         });
       }
       await this.supabase.from('strategy_conversation_runs').insert({ strategy_id: state.strategy.id, user_id: state.strategy.user_id, identified: state.identified, high_potential: state.highPotential, engaged, routed: state.routed, goal: state.strategy.goal });
+      console.log(`[ConversationAgent] notify strategy=${state.strategy.id} changed=${changed} identified=${state.identified} highPotential=${state.highPotential} engaged=${engaged}`);
       return {};
     })
     .addEdge('__start__', 'discover')

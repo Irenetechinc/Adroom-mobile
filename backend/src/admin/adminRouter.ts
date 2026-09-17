@@ -1004,7 +1004,7 @@ router.get('/api/models/status', auth, async (_req, res) => {
         freeText: 'gpt-4.1-free',
         freeSmallTask: 'gpt-4.1-nano-free',
         freeVision: 'gemini-3.1-flash-image-preview-free',
-        freeImage: 'gpt-image-2-free',
+        freeImage: 'gemini-3.1-flash-image-preview-free',
       },
       description: {
         auto:    'CMA decides per-user based on subscription tier and burn rate',

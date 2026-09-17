@@ -310,7 +310,7 @@ function DemographicPanel({ strategyId }: { strategyId: string }) {
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [activeSegIdx, setActiveSegIdx] = useState(0);
-  const [pollCount, setPollCount] = useState(0);
+  const pollCountRef = useRef(0);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const clearPolling = useCallback(() => {
@@ -335,8 +335,8 @@ function DemographicPanel({ strategyId }: { strategyId: string }) {
 
       if (res.status === 202) {
         setGenerating(true);
-        const nextPollCount = (isPolling ? pollCount : pollCount + 1);
-        setPollCount(nextPollCount);
+        const nextPollCount = pollCountRef.current + 1;
+        pollCountRef.current = nextPollCount;
         if (nextPollCount >= 8) {
           clearPolling();
           setGenerating(false);
@@ -354,7 +354,7 @@ function DemographicPanel({ strategyId }: { strategyId: string }) {
         setIntel(data.intel);
         setGenerating(false);
         setError(null);
-        setPollCount(0);
+        pollCountRef.current = 0;
         clearPolling();
         return;
       }
@@ -367,7 +367,7 @@ function DemographicPanel({ strategyId }: { strategyId: string }) {
     } finally {
       if (!isPolling) setLoading(false);
     }
-  }, [clearPolling, pollCount, strategyId]);
+  }, [clearPolling, strategyId]);
 
   useEffect(() => {
     loadIntel();
@@ -397,7 +397,7 @@ function DemographicPanel({ strategyId }: { strategyId: string }) {
       <View style={styles.intelError}>
         <AlertCircle size={16} color="#F87171" />
         <Text style={styles.intelErrorText}>{error}</Text>
-        <TouchableOpacity onPress={() => { setError(null); setPollCount(0); loadIntel(); }} style={styles.retryBtn}>
+        <TouchableOpacity onPress={() => { setError(null); pollCountRef.current = 0; loadIntel(); }} style={styles.retryBtn}>
           <RefreshCw size={12} color="#00F0FF" />
           <Text style={styles.retryText}>Retry</Text>
         </TouchableOpacity>
@@ -588,6 +588,11 @@ function ConversionTrackerPanel({
   const [totalLeads, setTotalLeads] = useState(0);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const countChangeRef = useRef(onCountChange);
+
+  useEffect(() => {
+    countChangeRef.current = onCountChange;
+  }, [onCountChange]);
 
   const processLeads = useCallback((rows: { platform: string; stage: string }[]) => {
     const result: Record<string, FunnelCounts> = {};
@@ -600,11 +605,11 @@ function ConversionTrackerPanel({
     }
     setByPlatform(result);
     setTotalLeads(total);
-    onCountChange?.(total);
-  }, [onCountChange]);
+    countChangeRef.current?.(total);
+  }, []);
 
-  const loadLeads = useCallback(async () => {
-    setLoading(true);
+  const loadLeads = useCallback(async (showLoading = false) => {
+    if (showLoading) setLoading(true);
     setError(null);
     try {
       const { data: { user } } = await supabase.auth.getUser();
@@ -615,16 +620,35 @@ function ConversionTrackerPanel({
         .eq('strategy_id', strategyId)
         .eq('user_id', user.id);
       if (qErr) throw qErr;
-      processLeads(data ?? []);
+      const leadRows = data ?? [];
+      if (leadRows.length > 0) {
+        processLeads(leadRows);
+      } else if (BACKEND_URL) {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session?.access_token) {
+          const response = await globalThis.fetch(`${BACKEND_URL}/api/strategy/${strategyId}/conversation`, {
+            headers: { Authorization: `Bearer ${session.access_token}` },
+          });
+          const conversation = await response.json();
+          processLeads((conversation.signals ?? []).map((signal: any) => ({
+            platform: signal.platform,
+            stage: signal.status === 'engaged' ? 'engaged' : signal.status === 'high_potential' ? 'warm' : 'identified',
+          })));
+        } else {
+          processLeads([]);
+        }
+      } else {
+        processLeads([]);
+      }
     } catch {
       setError('Could not load lead data. Please try again.');
     } finally {
-      setLoading(false);
+      if (showLoading) setLoading(false);
     }
   }, [strategyId, processLeads]);
 
   useEffect(() => {
-    loadLeads();
+    loadLeads(true);
     // Subscribe to real-time changes on agent_leads for this strategy so the
     // counts update the moment the SALESMAN / outreach agent moves a lead
     // forward — no manual refresh needed.
@@ -633,7 +657,7 @@ function ConversionTrackerPanel({
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'agent_leads', filter: `strategy_id=eq.${strategyId}` },
-        () => { loadLeads(); },
+        () => { loadLeads(false); },
       )
       .subscribe();
     return () => { supabase.removeChannel(channel); };
@@ -655,7 +679,7 @@ function ConversionTrackerPanel({
       <View style={styles.intelError}>
         <AlertCircle size={16} color="#F87171" />
         <Text style={styles.intelErrorText}>{error}</Text>
-        <TouchableOpacity onPress={loadLeads} style={styles.retryBtn}>
+        <TouchableOpacity onPress={() => loadLeads(true)} style={styles.retryBtn}>
           <RefreshCw size={12} color="#00F0FF" />
           <Text style={styles.retryText}>Retry</Text>
         </TouchableOpacity>

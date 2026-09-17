@@ -186,7 +186,7 @@ export class AgentOrchestrator {
 
         const { data: dueTasks, error } = await this.supabase
             .from('agent_tasks')
-            .select('id, agent_type, strategy_id, user_id, task_type, platform')
+            .select('id, agent_type, strategy_id, user_id, task_type, platform, strategies(selected_accounts, platforms)')
             .eq('status', 'pending')
             .lte('scheduled_at', now)
             .neq('task_type', 'LEAD_SCAN')       // Lead scans handled separately
@@ -212,6 +212,33 @@ export class AgentOrchestrator {
         for (const task of dueTasks) {
             if (!(await this.claimTask(task.id))) continue;
             try {
+                const strategyAccounts = Array.isArray((task as any).strategies?.selected_accounts)
+                    ? (task as any).strategies.selected_accounts
+                    : (Array.isArray((task as any).strategies?.platforms) ? (task as any).strategies.platforms : []);
+                const allowedPlatforms = new Set(strategyAccounts.map((platform: unknown) => String(platform).trim().toLowerCase()).filter(Boolean));
+                const taskPlatform = String(task.platform || '').trim().toLowerCase();
+                if (!allowedPlatforms.has(taskPlatform)) {
+                    console.warn(`[Orchestrator] Skipping task ${task.id}: ${taskPlatform} is not selected for strategy ${task.strategy_id}`);
+                    await this.supabase.from('agent_tasks').update({ status: 'skipped', error_message: 'Platform is not selected for this strategy.' }).eq('id', task.id);
+                    continue;
+                }
+                const { data: connected } = await this.supabase
+                    .from('ad_configs')
+                    .select('platform, access_token')
+                    .eq('user_id', task.user_id)
+                    .eq('platform', taskPlatform)
+                    .maybeSingle();
+                if (!connected?.access_token) {
+                    console.warn(`[Orchestrator] Skipping task ${task.id}: ${taskPlatform} is not currently connected for user ${task.user_id}`);
+                    await this.supabase.from('agent_tasks').update({ status: 'skipped', error_message: `${taskPlatform} is not connected.` }).eq('id', task.id);
+                    try {
+                        const { pushService } = await import('../services/pushService');
+                        await pushService.notifyTokenRefreshFailed(task.user_id, taskPlatform);
+                    } catch (notificationError: any) {
+                        console.error(`[Orchestrator] Connection notification failed for task ${task.id}:`, notificationError.message);
+                    }
+                    continue;
+                }
                 // CMA pre-check for this user's autonomous task
                 const cma = await creditManagementAgent.evaluate(task.user_id, 'agent_task');
                 if (cma.decision === 'deny_cap') {

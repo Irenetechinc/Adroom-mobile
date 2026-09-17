@@ -1,5 +1,6 @@
 import { execFile } from 'child_process';
 import { promisify } from 'util';
+import { agentReachWebRouter } from './agentReachWebRouter';
 
 const execFileAsync = promisify(execFile);
 
@@ -62,7 +63,7 @@ function normalizePlatform(platform: string): string {
 
 /** Adapter that follows the Agent-Reach routing model: channel-first, browser-session, with graceful fallback. */
 export class AgentReachAdapter {
-  private readonly command = process.env.AGENT_REACH_SEARCH_COMMAND || 'opencli';
+  private readonly command = process.env.AGENT_REACH_SEARCH_COMMAND || process.env.OPENCLI_COMMAND || 'opencli';
   private readonly timeoutMs = Number(process.env.AGENT_REACH_TIMEOUT_MS || 20000);
 
   private buildArgs(platform: string, query: string): string[] {
@@ -106,6 +107,18 @@ export class AgentReachAdapter {
 
   async search(platform: string, query: string): Promise<ReachResult[]> {
     const normalized = normalizePlatform(platform);
+    if (normalized === 'web') {
+      const webResults = await agentReachWebRouter.search(query, 8);
+      console.log(`[AgentReachAdapter] web search completed: ${webResults.length} result(s)`);
+      return webResults.map((item, index) => this.mapItem('web', {
+        id: item.url || `web:${index}`,
+        title: item.title,
+        snippet: item.snippet,
+        url: item.url,
+        source: item.source,
+        captured_at: item.capturedAt,
+      }, index, query));
+    }
     const args = this.buildArgs(normalized, query);
 
     try {
@@ -118,12 +131,13 @@ export class AgentReachAdapter {
 
       const stdout = String(result.stdout || '');
       const output = parseOutput(stdout);
+      console.log(`[AgentReachAdapter] ${normalized} search completed: ${output.length} raw result(s)`);
 
       return output
         .filter((item) => item && (item.text || item.content || item.title || item.snippet || item.body || item.url))
         .map((item: any, index) => this.mapItem(normalized, item, index, query));
     } catch (error: any) {
-      console.warn(`[AgentReachAdapter] ${normalized} search unavailable: ${error.message}`);
+      console.error(`[AgentReachAdapter] ${normalized} search failed: ${error.message}`);
       return [];
     }
   }

@@ -54,7 +54,8 @@ export class CreativeService {
                 `${directorPrefix}Professional studio photography of ${productDetails.name}, clean background, commercial lighting${moodHint}${colorHint}`;
 
             const imageResult = await this.ai.generateImage(
-                `Professional commercial advertisement: ${imagePrompt}. Photorealistic, high-fidelity, 8K.`
+                `Professional commercial advertisement: ${imagePrompt}. Photorealistic, high-fidelity, 8K.`,
+                productDetails.user_id || productDetails.userId,
             );
 
             if (!imageResult) {
