@@ -18,6 +18,7 @@ import { telephonyService } from './telephonyService';
 import { DeepProductBrandAnalysisAgent } from './deepProductBrandAnalysisAgent';
 import { dataCollectionAgent } from './dataCollectionAgent';
 import { conversationAgent } from './conversationAgent';
+import { strategyCoordinator } from './strategyCoordinator';
 import { randomUUID } from 'crypto';
 
 async function hasActiveStrategies(): Promise<boolean> {
@@ -57,6 +58,7 @@ const SCHED_PRODUCT_MANAGER_CRON  = process.env.SCHED_PRODUCT_MANAGER_CRON  || '
 const SCHED_DEEP_ANALYSIS_CRON    = process.env.SCHED_DEEP_ANALYSIS_CRON    || '0 */6 * * *';   // Deep product + brand analysis every 6 hours
 const SCHED_DATA_COLLECTION_CRON   = process.env.SCHED_DATA_COLLECTION_CRON   || '*/20 * * * *'; // Shared live evidence collection every 20 minutes while active strategies exist
 const SCHED_CALLS_CRON             = process.env.SCHED_CALLS_CRON             || '* * * * *';   // Provider call queue every minute
+const SCHED_COORDINATOR_CRON       = process.env.SCHED_COORDINATOR_CRON       || '*/10 * * * *'; // Cross-agent coordination every 10 minutes
 
 export class SchedulerService {
     private ipe: PlatformIntelligenceEngine;
@@ -356,6 +358,19 @@ export class SchedulerService {
                 }
             } catch (e: any) {
                 console.error('[Scheduler] Agent execution error:', e.message);
+            }
+        });
+
+        // Coordinate existing agents and engines from live strategy evidence.
+        // This is deliberately separate from task execution: the coordinator
+        // proposes bounded collaboration while the orchestrator owns claims,
+        // credits, critic gates, and publishing.
+        cron.schedule(SCHED_COORDINATOR_CRON, async () => {
+            console.log('[Scheduler] Running active-strategy coordination...');
+            try {
+                await this.withCycleLock('strategy_coordination', () => strategyCoordinator.runCycle(), 8 * 60 * 1000);
+            } catch (e: any) {
+                console.error('[Scheduler] Strategy coordination error:', e.message);
             }
         });
 

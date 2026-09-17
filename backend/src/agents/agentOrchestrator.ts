@@ -49,6 +49,10 @@ export class AgentOrchestrator {
         }
     }
 
+    getAgentForCoordination(agentType: string) {
+        return this.getAgent(resolveGoal(agentType));
+    }
+
     private async claimTask(taskId: string): Promise<boolean> {
         const claimToken = randomUUID();
         const { data, error } = await this.supabase
