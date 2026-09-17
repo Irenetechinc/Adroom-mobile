@@ -36,12 +36,17 @@ create policy "Users can insert their own system logs"
   on public.system_logs for insert
   with check (auth.uid() = user_id);
 
+update public.intelligence_sources
+set url = 'https://developer.x.com/en/docs/x-api', name = 'X Developer Docs', is_active = true
+where platform = 'x' and url in ('https://developer.x.com/en/blog', 'https://developer.x.com/en/docs/x-api');
+
 insert into public.intelligence_sources (platform, name, url, is_active)
 values
   ('facebook', 'Meta Newsroom', 'https://about.fb.com/news/', true),
   ('instagram', 'Instagram Blog', 'https://about.instagram.com/blog', true),
   ('linkedin', 'LinkedIn News', 'https://news.linkedin.com/', true),
-  ('x', 'X Developer Blog', 'https://developer.x.com/en/blog', true)
+  ('x', 'X Developer Docs', 'https://developer.x.com/en/docs/x-api', true),
+  ('x', 'X API Docs', 'https://docs.x.com/x-api', true)
 on conflict (url) do nothing;
 
 notify pgrst, 'reload schema';

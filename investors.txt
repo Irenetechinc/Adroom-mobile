@@ -1,0 +1,18 @@
+────────────────────────────────────────────────────────────────────────
+[2026-04-23T01:24:10.216Z]  Early Investor Window — Reservation
+  Name        : Test User
+  Amount (₦)  : 5,000,000
+  Email       : test@example.com
+  Phone/WA    : +2348100000000
+  Notes       : smoke test
+  IP          : 127.0.0.1
+  User-Agent  : curl/8.14.1
+────────────────────────────────────────────────────────────────────────
+[2026-04-23T02:07:51.191Z]  Early Investor Window — Reservation
+  Name        : Test Person
+  Amount (₦)  : 2000000
+  Email       : test@example.com
+  Phone/WA    : +2348012345678
+  Notes       : Local PHP-style test
+  IP          : 127.0.0.1
+  User-Agent  : curl/8.14.1

@@ -21,7 +21,7 @@ AdRoom Mobile consists of the following main screens:
 2. **Sign Up Screen**: New user registration with email verification.
 3. **Facebook Configuration**: Seamless Facebook account connection and page selection where campaign strategy will be executed for new users.
 4. **Analytics Dashboard**: Real-time campaign metrics, charts, and performance indicators.
-5. **Campaign Creation**: AdRoom AI gets product information from the user and creates a campaign strategy. This strategy comes in two types: "Free" (organic) and "Paid" (includes paid ads). Users approve the preferred campaign type before AdRoom begins to autonomously execute the strategy.
+5. **Campaign Creation**: Adirum AI gets product information from the user and creates a campaign strategy. This strategy comes in two types: "Free" (organic) and "Paid" (includes paid ads). Users approve the preferred campaign type before AdRoom begins to autonomously execute the strategy.
 6. **Campaign Management**: List of active campaigns with status and performance data.
 7. **Settings**: User profile, notification preferences, and app configuration.
 
@@ -39,7 +39,7 @@ AdRoom Mobile consists of the following main screens:
 | Analytics Dashboard | Performance Charts | Show real-time campaign metrics including impressions, clicks, conversions, and ROI. |
 | Analytics Dashboard | Quick Actions | Provide shortcuts to create new campaign or view recent campaigns. |
 | Campaign Creation | AdRoom Agent Chat | Interactive AI chat interface that greets user and asks "What product would you like to market today?". This is where AdRoom will collect all the user product details it intends to market. |
-| Campaign Creation | Campaign Strategy | AdRoom AI creates a strategy based on product info. Two versions: Free (organic) and Paid. User approves one before execution. |
+| Campaign Creation | Campaign Strategy | Adirum AI creates a strategy based on product info. Two versions: Free (organic) and Paid. User approves one before execution. |
 | Campaign Creation | AI Analysis | Analyze uploaded image and title to identify missing information dynamically. |
 | Campaign Creation | Dynamic Requirements | Ask specific questions based on AI analysis (e.g., "What sizes do you have for these shoes?" OR "What is the mileage on this car?"). |
 | Campaign Management | Active Campaigns List | Display all active campaigns with status indicators and key metrics. |

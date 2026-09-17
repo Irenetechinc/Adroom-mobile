@@ -25,7 +25,7 @@ export class DecisionEngine {
 
     // Construct the prompt for the AI Brain
     const prompt = `
-      You are the AdRoom AI Core Brain. Your task is to generate a comprehensive marketing strategy based on the following context.
+      You are the Adirum AI Core Brain. Your task is to generate a comprehensive marketing strategy based on the following context.
       
       USER CONTEXT:
       - Profile: ${JSON.stringify(memory.user)}

@@ -8,7 +8,7 @@ const BACKEND_URL = process.env.EXPO_PUBLIC_API_URL;
 export const CreativeService = {
   /**
    * Generates a graphic design or reimagined product image using Gemini 3 Pro (Nano Banana).
-   * Proxied through Supabase Edge Function to protect API keys.
+  * Proxied through the Railway backend to protect API keys.
    */
   async generateCreative(baseImageUri: string, prompt: string, style: string): Promise<string> {
     RemoteLogger.log('CREATIVE', `Generating image with prompt: "${prompt}" in style: "${style}"`);

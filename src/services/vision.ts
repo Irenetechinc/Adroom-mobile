@@ -23,7 +23,7 @@ export interface VisualAttributes {
 
 export const VisionService = {
     /**
-     * Analyzes an image using the AdRoom AI Brain (Gemini 2.5 Pro via railway).
+     * Analyzes an image using the Adirum AI Brain (Gemini 2.5 Pro via railway).
      */
     async analyzeProductImage(base64Image: string): Promise<VisualAttributes> {
         RemoteLogger.log('VISION', `Starting analysis for image`);
