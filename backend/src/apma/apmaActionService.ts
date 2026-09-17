@@ -87,6 +87,19 @@ export class APMAActionService {
       if (withVideo && i === 0) {
         const vidResult = await this._generatePostVideo(client, campaign, action, rawContent, imageBase64, imageMime);
         if (vidResult?.url) {
+          const { criticAgentService } = await import('../services/criticAgentService');
+          const review = await criticAgentService.validateBeforePublish({
+            output: humanized.text,
+            agentType: 'APMA_POLITICAL',
+            taskType: 'video_post',
+            platform: action.platform,
+            operation: 'apma_video_publish',
+          });
+          if (review.verdict !== 'approved') {
+            fail++;
+            console.warn(`[APMA] Critic blocked video publication: ${review.issues.join('; ') || 'quality threshold not met'}`);
+            continue;
+          }
           const vRes = action.platform === 'twitter'
             ? await this._twitterVideoPost(humanized.text, vidResult.url)
             : await this._telegramVideoPost(humanized.text, campaign, vidResult.url);
@@ -113,17 +126,6 @@ export class APMAActionService {
 
       const result = await this._publishContent(client, campaign, action, humanized, strategyId, imageBase64, imageMime);
       if (result.success) success++; else fail++;
-
-      // Critic: fire-and-forget quality evaluation on published APMA content
-      import('../services/criticAgentService').then(({ criticAgentService }) => {
-        criticAgentService.analyze({
-          output: humanized.text,
-          agentType: 'APMA_POLITICAL',
-          taskType: action.type || 'social_post',
-          platform: action.platform,
-          operation: 'apma_content_publish',
-        });
-      }).catch(() => {});
 
       // Realistic inter-post delay (reduced in execution to max 5s so cycles don't time out)
       if (i < action.count - 1) await this._sleep(Math.floor(Math.random() * 5000 + 1000));
@@ -207,6 +209,17 @@ Write ONLY the ${action.type} text. No quotes. No label.`;
     let publishSuccess = false;
 
     try {
+      const { criticAgentService } = await import('../services/criticAgentService');
+      const review = await criticAgentService.validateBeforePublish({
+        output: humanized.text,
+        agentType: 'APMA_POLITICAL',
+        taskType: action.type || 'social_post',
+        platform: action.platform,
+        operation: 'apma_content_publish',
+      });
+      if (review.verdict !== 'approved') {
+        throw new Error(`Critic blocked APMA publication: ${review.issues.join('; ') || 'quality threshold not met'}`);
+      }
       const r = await this._callPlatformApi(action.platform, action.type, humanized.text, humanized.persona, campaign, imageBase64, imageMime);
       externalId = r.id ?? null;
       url        = r.url ?? null;
@@ -612,6 +625,16 @@ Only valid JSON.`;
       const humanized = await apmaHumanizerService.humanizeContent(raw, platform, client.id, 'quick', client.country);
       if (!humanized) continue;
 
+      const { criticAgentService } = await import('../services/criticAgentService');
+      const review = await criticAgentService.validateBeforePublish({
+        output: humanized.text,
+        agentType: 'APMA_POLITICAL',
+        taskType: 'group_post',
+        platform,
+        operation: 'apma_group_publish',
+      });
+      if (review.verdict !== 'approved') continue;
+
       let result;
       if (platform === 'telegram') {
         result = await this._telegramPost(humanized.text, campaign);
@@ -796,6 +819,15 @@ Style: Clean political motion graphics, bold colours, professional broadcast qua
   ): Promise<void> {
     const sb = getServiceSupabaseClient();
     const shareText = `${title} — ${url}`;
+
+    const { criticAgentService } = await import('../services/criticAgentService');
+    const review = await criticAgentService.validateBeforePublish({
+      output: shareText,
+      agentType: 'APMA_POLITICAL',
+      taskType: 'blog_share',
+      operation: 'apma_blog_share',
+    });
+    if (review.verdict !== 'approved') return;
 
     const promises: Array<Promise<any>> = [];
 

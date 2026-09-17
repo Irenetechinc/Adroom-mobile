@@ -266,14 +266,14 @@ Return valid JSON only with this schema:
 
             let result;
             if (task.platform === 'facebook' && tokens.facebook) {
-                result = await this.publishToFacebook(tokens.facebook, body, postImageUrl);
+                result = await this.publishToplatform(task.platform, tokens, body, postImageUrl);
             } else if (task.platform === 'instagram' && tokens.instagram) {
                 if (!postImageUrl) throw new Error('Instagram requires an image — GraphicsDesignerAgent must provide one');
-                result = await this.publishToInstagram(tokens.instagram, body, postImageUrl);
+                result = await this.publishToplatform(task.platform, tokens, body, postImageUrl);
             } else if (task.platform === 'twitter' && tokens.twitter) {
-                result = await this.publishToTwitter(tokens.twitter, body.slice(0, 280));
+                result = await this.publishToplatform(task.platform, tokens, body.slice(0, 280));
             } else if (task.platform === 'linkedin' && tokens.linkedin) {
-                result = await this.publishToLinkedIn(tokens.linkedin, body);
+                result = await this.publishToplatform(task.platform, tokens, body);
             } else if (task.platform === 'tiktok' && tokens.tiktok) {
                 let tiktokVideoUrl: string | undefined = task.content?.video_url;
 
@@ -349,7 +349,7 @@ Return valid JSON only with this schema:
                     this.log(`TikTok awareness ${taskId}: video ready (Director: ${direction.should_use_user_video ? 'user_video' : 'ai_generated'})`);
                 }
 
-                result = await this.publishToTikTok(tokens.tiktok, body, tiktokVideoUrl);
+                result = await this.publishToplatform(task.platform, tokens, body, tiktokVideoUrl);
             } else {
                 throw new Error(`No token for: ${task.platform}`);
             }
@@ -393,13 +393,13 @@ Return valid JSON only with this schema:
 
             try {
                 if (platform === 'facebook' && tokens.facebook) {
-                    await this.publishToFacebook(tokens.facebook, body);
+                    await this.publishToplatform(platform, tokens, body);
                 } else if (platform === 'instagram' && tokens.instagram) {
-                    await this.publishToInstagram(tokens.instagram, body);
+                    await this.publishToplatform(platform, tokens, body);
                 } else if (platform === 'twitter' && tokens.twitter) {
-                    await this.publishToTwitter(tokens.twitter, body.slice(0, 280));
+                    await this.publishToplatform(platform, tokens, body.slice(0, 280));
                 } else if (platform === 'linkedin' && tokens.linkedin) {
-                    await this.publishToLinkedIn(tokens.linkedin, body);
+                    await this.publishToplatform(platform, tokens, body);
                 } else if (platform === 'tiktok' && tokens.tiktok) {
                     // TikTok requires video — blitz text posts are skipped, log for awareness
                     this.log(`TikTok blitz skipped: no video asset available for blitz post`);

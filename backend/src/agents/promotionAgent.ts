@@ -267,14 +267,14 @@ Return valid JSON only with this schema:
 
             let result;
             if (task.platform === 'facebook' && tokens.facebook) {
-                result = await this.publishToFacebook(tokens.facebook, body, postImageUrl);
+                result = await this.publishToplatform(task.platform, tokens, body, postImageUrl);
             } else if (task.platform === 'instagram' && tokens.instagram) {
                 if (!postImageUrl) throw new Error('Instagram requires an image — GraphicsDesignerAgent must provide one');
-                result = await this.publishToInstagram(tokens.instagram, body, postImageUrl);
+                result = await this.publishToplatform(task.platform, tokens, body, postImageUrl);
             } else if (task.platform === 'twitter' && tokens.twitter) {
-                result = await this.publishToTwitter(tokens.twitter, body.slice(0, 280));
+                result = await this.publishToplatform(task.platform, tokens, body.slice(0, 280));
             } else if (task.platform === 'linkedin' && tokens.linkedin) {
-                result = await this.publishToLinkedIn(tokens.linkedin, body);
+                result = await this.publishToplatform(task.platform, tokens, body);
             } else {
                 throw new Error(`No token for platform: ${task.platform}`);
             }

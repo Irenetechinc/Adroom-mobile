@@ -92,6 +92,17 @@ Return JSON only with this shape:
       "action": "search or scrape the specific source group",
       "purpose": "what decision this supports"
     }
+  ],
+  "results": [
+    {
+      "title": "evidence title",
+      "source": "publisher or platform",
+      "snippet": "verbatim or closely bounded evidence",
+      "url": "public source URL",
+      "capturedAt": "ISO timestamp",
+      "trustScore": 0.0,
+      "kind": "search|social|news|review|reddit|youtube|linkedin|forum|market"
+    }
   ]
 }
 
@@ -168,8 +179,12 @@ export class DataCollectionAgent {
     const response = await this.ai.generateStrategyEconomy({}, prompt);
     const data = response.parsedJson || response.text || {};
 
-    const evidenceCandidates: CollectedEvidenceItem[] = Array.isArray(data?.results)
-      ? data.results.map((result: any) => ({
+    const rawResults = Array.isArray(data?.results)
+      ? data.results
+      : Array.isArray(data?.evidence)
+        ? data.evidence
+        : [];
+    const evidenceCandidates: CollectedEvidenceItem[] = rawResults.map((result: any) => ({
           title: String(result.title || 'Evidence item'),
           source: String(result.source || 'web'),
           snippet: String(result.snippet || result.summary || ''),
@@ -178,8 +193,7 @@ export class DataCollectionAgent {
           trustScore: Number(result.trustScore ?? 0.7),
           kind: result.kind || 'search',
           metadata: result.metadata || {},
-        }))
-      : [];
+        }));
 
     const evidence = rankAndVerifyCollectedData(evidenceCandidates, {
       maxAgeHours: request.timeWindowHours || 24,

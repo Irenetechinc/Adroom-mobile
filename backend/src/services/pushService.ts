@@ -241,6 +241,28 @@ export const pushService = {
     ]);
   },
 
+  async notifyConversationMilestone(
+    userId: string,
+    params: {
+      strategyId: string;
+      strategyTitle: string;
+      identified: number;
+      highPotential: number;
+      engaged: number;
+      goal: string;
+    },
+  ): Promise<void> {
+    const tokens = await getUserTokens(userId);
+    const title = 'Conversation Signals Update';
+    const summary = `${params.strategyTitle} found ${params.identified} relevant conversations and ${Math.max(params.highPotential, params.engaged)} high-potential opportunities to act on.`;
+    const data = { type: 'conversation_milestone', ...params };
+    await Promise.all([
+      sendExpoPush(tokens, { title, body: summary, data, channelId: 'alerts', sound: 'default' }),
+      insertNotification(userId, title, summary, data),
+    ]);
+    console.log(`[PushService] Conversation milestone for user ${userId}: ${params.identified} identified / ${Math.max(params.highPotential, params.engaged)} high-potential`);
+  },
+
   async notifySubscriptionCancelled(userId: string, accessUntil: string | null): Promise<void> {
     const tokens = await getUserTokens(userId);
     const dateText = accessUntil ? new Date(accessUntil).toLocaleDateString() : 'the end of your billing period';

@@ -7,7 +7,7 @@ import { GeoMonitoringEngine } from './geoMonitoring';
 import { PsychologistEngine } from './psychologistEngine';
 import { DecisionEngine } from './decisionEngine';
 import { ScraperService } from './scraperService';
-import { AgentOrchestrator } from '../agents/agentOrchestrator';
+import { AgentSupervisor } from './agentSupervisor';
 import { getServiceSupabaseClient } from '../config/supabase';
 import { creditManagementAgent } from './creditManagementAgent';
 import { DailySummaryService } from './dailySummaryService';
@@ -17,6 +17,8 @@ import { tokenRefreshService } from './tokenRefreshService';
 import { telephonyService } from './telephonyService';
 import { DeepProductBrandAnalysisAgent } from './deepProductBrandAnalysisAgent';
 import { dataCollectionAgent } from './dataCollectionAgent';
+import { conversationAgent } from './conversationAgent';
+import { randomUUID } from 'crypto';
 
 async function hasActiveStrategies(): Promise<boolean> {
     const supabase = getServiceSupabaseClient();
@@ -63,11 +65,12 @@ export class SchedulerService {
     private geo: GeoMonitoringEngine;
     private scraper: ScraperService;
     private decisionEngine: DecisionEngine;
-    private orchestrator: AgentOrchestrator;
+    private orchestrator: AgentSupervisor;
     private dailySummary: DailySummaryService;
     private radar: RadarAgent;
     private psychologist: PsychologistEngine;
     private deepProductBrandAnalysis: DeepProductBrandAnalysisAgent;
+    private readonly schedulerOwner = randomUUID();
 
     constructor() {
         this.ipe = new PlatformIntelligenceEngine();
@@ -77,10 +80,44 @@ export class SchedulerService {
         this.psychologist = new PsychologistEngine();
         this.scraper = new ScraperService();
         this.decisionEngine = new DecisionEngine();
-        this.orchestrator = new AgentOrchestrator();
+        this.orchestrator = new AgentSupervisor();
         this.dailySummary = new DailySummaryService();
         this.radar = new RadarAgent();
         this.deepProductBrandAnalysis = new DeepProductBrandAnalysisAgent();
+    }
+
+    private async withCycleLock<T>(name: string, work: () => Promise<T>, ttlMs = 10 * 60 * 1000): Promise<T | undefined> {
+        const supabase = getServiceSupabaseClient();
+        const now = new Date();
+        const expiresAt = new Date(now.getTime() + ttlMs).toISOString();
+        let claimed = false;
+        const inserted = await supabase.from('scheduler_locks').insert({
+            lock_name: name,
+            owner_id: this.schedulerOwner,
+            acquired_at: now.toISOString(),
+            expires_at: expiresAt,
+        }).select('lock_name').maybeSingle();
+        claimed = Boolean(inserted.data?.lock_name);
+
+        if (!claimed) {
+            const takeover = await supabase.from('scheduler_locks').update({
+                owner_id: this.schedulerOwner,
+                acquired_at: now.toISOString(),
+                expires_at: expiresAt,
+            }).eq('lock_name', name).lt('expires_at', now.toISOString()).select('lock_name').maybeSingle();
+            claimed = Boolean(takeover.data?.lock_name);
+        }
+
+        if (!claimed) {
+            console.log(`[Scheduler] Skipping overlapping cycle: ${name}`);
+            return undefined;
+        }
+
+        try {
+            return await work();
+        } finally {
+            await supabase.from('scheduler_locks').delete().eq('lock_name', name).eq('owner_id', this.schedulerOwner);
+        }
     }
 
     start() {
@@ -312,7 +349,8 @@ export class SchedulerService {
         // Execute due content tasks (posts, reels, stories, threads) — every 5 minutes
         cron.schedule(SCHED_AGENT_EXEC_CRON, async () => {
             try {
-                const result = await this.orchestrator.executeDueTasks();
+                const result = await this.withCycleLock('agent_execution', () => this.orchestrator.executeDueTasks());
+                if (!result) return;
                 if (result.executed > 0 || result.failed > 0) {
                     console.log(`[Scheduler] Agent execution cycle: ${result.executed} published, ${result.failed} failed`);
                 }
@@ -324,7 +362,7 @@ export class SchedulerService {
         // Execute special tasks (lead scans, DM follow-ups, performance checks) — every 10 minutes
         cron.schedule(SCHED_AGENT_SPECIAL_CRON, async () => {
             try {
-                await this.orchestrator.executeSpecialTasks();
+                await this.withCycleLock('agent_special_tasks', () => this.orchestrator.executeSpecialTasks());
             } catch (e: any) {
                 console.error('[Scheduler] Agent special tasks error:', e.message);
             }
@@ -334,7 +372,7 @@ export class SchedulerService {
         cron.schedule(SCHED_AGENT_MONITOR_CRON, async () => {
             console.log('[Scheduler] Running performance monitoring...');
             try {
-                await this.orchestrator.monitorPerformance();
+                await this.withCycleLock('agent_performance_monitor', () => this.orchestrator.monitorPerformance());
             } catch (e: any) {
                 console.error('[Scheduler] Performance monitoring error:', e.message);
             }
@@ -344,7 +382,7 @@ export class SchedulerService {
         cron.schedule(SCHED_AGENT_OPTIM_CRON, async () => {
             console.log('[Scheduler] Running agent self-optimization...');
             try {
-                await this.orchestrator.optimizeActiveStrategies();
+                await this.withCycleLock('agent_optimization', () => this.orchestrator.optimizeActiveStrategies(), 30 * 60 * 1000);
             } catch (e: any) {
                 console.error('[Scheduler] Optimization error:', e.message);
             }
@@ -510,6 +548,16 @@ export class SchedulerService {
         cron.schedule(SCHED_DATA_COLLECTION_CRON, async () => {
             console.log('[Scheduler] Running shared live data collection cycle...');
             await this.runSharedDataCollection();
+        });
+
+        // ─── STRATEGY CONVERSATION MONITORING ───────────────────────────────────
+        cron.schedule('*/20 * * * *', async () => {
+            console.log('[Scheduler] Running strategy conversation monitoring...');
+            try {
+                await this.runConversationMonitoring();
+            } catch (e: any) {
+                console.error('[Scheduler] Strategy conversation monitoring error:', e.message);
+            }
         });
 
         console.log('[Scheduler] ✓ All loops started:');
@@ -764,6 +812,33 @@ export class SchedulerService {
             }
         } catch (e: any) {
             console.error('[Scheduler] Shared data collection cycle error:', e.message);
+        }
+    }
+
+    private async runConversationMonitoring() {
+        try {
+            const supabase = getServiceSupabaseClient();
+            const { data: activeStrategies } = await supabase
+                .from('strategies')
+                .select('id, user_id, title, goal, product_memory(name, brand, description)')
+                .eq('is_active', true)
+                .eq('status', 'active')
+                .limit(25);
+
+            if (!activeStrategies?.length) return;
+
+            for (const strategy of activeStrategies) {
+                try {
+                    const result = await conversationAgent.runForStrategy(strategy);
+                    if (result.identified > 0 || result.highPotential > 0) {
+                        console.log(`[Scheduler] Conversation monitor for strategy ${strategy.id}: ${result.identified} identified / ${result.highPotential} high-potential / ${result.engaged} engaged`);
+                    }
+                } catch (e: any) {
+                    console.error(`[Scheduler] Conversation monitoring error for strategy ${strategy.id}:`, e.message);
+                }
+            }
+        } catch (e: any) {
+            console.error('[Scheduler] Conversation monitoring cycle error:', e.message);
         }
     }
 

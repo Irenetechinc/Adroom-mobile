@@ -1577,6 +1577,22 @@ app.post('/api/ai/generate-strategy', async (req, res) => {
           dispatchAddress: normalizedProductType === 'physical' ? String(dispatchAddress).trim() : null,
         });
 
+        const { criticAgentService } = await import('./services/criticAgentService');
+        const strategyReview = await criticAgentService.validateBeforePublish({
+          output: JSON.stringify(strategy),
+          agentType: 'AI_CORE',
+          taskType: 'STRATEGY_GENERATION',
+          userId: user.id,
+          operation: 'generate_strategy',
+        });
+        if (strategyReview.verdict === 'rejected') {
+          return res.status(422).json({
+            error: 'STRATEGY_QUALITY_REJECTED',
+            message: 'The generated strategy did not meet the quality threshold. Please retry generation.',
+            issues: strategyReview.issues,
+          });
+        }
+
         const selectedPlatformSet = new Set(requestedAccounts);
         strategy.platforms = requestedAccounts;
         strategy.schedule = Array.isArray(strategy.schedule)
@@ -2111,6 +2127,110 @@ app.get('/api/agents/interventions/:strategyId', async (req, res) => {
             .limit(20);
 
         res.status(200).json({ interventions: interventions || [] });
+    } catch (error: any) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+app.get('/api/dashboard/conversation-overview', async (req, res) => {
+    try {
+        const supabase = getSupabaseClient(req as any);
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) return res.status(401).json({ error: 'Unauthorized.' });
+
+        const { data: activeStrategies } = await supabase
+            .from('strategies')
+            .select('id, title, goal, status, is_active')
+            .eq('user_id', user.id)
+            .eq('is_active', true)
+            .order('updated_at', { ascending: false });
+
+        const strategyIds = (activeStrategies || []).map((strategy: any) => strategy.id);
+        const overview = (activeStrategies || []).map((strategy: any) => ({
+            strategyId: strategy.id,
+            title: strategy.title || 'Active strategy',
+            goal: strategy.goal,
+            counts: { identified: 0, high_potential: 0, engaged: 0, routed: 0 },
+        }));
+
+        if (strategyIds.length) {
+            const { data: runs } = await supabase
+                .from('strategy_conversation_runs')
+                .select('strategy_id, identified, high_potential, engaged, routed, created_at')
+                .eq('user_id', user.id)
+                .in('strategy_id', strategyIds)
+                .order('created_at', { ascending: false });
+
+            const latestByStrategy = new Map<string, any>();
+            for (const run of runs || []) {
+                if (!latestByStrategy.has(run.strategy_id)) {
+                    latestByStrategy.set(run.strategy_id, run);
+                }
+            }
+
+            for (const item of overview) {
+                const latest = latestByStrategy.get(item.strategyId);
+                if (latest) {
+                    item.counts = {
+                        identified: latest.identified || 0,
+                        high_potential: latest.high_potential || 0,
+                        engaged: latest.engaged || 0,
+                        routed: latest.routed || 0,
+                    };
+                }
+            }
+        }
+
+        res.status(200).json({ strategies: overview, total: overview.reduce((sum, item) => sum + (item.counts.identified || 0), 0), summary: { identified: overview.reduce((sum, item) => sum + (item.counts.identified || 0), 0), high_potential: overview.reduce((sum, item) => sum + (item.counts.high_potential || 0), 0), engaged: overview.reduce((sum, item) => sum + (item.counts.engaged || 0), 0) } });
+    } catch (error: any) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+app.get('/api/strategy/:id/conversation', async (req, res) => {
+    try {
+        const supabase = getSupabaseClient(req as any);
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) return res.status(401).json({ error: 'Unauthorized.' });
+
+        const { data: strategy } = await supabase
+            .from('strategies')
+            .select('id, title, goal, product_memory, current_execution_plan')
+            .eq('id', req.params.id)
+            .eq('user_id', user.id)
+            .maybeSingle();
+
+        if (!strategy) return res.status(404).json({ error: 'Strategy not found.' });
+
+        const { data: latestRun } = await supabase
+            .from('strategy_conversation_runs')
+            .select('*')
+            .eq('strategy_id', req.params.id)
+            .eq('user_id', user.id)
+            .order('created_at', { ascending: false })
+            .limit(1)
+            .maybeSingle();
+
+        const { data: signals } = await supabase
+            .from('strategy_conversation_signals')
+            .select('*')
+            .eq('strategy_id', req.params.id)
+            .eq('user_id', user.id)
+            .order('captured_at', { ascending: false })
+            .limit(25);
+
+        res.status(200).json({
+            strategyId: strategy.id,
+            strategyTitle: strategy.title || 'Active strategy',
+            goal: strategy.goal,
+            counts: {
+                identified: latestRun?.identified || 0,
+                high_potential: latestRun?.high_potential || 0,
+                engaged: latestRun?.engaged || 0,
+                routed: latestRun?.routed || 0,
+            },
+            signals: signals || [],
+        });
     } catch (error: any) {
         res.status(500).json({ error: error.message });
     }

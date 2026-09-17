@@ -882,6 +882,46 @@ router.get('/api/critic/logs', auth, async (req, res) => {
   }
 });
 
+// ─── LEARNED SKILLS: CANDIDATE REVIEW ────────────────────────────────────────
+router.get('/api/skills/candidates', auth, async (req, res) => {
+  try {
+    const sb = getServiceSupabaseClient();
+    let query = sb.from('agent_skills').select('*').eq('lifecycle_status', 'candidate').order('updated_at', { ascending: false }).limit(200);
+    if (req.query.agent_type) query = query.eq('agent_type', String(req.query.agent_type));
+    const { data, error } = await query;
+    if (error) throw error;
+    res.json({ skills: data || [] });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.post('/api/skills/:skillName/review', auth, async (req, res) => {
+  try {
+    const status = String(req.body?.status || '').toLowerCase();
+    if (!['approved', 'rejected', 'retired'].includes(status)) {
+      return res.status(400).json({ error: 'status must be approved, rejected, or retired' });
+    }
+    const sb = getServiceSupabaseClient();
+    const { data: skill, error: findError } = await sb
+      .from('agent_skills')
+      .select('id, skill_name, lifecycle_status, version')
+      .eq('skill_name', req.params.skillName)
+      .single();
+    if (findError || !skill) return res.status(404).json({ error: 'Skill not found' });
+    const { data, error } = await sb.from('agent_skills').update({
+      lifecycle_status: status,
+      updated_at: new Date().toISOString(),
+      evidence: { reviewed_by: ADMIN_EMAIL, reviewed_at: new Date().toISOString(), decision: status, review_note: req.body?.note || null },
+    }).eq('id', skill.id).select('skill_name, lifecycle_status, version').single();
+    if (error) throw error;
+    await logAction(`skill_${status}`, null, null, { skill_name: skill.skill_name, version: skill.version, note: req.body?.note || null });
+    res.json({ skill: data });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ─── CRITIC AGENT: HEATMAP (7-day rolling avg per agent × platform) ───────────
 router.get('/api/critic/heatmap', auth, async (_req, res) => {
   try {

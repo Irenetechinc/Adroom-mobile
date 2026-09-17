@@ -277,14 +277,14 @@ Return valid JSON only with this schema:
 
             let result;
             if (task.platform === 'facebook' && tokens.facebook) {
-                result = await this.publishToFacebook(tokens.facebook, body, postImageUrl);
+                result = await this.publishToplatform(task.platform, tokens, body, postImageUrl);
             } else if (task.platform === 'instagram' && tokens.instagram) {
                 if (!postImageUrl) throw new Error('Instagram requires an image — GraphicsDesignerAgent must provide one');
-                result = await this.publishToInstagram(tokens.instagram, body, postImageUrl);
+                result = await this.publishToplatform(task.platform, tokens, body, postImageUrl);
             } else if (task.platform === 'twitter' && tokens.twitter) {
-                result = await this.publishToTwitter(tokens.twitter, body.slice(0, 280));
+                result = await this.publishToplatform(task.platform, tokens, body.slice(0, 280));
             } else if (task.platform === 'linkedin' && tokens.linkedin) {
-                result = await this.publishToLinkedIn(tokens.linkedin, body);
+                result = await this.publishToplatform(task.platform, tokens, body);
             } else {
                 throw new Error(`No token for platform: ${task.platform}`);
             }
@@ -342,11 +342,11 @@ Return JSON:
             try {
                 const platform = angle.platform || params.platforms[0];
                 if (platform === 'facebook' && tokens.facebook) {
-                    await this.publishToFacebook(tokens.facebook, angle.post_content);
+                    await this.publishToplatform(platform, tokens, angle.post_content);
                 } else if (platform === 'twitter' && tokens.twitter) {
-                    await this.publishToTwitter(tokens.twitter, angle.post_content.slice(0, 280));
+                    await this.publishToplatform(platform, tokens, angle.post_content.slice(0, 280));
                 } else if (platform === 'linkedin' && tokens.linkedin) {
-                    await this.publishToLinkedIn(tokens.linkedin, angle.post_content);
+                    await this.publishToplatform(platform, tokens, angle.post_content);
                 }
 
                 // Store narrative snapshot

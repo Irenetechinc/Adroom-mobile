@@ -6,6 +6,7 @@ import { LaunchAgent } from './launchAgent';
 import { getServiceSupabaseClient } from '../config/supabase';
 import { creditManagementAgent } from '../services/creditManagementAgent';
 import { energyService } from '../services/energyService';
+import { randomUUID } from 'crypto';
 
 type GoalType = 'SALESMAN' | 'AWARENESS' | 'PROMOTION' | 'LAUNCH' | string;
 
@@ -46,6 +47,22 @@ export class AgentOrchestrator {
             case 'PROMOTION': return new PromotionAgent(this.supabase);
             case 'LAUNCH': return new LaunchAgent(this.supabase);
         }
+    }
+
+    private async claimTask(taskId: string): Promise<boolean> {
+        const claimToken = randomUUID();
+        const { data, error } = await this.supabase
+            .from('agent_tasks')
+            .update({ status: 'executing', claim_token: claimToken, claimed_at: new Date().toISOString() })
+            .eq('id', taskId)
+            .eq('status', 'pending')
+            .select('id')
+            .maybeSingle();
+        if (error) {
+            console.error(`[Orchestrator] Failed to claim task ${taskId}:`, error.message);
+            return false;
+        }
+        return Boolean(data?.id);
     }
 
     /**
@@ -193,6 +210,7 @@ export class AgentOrchestrator {
         let failed = 0;
 
         for (const task of dueTasks) {
+            if (!(await this.claimTask(task.id))) continue;
             try {
                 // CMA pre-check for this user's autonomous task
                 const cma = await creditManagementAgent.evaluate(task.user_id, 'agent_task');
@@ -283,7 +301,7 @@ export class AgentOrchestrator {
             .limit(10);
 
         for (const task of tasks || []) {
-            await this.supabase.from('agent_tasks').update({ status: 'executing' }).eq('id', task.id);
+            if (!(await this.claimTask(task.id))) continue;
 
             try {
                 // ─── LEAD SCAN ────────────────────────────────────────────────────────────
@@ -361,7 +379,7 @@ export class AgentOrchestrator {
                                 try {
                                     const reply = await agent.generateQuickReply(mention.text, task.content?.goal || 'AWARENESS', product);
                                     if (reply) {
-                                        await agent.replyToTwitterPost(tokens.twitter, mention.id, reply);
+                                        await agent.replyToComment('twitter', tokens, mention.id, reply);
                                         totalReplied++;
                                     }
                                 } catch {}
@@ -486,6 +504,24 @@ export class AgentOrchestrator {
                         platformPostId,
                         metrics
                     });
+
+                    const promptVariantId = task.result?.prompt_variant_id || task.result?.final_content?.prompt_variant_id;
+                    if (promptVariantId) {
+                        try {
+                            const { agentEvolutionService } = await import('../services/agentEvolutionService');
+                            const reach = Number(metrics.reach || metrics.impressions || 0);
+                            const engagement = Number(metrics.likes || 0) + Number(metrics.comments || 0) + Number(metrics.shares || 0);
+                            const score = Math.min(1, (reach + engagement) / Math.max(1, Number(process.env.AGENT_VARIANT_TARGET_SCORE || 1000)));
+                            await agentEvolutionService.recordPromptOutcome({
+                                variantId: String(promptVariantId),
+                                score,
+                                adopted: score >= Number(process.env.AGENT_VARIANT_ADOPTION_SCORE || 0.5),
+                                reason: `Measured ${task.platform} performance`,
+                            });
+                        } catch (error: any) {
+                            console.error(`[Orchestrator] Prompt variant outcome failed for task ${task.id}:`, error.message);
+                        }
+                    }
 
                     // After collecting metrics, schedule a COMMENT_SCAN on this post
                     // to engage with commenters while the post is still getting traffic

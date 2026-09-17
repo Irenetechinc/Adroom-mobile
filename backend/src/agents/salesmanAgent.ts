@@ -309,14 +309,14 @@ Return valid JSON only with this schema:
 
             let result;
             if (task.platform === 'facebook' && tokens.facebook) {
-                result = await this.publishToFacebook(tokens.facebook, publishBody, postImageUrl);
+                result = await this.publishToplatform(task.platform, tokens, publishBody, postImageUrl);
             } else if (task.platform === 'instagram' && tokens.instagram) {
                 if (!postImageUrl) throw new Error('Instagram requires an image — GraphicsDesignerAgent must provide one');
-                result = await this.publishToInstagram(tokens.instagram, publishBody, postImageUrl);
+                result = await this.publishToplatform(task.platform, tokens, publishBody, postImageUrl);
             } else if (task.platform === 'twitter' && tokens.twitter) {
-                result = await this.publishToTwitter(tokens.twitter, publishBody.slice(0, 280));
+                result = await this.publishToplatform(task.platform, tokens, publishBody.slice(0, 280));
             } else if (task.platform === 'linkedin' && tokens.linkedin) {
-                result = await this.publishToLinkedIn(tokens.linkedin, publishBody);
+                result = await this.publishToplatform(task.platform, tokens, publishBody);
             } else if (task.platform === 'tiktok' && tokens.tiktok) {
                 let tiktokVideoUrl: string | undefined = task.content?.video_url;
 
@@ -394,7 +394,7 @@ Return valid JSON only with this schema:
                     this.log(`TikTok task ${taskId}: video ready (Director: ${direction.should_use_user_video ? 'user_video' : 'ai_generated'}) — ${tiktokVideoUrl}`);
                 }
 
-                result = await this.publishToTikTok(tokens.tiktok, publishBody, tiktokVideoUrl);
+                result = await this.publishToplatform(task.platform, tokens, publishBody, tiktokVideoUrl);
             } else {
                 throw new Error(`No token available for platform: ${task.platform}`);
             }

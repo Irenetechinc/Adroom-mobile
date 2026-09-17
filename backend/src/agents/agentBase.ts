@@ -165,9 +165,20 @@ export class AgentBase {
         platformIntel?: any;
         instructionOverride?: string;
         userId?: string;
-    }): Promise<{ headline: string; body: string; image_prompt: string; hashtags: string[]; cta: string }> {
+    }): Promise<{ headline: string; body: string; image_prompt: string; hashtags: string[]; cta: string; prompt_variant_id?: string }> {
+        let promptVariant: { id: string; prompt: string } | null = null;
+        try {
+            const { agentEvolutionService } = await import('../services/agentEvolutionService');
+            promptVariant = await agentEvolutionService.selectPromptVariant({
+                agentType: this.agentType,
+                operation: 'generatePlatformContent',
+                userId: params.userId,
+            });
+        } catch (error: any) {
+            this.log(`Prompt variant selection failed: ${error.message}`);
+        }
         const prompt = `
-You are the AdRoom ${this.agentType} Agent generating PRODUCTION-READY social content.
+You are the Adirum's AI ${this.agentType} Agent generating PRODUCTION-READY social content.
 
 PLATFORM: ${params.platform.toUpperCase()}
 GOAL: ${params.goal}
@@ -182,6 +193,7 @@ SOCIAL LISTENING: ${JSON.stringify(params.socialData || [])}
 PLATFORM INTELLIGENCE: ${JSON.stringify(params.platformIntel || {})}
 CONTEXT: ${params.context}
 ${params.instructionOverride ? `PRIORITY OVERRIDE: ${params.instructionOverride}` : ''}
+${promptVariant ? `EVOLVED PROMPT VARIANT (${promptVariant.id}):\n${promptVariant.prompt}` : ''}
 
 PLATFORM RULES:
 - Facebook: 400-500 chars, storytelling, 1-2 emojis, 3-5 hashtags
@@ -233,6 +245,9 @@ Return STRICT JSON only (no markdown, no explanation):
             });
         } catch { /* critic is non-critical — never throw */ }
 
+        if (promptVariant && content && typeof content === 'object') {
+            (content as any).prompt_variant_id = promptVariant.id;
+        }
         return content;
     }
 
@@ -744,6 +759,17 @@ Return STRICT JSON only (no markdown, no explanation):
     // ─── UNIFIED PUBLISH DISPATCHER ──────────────────────────────────────────────
 
     async publishToplatform(platform: string, tokens: AgentTokens, body: string, mediaUrl?: string): Promise<PublishResult> {
+        const { criticAgentService } = await import('../services/criticAgentService');
+        const review = await criticAgentService.validateBeforePublish({
+            output: body,
+            agentType: this.agentType,
+            taskType: 'PUBLISH',
+            platform,
+            operation: 'publish_to_platform',
+        });
+        if (review.verdict !== 'approved') {
+            throw new Error(`Critic blocked ${platform} publication: ${review.issues.join('; ') || 'quality threshold not met'}`);
+        }
         this.log(`Dispatching publish to ${platform}`);
         switch (platform.toLowerCase()) {
             case 'facebook': return this.publishToFacebook(tokens.facebook, body, mediaUrl);
@@ -756,6 +782,17 @@ Return STRICT JSON only (no markdown, no explanation):
     }
 
     async replyToComment(platform: string, tokens: AgentTokens, commentId: string, reply: string, videoId?: string): Promise<void> {
+        const { criticAgentService } = await import('../services/criticAgentService');
+        const review = await criticAgentService.validateBeforePublish({
+            output: reply,
+            agentType: this.agentType,
+            taskType: 'COMMENT_REPLY',
+            platform,
+            operation: 'reply_to_comment',
+        });
+        if (review.verdict !== 'approved') {
+            throw new Error(`Critic blocked ${platform} reply: ${review.issues.join('; ') || 'quality threshold not met'}`);
+        }
         this.log(`Dispatching reply on ${platform} to comment ${commentId}`);
         switch (platform.toLowerCase()) {
             case 'facebook': await this.replyToFacebookComment(tokens.facebook, commentId, reply); break;
@@ -768,6 +805,17 @@ Return STRICT JSON only (no markdown, no explanation):
     }
 
     async sendDM(platform: string, tokens: AgentTokens, recipientId: string, message: string): Promise<void> {
+        const { criticAgentService } = await import('../services/criticAgentService');
+        const review = await criticAgentService.validateBeforePublish({
+            output: message,
+            agentType: this.agentType,
+            taskType: 'DIRECT_MESSAGE',
+            platform,
+            operation: 'send_direct_message',
+        });
+        if (review.verdict !== 'approved') {
+            throw new Error(`Critic blocked ${platform} message: ${review.issues.join('; ') || 'quality threshold not met'}`);
+        }
         this.log(`Dispatching DM on ${platform} to ${recipientId}`);
         switch (platform.toLowerCase()) {
             case 'facebook': await this.sendFacebookDM(tokens.facebook, recipientId, message); break;
@@ -833,11 +881,32 @@ Return STRICT JSON only (no markdown, no explanation):
     }
 
     async completeTask(taskId: string, result: PublishResult & Record<string, any>): Promise<void> {
-        await this.supabase.from('agent_tasks').update({
+        const { data: task } = await this.supabase
+            .from('agent_tasks')
+            .select('strategy_id, user_id')
+            .eq('id', taskId)
+            .maybeSingle();
+        const { error } = await this.supabase.from('agent_tasks').update({
             status: 'done',
             executed_at: new Date().toISOString(),
             result,
         }).eq('id', taskId);
+        if (error) throw new Error(`Failed to complete task: ${error.message}`);
+
+        const skillName = result.skill_name || result.learned_skill_name;
+        if (skillName) {
+            try {
+                const { agentEvolutionService } = await import('../services/agentEvolutionService');
+                await agentEvolutionService.observeSkill(String(skillName), {
+                    reach: Number(result.reach || result.metrics?.reach || 0),
+                    engagement: Number(result.engagement || result.metrics?.engagement || 0),
+                    confidence: Number(result.confidence || 0),
+                    strategyId: task?.strategy_id,
+                });
+            } catch (error: any) {
+                this.log(`Evolution observation failed for task ${taskId}: ${error.message}`);
+            }
+        }
     }
 
     async failTask(taskId: string, error: string, retry: boolean = true): Promise<void> {
@@ -863,7 +932,13 @@ Return STRICT JSON only (no markdown, no explanation):
         // The AI Brain designs the skill as a pure description — NO templates,
         // NO placeholders, NO fixed strings. When the skill is USED, the AI Brain
         // writes a completely fresh prompt from the description and live variables.
-        const prompt = `You are the AdRoom ${this.agentType} Agent. You encountered a gap and must create a reusable autonomous marketing skill.
+        const prompt = `You are the Adirum's AI
+        
+        
+        
+        
+        
+        ${this.agentType} Agent. You encountered a gap and must create a reusable autonomous marketing skill.
 
 PROBLEM ENCOUNTERED: ${params.problem}
 EXECUTION CONTEXT: ${params.context}
@@ -903,6 +978,8 @@ Return JSON — all fields must be prose descriptions, NOT templates with placeh
             parameters: { what_data_to_use: skill.what_data_to_use, what_to_produce: skill.what_to_produce },
             success_metric: String(skill.success_metric || 'Measure whether the action resolves the identified performance gap.'),
             created_by_agent_run: params.strategyId,
+            lifecycle_status: 'candidate',
+            evidence: { source: 'buildSkill', problem: params.problem, context: params.context, created_at: new Date().toISOString() },
         }, { onConflict: 'skill_name' });
 
         if (error) this.log(`Failed to store skill: ${error.message}`);
@@ -911,13 +988,13 @@ Return JSON — all fields must be prose descriptions, NOT templates with placeh
     }
 
     async useSkill(skillName: string, variables: Record<string, any>): Promise<any> {
-        const { data: skill } = await this.supabase.from('agent_skills').select('*').eq('skill_name', skillName).single();
+        const { data: skill } = await this.supabase.from('agent_skills').select('*').eq('skill_name', skillName).eq('lifecycle_status', 'approved').single();
         if (!skill) { this.log(`Skill not found: ${skillName}`); return null; }
 
         // The AI Brain writes a completely fresh prompt each time — never reuses or
         // substitutes into a stored template. The stored description tells it what to
         // do and what data matters; the live variables provide the actual content.
-        const freshPromptBuilder = `You are the AdRoom ${this.agentType} AI Brain executing a learned skill.
+        const freshPromptBuilder = `You are the Adirum's AI  ${this.agentType} AI Brain executing a learned skill.
 
 SKILL DESCRIPTION:
 ${skill.execution_prompt}
@@ -1214,20 +1291,17 @@ Return ONLY the reply text, nothing else.
 `);
             const replyText = result.text?.trim().replace(/^"|"$/g, '').substring(0, 120) || null;
 
-            // Critic: fire-and-forget quality evaluation — never blocks the pipeline
-            if (replyText) {
-                import('../services/criticAgentService').then(({ criticAgentService }) => {
-                    criticAgentService.analyze({
-                        output: replyText,
-                        agentType: this.agentType,
-                        taskType: 'comment_reply',
-                        platform,
-                        operation: 'quick_reply',
-                    });
-                }).catch(() => {});
-            }
+            if (!replyText) return null;
 
-            return replyText;
+            const { criticAgentService } = await import('../services/criticAgentService');
+            const review = await criticAgentService.validateBeforePublish({
+                output: replyText,
+                agentType: this.agentType,
+                taskType: 'COMMENT_REPLY',
+                platform,
+                operation: 'quick_reply',
+            });
+            return review.verdict === 'approved' ? replyText : null;
         } catch { return null; }
     }
 
@@ -1423,34 +1497,7 @@ Only include comments that should be replied to.`;
                 // ────────────────────────────────────────────────────────────
 
                 // ── Step 3: Post the reply on the platform ──
-                switch (params.platform.toLowerCase()) {
-                    case 'facebook':
-                        if (params.tokens.facebook) {
-                            await this.replyToFacebookComment(params.tokens.facebook, comment.id, plan.reply);
-                        }
-                        break;
-                    case 'instagram':
-                        if (params.tokens.instagram) {
-                            await this.replyToInstagramComment(params.tokens.instagram, comment.id, plan.reply);
-                        }
-                        break;
-                    case 'twitter':
-                    case 'x':
-                        if (params.tokens.twitter) {
-                            await this.replyToTwitterPost(params.tokens.twitter, comment.id, plan.reply);
-                        }
-                        break;
-                    case 'linkedin':
-                        if (params.tokens.linkedin) {
-                            await this.replyToLinkedInComment(params.tokens.linkedin, comment.id, plan.reply);
-                        }
-                        break;
-                    case 'tiktok':
-                        if (params.tokens.tiktok) {
-                            await this.replyToTikTokComment(params.tokens.tiktok, params.postId, comment.id, plan.reply);
-                        }
-                        break;
-                }
+                await this.replyToComment(params.platform, params.tokens, comment.id, plan.reply, params.postId);
                 replied++;
 
                 // ── Step 4: Store interaction in social_conversations for future learning ──
@@ -1829,7 +1876,31 @@ Return JSON ONLY:
                 parameters: { best_platform: bestPlatform, confidence: learning.confidence },
                 success_metric: `Reach >${totalReach}, Engagement >${totalEngagement}`,
                 created_by_agent_run: strategyId,
+                lifecycle_status: 'candidate',
+                evidence: {
+                    source: 'selfLearnFromPerformance',
+                    strategy_id: strategyId,
+                    confidence: learning.confidence,
+                    total_reach: totalReach,
+                    total_engagement: totalEngagement,
+                    completed_tasks: recentTasks.length,
+                    performance_samples: recentPerf.slice(0, 5),
+                    generated_at: new Date().toISOString(),
+                },
+                updated_at: new Date().toISOString(),
             }, { onConflict: 'skill_name' });
+
+            try {
+                const { agentEvolutionService } = await import('../services/agentEvolutionService');
+                await agentEvolutionService.observeSkill(`${this.agentType.toLowerCase()}_${learning.skill_name}`.slice(0, 80), {
+                    reach: totalReach,
+                    engagement: totalEngagement,
+                    confidence: Number(learning.confidence || 0),
+                    strategyId,
+                });
+            } catch (error: any) {
+                this.log(`Evolution observation failed for skill ${learning.skill_name}: ${error.message}`);
+            }
 
             // Store the learning as an intervention log entry
             await this.supabase.from('agent_interventions').insert({

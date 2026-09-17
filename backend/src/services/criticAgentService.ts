@@ -173,6 +173,37 @@ Return JSON only:
     return { quality_score: qc.score, issues: qc.issues, verdict };
   }
 
+  /**
+   * Synchronous safety gate for output that is about to reach a user or
+   * platform. The existing analyze() method remains asynchronous telemetry;
+   * this method is the enforcement boundary.
+   */
+  async validateBeforePublish(params: CriticParams): Promise<CriticResult> {
+    const quick = this.quickCheck(params.output);
+    const result = quick.score >= 90
+      ? { quality_score: quick.score, issues: [], verdict: 'approved' as const }
+      : await this.aiAnalyze(params);
+
+    try {
+      await this.supabase.from('critic_agent_logs').insert({
+        user_id: params.userId,
+        agent_type: params.agentType,
+        task_type: params.taskType,
+        operation: params.operation,
+        platform: params.platform ?? null,
+        output_text: params.output.slice(0, 2000),
+        quality_score: result.quality_score,
+        issues: result.issues,
+        verdict: result.verdict,
+        blocked: result.verdict !== 'approved',
+      });
+    } catch (error: any) {
+      console.error('[CriticAgent] Failed to persist synchronous review:', error.message);
+    }
+
+    return result;
+  }
+
   // ── Public: fire-and-forget async analysis ─────────────────────────────────
   analyze(params: CriticParams): void {
     // Queue analyses so we don't spam the DB with parallel writes
