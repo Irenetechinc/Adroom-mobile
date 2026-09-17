@@ -41,6 +41,9 @@ export const StrategyService = {
       currency?: string;
       websiteUrl?: string;
       videoUri?: string | null;
+      paymentAccountName?: string;
+      paymentAccount?: string;
+      paymentBank?: string;
     };
   }): Promise<GeneratedStrategy> {
     RemoteLogger.log('STRATEGY', `Generating strategies for product ${productId}, goal: ${goal}, duration: ${duration}`);
