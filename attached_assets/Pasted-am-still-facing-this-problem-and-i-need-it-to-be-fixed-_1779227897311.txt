@@ -1,0 +1,15 @@
+am still facing this problem and i need it to be fixed once and for all, when user navigate to the connected account screen and clicks on the 
+connect facebook button the user is redirectd to the agent chat screen where the agent replies with the facebook connect button wich is how it supose to be 
+but the problem is when the user clicks on the button the user is not redirectd to the in app browser where the are suppose to connect the user is to login and connect thier account after which the are redirectd back to the agent chat screen to select thier prefered facebook page 
+but the problem is no in app browser is open notin happens when the user click the connect facebook button in the gaen chat screen it just shows the typing indicator for a while and reply with connection cancled investigate and fix this problem from root couse this happens to the whatsapp and instegram connectionto whn user trie to attempt to connect them.
+
+also when user attempt to subscribe to a plan or top up the secure payment modal is triggerd and opend but fluttercheck out is not displayed only blank page then after a while i get error saying nework request faild  fix this from root couse 
+
+also when user click on the start trail button in any of the subscription plans the popup being shown before the user clicks continue is basic improve ui of that poup and remove any mention of the 2 dollar temp charge from the popup and the 14days trails modal in the energy /subscription screen.
+i also noticed that the subscription screen dosnt show the 14 days trail modal in the subscription.energy screen soon as user navigate to it for a slit secon the non 14days trail screen is shows before the 14days trail modal shows up and and then the subscription plans button change to trail button fix this suer should see the switch inbween this two states when ever the navigate to the subscription screen.
+
+also the 14days trail modal should in the subscription and ebnergy screen should show show the count down as well.
+
+Note:
+Do not disrupt any already. Made progress, no dummy or demo implementations, no hard coded data look what been don and update, creat and Impliment where required avoid any form of double implimentation make sure all fix and Implemtations are for realtime and production. All implimentation must align with what already done and work in syc. 
+This is a mobile app not web application. And must run 100% without replit, railway for backend and supabase for database

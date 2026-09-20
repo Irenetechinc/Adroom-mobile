@@ -1,30 +1,34 @@
-
 import { create } from 'zustand';
 
 interface ProductData {
   imageUri: string | null;
-  scanResult: any | null; // Detailed scan result from Gemini
+  videoUri: string | null;
+  websiteUrl: string;
+  scanResult: any | null;
   name: string;
   description: string;
   price: string;
+  currency: string;
   category: string;
   targetAudience: string;
+  productType: 'physical' | 'digital';
+  dispatchAddress: string;
+  paymentAccount: string;
+  paymentAccountName: string;
+  paymentBank: string;
+  selectedAccounts: string[];
 }
 
 interface StrategyCreationState {
-  // Step 1: Product Intake
   productData: ProductData;
   setProductData: (data: Partial<ProductData>) => void;
-  
-  // Step 2: Goal Selection
+
   selectedGoal: string | null;
   setSelectedGoal: (goal: string) => void;
-  
-  // Step 3: Duration Selection
+
   selectedDuration: number | null;
   setSelectedDuration: (days: number) => void;
-  
-  // Step 4: Generation
+
   isGenerating: boolean;
   generatedStrategies: {
     free: any;
@@ -37,17 +41,28 @@ interface StrategyCreationState {
   reset: () => void;
 }
 
+const defaultProductData: ProductData = {
+  imageUri: null,
+  videoUri: null,
+  websiteUrl: '',
+  scanResult: null,
+  name: '',
+  description: '',
+  price: '',
+  currency: 'USD',
+  category: '',
+  targetAudience: '',
+  productType: 'physical',
+  dispatchAddress: '',
+  paymentAccount: '',
+  paymentAccountName: '',
+  paymentBank: '',
+  selectedAccounts: [],
+};
+
 export const useStrategyCreationStore = create<StrategyCreationState>((set) => ({
-  productData: {
-    imageUri: null,
-    scanResult: null,
-    name: '',
-    description: '',
-    price: '',
-    category: '',
-    targetAudience: '',
-  },
-  setProductData: (data) => 
+  productData: { ...defaultProductData },
+  setProductData: (data) =>
     set((state) => ({ productData: { ...state.productData, ...data } })),
 
   selectedGoal: null,
@@ -62,15 +77,7 @@ export const useStrategyCreationStore = create<StrategyCreationState>((set) => (
   setIsGenerating: (isGenerating) => set({ isGenerating }),
 
   reset: () => set({
-    productData: {
-      imageUri: null,
-      scanResult: null,
-      name: '',
-      description: '',
-      price: '',
-      category: '',
-      targetAudience: '',
-    },
+    productData: { ...defaultProductData },
     selectedGoal: null,
     selectedDuration: null,
     generatedStrategies: null,

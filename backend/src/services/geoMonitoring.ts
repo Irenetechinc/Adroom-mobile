@@ -1,6 +1,5 @@
 import { AIEngine } from '../config/ai-models';
 import { getServiceSupabaseClient } from '../config/supabase';
-import fetch from 'node-fetch';
 
 export class GeoMonitoringEngine {
   private ai: AIEngine;
@@ -33,12 +32,13 @@ export class GeoMonitoringEngine {
         ];
 
         for (const query of queries) {
-            // 3. Connect to multiple LLMs
-            const models = ['gpt-4o', 'claude-3-opus', 'gemini-pro', 'perplexity'];
+            // 3. Run through the shared provider policy so GEO respects CMA,
+            // free-mode routing, usage accounting, and provider rotation.
+            const models = ['shared_ai_policy'];
             
             for (const model of models) {
                 try {
-                    const response = await this.queryLLM(model, query);
+                    const response = await this.queryLLM(query);
                     if (response) {
                         // 4. Analyze and Extract Claims/Gaps
                         const analysisPrompt = `
@@ -107,67 +107,12 @@ export class GeoMonitoringEngine {
       return alerts;
   }
 
-  private async queryLLM(model: string, query: string): Promise<string | null> {
+  private async queryLLM(query: string): Promise<string | null> {
     try {
-        if (model.startsWith('gpt')) {
-            const response = await fetch('https://api.openai.com/v1/chat/completions', {
-                method: 'POST',
-                headers: {
-                    'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({
-                    model: model,
-                    messages: [{ role: 'user', content: query }],
-                    max_tokens: 500
-                })
-            });
-            const data: any = await response.json();
-            return data.choices[0]?.message?.content || null;
-        } else if (model.startsWith('claude')) {
-            const response = await fetch('https://api.anthropic.com/v1/messages', {
-                method: 'POST',
-                headers: {
-                    'x-api-key': process.env.ANTHROPIC_API_KEY || '',
-                    'anthropic-version': '2023-06-01',
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({
-                    model: model,
-                    max_tokens: 500,
-                    messages: [{ role: 'user', content: query }]
-                })
-            });
-            const data: any = await response.json();
-            return data.content[0]?.text || null;
-        } else if (model.startsWith('gemini')) {
-            const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${process.env.GEMINI_API_KEY}`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    contents: [{ parts: [{ text: query }] }]
-                })
-            });
-            const data: any = await response.json();
-            return data.candidates[0]?.content?.parts[0]?.text || null;
-        } else if (model === 'perplexity') {
-            const response = await fetch('https://api.perplexity.ai/chat/completions', {
-                method: 'POST',
-                headers: {
-                    'Authorization': `Bearer ${process.env.PERPLEXITY_API_KEY}`,
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({
-                    model: 'sonar-small-online',
-                    messages: [{ role: 'user', content: query }]
-                })
-            });
-            const data: any = await response.json();
-            return data.choices[0]?.message?.content || null;
-        }
-        return null;
+        const response = await this.ai.generateText(query);
+        return response || null;
     } catch (e) {
-        console.error(`Error querying ${model}:`, e);
+        console.error('Error querying shared AI policy:', e);
         return null;
     }
   }

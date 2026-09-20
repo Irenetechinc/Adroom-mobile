@@ -1,0 +1,99 @@
+Running "npm ci --include=dev" in /home/expo/workingdir/build directory
+npm warn EBADENGINE Unsupported engine {
+npm warn EBADENGINE   package: '@react-native/assets-registry@0.81.5',
+npm warn EBADENGINE   required: { node: '>= 20.19.4' },
+npm warn EBADENGINE   current: { node: 'v20.19.2', npm: '10.8.2' }
+npm warn EBADENGINE }
+npm warn EBADENGINE Unsupported engine {
+npm warn EBADENGINE   package: '@react-native/babel-plugin-codegen@0.81.5',
+npm warn EBADENGINE   required: { node: '>= 20.19.4' },
+npm warn EBADENGINE   current: { node: 'v20.19.2', npm: '10.8.2' }
+npm warn EBADENGINE }
+npm warn EBADENGINE Unsupported engine {
+npm warn EBADENGINE   package: '@react-native/babel-preset@0.81.5',
+npm warn EBADENGINE   required: { node: '>= 20.19.4' },
+npm warn EBADENGINE   current: { node: 'v20.19.2', npm: '10.8.2' }
+npm warn EBADENGINE }
+npm warn EBADENGINE Unsupported engine {
+npm warn EBADENGINE   package: '@react-native/codegen@0.81.5',
+npm warn EBADENGINE   required: { node: '>= 20.19.4' },
+npm warn EBADENGINE   current: { node: 'v20.19.2', npm: '10.8.2' }
+npm warn EBADENGINE }
+npm warn EBADENGINE Unsupported engine {
+npm warn EBADENGINE   package: '@react-native/community-cli-plugin@0.81.5',
+npm warn EBADENGINE   required: { node: '>= 20.19.4' },
+npm warn EBADENGINE   current: { node: 'v20.19.2', npm: '10.8.2' }
+npm warn EBADENGINE }
+npm warn EBADENGINE Unsupported engine {
+npm warn EBADENGINE   package: '@react-native/debugger-frontend@0.81.5',
+npm warn EBADENGINE   required: { node: '>= 20.19.4' },
+npm warn EBADENGINE   current: { node: 'v20.19.2', npm: '10.8.2' }
+npm warn EBADENGINE }
+npm warn EBADENGINE Unsupported engine {
+npm warn EBADENGINE   package: '@react-native/dev-middleware@0.81.5',
+npm warn EBADENGINE   required: { node: '>= 20.19.4' },
+npm warn EBADENGINE   current: { node: 'v20.19.2', npm: '10.8.2' }
+npm warn EBADENGINE }
+npm warn EBADENGINE Unsupported engine {
+npm warn EBADENGINE   package: '@react-native/gradle-plugin@0.81.5',
+npm warn EBADENGINE   required: { node: '>= 20.19.4' },
+npm warn EBADENGINE   current: { node: 'v20.19.2', npm: '10.8.2' }
+npm warn EBADENGINE }
+npm warn EBADENGINE Unsupported engine {
+npm warn EBADENGINE   package: '@react-native/js-polyfills@0.81.5',
+npm warn EBADENGINE   required: { node: '>= 20.19.4' },
+npm warn EBADENGINE   current: { node: 'v20.19.2', npm: '10.8.2' }
+npm warn EBADENGINE }
+npm warn EBADENGINE Unsupported engine {
+npm warn EBADENGINE   package: 'metro@0.83.3',
+npm warn EBADENGINE   required: { node: '>=20.19.4' },
+npm warn EBADENGINE   current: { node: 'v20.19.2', npm: '10.8.2' }
+npm warn EBADENGINE }
+npm warn EBADENGINE Unsupported engine {
+npm warn EBADENGINE   package: 'metro-babel-transformer@0.83.3',
+npm warn EBADENGINE   required: { node: '>=20.19.4' },
+npm warn EBADENGINE   current: { node: 'v20.19.2', npm: '10.8.2' }
+npm warn EBADENGINE }
+npm warn EBADENGINE Unsupported engine {
+npm warn EBADENGINE   package: 'metro-cache@0.83.3',
+npm warn EBADENGINE   required: { node: '>=20.19.4' },
+npm warn EBADENGINE   current: { node: 'v20.19.2', npm: '10.8.2' }
+npm warn EBADENGINE }
+npm warn EBADENGINE Unsupported engine {
+npm warn EBADENGINE   package: 'metro-cache-key@0.83.3',
+npm warn EBADENGINE   required: { node: '>=20.19.4' },
+npm warn EBADENGINE   current: { node: 'v20.19.2', npm: '10.8.2' }
+npm warn EBADENGINE }
+npm warn EBADENGINE Unsupported engine {
+npm warn EBADENGINE   package: 'metro-config@0.83.3',
+npm warn EBADENGINE   required: { node: '>=20.19.4' },
+npm warn EBADENGINE   current: { node: 'v20.19.2', npm: '10.8.2' }
+npm warn EBADENGINE }
+npm warn EBADENGINE Unsupported engine {
+npm warn EBADENGINE   package: 'metro-core@0.83.3',
+npm warn EBADENGINE   required: { node: '>=20.19.4' },
+npm warn EBADENGINE   current: { node: 'v20.19.2', npm: '10.8.2' }
+npm warn EBADENGINE }
+npm warn EBADENGINE Unsupported engine {
+npm warn EBADENGINE   package: 'metro-file-map@0.83.3',
+npm warn EBADENGINE   required: { node: '>=20.19.4' },
+npm warn EBADENGINE   current: { node: 'v20.19.2', npm: '10.8.2' }
+npm warn EBADENGINE }
+npm warn EBADENGINE Unsupported engine {
+npm warn EBADENGINE   package: 'metro-minify-terser@0.83.3',
+npm warn EBADENGINE   required: { node: '>=20.19.4' },
+npm warn EBADENGINE   current: { node: 'v20.19.2', npm: '10.8.2' }
+npm warn EBADENGINE }
+npm warn EBADENGINE Unsupported engine {
+npm warn EBADENGINE   package: 'metro-resolver@0.83.3',
+npm warn EBADENGINE   required: { node: '>=20.19.4' },
+npm warn EBADENGINE   current: { node: 'v20.19.2', npm: '10.8.2' }
+npm warn EBADENGINE }
+npm warn EBADENGINE Unsupported engine {
+npm warn EBADENGINE   package: 'metro-runtime@0.83.3',
+npm warn EBADENGINE   required: { node: '>=20.19.4' },
+npm warn EBADENGINE   current: { node: 'v20.19.2', npm: '10.8.2' }
+npm warn EBADENGINE }
+npm warn EBADENGINE Unsupported engine {
+npm warn EBADENGINE   package: 'metro-source-map@0.83.3',
+npm warn EBADENGI...

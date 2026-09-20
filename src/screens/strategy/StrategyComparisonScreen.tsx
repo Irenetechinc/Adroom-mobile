@@ -21,7 +21,10 @@ export default function StrategyComparisonScreen() {
     );
   }
 
-  const strategy = (generatedStrategies as any)?.strategy;
+  // This screen is deprecated in favor of the AgentChat flow but is kept for
+  // direct access. Prefer the organic ("free") strategy when present, fall
+  // back to the paid one so the deprecated screen stays renderable.
+  const strategy: any = generatedStrategies?.free ?? generatedStrategies?.paid;
 
   const handleSelect = (type: 'free' | 'paid') => {
     Alert.alert(

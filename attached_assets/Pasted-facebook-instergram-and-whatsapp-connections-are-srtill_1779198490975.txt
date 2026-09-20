@@ -1,0 +1,17 @@
+facebook, instergram and whatsapp connections are srtill not working when user try to connect account either of these accounts in the agent chat screen 
+nothing happens its just stock at typing and then after sometime show connection canceled , this flow is suppose to trigger in an in app browser where the user can 
+connect thier accounts for facebook user is to connect thier account after word directed back to the agent chat screen with a list of that user facebook pages and user will select they page the want to connect and the page is connected all this ws working before 
+and sam for the whatsapp and instergrm only that this once dont need the user to select a page investigate asnd fic this problem from root couse 
+
+i also noticed that when user want to subcribe click the the subscription button and the subscription popup comee up and the click on the paynew button the flutterwave payment modal takes a long time to come up user myth even think button is not working and leav app so once user click that paynow button the flutter wave popup modal wher ethe check out will be loaded should be triggered imidaily and displaued to the user with out a single delay.
+
+i also noticed that user can register with an non exixting email, this is wrong if user enter a non exisiting email they when attempting to register thuey should be told that the email is invalid and should use a valid email, before they can register.
+alsom the 14 dyas trial pop is not showing to new users in the subscription screen as required investigate and fix this from root couse.
+also when a new user sing up and login the sun=bscribe now modal that shows in the bottom of the app should show insted the claim  14days trail with the 48hr timer counting after the 48hr is expired and user hasnt cliamed trail that modalshould dispear and show the subscribe modal. 
+
+
+investigate and fix all this problems from root couse make sure they are fixed and working at full capaity as required.
+
+Note:
+Do not disrupt any already. Made progress, no dummy or demo implementations, no hard coded data look what been don and update, creat and Impliment where required avoid any form of double implimentation make sure all fix and Implemtations are for realtime and production. All implimentation must align with what already done and work in syc. 
+This is a mobile app not web application. And must run 100% off replit, railway for backend and supabase for database

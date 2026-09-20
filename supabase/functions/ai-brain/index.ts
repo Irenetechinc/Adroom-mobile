@@ -83,7 +83,7 @@ serve(async (req) => {
         // Payload: { message: string, contextId?: string }
         // Basic chat implementation - needs more context awareness
         const chatPrompt = `
-          You are AdRoom AI. Respond to the user's message: "${payload.message}".
+          You are Adirum AI. Respond to the user's message: "${payload.message}".
           Be helpful, professional, and data-driven.
         `;
         const chatResponse = await aiEngine.generateStrategy({}, chatPrompt); // Reusing strategy gen for now as it uses GPT

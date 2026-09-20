@@ -1,84 +1,491 @@
-import React from 'react';
-import { View, Text, TouchableOpacity, Image, ScrollView, Dimensions } from 'react-native';
+import React, { useEffect } from 'react';
+import {
+  View,
+  Text,
+  TouchableOpacity,
+  ScrollView,
+  StyleSheet,
+  Platform,
+  Image,
+  Dimensions,
+} from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../types';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { Zap, Target, TrendingUp, ShieldCheck, ArrowRight } from 'lucide-react-native';
-import Animated, { FadeInDown, FadeInUp } from 'react-native-reanimated';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Target, TrendingUp, ShieldCheck, ArrowRight, Globe, Zap, Rocket } from 'lucide-react-native';
+import Animated, {
+  FadeInDown,
+  FadeInUp,
+  useSharedValue,
+  useAnimatedStyle,
+  withRepeat,
+  withTiming,
+  withSequence,
+  Easing,
+} from 'react-native-reanimated';
+import * as Notifications from 'expo-notifications';
+import * as Location from 'expo-location';
 
 const { width } = Dimensions.get('window');
 
-const FeatureCard = ({ icon: Icon, title, description, delay }: any) => (
-  <Animated.View 
-    entering={FadeInDown.delay(delay).springify()}
-    className="bg-adroom-card p-6 rounded-2xl mb-4 border border-adroom-neon/20 shadow-lg shadow-adroom-neon/10"
-  >
-    <View className="w-12 h-12 bg-adroom-neon/10 rounded-full items-center justify-center mb-4 border border-adroom-neon/30">
-      <Icon color="#00F0FF" size={24} />
-    </View>
-    <Text className="text-white text-lg font-bold mb-2">{title}</Text>
-    <Text className="text-adroom-text-muted leading-5">{description}</Text>
-  </Animated.View>
-);
-
 type Props = NativeStackScreenProps<RootStackParamList, 'Onboarding'>;
 
-export default function OnboardingScreen({ navigation }: Props) {
+const features = [
+  {
+    icon: TrendingUp,
+    title: 'Autonomous targeting',
+    description: 'Adirum AI identifies and prioritizes the opportunities most likely to convert, then moves without manual direction or repeated prompting.',
+    color: '#00F0FF',
+    bg: 'rgba(0,240,255,0.08)',
+    border: 'rgba(0,240,255,0.18)',
+    delay: 420,
+  },
+  {
+    icon: Globe,
+    title: 'Autonomous market signal',
+    description: 'The system continuously detects where demand is forming so the right buyers, message, and timing are aligned around active opportunity.',
+    color: '#34D399',
+    bg: 'rgba(52,211,153,0.08)',
+    border: 'rgba(52,211,153,0.18)',
+    delay: 560,
+  },
+  {
+    icon: Target,
+    title: 'Autonomous outreach',
+    description: 'The workforce engages the right prospects and advances conversations without waiting for human approvals or repeated instruction.',
+    color: '#F59E0B',
+    bg: 'rgba(245,158,11,0.08)',
+    border: 'rgba(245,158,11,0.18)',
+    delay: 700,
+  },
+  {
+    icon: Rocket,
+    title: 'Autonomous deal flow',
+    description: 'Once momentum is active, the system keeps the deal moving through the next qualifying steps and toward conversion with minimal friction.',
+    color: '#A78BFA',
+    bg: 'rgba(167,139,250,0.08)',
+    border: 'rgba(167,139,250,0.18)',
+    delay: 840,
+  },
+  {
+    icon: Zap,
+    title: 'Autonomous operations',
+    description: 'Execution is handled end-to-end so campaigns, follow-up, and required next actions keep moving without slowing the user down.',
+    color: '#F87171',
+    bg: 'rgba(248,113,113,0.08)',
+    border: 'rgba(248,113,113,0.18)',
+    delay: 980,
+  },
+  {
+    icon: ShieldCheck,
+    title: 'Outcome-first experience',
+    description: 'The user sees sales momentum, customer acquisition, and revenue impact — not a list of suggestions or operational chores to manage manually.',
+    color: '#38BDF8',
+    bg: 'rgba(56,189,248,0.08)',
+    border: 'rgba(56,189,248,0.18)',
+    delay: 1120,
+  },
+];
+
+function PulsingOrb() {
+  const scale = useSharedValue(1);
+
+  useEffect(() => {
+    scale.value = withRepeat(
+      withSequence(
+        withTiming(1.08, { duration: 2200, easing: Easing.inOut(Easing.ease) }),
+        withTiming(1, { duration: 2200, easing: Easing.inOut(Easing.ease) }),
+      ),
+      -1,
+      false,
+    );
+  }, []);
+
+  const animStyle = useAnimatedStyle(() => ({ transform: [{ scale: scale.value }] }));
+
   return (
-    <SafeAreaView className="flex-1 bg-adroom-dark">
-      <ScrollView className="flex-1" contentContainerStyle={{ paddingBottom: 100 }}>
-        {/* Header Section */}
-        <Animated.View entering={FadeInUp.delay(200)} className="items-center mt-10 px-6">
-          <View className="w-20 h-20 bg-adroom-neon/20 rounded-full items-center justify-center mb-6 border-2 border-adroom-neon animate-pulse">
-            <Zap size={40} color="#00F0FF" />
+    <Animated.View style={[styles.outerOrb, animStyle]}>
+      <View style={styles.orbHalo} />
+      <Image source={require('../../assets/icon.png')} style={styles.logoImage} resizeMode="contain" />
+    </Animated.View>
+  );
+}
+
+function FeatureRow({ icon: Icon, title, description, color, bg, border, delay }: any) {
+  return (
+    <Animated.View entering={FadeInDown.delay(delay).springify()} style={[styles.featureCard, { backgroundColor: bg, borderColor: border }]}>
+      <View style={[styles.featureIcon, { backgroundColor: `${color}1F` }]}>
+        <Icon size={19} color={color} strokeWidth={2.2} />
+      </View>
+      <View style={styles.featureCopy}>
+        <Text style={styles.featureTitle}>{title}</Text>
+        <Text style={styles.featureDesc}>{description}</Text>
+      </View>
+    </Animated.View>
+  );
+}
+
+export default function OnboardingScreen({ navigation }: Props) {
+  const insets = useSafeAreaInsets();
+
+  useEffect(() => {
+    (async () => {
+      try {
+        if (Platform.OS !== 'web') {
+          await Notifications.requestPermissionsAsync({
+            ios: { allowAlert: true, allowBadge: true, allowSound: true },
+          });
+        }
+      } catch {}
+      try {
+        await Location.requestForegroundPermissionsAsync();
+      } catch {}
+    })();
+  }, []);
+
+  return (
+    <SafeAreaView style={styles.container}>
+      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scroll}>
+        <Animated.View entering={FadeInDown.delay(130).springify()} style={styles.topBar}>
+          <View style={styles.brandChip}>
+            <Text style={styles.brandChipText}>Adirum AI</Text>
           </View>
-          <Text className="text-3xl font-bold text-white text-center mb-2">
-            AdRoom <Text className="text-adroom-neon">Intelligent Smart</Text>
-          </Text>
-          <Text className="text-lg font-bold text-white text-center mb-4">
-             Automated Digital Marketing Agent
-          </Text>
-          <Text className="text-adroom-text-muted text-center text-base px-4">
-            The world's first fully autonomous marketing OS.
-          </Text>
+          <TouchableOpacity onPress={() => navigation.navigate('Login')} activeOpacity={0.9}>
+            <Text style={styles.loginLink}>Log in</Text>
+          </TouchableOpacity>
         </Animated.View>
 
-        {/* Features Grid */}
-        <View className="px-6 mt-10">
-          <FeatureCard 
-            icon={Target}
-            title="Real-time Strategy"
-            description="Autonomous ad campaigns that adjust instantly to market data and user behavior."
-            delay={400}
-          />
-          <FeatureCard 
-            icon={TrendingUp}
-            title="Smart Asset Gen"
-            description="Instantly generate professional banners, copy, and video concepts using generative AI."
-            delay={600}
-          />
-          <FeatureCard 
-            icon={ShieldCheck}
-            title="Auto-Integrity"
-            description="Every word is proofread and every image vetted by AI before going live."
-            delay={800}
-          />
+        <Animated.View entering={FadeInUp.delay(260).springify()} style={styles.heroCard}>
+          <View style={styles.heroRow}>
+            <PulsingOrb />
+            <View style={styles.badgeRow}>
+              <View style={styles.badge}>
+                <Text style={styles.badgeText}>Live ops</Text>
+              </View>
+              <View style={styles.statusPill}>
+                <Text style={styles.statusPillText}>Ready</Text>
+              </View>
+            </View>
+          </View>
+
+          <Text style={styles.kicker}>Autonomous Marketing Workforce</Text>
+          <Text style={styles.brandName}>
+            We find the buyer.{'\n'}We close the deal.
+          </Text>
+          <Text style={styles.subtitle}>
+            Adirum AI autonomously finds demand, reaches the right opportunities, and delivers measurable sales outcomes without requiring manual intervention.
+          </Text>
+
+          <View style={styles.heroActions}>
+            <TouchableOpacity style={styles.primaryButton} onPress={() => navigation.navigate('Signup')} activeOpacity={0.9}>
+              <Text style={styles.primaryButtonText}>Get started</Text>
+              <View style={styles.primaryButtonIcon}>
+                <ArrowRight size={18} color="#07111C" strokeWidth={2.5} />
+              </View>
+            </TouchableOpacity>
+          </View>
+        </Animated.View>
+
+        <Animated.View entering={FadeInDown.delay(440).springify()} style={styles.statsRow}>
+          {[
+            { value: '24/7', label: 'Live orchestration' },
+            { value: '5×', label: 'More reach' },
+            { value: '1 flow', label: 'From idea to action' },
+          ].map((stat, index) => (
+            <View key={index} style={styles.stat}>
+              <Text style={styles.statValue}>{stat.value}</Text>
+              <Text style={styles.statLabel}>{stat.label}</Text>
+            </View>
+          ))}
+        </Animated.View>
+
+        <View style={styles.sectionHeader}>
+          <Text style={styles.sectionEyebrow}>What you unlock</Text>
+          <Text style={styles.sectionTitle}>Autonomous growth. Measurable results.</Text>
+        </View>
+
+        <View style={styles.featuresList}>
+          {features.map((feature) => (
+            <FeatureRow key={feature.title} {...feature} />
+          ))}
         </View>
       </ScrollView>
 
-      {/* Bottom Action */}
-      <Animated.View 
-        entering={FadeInUp.delay(1000)}
-        className="absolute bottom-10 left-6 right-6"
+      <Animated.View
+        entering={FadeInUp.delay(1100).springify()}
+        style={[styles.cta, { paddingBottom: Math.max(insets.bottom + 16, 28) }]}
       >
-        <TouchableOpacity 
-          onPress={() => navigation.replace('Login')}
-          className="bg-adroom-neon h-14 rounded-xl flex-row items-center justify-center shadow-lg shadow-adroom-neon/40"
-        >
-          <Text className="text-adroom-dark font-bold text-lg mr-2 uppercase tracking-wider">Initialize System</Text>
-          <ArrowRight color="#050B14" size={24} />
+        <Text style={styles.ctaNote}>Already have an account?</Text>
+        <TouchableOpacity onPress={() => navigation.navigate('Login')} style={styles.ctaButton} activeOpacity={0.9}>
+          <Text style={styles.ctaText}>Sign in</Text>
         </TouchableOpacity>
       </Animated.View>
     </SafeAreaView>
   );
 }
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: '#07111C',
+  },
+  scroll: {
+    paddingHorizontal: 20,
+    paddingTop: 16,
+    paddingBottom: 160,
+  },
+  topBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 18,
+  },
+  brandChip: {
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 999,
+    backgroundColor: 'rgba(15, 23, 42, 0.95)',
+  },
+  brandChipText: {
+    color: '#E2F7FF',
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 1.1,
+    textTransform: 'uppercase',
+  },
+  loginLink: {
+    color: '#7DD3FC',
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  heroCard: {
+    backgroundColor: '#0F1B2A',
+    borderRadius: 28,
+    paddingHorizontal: 20,
+    shadowColor: '#000000',
+    shadowOpacity: 0.32,
+    shadowRadius: 18,
+    shadowOffset: { width: 0, height: 14 },
+    marginBottom: 18,
+  },
+  heroRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 16,
+    gap: 12,
+  },
+  badgeRow: {
+    flexDirection: 'column',
+    alignItems: 'flex-end',
+    gap: 8,
+  },
+  badge: {
+    alignSelf: 'flex-start',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 999,
+    backgroundColor: 'rgba(52,211,153,0.08)',
+  },
+  statusPill: {
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 999,
+    backgroundColor: 'rgba(96,165,250,0.08)',
+    alignSelf: 'flex-end',
+  },
+  outerOrb: {
+    width: 86,
+    height: 86,
+    borderRadius: 26,
+    backgroundColor: '#111E2D',
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'hidden',
+  },
+  orbHalo: {
+    position: 'absolute',
+    width: 110,
+    height: 110,
+    borderRadius: 38,
+    backgroundColor: 'rgba(0,240,255,0.10)',
+  },
+  logoImage: {
+    width: 66,
+    height: 66,
+    borderRadius: 20,
+    zIndex: 1,
+  },
+  badgeText: {
+    color: '#A7F3D0',
+    fontSize: 10,
+    fontWeight: '800',
+    letterSpacing: 1.1,
+    textTransform: 'uppercase',
+  },
+  statusPillText: {
+    color: '#BFDBFE',
+    fontSize: 9,
+    fontWeight: '800',
+    letterSpacing: 1.2,
+    textTransform: 'uppercase',
+  },
+  kicker: {
+    color: '#8FB3CF',
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 1.6,
+    textTransform: 'uppercase',
+    marginBottom: 8,
+  },
+  brandName: {
+    color: '#F8FAFC',
+    fontSize: Math.min(width * 0.09, 33),
+    lineHeight: Math.min(width * 0.12, 41),
+    fontWeight: '900',
+    letterSpacing: -1,
+    marginBottom: 10,
+  },
+  subtitle: {
+    color: '#9AAFC2',
+    fontSize: 14,
+    lineHeight: 22,
+    maxWidth: 560,
+  },
+  heroActions: {
+    marginTop: 18,
+  },
+  primaryButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#00F0FF',
+    borderRadius: 16,
+    paddingVertical: 15,
+    paddingHorizontal: 18,
+  },
+  primaryButtonText: {
+    color: '#07111C',
+    fontSize: 15,
+    fontWeight: '800',
+    letterSpacing: 0.3,
+    textTransform: 'uppercase',
+  },
+  primaryButtonIcon: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: 'rgba(7,17,28,0.13)',
+    marginLeft: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  statsRow: {
+    backgroundColor: '#0F1B2A',
+    borderRadius: 18,
+    flexDirection: 'row',
+    overflow: 'hidden',
+    marginBottom: 22,
+  },
+  stat: {
+    flex: 1,
+    paddingVertical: 18,
+    paddingHorizontal: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  statValue: {
+    color: '#F8FAFC',
+    fontSize: 22,
+    fontWeight: '800',
+    letterSpacing: -0.6,
+    marginBottom: 4,
+  },
+  statLabel: {
+    color: '#94A3B8',
+    fontSize: 10,
+    fontWeight: '700',
+    letterSpacing: 0.8,
+    textAlign: 'center',
+    textTransform: 'uppercase',
+  },
+  sectionHeader: {
+    marginTop: 4,
+    marginBottom: 14,
+  },
+  sectionEyebrow: {
+    color: '#6EE7F9',
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 1.5,
+    textTransform: 'uppercase',
+    marginBottom: 6,
+  },
+  sectionTitle: {
+    color: '#F8FAFC',
+    fontSize: 24,
+    fontWeight: '800',
+    letterSpacing: -0.6,
+  },
+  featuresList: {
+    marginBottom: 12,
+  },
+  featureCard: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    borderRadius: 18,
+    padding: 16,
+    marginBottom: 12,
+  },
+  featureIcon: {
+    width: 42,
+    height: 42,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 14,
+  },
+  featureCopy: {
+    flex: 1,
+  },
+  featureTitle: {
+    color: '#F8FAFC',
+    fontWeight: '800',
+    fontSize: 15,
+    marginBottom: 4,
+  },
+  featureDesc: {
+    color: '#9AAFC2',
+    fontSize: 12.5,
+    lineHeight: 18,
+  },
+  cta: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    paddingHorizontal: 20,
+    paddingTop: 12,
+    backgroundColor: 'rgba(7,17,28,0.92)',
+  },
+  ctaNote: {
+    color: '#8E9EB4',
+    fontSize: 12,
+    textAlign: 'center',
+    marginBottom: 8,
+  },
+  ctaButton: {
+    backgroundColor: '#101A2A',
+    borderRadius: 14,
+    height: 52,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  ctaText: {
+    color: '#E2F7FF',
+    fontWeight: '800',
+    fontSize: 15,
+    letterSpacing: 0.3,
+    textTransform: 'uppercase',
+  },
+});
