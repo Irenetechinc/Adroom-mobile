@@ -25,7 +25,7 @@ const OPENAI_STRATEGY_MODEL = process.env.OPENAI_TEXT_MODEL || 'gpt-4o';
 const FREE_TEXT_MODEL = 'gpt-4.1-free';
 const FREE_SMALL_MODEL = 'gpt-4.1-nano-free';
 const FREE_VISION_MODEL = 'gemini-3.1-flash-image-preview-free';
-const FREE_IMAGE_MODEL = FREE_VISION_MODEL;
+const FREE_IMAGE_MODEL = 'gemini-3.7-flash-free';
 
 export type AIRequestContext = { userId: string; plan: string; status: string };
 const aiRequestContext = new AsyncLocalStorage<AIRequestContext>();
