@@ -228,11 +228,15 @@ export class AgentOrchestrator {
                 }
                 const { data: connected } = await this.supabase
                     .from('ad_configs')
-                    .select('platform, access_token')
+                    .select('platform, access_token, instagram_account_id')
                     .eq('user_id', task.user_id)
                     .eq('platform', taskPlatform)
-                    .maybeSingle();
-                if (!connected?.access_token) {
+                    .maybeSingle() as { data: { access_token?: string | null; instagram_account_id?: string | null } | null };
+                const connectionReady = Boolean(
+                    connected?.access_token &&
+                    (taskPlatform !== 'instagram' || connected.instagram_account_id),
+                );
+                if (!connectionReady) {
                     console.warn(`[Orchestrator] Skipping task ${task.id}: ${taskPlatform} is not currently connected for user ${task.user_id}`);
                     await this.supabase.from('agent_tasks').update({ status: 'skipped', error_message: `${taskPlatform} is not connected.` }).eq('id', task.id);
                     try {

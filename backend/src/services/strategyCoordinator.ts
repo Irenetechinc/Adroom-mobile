@@ -30,7 +30,7 @@ export class StrategyCoordinator {
   async runCycle(): Promise<{ inspected: number; collaborated: number; skipped: number }> {
     const { data: strategies, error } = await this.supabase
       .from('strategies')
-      .select('id, user_id, title, goal, agent_type, platforms, selected_accounts, product_id, product_memory(name, category, description)')
+      .select('id, user_id, title, goal, agent_type, platforms, selected_accounts, product_id')
       .eq('is_active', true)
       .eq('status', 'active')
       .limit(50);
@@ -61,17 +61,25 @@ export class StrategyCoordinator {
   }
 
   private async coordinate(strategy: any): Promise<boolean> {
-    const [conversation, collection, activity, performance] = await Promise.all([
+    const [conversation, collection, activity, performance, productResult] = await Promise.all([
       this.supabase.from('strategy_conversation_runs').select('created_at, identified, high_potential, engaged').eq('strategy_id', strategy.id).order('created_at', { ascending: false }).limit(1).maybeSingle(),
       this.supabase.from('agent_tasks').select('created_at').eq('strategy_id', strategy.id).eq('agent_type', 'DATA_COLLECTION').eq('task_type', 'WEB_RESEARCH').order('created_at', { ascending: false }).limit(1).maybeSingle(),
       this.supabase.from('agent_tasks').select('status, task_type, created_at, executed_at, error_message').eq('strategy_id', strategy.id).order('created_at', { ascending: false }).limit(30),
       this.supabase.from('agent_performance').select('reach, likes, comments, shares, fetched_at').eq('strategy_id', strategy.id).order('fetched_at', { ascending: false }).limit(10),
+      strategy.product_id
+        ? this.supabase.from('product_memory').select('name, product_name, category, description').eq('product_id', strategy.product_id).maybeSingle()
+        : Promise.resolve({ data: null }),
     ]);
 
     const tasks = activity.data || [];
     const failures = tasks.filter((task: any) => task.status === 'failed').length;
     const pending = tasks.filter((task: any) => ['pending', 'executing', 'scheduled'].includes(task.status)).length;
-    const product = Array.isArray(strategy.product_memory) ? strategy.product_memory[0] || {} : strategy.product_memory || {};
+    const product: {
+      name?: string;
+      product_name?: string;
+      category?: string;
+      description?: string;
+    } = productResult.data || {};
     const platforms = normalizePlatforms(strategy.selected_accounts || strategy.platforms);
     const actions: string[] = [];
 
@@ -85,7 +93,7 @@ export class StrategyCoordinator {
         strategyId: strategy.id,
         userId: strategy.user_id,
         strategyGoal: strategy.goal || 'active strategy improvement',
-        productName: product.name || strategy.title || 'active product',
+        productName: product.name || product.product_name || strategy.title || 'active product',
         category: product.category || 'general',
         dataNeed: failures > 0 ? 'fresh evidence to diagnose failed agent work and improve the active strategy' : 'fresh market and audience evidence for the active strategy',
         audience: 'current target audience',

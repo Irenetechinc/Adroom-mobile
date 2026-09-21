@@ -95,6 +95,10 @@ export class CreativeService {
         console.log(`[Creative:Video] Generating video asset for: ${platform}`);
 
         try {
+            const productName = productDetails?.product_name || productDetails?.name;
+            if (!productName || !productDetails?.description) {
+                throw new Error('Video generation requires product_name and description.');
+            }
             const directorScriptNote = direction?.video_style_guide
                 ? `\nDIRECTOR'S VIDEO STYLE: ${direction.video_style_guide}`
                 : '';
@@ -107,7 +111,7 @@ export class CreativeService {
 
             const scriptResult = await this.ai.generateStrategy({}, `
                 Create a high-performing organic video ad script for ${platform}.
-                PRODUCT: ${productDetails.name}
+                PRODUCT: ${productName}
                 DESCRIPTION: ${productDetails.description}
                 GOAL: Hook in first 3 seconds, build trust, strong CTA.
                 EMOTIONAL TONE: ${direction?.emotional_tone || 'confident'}
@@ -126,7 +130,9 @@ export class CreativeService {
                 }
             `);
             const script = scriptResult.parsedJson;
-            if (!script || !script.scenes) throw new Error('Failed to generate video script.');
+            if (!script || !Array.isArray(script.scenes) || script.scenes.length === 0) {
+                throw new Error('Failed to generate video script: AI response did not contain scenes.');
+            }
 
             const directorPrefix = direction?.image_generation_prefix || '';
             const moodSuffix = direction?.visual_mood ? `, ${direction.visual_mood}` : '';
@@ -264,7 +270,9 @@ export class CreativeService {
         psychProfile?: any
     ): Promise<string | null> {
         try {
-            console.log(`[Creative:TikTok] Starting Director-informed video generation for: ${productDetails.name}`);
+            const productName = productDetails?.product_name || productDetails?.name;
+            if (!productName) throw new Error('TikTok video generation requires product details.');
+            console.log(`[Creative:TikTok] Starting Director-informed video generation for: ${productName}`);
             if (direction) {
                 console.log(`[Creative:TikTok] Director direction: mood="${direction.visual_mood}" | tone="${direction.emotional_tone}" | fingerprint=${direction.unique_fingerprint}`);
             }

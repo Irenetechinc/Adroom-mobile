@@ -25,7 +25,7 @@ const OPENAI_STRATEGY_MODEL = process.env.OPENAI_TEXT_MODEL || 'gpt-4o';
 const FREE_TEXT_MODEL = 'gpt-4.1-free';
 const FREE_SMALL_MODEL = 'gpt-4.1-nano-free';
 const FREE_VISION_MODEL = 'gemini-3.1-flash-image-preview-free';
-const FREE_IMAGE_MODEL = FREE_VISION_MODEL;
+const FREE_IMAGE_MODEL = 'gemini-3.7-flash-free';
 
 export type AIRequestContext = { userId: string; plan: string; status: string };
 const aiRequestContext = new AsyncLocalStorage<AIRequestContext>();
@@ -134,7 +134,9 @@ async function freeChat(params: any) {
   ]));
   let lastError: any;
 
-  for (const apiKey of keys) {
+  if (!keys.length) throw new Error('Free AI providers are not configured.');
+  for (let keyIndex = 0; keyIndex < keys.length; keyIndex += 1) {
+    const apiKey = keys[keyIndex];
     for (const baseURL of baseUrls) {
       try {
         const client = new OpenAI({ apiKey, baseURL });
@@ -151,7 +153,7 @@ async function freeChat(params: any) {
         return response;
       } catch (error: any) {
         lastError = error;
-        console.warn(`[AI:FREE] Provider failed; rotating free-model route (${baseURL}).`);
+        console.warn(`[AI:FREE] Provider failed; rotating route key=${keyIndex + 1}/${keys.length} base=${baseURL} status=${error?.status || error?.response?.status || 'unknown'} reason=${error?.message || 'unknown'}`);
       }
     }
   }
@@ -387,6 +389,10 @@ export class AIEngine {
    * Produces the same JSON structure as generateStrategy.
    */
   async generateStrategyEconomy(context: any, prompt: string): Promise<AIResponse> {
+    if (await useFreeModels()) {
+      aiLog('GEMINI-FLASH', 'generateStrategyEconomy ROUTE->free-provider');
+      return this.generateStrategyFree(context, prompt);
+    }
     // Admin premium override: route economy request up to GPT-4o
     if (_globalModelOverride === 'premium') {
       aiLog('GEMINI-FLASH', 'generateStrategyEconomy OVERRIDE→premium (admin forced)');
@@ -414,21 +420,14 @@ export class AIEngine {
   }
 
   async generateDeepProductBrandAnalysis(prompt: string): Promise<AIResponse> {
+    // Free mode uses the shared provider rotation and quota controls. The
+    // previous hardcoded model bypassed that route and returned a multipart
+    // error from the provider.
     if (await useFreeModels()) {
-      const response = await freeChat({
-        model: 'gemini-3.7-flash-free',
-        messages: [{ role: 'user', content: `Return ONLY valid JSON, no markdown fences, no explanation.\n\n${prompt}` }],
-        response_format: { type: 'json_object' },
-        temperature: 0.4,
-      });
-      const text = response.choices[0]?.message?.content || '';
-      return { text, parsedJson: parseStructuredJson(text) };
+      return this.generateStrategyFree({}, prompt);
     }
 
-    const model = genAI.getGenerativeModel({ model: 'gemini-3.6-flash' });
-    const result = await model.generateContent(`Return ONLY valid JSON, no markdown fences, no explanation.\n\n${prompt}`);
-    const text = (await result.response).text();
-    return { text, parsedJson: parseStructuredJson(text) };
+    return this.generateStrategyEconomy({}, prompt);
   }
 
   // Internal helper used when admin forces premium mode on economy calls

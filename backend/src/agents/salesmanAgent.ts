@@ -299,6 +299,7 @@ Return valid JSON only with this schema:
                         hashtags: finalContent.hashtags,
                         cta: finalContent.cta,
                         taskType: task.task_type,
+                        dayNumber: task.content?.day_number,
                         product,
                     });
                     if (postImageUrl) this.log(`Sales graphic generated — ${postImageUrl.split('/').pop()}`);

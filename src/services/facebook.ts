@@ -94,7 +94,7 @@ export const FacebookService = {
     } catch { return false; }
   },
 
-  async saveConfig(pageId: string, pageName: string, accessToken: string): Promise<FacebookConfig> {
+  async saveConfig(pageId: string, pageName: string, accessToken: string, userAccessToken?: string): Promise<FacebookConfig> {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) throw new Error('User not authenticated');
     const { data, error } = await supabase
@@ -102,6 +102,7 @@ export const FacebookService = {
       .upsert({
         user_id: user.id, platform: 'facebook',
         page_id: pageId, page_name: pageName,
+        refresh_token: userAccessToken || accessToken,
         access_token: accessToken, updated_at: new Date().toISOString(),
       }, { onConflict: 'user_id,platform' })
       .select().single();

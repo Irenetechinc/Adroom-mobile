@@ -209,19 +209,34 @@ export class DeepProductBrandAnalysisAgent {
 
     console.log('[DeepProductBrandAnalysis] Running live product and brand analysis cycle...');
 
-    const { data: products } = await this.supabase
+    const { data: activeStrategies, error: strategyError } = await this.supabase
+      .from('strategies')
+      .select('id, user_id, product_id, title, goal, status, is_active')
+      .eq('is_active', true)
+      .eq('status', 'active')
+      .not('product_id', 'is', null)
+      .limit(25);
+    if (strategyError) throw new Error(`Active strategy query failed: ${strategyError.message}`);
+    const productIds = Array.from(new Set((activeStrategies || []).map((strategy: any) => strategy.product_id).filter(Boolean)));
+    if (!productIds.length) {
+      console.log('[DeepProductBrandAnalysis] No active approved strategies with products available for deep analysis.');
+      return;
+    }
+    const { data: products, error: productError } = await this.supabase
       .from('product_memory')
       .select('*')
-      .limit(25);
+      .in('product_id', productIds);
+    if (productError) throw new Error(`Active strategy product query failed: ${productError.message}`);
 
     if (!products?.length) {
       console.log('[DeepProductBrandAnalysis] No products available for deep analysis.');
       return;
     }
 
-    for (const product of products) {
+    for (const product of products || []) {
       try {
-        await this.analyzeProduct(product);
+        const strategy = (activeStrategies || []).find((item: any) => item.product_id === product.product_id);
+        await this.analyzeProduct({ ...product, strategy_id: strategy?.id, strategy_status: strategy?.status });
       } catch (error: any) {
         console.error('[DeepProductBrandAnalysis] Product analysis failed:', error?.message || error);
       }

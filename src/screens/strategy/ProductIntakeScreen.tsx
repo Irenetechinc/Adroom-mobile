@@ -69,7 +69,12 @@ export default function ProductIntakeScreen() {
     });
     if (!result.canceled && result.assets[0]?.uri) {
       setProductData({ imageUri: result.assets[0].uri });
-      analyzeImage(result.assets[0].uri);
+      const asset = result.assets[0];
+      if (asset.base64) {
+        analyzeImage(asset.base64);
+      } else {
+        Alert.alert('Scan Unavailable', 'The selected image could not be read for scanning. Please choose the image again.');
+      }
     }
   };
 

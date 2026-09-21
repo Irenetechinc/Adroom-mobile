@@ -70,7 +70,9 @@ export class DirectorAgent {
     hasUserVideo?: boolean;
     strategyGoalData?: any;
   }): Promise<VisualDirection> {
-    console.log(`[Director] Generating visual direction for user ${params.userId} — product: ${params.product?.name || 'unknown'}`);
+    const productName = params.product?.product_name || params.product?.name;
+    if (!productName) throw new Error('Director requires product details before generating visual direction.');
+    console.log(`[Director] Generating visual direction for user ${params.userId} — product: ${productName}`);
 
     const [psychProfile, platformIntel, emotionalOwnership, socialTrends, existingProfile] = await Promise.all([
       this.psychologist.getProfileForProduct(params.productId || '', params.product?.category),
@@ -101,7 +103,7 @@ export class DirectorAgent {
 
     const userSeed = crypto
       .createHash('sha256')
-      .update(`${params.userId}-${params.product?.name || ''}-${params.product?.category || ''}-${Date.now()}`)
+      .update(`${params.userId}-${productName}-${params.product?.category || ''}-${Date.now()}`)
       .digest('hex')
       .slice(0, 14);
 
@@ -267,7 +269,7 @@ OUTPUT JSON:
       lighting: 'high-key studio clean',
       texture: 'clean-minimal-white',
       unique_fingerprint: seed,
-      image_generation_prefix: `Commercial product photography, ${product?.name || 'product'}, clean studio, high contrast, cinematic quality`,
+      image_generation_prefix: `Commercial product photography, ${product?.product_name || product?.name || 'product'}, clean studio, high contrast, cinematic quality`,
       video_style_guide: 'Fast cuts every 2-3 seconds, bold text overlays, product hero shots, high energy',
       platform_adaptations: {
         tiktok: 'Vertical 9:16, hook in first 2s, trending-style text overlays',

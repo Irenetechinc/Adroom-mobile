@@ -390,11 +390,15 @@ export const pushService = {
     const data  = { type: 'token_refresh_failed', platform, action: 'reconnect' };
 
     const tokens = await getUserTokens(userId);
-    await Promise.all([
+    const [pushResult] = await Promise.all([
       sendExpoPush(tokens, { title, body, data, channelId: 'alerts' }),
       insertNotification(userId, title, body, data),
     ]);
-    console.log(`[PushService] Token refresh failed notification sent — ${platform} user ${userId}`);
+    if (!pushResult.ok) {
+      console.error(`[PushService] Token refresh failed notification not delivered — ${platform} user ${userId}: ${pushResult.errorSummary || 'Expo rejected the push'}`);
+      return;
+    }
+    console.log(`[PushService] Token refresh failed notification delivered — ${platform} user ${userId}`);
   },
 
   /**

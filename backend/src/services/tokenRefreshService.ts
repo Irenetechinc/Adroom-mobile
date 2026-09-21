@@ -52,6 +52,7 @@ interface TokenRow {
   platform: string;
   access_token: string | null;
   refresh_token: string | null;
+  page_id: string | null;
   token_expires_at: string | null;
   updated_at: string | null;
 }
@@ -101,7 +102,7 @@ export class TokenRefreshService {
     // hasn't been added yet (migration not yet run in Supabase).
     let { data: configs, error } = await supabase
       .from('ad_configs')
-      .select('user_id, platform, access_token, refresh_token, token_expires_at, updated_at')
+      .select('user_id, platform, access_token, refresh_token, page_id, token_expires_at, updated_at')
       .not('access_token', 'is', null);
 
     if (error) {
@@ -118,7 +119,7 @@ export class TokenRefreshService {
         // updated_at when token_expires_at is null, so everything still works.
         const fallback = await supabase
           .from('ad_configs')
-          .select('user_id, platform, access_token, refresh_token, updated_at')
+          .select('user_id, platform, access_token, refresh_token, page_id, updated_at')
           .not('access_token', 'is', null);
 
         if (fallback.error) {
@@ -161,6 +162,9 @@ export class TokenRefreshService {
 
   private needsRefresh(row: TokenRow, now: Date): boolean {
     const platform = row.platform;
+    if ((platform === 'facebook' || platform === 'instagram' || platform === 'whatsapp') && row.page_id && !row.refresh_token) {
+      return false;
+    }
     const expiresAt  = row.token_expires_at ? new Date(row.token_expires_at) : null;
     const updatedAt  = row.updated_at       ? new Date(row.updated_at)       : null;
 
@@ -233,6 +237,27 @@ export class TokenRefreshService {
     // expired).  Skip config issues and transient network errors so we only
     // alert when the user actually needs to act.
     if (!result.success && this.isHardAuthFailure(result.error)) {
+      // A reconnect can replace the row while this six-hour sweep is still
+      // processing the old token. Invalidate only the exact stale credential;
+      // never clear a newer token saved by the user's reconnect flow.
+      const current = await getServiceSupabaseClient()
+        .from('ad_configs')
+        .select('access_token, updated_at')
+        .eq('user_id', row.user_id)
+        .eq('platform', row.platform)
+        .maybeSingle();
+      if (current.data?.access_token === row.access_token) {
+        await getServiceSupabaseClient()
+          .from('ad_configs')
+          .update({ access_token: null, token_expires_at: null, updated_at: new Date().toISOString() })
+          .eq('user_id', row.user_id)
+          .eq('platform', row.platform)
+          .eq('access_token', row.access_token);
+        console.warn(`[TokenRefresh] Invalidated stale ${row.platform} credential for user ${row.user_id}; reconnect required.`);
+      } else {
+        console.log(`[TokenRefresh] Ignoring stale ${row.platform} failure for user ${row.user_id}; a newer credential is already stored.`);
+        return result;
+      }
       pushService
         .notifyTokenRefreshFailed(row.user_id, row.platform)
         .catch((e: any) =>
@@ -266,6 +291,7 @@ export class TokenRefreshService {
     if (e.includes('http 401'))        return true;
     if (e.includes('invalid refresh')) return true;
     if (e.includes('refresh token'))   return true;
+    if (e.includes('page access token') && e.includes('not accessible')) return true;
     return false;
   }
 
@@ -274,13 +300,15 @@ export class TokenRefreshService {
   /**
    * Facebook / Instagram / WhatsApp
    * Uses the fb_exchange_token flow — no refresh_token needed.
-   * Works with any valid user access token (short- or long-lived).
+  * Exchanges the retained user token for a fresh Page token. Page tokens
+  * themselves cannot be passed to fb_exchange_token.
    */
   private async refreshFacebook(row: TokenRow): Promise<RefreshResult> {
     if (!FB_APP_ID || !FB_APP_SECRET) {
       return { platform: row.platform, userId: row.user_id, success: false, error: 'FB credentials not configured' };
     }
-    if (!row.access_token) {
+    const userAccessToken = row.refresh_token || null;
+    if (!userAccessToken) {
       return { platform: row.platform, userId: row.user_id, success: false, error: 'no access_token' };
     }
 
@@ -288,7 +316,7 @@ export class TokenRefreshService {
       grant_type:       'fb_exchange_token',
       client_id:        FB_APP_ID,
       client_secret:    FB_APP_SECRET,
-      fb_exchange_token: row.access_token,
+      fb_exchange_token: userAccessToken,
     });
 
     const res  = await retryFetch(`https://graph.facebook.com/v25.0/oauth/access_token?${params}`);
