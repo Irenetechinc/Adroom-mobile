@@ -1603,7 +1603,7 @@ export const useAgentStore = create<AgentState>()(
           }
 
           if (platform === 'facebook') await FacebookService.saveConfig(account.id, account.name, account.access_token || accessToken, accessToken);
-          else if (platform === 'instagram') await InstagramService.saveConfig(account.id, account.access_token || accessToken, account.username, accessToken);
+          else if (platform === 'instagram') await InstagramService.saveConfig(account.id, account.access_token || accessToken, account.username, accessToken, account.page_id);
           else if (platform === 'tiktok') await TikTokService.saveConfig(account.id, accessToken, account.name);
           else if (platform === 'linkedin') await LinkedInService.saveConfig(account.id, accessToken, account.name);
           else if (platform === 'twitter') await TwitterService.saveConfig(account.id, accessToken, account.name);

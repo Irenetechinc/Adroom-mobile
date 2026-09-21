@@ -328,12 +328,28 @@ export class TokenRefreshService {
       return { platform: row.platform, userId: row.user_id, success: false, error: msg };
     }
 
+    let pageAccessToken = data.access_token as string;
+    if ((row.platform === 'facebook' || row.platform === 'instagram') && row.page_id) {
+      const pagesParams = new URLSearchParams({
+        fields: 'id,access_token',
+        access_token: pageAccessToken,
+      });
+      const pagesRes = await retryFetch(`https://graph.facebook.com/v25.0/me/accounts?${pagesParams}`);
+      const pagesData: any = await pagesRes.json();
+      const page = (pagesData.data || []).find((candidate: any) => candidate.id === row.page_id);
+      if (!pagesRes.ok || !page?.access_token) {
+        const msg = pagesData?.error?.message || `Page ${row.page_id} is not accessible by the connected Meta user.`;
+        return { platform: row.platform, userId: row.user_id, success: false, error: msg };
+      }
+      pageAccessToken = page.access_token;
+    }
+
     const expiresAt = data.expires_in
       ? new Date(Date.now() + Number(data.expires_in) * 1000).toISOString()
       : null;
 
     await this.persist(row.user_id, row.platform, {
-      access_token: data.access_token,
+      access_token: pageAccessToken,
       token_expires_at: expiresAt,
     });
 

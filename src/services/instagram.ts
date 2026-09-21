@@ -43,7 +43,7 @@ export const InstagramService = {
   async getInstagramAccounts(accessToken: string): Promise<any[]> {
     try {
       const pagesRes  = await fetch(
-        `https://graph.facebook.com/v25.0/me/accounts?access_token=${accessToken}&fields=instagram_business_account,name,id`
+        `https://graph.facebook.com/v25.0/me/accounts?access_token=${accessToken}&fields=instagram_business_account,name,id,access_token`
       );
       const pagesData = await pagesRes.json();
       if (pagesData.error) throw new Error(pagesData.error.message);
@@ -88,13 +88,13 @@ export const InstagramService = {
     throw new Error(publishData.error?.message || 'IG Publish Failed');
   },
 
-  async saveConfig(igAccountId: string, accessToken: string, username: string, userAccessToken?: string): Promise<void> {
+  async saveConfig(igAccountId: string, accessToken: string, username: string, userAccessToken?: string, pageId?: string): Promise<void> {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) throw new Error('User not authenticated');
     const { error } = await supabase.from('ad_configs').upsert({
       user_id:       user.id,
       platform:      'instagram',
-      page_id:       igAccountId,
+      page_id:       pageId || igAccountId,
       instagram_account_id: igAccountId,
       ad_account_id: igAccountId,
       page_name:     username,
