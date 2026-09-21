@@ -49,3 +49,6 @@ build.log
 
 # Trae IDE
 .trae/
+
+# Standalone repository kept outside Adroom-mobile's source tree
+/Agent-Reach/
