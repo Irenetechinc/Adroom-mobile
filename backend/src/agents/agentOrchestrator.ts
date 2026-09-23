@@ -7,6 +7,8 @@ import { getServiceSupabaseClient } from '../config/supabase';
 import { creditManagementAgent } from '../services/creditManagementAgent';
 import { energyService } from '../services/energyService';
 import { randomUUID } from 'crypto';
+import { normalizePlatform, normalizeSelectedPlatforms, isPersonalProvider } from '../services/platformIdentity';
+import { socialAccountService } from '../services/socialAccountService';
 
 type GoalType = 'SALESMAN' | 'AWARENESS' | 'PROMOTION' | 'LAUNCH' | string;
 
@@ -124,7 +126,7 @@ export class AgentOrchestrator {
             durationDays
         });
 
-        const allowedPlatforms = new Set(params.platforms.map((platform) => platform.toLowerCase()));
+        const allowedPlatforms = new Set(normalizeSelectedPlatforms(params.platforms));
         const { data: plannedTasks } = await this.supabase
             .from('agent_tasks')
             .select('id, platform')
@@ -219,27 +221,44 @@ export class AgentOrchestrator {
                 const strategyAccounts = Array.isArray((task as any).strategies?.selected_accounts)
                     ? (task as any).strategies.selected_accounts
                     : (Array.isArray((task as any).strategies?.platforms) ? (task as any).strategies.platforms : []);
-                const allowedPlatforms = new Set(strategyAccounts.map((platform: unknown) => String(platform).trim().toLowerCase()).filter(Boolean));
-                const taskPlatform = String(task.platform || '').trim().toLowerCase();
+                const allowedPlatforms = new Set(normalizeSelectedPlatforms(strategyAccounts));
+                const taskPlatform = normalizePlatform(task.platform);
                 if (!allowedPlatforms.has(taskPlatform)) {
-                    console.warn(`[Orchestrator] Skipping task ${task.id}: ${taskPlatform} is not selected for strategy ${task.strategy_id}`);
+                    console.info(`[Orchestrator] Task ${task.id} is outside the selected account set; marking it skipped.`);
                     await this.supabase.from('agent_tasks').update({ status: 'skipped', error_message: 'Platform is not selected for this strategy.' }).eq('id', task.id);
                     continue;
                 }
-                const { data: connected } = await this.supabase
-                    .from('ad_configs')
-                    .select('platform, access_token, instagram_account_id')
-                    .eq('user_id', task.user_id)
-                    .eq('platform', taskPlatform)
-                    .maybeSingle() as { data: { access_token?: string | null; instagram_account_id?: string | null } | null };
-                const connectionReady = Boolean(
-                    connected?.access_token &&
-                    (taskPlatform !== 'instagram' || connected.instagram_account_id),
-                );
+                let connectionReady = false;
+                if (isPersonalProvider(taskPlatform)) {
+                    const personal = await socialAccountService.get(task.user_id, taskPlatform);
+                    connectionReady = personal?.status === 'connected';
+                } else {
+                    const { data: connected } = await this.supabase
+                        .from('ad_configs')
+                        .select('platform, access_token, instagram_account_id')
+                        .eq('user_id', task.user_id)
+                        .eq('platform', taskPlatform)
+                        .maybeSingle() as { data: { access_token?: string | null; instagram_account_id?: string | null } | null };
+                    connectionReady = Boolean(
+                        connected?.access_token &&
+                        (taskPlatform !== 'instagram' || connected.instagram_account_id),
+                    );
+                }
                 if (!connectionReady) {
-                    console.warn(`[Orchestrator] Skipping task ${task.id}: ${taskPlatform} is not currently connected for user ${task.user_id}`);
+                    console.info(`[Orchestrator] Task ${task.id} is waiting for a connected ${taskPlatform} account.`);
                     await this.supabase.from('agent_tasks').update({ status: 'skipped', error_message: `${taskPlatform} is not connected.` }).eq('id', task.id);
-                    try {
+                    // Only notify when this platform is selected and was once
+                    // connected. Missing setup is not a token-refresh failure.
+                    const { data: activeStrategy } = await this.supabase
+                        .from('strategies')
+                        .select('selected_accounts')
+                        .eq('id', task.strategy_id)
+                        .maybeSingle();
+                    const selected = normalizeSelectedPlatforms(activeStrategy?.selected_accounts || []);
+                    const wasConnected = isPersonalProvider(taskPlatform)
+                      ? Boolean(await socialAccountService.get(task.user_id, taskPlatform))
+                      : Boolean((await this.supabase.from('ad_configs').select('platform').eq('user_id', task.user_id).eq('platform', taskPlatform).maybeSingle()).data);
+                    if (selected.includes(taskPlatform) && wasConnected) try {
                         const { pushService } = await import('../services/pushService');
                         await pushService.notifyTokenRefreshFailed(task.user_id, taskPlatform);
                     } catch (notificationError: any) {

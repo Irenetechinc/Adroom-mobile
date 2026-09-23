@@ -6,8 +6,9 @@ import { execFile } from 'child_process';
 import { promisify } from 'util';
 import { getServiceSupabaseClient } from '../config/supabase';
 import { normalizePlatform } from './platformIdentity';
+import { isEnabled as isFeatureEnabled } from './featureFlagService';
 
-export type PersonalProvider = 'telegram' | 'whatsapp_personal' | 'signal_personal' | 'bluesky';
+export type PersonalProvider = 'telegram' | 'whatsapp_personal' | 'signal_personal' | 'bluesky' | 'delta_chat';
 
 export interface SocialConnectionPublic {
   id: string;
@@ -77,8 +78,15 @@ function publicConnection(row: any): SocialConnectionPublic {
 export class SocialAccountService {
   private readonly supabase = getServiceSupabaseClient();
   private readonly pendingTelegram = new Map<string, any>();
-  private readonly pendingSignal = new Map<string, { userId: string; phone: string; createdAt: number }>();
+    private readonly pendingSignal = new Map<string, { userId: string; phone: string; createdAt: number }>();
   private readonly pendingWhatsApp = new Map<string, { userId: string; phone: string; sock: any; authDir: string }>();
+
+  private async assertProviderEnabled(userId: string, provider: string): Promise<void> {
+    const normalized = normalizePlatform(provider);
+    if (!(await isFeatureEnabled(`social_${normalized}_connections`, userId))) {
+      throw new Error(`${normalized} connections are temporarily unavailable.`);
+    }
+  }
 
   async list(userId: string): Promise<SocialConnectionPublic[]> {
     const { data, error } = await this.supabase
@@ -131,7 +139,8 @@ export class SocialAccountService {
         credential_iv: encrypted.iv,
         credential_tag: encrypted.tag,
         metadata: params.metadata || {},
-        daily_limit: Math.max(1, Math.min(200, Number(params.dailyLimit || 20))),
+      daily_limit: Math.max(1, Math.min(200, Number(params.dailyLimit || 20))),
+      warmup_started_at: now,
         last_error: null,
         updated_at: now,
       }, { onConflict: 'user_id,provider' })
@@ -176,12 +185,21 @@ export class SocialAccountService {
 
   async reserveAction(userId: string, provider: string, recipient?: string): Promise<boolean> {
     provider = normalizePlatform(provider);
+    if (!(await isFeatureEnabled(`social_${provider}_connections`, userId))) return false;
     const row = await this.get(userId, provider);
     if (!row || row.status !== 'connected') return false;
     if (row.cooldown_until && new Date(row.cooldown_until).getTime() > Date.now()) return false;
     const today = new Date().toISOString().slice(0, 10);
     const actionsToday = row.action_day === today ? Number(row.actions_today || 0) : 0;
-    if (actionsToday >= Number(row.daily_limit || 20)) return false;
+    const configuredLimit = Number(row.daily_limit || 20);
+    // New accounts ramp up slowly. Existing rows without a warmup timestamp
+    // keep their configured limit so reconnects do not unexpectedly throttle
+    // established accounts.
+    const warmupDays = row.warmup_started_at
+      ? Math.max(0, Math.floor((Date.now() - new Date(row.warmup_started_at).getTime()) / 86400000))
+      : 999;
+    const warmupLimit = warmupDays < 1 ? 3 : warmupDays < 3 ? 8 : warmupDays < 7 ? 15 : configuredLimit;
+    if (actionsToday >= Math.min(configuredLimit, warmupLimit)) return false;
     const recipientKey = recipient
       ? crypto.createHash('sha256').update(String(recipient)).digest('hex').slice(0, 24)
       : null;
@@ -230,8 +248,9 @@ export class SocialAccountService {
   }
 
   private async safetyDelay(provider: string): Promise<void> {
-    const min = normalizePlatform(provider) === 'signal_personal' ? 1500 : 350;
-    const max = normalizePlatform(provider) === 'signal_personal' ? 4000 : 1400;
+    const normalized = normalizePlatform(provider);
+    const min = normalized === 'signal_personal' ? 5000 : normalized === 'telegram' ? 1200 : 800;
+    const max = normalized === 'signal_personal' ? 12000 : normalized === 'telegram' ? 5000 : 3500;
     await new Promise((resolve) => setTimeout(resolve, min + Math.floor(Math.random() * (max - min + 1))));
   }
 
@@ -329,7 +348,7 @@ export class SocialAccountService {
       throw new Error(error?.code === 'ENOENT' ? 'Signal registration service is not installed.' : 'Signal could not send a verification code.');
     }
     const requestId = crypto.randomUUID();
-    this.pendingSignal.set(requestId, { userId, phone });
+    this.pendingSignal.set(requestId, { userId, phone, createdAt: Date.now() });
     return { requestId, status: 'verification_code_sent' };
   }
 
@@ -350,80 +369,167 @@ export class SocialAccountService {
   }
 
   async publish(provider: string, userId: string, text: string, mediaUrl?: string): Promise<{ id: string; url?: string }> {
+    provider = normalizePlatform(provider);
+    await this.assertProviderEnabled(userId, provider);
+    if (provider === 'delta_chat') {
+      return this.deltaChatRequest(userId, 'publish', { text, mediaUrl });
+    }
     if (provider === 'bluesky') {
+      if (!(await this.reserveAction(userId, provider))) throw new Error(`${provider} daily safety limit reached or account is not ready.`);
+      await this.safetyDelay(provider);
       const credential = await this.credentials(userId, provider);
       if (!credential?.accessJwt || !credential?.did) throw new Error('Bluesky credentials are unavailable.');
-      const response = await fetch('https://bsky.social/xrpc/com.atproto.repo.createRecord', {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${credential.accessJwt}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          repo: credential.did,
-          collection: 'app.bsky.feed.post',
-          record: { $type: 'app.bsky.feed.post', text: text.slice(0, 3000), createdAt: new Date().toISOString() },
-        }),
-      });
-      const data: any = await response.json().catch(() => ({}));
-      if (!response.ok || !data.uri) throw new Error(data.message || 'Bluesky publication failed.');
-      await this.reserveAction(userId, provider);
-      return { id: data.uri, url: credential.handle ? `https://bsky.app/profile/${credential.handle}` : undefined };
+      try {
+        const response = await fetch('https://bsky.social/xrpc/com.atproto.repo.createRecord', {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${credential.accessJwt}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            repo: credential.did,
+            collection: 'app.bsky.feed.post',
+            record: { $type: 'app.bsky.feed.post', text: text.slice(0, 3000), createdAt: new Date().toISOString() },
+          }),
+        });
+        const data: any = await response.json().catch(() => ({}));
+        if (!response.ok || !data.uri) throw new Error(data.message || 'Bluesky publication failed.');
+        await this.recordSuccess(userId, provider);
+        return { id: data.uri, url: credential.handle ? `https://bsky.app/profile/${credential.handle}` : undefined };
+      } catch (error: any) {
+        await this.recordError(userId, provider, error.message);
+        throw error;
+      }
     }
     throw new Error(`Publishing is not supported for ${provider} yet.`);
   }
 
   async sendMessage(provider: string, userId: string, recipient: string, text: string): Promise<void> {
+    provider = normalizePlatform(provider);
+    await this.assertProviderEnabled(userId, provider);
     if (!(await this.reserveAction(userId, provider))) throw new Error(`${provider} daily safety limit reached or account is not ready.`);
+    await this.safetyDelay(provider);
     const credential = await this.credentials(userId, provider);
     if (!credential) throw new Error(`${provider} credentials are unavailable.`);
     const exec = promisify(execFile);
 
-    if (provider === 'signal_personal') {
-      await exec('signal-cli', ['-u', credential.phone, 'send', '-m', text.slice(0, 2000), recipient], { timeout: 30000 });
-      return;
-    }
-
-    if (provider === 'telegram') {
-      const telegram = require('telegram');
-      const client = new telegram.TelegramClient(
-        new telegram.sessions.StringSession(credential.session),
-        Number(credential.apiId),
-        credential.apiHash,
-        { connectionRetries: 3 },
-      );
-      await client.connect();
-      await client.sendMessage(recipient, { message: text.slice(0, 4000) });
-      await client.disconnect();
-      return;
-    }
-
-    if (provider === 'whatsapp_personal') {
-      let baileys: any;
-      try { baileys = require('@whiskeysockets/baileys'); } catch { throw new Error('WhatsApp pairing service is not installed.'); }
-      const tempDir = path.join(os.tmpdir(), 'adroom-whatsapp-send', crypto.randomUUID());
-      await fs.mkdir(tempDir, { recursive: true });
-      try {
-        for (const [file, encoded] of Object.entries(credential.bundle || {})) {
-          await fs.writeFile(path.join(tempDir, file), Buffer.from(String(encoded), 'base64'));
-        }
-        const { state, saveCreds } = await baileys.useMultiFileAuthState(tempDir);
-        const sock = baileys.default({ auth: state, printQRInTerminal: false });
-        sock.ev.on('creds.update', saveCreds);
-        await new Promise<void>((resolve, reject) => {
-          const timer = setTimeout(() => reject(new Error('WhatsApp connection timed out.')), 30000);
-          sock.ev.on('connection.update', (update: any) => {
-            if (update.connection === 'open') { clearTimeout(timer); resolve(); }
-            if (update.connection === 'close') { clearTimeout(timer); reject(new Error('WhatsApp connection closed.')); }
-          });
-        });
-        const jid = recipient.includes('@') ? recipient : `${recipient.replace(/\D/g, '')}@s.whatsapp.net`;
-        await sock.sendMessage(jid, { text: text.slice(0, 4000) });
-        sock.end(undefined);
-      } finally {
-        await fs.rm(tempDir, { recursive: true, force: true });
+    try {
+      if (provider === 'delta_chat') {
+        await this.deltaChatRequest(userId, 'send', { recipient, text });
+        await this.recordSuccess(userId, provider);
+        return;
       }
-      return;
+
+      if (provider === 'signal_personal') {
+        await exec('signal-cli', ['-u', credential.phone, 'send', '-m', text.slice(0, 2000), recipient], { timeout: 30000 });
+        await this.recordSuccess(userId, provider);
+        return;
+      }
+
+      if (provider === 'telegram') {
+        const telegram = require('telegram');
+        const client = new telegram.TelegramClient(
+          new telegram.sessions.StringSession(credential.session),
+          Number(credential.apiId),
+          credential.apiHash,
+          { connectionRetries: 3 },
+        );
+        await client.connect();
+        await client.sendMessage(recipient, { message: text.slice(0, 4000) });
+        await client.disconnect();
+        await this.recordSuccess(userId, provider);
+        return;
+      }
+
+      if (provider === 'whatsapp_personal') {
+        let baileys: any;
+        try { baileys = require('@whiskeysockets/baileys'); } catch { throw new Error('WhatsApp pairing service is not installed.'); }
+        const tempDir = path.join(os.tmpdir(), 'adroom-whatsapp-send', crypto.randomUUID());
+        await fs.mkdir(tempDir, { recursive: true });
+        try {
+          for (const [file, encoded] of Object.entries(credential.bundle || {})) {
+            await fs.writeFile(path.join(tempDir, file), Buffer.from(String(encoded), 'base64'));
+          }
+          const { state, saveCreds } = await baileys.useMultiFileAuthState(tempDir);
+          const sock = baileys.default({ auth: state, printQRInTerminal: false });
+          sock.ev.on('creds.update', saveCreds);
+          await new Promise<void>((resolve, reject) => {
+            const timer = setTimeout(() => reject(new Error('WhatsApp connection timed out.')), 30000);
+            sock.ev.on('connection.update', (update: any) => {
+              if (update.connection === 'open') { clearTimeout(timer); resolve(); }
+              if (update.connection === 'close') { clearTimeout(timer); reject(new Error('WhatsApp connection closed.')); }
+            });
+          });
+          const jid = recipient.includes('@') ? recipient : `${recipient.replace(/\D/g, '')}@s.whatsapp.net`;
+          await sock.sendMessage(jid, { text: text.slice(0, 4000) });
+          sock.end(undefined);
+        } finally {
+          await fs.rm(tempDir, { recursive: true, force: true });
+        }
+        await this.recordSuccess(userId, provider);
+        return;
+      }
+
+      if (provider === 'bluesky') {
+        const didResponse = await fetch(`https://bsky.social/xrpc/com.atproto.identity.resolveHandle?handle=${encodeURIComponent(recipient.replace(/^@/, ''))}`);
+        const didData: any = await didResponse.json().catch(() => ({}));
+        if (!didResponse.ok || !didData.did) throw new Error('Bluesky recipient could not be resolved.');
+        const headers = { Authorization: `Bearer ${credential.accessJwt}`, 'Content-Type': 'application/json' };
+        const convoResponse = await fetch('https://bsky.social/xrpc/chat.bsky.convo.getConvoForMembers', {
+          method: 'POST', headers, body: JSON.stringify({ members: [credential.did, didData.did] }),
+        });
+        const convo: any = await convoResponse.json().catch(() => ({}));
+        if (!convoResponse.ok || !convo.convo?.id) throw new Error(convo.message || 'Bluesky conversation could not be opened.');
+        const messageResponse = await fetch('https://bsky.social/xrpc/chat.bsky.convo.sendMessage', {
+          method: 'POST', headers, body: JSON.stringify({ convoId: convo.convo.id, message: { text: text.slice(0, 1000) } }),
+        });
+        const message: any = await messageResponse.json().catch(() => ({}));
+        if (!messageResponse.ok) throw new Error(message.message || 'Bluesky message failed.');
+        await this.recordSuccess(userId, provider);
+        return;
+      }
+    } catch (error: any) {
+      await this.recordError(userId, provider, error.message);
+      throw error;
     }
 
     throw new Error(`Messaging is not supported for ${provider} yet.`);
+  }
+
+  /**
+   * Delta Chat deliberately uses an operator-provided Delta Chat Core bridge.
+   * There is no stable Node-native account runtime to embed in Railway. The
+   * bridge receives credentials only during connect and keeps them on its own
+   * encrypted account store; Adirum stores only the returned opaque account
+   * credential. All bridge calls are server-to-server and fail explicitly when
+   * the runtime is not configured.
+   */
+  async connectDeltaChat(userId: string, address: string, password: string): Promise<SocialConnectionPublic> {
+    const result = await this.deltaChatRequest(userId, 'connect', { address, password });
+    if (!result?.credential) throw new Error('Delta Chat bridge did not return an account credential.');
+    return this.save({
+      userId,
+      provider: 'delta_chat',
+      accountId: result.accountId || address,
+      displayName: result.displayName || address,
+      handle: address,
+      credential: { bridgeCredential: result.credential },
+      metadata: { bridge: 'configured' },
+    });
+  }
+
+  private async deltaChatRequest(userId: string, operation: string, body: Record<string, unknown>): Promise<any> {
+    const bridgeUrl = String(process.env.DELTA_CHAT_BRIDGE_URL || '').replace(/\/+$/, '');
+    if (!bridgeUrl) throw new Error('Delta Chat is not configured on this server. Ask the administrator to configure the Delta Chat bridge.');
+    const credential = operation === 'connect' ? undefined : (await this.credentials(userId, 'delta_chat'))?.bridgeCredential;
+    const response = await fetch(`${bridgeUrl}/${operation}`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(process.env.DELTA_CHAT_BRIDGE_TOKEN ? { Authorization: `Bearer ${process.env.DELTA_CHAT_BRIDGE_TOKEN}` } : {}),
+      },
+      body: JSON.stringify({ userId, credential, ...body }),
+    });
+    const data: any = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(data.error || data.message || `Delta Chat ${operation} failed.`);
+    return data;
   }
 }
 

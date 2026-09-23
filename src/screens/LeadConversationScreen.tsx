@@ -6,7 +6,7 @@
  *  - lead_dm_messages  (each AI message logged at send time)
  *  - agent_tasks       (pending/scheduled DM tasks = next message preview)
  */
-import React, { useState, useCallback, useRef } from 'react';
+import React, { useState, useCallback, useRef, useEffect } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity, StyleSheet,
   ActivityIndicator, RefreshControl,
@@ -153,6 +153,22 @@ export default function LeadConversationScreen() {
     setLoading(true);
     fetchData();
   }, [fetchData]));
+
+  useEffect(() => {
+    if (!session?.user?.id || !lead?.id) return;
+    const channel = supabase
+      .channel(`lead_conversation_${lead.id}`)
+      .on('postgres_changes', {
+        event: '*', schema: 'public', table: 'lead_dm_messages',
+        filter: `lead_id=eq.${lead.id}`,
+      }, () => { fetchData(); })
+      .on('postgres_changes', {
+        event: '*', schema: 'public', table: 'agent_tasks',
+        filter: `user_id=eq.${session.user.id}`,
+      }, () => { fetchData(); })
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [session?.user?.id, lead?.id, fetchData]);
 
   const onRefresh = () => {
     setRefreshing(true);

@@ -81,14 +81,6 @@ const PLATFORM_SPECS: Record<string, { aspectRatio: string; orientation: string;
   x: { aspectRatio: '16:9', orientation: 'landscape', primaryZone: 'centered-impact', visualPriority: 'immediate-clarity' },
 };
 
-// Design templates by goal and task type
-const DESIGN_TEMPLATES: Record<string, string[]> = {
-  SALESMAN: ['conversion-hero', 'social-proof-card', 'before-after-split', 'offer-reveal', 'testimonial-overlay', 'product-showcase-3d'],
-  AWARENESS: ['viral-lifestyle', 'trend-hijack', 'bold-statement', 'community-moment', 'behind-the-scenes', 'movement-visual'],
-  PROMOTION: ['countdown-urgency', 'deal-reveal-burst', 'scarcity-spotlight', 'limited-badge', 'fomo-collage', 'offer-card'],
-  LAUNCH: ['teaser-mystery', 'launch-day-explosion', 'announcement-cinematic', 'product-reveal-dramatic', 'hype-build', 'narrative-arc'],
-};
-
 export class GraphicsDesignerAgent {
   private ai: AIEngine;
   private supabase: ReturnType<typeof getServiceSupabaseClient>;
@@ -158,28 +150,18 @@ export class GraphicsDesignerAgent {
    * Select the optimal design template for this specific post context.
    * Uses intelligence + goal + task type to pick the highest-impact template.
    */
-  private selectDesignTemplate(brief: DesignBrief, intel: any): string {
-    const templates = DESIGN_TEMPLATES[brief.goal] || DESIGN_TEMPLATES.AWARENESS;
-    const taskType = (brief.postContent.taskType || '').toLowerCase();
-
-    // Smart template selection based on context
-    if (taskType.includes('story')) return 'vertical-story-full';
-    if (taskType.includes('reel') || taskType.includes('video')) return 'motion-thumbnail-dramatic';
-    if (taskType.includes('carousel')) return 'multi-panel-carousel-hero';
-    if (taskType.includes('testimonial')) return 'social-proof-card';
-    if (taskType.includes('countdown')) return 'countdown-urgency';
-    if (taskType.includes('thread')) return 'thread-visual-anchor';
-    if (taskType.includes('poll')) return 'interactive-poll-card';
-
-    // Sentiment-based selection — if social sentiment is positive, use lifestyle; if urgent, use burst
-    const avgSentiment = intel.social.reduce((sum: number, s: any) => sum + (s.sentiment === 'positive' ? 1 : s.sentiment === 'negative' ? -1 : 0), 0);
-    if (avgSentiment > 3 && brief.goal === 'AWARENESS') return 'viral-lifestyle';
-    if (brief.goal === 'PROMOTION') return 'offer-reveal';
-    if (brief.goal === 'LAUNCH' && brief.postContent.launchPhase === 'launch_blitz') return 'launch-day-explosion';
-
-    // Rotate through templates based on day number to ensure variety
-    const dayIndex = (brief.dayNumber ?? 0) % templates.length;
-    return templates[dayIndex];
+  private async selectDesignConcept(brief: DesignBrief, intel: any): Promise<string> {
+    const platformSpec = PLATFORM_SPECS[brief.platform.toLowerCase()];
+    const prompt = `Choose one original visual concept for this specific post. Do not use a named template or a fixed catalog.
+Platform: ${brief.platform}; canvas: ${JSON.stringify(platformSpec || {})}
+Goal: ${brief.goal}; task: ${brief.postContent.taskType || 'post'}
+Headline: ${brief.postContent.headline}; body: ${brief.postContent.body.slice(0, 500)}
+Current algorithm signals: ${JSON.stringify(intel.ipe.slice(0, 2))}
+Current audience signals: ${JSON.stringify(intel.social.slice(0, 8))}
+Return one concise concept describing subject, composition, motion/energy, typography treatment, and why it is native to this platform.`;
+    const result = await this.ai.generateStrategy({}, prompt);
+    return result.text?.trim().replace(/^"|"$/g, '').slice(0, 800)
+      || `Original ${brief.platform}-native composition derived from the post content and current audience signals.`;
   }
 
   /**
@@ -257,24 +239,8 @@ Return ONLY the image prompt text, nothing else.
     return this.buildFallbackPrompt(brief, template, spec, fingerprint);
   }
 
-  private getTemplateRules(template: string, goal: string, platform: string): string {
-    const rules: Record<string, string> = {
-      'conversion-hero': 'Product front-and-center with aspirational lifestyle background. Human subject shows transformation result. Bold typographic overlay at bottom with offer/CTA.',
-      'social-proof-card': 'Clean card design with star rating, quote text, real-person thumbnail. Trust signals (checkmarks, logos) subtly visible. Clean white/cream background with brand accent stripe.',
-      'before-after-split': 'Perfect 50/50 vertical split. Left=before (desaturated, moody). Right=after (vibrant, bright, product result). Brand watermark at intersection.',
-      'offer-reveal': 'Bold price/offer as primary focal point. Radial gradient burst from center. Confetti-style energy particles. Hard deadline text overlay.',
-      'viral-lifestyle': 'Real-looking UGC aesthetic. Human subject in authentic environment using product. Natural light, slight film grain. Candid energy, not posed.',
-      'trend-hijack': 'Meme-aware composition. Bold white caption text over image (Instagram Reels / TikTok style). Subject is relatable, not aspirational.',
-      'bold-statement': 'Typography-dominant. Oversized statement text with background image cropped as secondary element. High contrast color block.',
-      'countdown-urgency': 'Clock or timer visual as hero. Urgent color palette (red/orange gradient). Bold numbers. Scarcity element ("Only X left") prominent.',
-      'launch-day-explosion': 'Dark background, product reveal with dramatic lighting burst. Confetti, sparkle particles. "LIVE NOW" or "TODAY ONLY" badge. High-impact.',
-      'announcement-cinematic': 'Wide cinematic frame. Product silhouette with dramatic backlight. Movie-poster composition. Coming-soon energy.',
-      'testimonial-overlay': 'Real person portrait (authentic not stock). Quote overlaid directly on image. Star rating. Subtle product in corner.',
-      'motion-thumbnail-dramatic': 'Single frame optimized for play button visibility. Face with exaggerated expression OR product with motion blur. Bold title text.',
-      'story-vertical-full': 'Edge-to-edge vertical canvas. Top 30% — hook text. Middle 60% — main visual. Bottom 10% — CTA/swipe-up. No wasted space.',
-      'multi-panel-carousel-hero': 'First panel: cover image, high-impact headline. Designed to pull the viewer to swipe. Teaser arrow or partial reveal on right edge.',
-    };
-    return rules[template] || `Bold, high-contrast ${goal.toLowerCase()} image optimized for ${platform}. Product is clearly visible. Brand colors dominant. Professional commercial quality.`;
+  private getTemplateRules(concept: string, _goal: string, platform: string): string {
+    return `Use this AI-selected original concept, not a reusable template: ${concept}. Preserve platform-native safe zones, readable hierarchy, and a clear product/brand focal point for ${platform}.`;
   }
 
   private getGoalVisualCTA(goal: string): string {
@@ -289,14 +255,7 @@ Return ONLY the image prompt text, nothing else.
 
   private buildFallbackPrompt(brief: DesignBrief, template: string, spec: any, fingerprint: string): string {
     const product = brief.product?.product_name || brief.product?.name || 'product';
-    const goalMood: Record<string, string> = {
-      SALESMAN: 'high-conversion commercial photography, aspirational lifestyle, warm golden tones',
-      AWARENESS: 'viral social media aesthetic, bold colors, authentic UGC energy, relatable moment',
-      PROMOTION: 'urgent red-orange gradient, burst energy, bold typography, limited-time excitement',
-      LAUNCH: 'dark dramatic cinematic, product reveal backlight, announcement energy, premium quality',
-    };
-    const mood = goalMood[brief.goal] || goalMood.AWARENESS;
-    return `${mood}, ${template} layout, ${spec.orientation} format for ${brief.platform}, featuring ${product}, photorealistic 8K commercial quality, unique composition ${fingerprint}`;
+    return `Original ${brief.platform}-native visual concept for ${product}; ${template}; ${spec.orientation} format; reflect the post headline "${brief.postContent.headline}" and CTA "${brief.postContent.cta || ''}", commercial quality, unique composition ${fingerprint}`;
   }
 
   /**
@@ -342,7 +301,7 @@ Return ONLY the image prompt text, nothing else.
       const intel = await this.fetchIntelligence(productCategory, brief.platform);
 
       // 2. Select optimal design template
-      const template = this.selectDesignTemplate(brief, intel);
+       const template = await this.selectDesignConcept(brief, intel);
       this.log(`Template selected: ${template} (fingerprint: ${fingerprint})`);
 
       // 3. Get Director visual direction if not provided

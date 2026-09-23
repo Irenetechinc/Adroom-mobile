@@ -20,6 +20,7 @@ import { useAgentStore } from '../store/agentStore';
 import FeatureGate from '../components/FeatureGate';
 import { useEnergyStore } from '../store/energyStore';
 import { Skeleton } from '../components/Skeleton';
+import useFeatureFlags from '../hooks/useFeatureFlags';
 
 // ─── Brand SVG Icons ──────────────────────────────────────────────────────────
 
@@ -167,6 +168,7 @@ const PLATFORMS: Platform[] = [
   { id: 'whatsapp_personal', name: 'WhatsApp',   sub: 'Personal account · pairing code', bg: '#25D366' },
   { id: 'signal_personal', name: 'Signal',       sub: 'Personal account · phone verification', bg: '#3A76F0' },
   { id: 'bluesky',   name: 'Bluesky',            sub: 'Personal account · app password', bg: '#1185FE' },
+  { id: 'delta_chat', name: 'Delta Chat',        sub: 'Personal account · managed bridge', bg: '#5B5BEA' },
 ];
 
 // Instagram uses a gradient background — approximated here
@@ -231,6 +233,7 @@ export default function ConnectedAccountsScreen() {
   const [personalStep, setPersonalStep] = useState<'start' | 'verify'>('start');
   const [personalPhone, setPersonalPhone] = useState('');
   const [personalHandle, setPersonalHandle] = useState('');
+  const [personalAddress, setPersonalAddress] = useState('');
   const [personalSecret, setPersonalSecret] = useState('');
   const [personalRequestId, setPersonalRequestId] = useState('');
   const [pairingCode, setPairingCode] = useState('');
@@ -238,6 +241,7 @@ export default function ConnectedAccountsScreen() {
 
   const { tokens, connectedPlatforms, loadConnectedPlatforms, disconnectPlatform } = useAgentStore();
   const { subscription } = useEnergyStore();
+  const { isEnabled } = useFeatureFlags();
   const plan = subscription?.plan ?? 'none';
   const isPro = plan === 'pro' || plan === 'pro_plus';
 
@@ -264,6 +268,7 @@ export default function ConnectedAccountsScreen() {
       setPersonalStep('start');
       setPersonalPhone('');
       setPersonalHandle('');
+      setPersonalAddress('');
       setPersonalSecret('');
       setPersonalRequestId('');
       setPairingCode('');
@@ -306,10 +311,15 @@ export default function ConnectedAccountsScreen() {
         endpoint = `${base}/whatsapp-personal/start`;
         body = { phone: personalPhone };
       } else {
+        if (personalProvider.id === 'delta_chat') {
+          endpoint = `${base}/delta-chat/connect`;
+          body = { address: personalAddress, password: personalSecret };
+        } else {
         endpoint = `${base}/signal/${personalStep === 'start' ? 'start' : 'verify'}`;
         body = personalStep === 'start'
           ? { phone: personalPhone }
           : { requestId: personalRequestId, code: personalSecret };
+        }
       }
       const response = await fetch(endpoint, { method: 'POST', headers, body: JSON.stringify(body) });
       const result = await response.json().catch(() => ({}));
@@ -436,7 +446,8 @@ export default function ConnectedAccountsScreen() {
 
         {PLATFORMS.map((platform, index) => {
           const connected = isConnected(platform.id);
-          const comingSoon = !!platform.comingSoon;
+          const enabled = isEnabled(`social_${platform.id}_connections`);
+          const comingSoon = !!platform.comingSoon || !enabled;
           const disc = disconnecting === platform.id;
           const isProOnlyPlatform = platform.id === 'twitter';
           const locked = !connected && !comingSoon && (isStarterLimited || (!isPro && isProOnlyPlatform));
@@ -475,7 +486,16 @@ export default function ConnectedAccountsScreen() {
                 )}
               </View>
 
-              {!comingSoon && (
+              {comingSoon && !connected ? (
+                <View style={styles.lockedBody}>
+                  <Text style={styles.lockedTitle}>Coming soon</Text>
+                  <Text style={styles.lockedDesc}>
+                    {platform.comingSoon
+                      ? `${platform.name} connections are not available yet.`
+                      : `${platform.name} connections are temporarily unavailable.`}
+                  </Text>
+                </View>
+              ) : !comingSoon && (
                 locked ? (
                   <View style={styles.lockedBody}>
                     <Lock size={28} color="#F59E0B" />
@@ -565,12 +585,17 @@ export default function ConnectedAccountsScreen() {
                   ? 'Pair WhatsApp from the app using the code below. No QR code is used.'
                   : 'Your verification details stay encrypted and are never shown to the agent.'}
             </Text>
-            {personalProvider?.id === 'bluesky' ? (
+             {personalProvider?.id === 'bluesky' ? (
               <>
                 <TextInput value={personalHandle} onChangeText={setPersonalHandle} placeholder="Handle (name.bsky.social)" placeholderTextColor="#64748B" style={styles.modalInput} autoCapitalize="none" />
                 <TextInput value={personalSecret} onChangeText={setPersonalSecret} placeholder="App password" placeholderTextColor="#64748B" style={styles.modalInput} secureTextEntry autoCapitalize="none" />
               </>
-            ) : personalProvider?.id === 'whatsapp_personal' && personalStep === 'verify' ? (
+             ) : personalProvider?.id === 'delta_chat' ? (
+               <>
+                 <TextInput value={personalAddress} onChangeText={setPersonalAddress} placeholder="Email address" placeholderTextColor="#64748B" style={styles.modalInput} autoCapitalize="none" keyboardType="email-address" />
+                 <TextInput value={personalSecret} onChangeText={setPersonalSecret} placeholder="Email password" placeholderTextColor="#64748B" style={styles.modalInput} secureTextEntry autoCapitalize="none" />
+               </>
+             ) : personalProvider?.id === 'whatsapp_personal' && personalStep === 'verify' ? (
               <View style={styles.pairingBox}>
                 <Text style={styles.pairingLabel}>PAIRING CODE</Text>
                 <Text style={styles.pairingCode}>{pairingCode || 'Waiting…'}</Text>

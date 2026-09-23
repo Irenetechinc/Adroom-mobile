@@ -1715,6 +1715,16 @@ export const useAgentStore = create<AgentState>()(
       // Stash the channel ref on the store object (not Zustand state, so no re-renders)
       (get() as any)._adConfigsChannel = ch;
 
+      const personalCh = supabase
+        .channel(`social_connections_${userId}`)
+        .on(
+          'postgres_changes',
+          { event: '*', schema: 'public', table: 'social_account_connections', filter: `user_id=eq.${userId}` },
+          () => { get().loadConnectedPlatforms().catch(() => {}); },
+        )
+        .subscribe();
+      (get() as any)._socialConnectionsChannel = personalCh;
+
       // Load fresh data immediately
       await get().loadConnectedPlatforms();
     } catch { /* non-fatal */ }
@@ -1726,6 +1736,11 @@ export const useAgentStore = create<AgentState>()(
       if (ch) {
         supabase.removeChannel(ch);
         (get() as any)._adConfigsChannel = null;
+      }
+      const personalCh = (get() as any)._socialConnectionsChannel;
+      if (personalCh) {
+        supabase.removeChannel(personalCh);
+        (get() as any)._socialConnectionsChannel = null;
       }
     } catch { /* non-fatal */ }
   },
@@ -1867,6 +1882,21 @@ export const useAgentStore = create<AgentState>()(
           person_urn: c.person_urn,
           org_urn: c.org_urn,
           open_id: c.open_id,
+          updated_at: c.updated_at,
+          connected: true,
+        };
+      }
+      const { data: personalRows } = await supabase
+        .from('social_account_connections')
+        .select('provider, account_id, display_name, handle, status, updated_at')
+        .eq('user_id', user.id)
+        .eq('status', 'connected');
+      for (const c of personalRows || []) {
+        configs[c.provider] = {
+          platform: c.provider,
+          page_id: c.account_id,
+          page_name: c.display_name || c.handle || c.provider,
+          handle: c.handle,
           updated_at: c.updated_at,
           connected: true,
         };

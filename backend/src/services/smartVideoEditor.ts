@@ -59,7 +59,21 @@ export class SmartVideoEditor {
       linkedin: { ratio: '1:1', maxDuration: 180, captionStyle: 'professional', filters: ['corporate'] },
     };
 
-    const spec = platformSpecs[request.platform.toLowerCase()] || platformSpecs.instagram;
+    const spec = platformSpecs[request.platform.toLowerCase()];
+    if (!spec) throw new Error(`Video editing is not configured for ${request.platform}.`);
+    const [platformIntel, socialSignals] = await Promise.all([
+      this.supabase
+        .from('platform_intelligence')
+        .select('algorithm_priorities, trending_formats, optimal_times, predictions')
+        .eq('platform', request.platform.toLowerCase())
+        .order('captured_at', { ascending: false })
+        .limit(2),
+      this.supabase
+        .from('social_conversations')
+        .select('topics, sentiment, reaction, intent')
+        .order('collected_at', { ascending: false })
+        .limit(12),
+    ]);
 
     const directorNote = request.directionPrefix
       ? `\nDIRECTOR VISUAL DIRECTION: ${request.directionPrefix}\nVISUAL MOOD: ${request.visualMood || 'modern'}\nApply this direction to all text overlays, pacing, and caption style choices.`
@@ -75,6 +89,12 @@ ASPECT RATIO: ${spec.ratio}
 MAX DURATION: ${spec.maxDuration}s
 USER INSTRUCTIONS: ${request.instructions || 'Create the best ad possible'}
 ${directorNote}
+
+CURRENT PLATFORM INTELLIGENCE:
+${JSON.stringify(platformIntel.data || [])}
+
+CURRENT AUDIENCE SIGNALS:
+${JSON.stringify(socialSignals.data || [])}
 
 Generate a professional video edit plan as JSON:
 {

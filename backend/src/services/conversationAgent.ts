@@ -2,6 +2,7 @@ import { Annotation, END, StateGraph } from '@langchain/langgraph';
 import { getServiceSupabaseClient } from '../config/supabase';
 import { pushService } from './pushService';
 import { agentReachAdapter, ReachResult } from './agentReachAdapter';
+import { normalizeSelectedPlatforms } from './platformIdentity';
 
 export type StrategyGoal = 'SALESMAN' | 'AWARENESS' | 'PROMOTION' | 'LAUNCH';
 
@@ -68,9 +69,10 @@ export class ConversationAgent {
         `${brandName} ${productName} needs service recommendation`,
       ];
 
-      const discovered = await Promise.all(
-        intentVariants.map((query) => agentReachAdapter.searchAcrossSources(query, ['facebook', 'instagram', 'reddit', 'linkedin', 'google_maps']))
-      );
+       const selectedPlatforms = normalizeSelectedPlatforms(strategy.selected_accounts || strategy.platforms || []);
+       const discovered = await Promise.all(
+         intentVariants.map((query) => agentReachAdapter.searchAcrossSources(query, selectedPlatforms))
+       );
 
       const results = discovered.flat();
       console.log(`[ConversationAgent] discover complete strategy=${strategy.id} results=${results.length}`);
@@ -101,6 +103,21 @@ export class ConversationAgent {
           metadata: signal.metadata || {},
           updated_at: new Date().toISOString(),
         })), { onConflict: 'strategy_id,platform,external_id' });
+
+         // Keep the user-facing lead list in sync with discovery. Only public
+         // identity and the public interaction preview are persisted here;
+         // deeper research remains backend-only.
+         await this.supabase.from('agent_leads').upsert(state.signals.map((signal) => ({
+           strategy_id: signal.strategyId,
+           user_id: signal.userId,
+           platform: signal.platform,
+           platform_user_id: signal.authorId || signal.externalId,
+           platform_username: signal.authorName,
+           first_interaction: signal.text.slice(0, 1000),
+           intent_score: signal.intentScore,
+           intent_signals: [{ source: signal.kind, url: signal.url || null }],
+           stage: signal.status === 'high_potential' ? 'identified' : 'identified',
+         })), { onConflict: 'user_id,platform,platform_user_id' });
       }
       return {};
     })
@@ -147,6 +164,21 @@ export class ConversationAgent {
     .compile();
 
   async runForStrategy(strategy: any): Promise<{ identified: number; highPotential: number; engaged: number; routed: number }> {
+    const { data: latest } = await this.supabase
+      .from('strategy_conversation_runs')
+      .select('created_at')
+      .eq('strategy_id', strategy.id)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (latest?.created_at && Date.now() - new Date(latest.created_at).getTime() < 24 * 60 * 60 * 1000) {
+      console.log(`[ConversationAgent] daily sweep already completed strategy=${strategy.id}; skipping duplicate search`);
+      return { identified: 0, highPotential: 0, engaged: 0, routed: 0 };
+    }
+    return this.graph.invoke({ strategy, signals: [], identified: 0, highPotential: 0, engaged: 0, routed: 0 }) as Promise<any>;
+  }
+
+  async runOnDemand(strategy: any): Promise<{ identified: number; highPotential: number; engaged: number; routed: number }> {
     return this.graph.invoke({ strategy, signals: [], identified: 0, highPotential: 0, engaged: 0, routed: 0 }) as Promise<any>;
   }
 }

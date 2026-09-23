@@ -380,6 +380,38 @@ export const pushService = {
    */
   async notifyTokenRefreshFailed(userId: string, platform: string): Promise<void> {
     const supabase = getServiceSupabaseClient();
+    const normalizedPlatform = String(platform || '').trim().toLowerCase();
+    const personal = ['telegram', 'whatsapp_personal', 'signal_personal', 'bluesky', 'delta_chat'].includes(normalizedPlatform);
+
+    // A refresh warning is actionable only when the account is selected by a
+    // running strategy and was actually connected. This prevents warnings for
+    // coming-soon, disconnected, or never-selected platforms.
+    const { data: runningStrategies } = await supabase
+      .from('strategies')
+      .select('selected_accounts, platforms')
+      .eq('user_id', userId)
+      .eq('is_active', true)
+      .eq('status', 'active');
+    const selected = (runningStrategies || []).some((strategy: any) => {
+      const accounts = Array.isArray(strategy.selected_accounts) ? strategy.selected_accounts : strategy.platforms;
+      return Array.isArray(accounts) && accounts.some((item: any) => {
+        const value = typeof item === 'object' ? item.platform || item.provider || item.id : item;
+        return String(value || '').trim().toLowerCase() === normalizedPlatform;
+      });
+    });
+    if (!selected) {
+      console.log(`[PushService] Skipping reconnect warning for ${normalizedPlatform} user ${userId} — not selected by a running strategy`);
+      return;
+    }
+    const connectionQuery = personal
+      ? supabase.from('social_account_connections').select('status').eq('user_id', userId).eq('provider', normalizedPlatform).maybeSingle()
+      : supabase.from('ad_configs').select('access_token').eq('user_id', userId).eq('platform', normalizedPlatform).maybeSingle();
+    const { data: connection } = await connectionQuery;
+    const connectionRow: any = connection;
+    if (!connectionRow || (personal ? connectionRow.status !== 'needs_reconnect' : !connectionRow.access_token)) {
+      console.log(`[PushService] Skipping reconnect warning for ${normalizedPlatform} user ${userId} — no actionable connection`);
+      return;
+    }
 
     // ── Dedup: skip if we already sent this notification within 24 hours ──
     const cutoff = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
@@ -390,7 +422,7 @@ export const pushService = {
       .eq('sent_by', 'system')
       .gte('created_at', cutoff)
       .filter('data->>type', 'eq', 'token_refresh_failed')
-      .filter('data->>platform', 'eq', platform)
+       .filter('data->>platform', 'eq', normalizedPlatform)
       .limit(1)
       .maybeSingle();
 
@@ -399,10 +431,10 @@ export const pushService = {
       return;
     }
 
-    const displayName = platform.charAt(0).toUpperCase() + platform.slice(1);
+     const displayName = normalizedPlatform.charAt(0).toUpperCase() + normalizedPlatform.slice(1);
     const title = `Reconnect ${displayName}`;
     const body  = `Your ${displayName} connection has expired. Tap to reconnect and keep your campaign running.`;
-    const data  = { type: 'token_refresh_failed', platform, action: 'reconnect' };
+     const data  = { type: 'token_refresh_failed', platform: normalizedPlatform, action: 'reconnect' };
 
     const tokens = await getUserTokens(userId);
     const [pushResult] = await Promise.all([

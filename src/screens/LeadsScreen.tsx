@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useRef } from 'react';
+import React, { useState, useCallback, useRef, useEffect } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity, TextInput,
   RefreshControl, StyleSheet, Animated as RNAnimated,
@@ -332,6 +332,22 @@ export default function LeadsScreen({ route }: Props) {
     setRefreshing(true);
     fetchLeads();
   };
+
+  useEffect(() => {
+    if (!session?.user?.id) return;
+    const channel = supabase
+      .channel(`leads_live_${session.user.id}`)
+      .on('postgres_changes', {
+        event: '*', schema: 'public', table: 'agent_leads',
+        filter: `user_id=eq.${session.user.id}`,
+      }, () => { fetchLeads(); })
+      .on('postgres_changes', {
+        event: 'INSERT', schema: 'public', table: 'lead_dm_messages',
+        filter: `user_id=eq.${session.user.id}`,
+      }, () => { fetchLeads(); })
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [session?.user?.id, fetchLeads]);
 
   // ── Filter + Search ──
   const filtered = leads.filter(lead => {

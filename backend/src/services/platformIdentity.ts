@@ -8,6 +8,7 @@ export const PERSONAL_PROVIDERS = [
   'whatsapp_personal',
   'signal_personal',
   'bluesky',
+  'delta_chat',
 ] as const;
 
 export type CanonicalPlatform = string;
@@ -25,6 +26,9 @@ const ALIASES: Record<string, CanonicalPlatform> = {
   bluesky: 'bluesky',
   bluesky_personal: 'bluesky',
   'bluesky-personal': 'bluesky',
+  delta_chat: 'delta_chat',
+  deltachat: 'delta_chat',
+  'delta-chat': 'delta_chat',
 };
 
 export function normalizePlatform(value: unknown): CanonicalPlatform {

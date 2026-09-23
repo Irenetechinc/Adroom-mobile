@@ -1,8 +1,4 @@
-import { execFile } from 'child_process';
-import { promisify } from 'util';
 import { agentReachWebRouter } from './agentReachWebRouter';
-
-const execFileAsync = promisify(execFile);
 
 export interface ReachResult {
   platform: string;
@@ -63,31 +59,6 @@ function normalizePlatform(platform: string): string {
 
 /** Adapter that follows the Agent-Reach routing model: channel-first, browser-session, with graceful fallback. */
 export class AgentReachAdapter {
-  private readonly command = process.env.AGENT_REACH_SEARCH_COMMAND || process.env.OPENCLI_COMMAND || 'opencli';
-  private readonly timeoutMs = Number(process.env.AGENT_REACH_TIMEOUT_MS || 20000);
-
-  private buildArgs(platform: string, query: string): string[] {
-    const normalized = normalizePlatform(platform);
-    const quote = (value: string) => value.includes(' ') ? `"${value}"` : value;
-    const baseQuery = quote(query);
-
-    const commandMap: Record<string, string[]> = {
-      facebook: ['facebook', 'search', baseQuery, '-f', 'json'],
-      instagram: ['instagram', 'search', baseQuery, '-f', 'json'],
-      reddit: ['reddit', 'search', baseQuery, '-f', 'json'],
-      linkedin: ['linkedin', 'search', baseQuery, '-f', 'json'],
-      google_maps: ['google', 'maps', 'search', baseQuery, '-f', 'json'],
-      web: ['web', 'search', baseQuery, '-f', 'json'],
-      blog: ['web', 'search', baseQuery, '-f', 'json'],
-      youtube: ['youtube', 'search', baseQuery, '-f', 'json'],
-      x: ['twitter', 'search', baseQuery, '-f', 'json'],
-      twitter: ['twitter', 'search', baseQuery, '-f', 'json'],
-    };
-
-    const fallback = [normalized, 'search', baseQuery, '-f', 'json'];
-    return commandMap[normalized] || fallback;
-  }
-
   private mapItem(platform: string, item: any, index: number, query: string): ReachResult {
     const kind = (item.kind || item.type || item.category || '').toString().toLowerCase();
     const text = String(item.text || item.content || item.title || item.snippet || item.body || item.message || '');
@@ -119,25 +90,33 @@ export class AgentReachAdapter {
         captured_at: item.capturedAt,
       }, index, query));
     }
-    const args = this.buildArgs(normalized, query);
-
+    // Social discovery must not depend on opencli being installed or on a
+    // user's local browser credentials. Use the already-working web router as
+    // a public-signal source and preserve the requested channel as metadata.
+    const domains: Record<string, string> = {
+      facebook: 'site:facebook.com',
+      instagram: 'site:instagram.com',
+      reddit: 'site:reddit.com',
+      linkedin: 'site:linkedin.com',
+      google_maps: 'site:google.com/maps',
+      twitter: 'site:x.com OR site:twitter.com',
+      x: 'site:x.com OR site:twitter.com',
+      youtube: 'site:youtube.com',
+    };
+    const routedQuery = domains[normalized] ? `${query} ${domains[normalized]}` : query;
     try {
-      const result = await execFileAsync(this.command, args, {
-        cwd: process.env.AGENT_REACH_HOME || undefined,
-        timeout: this.timeoutMs,
-        windowsHide: true,
-        maxBuffer: 2 * 1024 * 1024,
-      });
-
-      const stdout = String(result.stdout || '');
-      const output = parseOutput(stdout);
-      console.log(`[AgentReachAdapter] ${normalized} search completed: ${output.length} raw result(s)`);
-
-      return output
-        .filter((item) => item && (item.text || item.content || item.title || item.snippet || item.body || item.url))
-        .map((item: any, index) => this.mapItem(normalized, item, index, query));
+      const results = await agentReachWebRouter.search(routedQuery, 8);
+      console.log(`[AgentReachAdapter] ${normalized} web-routed search completed: ${results.length} result(s)`);
+      return results.map((item, index) => this.mapItem(normalized, {
+        id: item.url || `${normalized}:${index}`,
+        title: item.title,
+        snippet: item.snippet,
+        url: item.url,
+        source: item.source,
+        captured_at: item.capturedAt,
+      }, index, query));
     } catch (error: any) {
-      console.error(`[AgentReachAdapter] ${normalized} search failed: ${error.message}`);
+      console.error(`[AgentReachAdapter] ${normalized} web-routed search failed: ${error.message}`);
       return [];
     }
   }

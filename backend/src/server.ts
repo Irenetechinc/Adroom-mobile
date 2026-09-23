@@ -23,7 +23,7 @@ import { pushService } from './services/pushService';
 import { CommunicationService } from './services/communicationService';
 import { energyCheck, deductEnergyForUser } from './services/energyMiddleware';
 import { checkFeatureAccess, getSubscriptionGuard, SUBSCRIPTION_PLAN_LIMITS } from './services/subscriptionGuard';
-import { getFlagsForUser as getFeatureFlagsForUser } from './services/featureFlagService';
+import { getFlagsForUser as getFeatureFlagsForUser, isEnabled as isFeatureEnabled } from './services/featureFlagService';
 import adminRouter from './admin/adminRouter';
 import authPagesRouter from './auth/authPagesRouter';
 import { popOAuthEntry, setOAuthCode, setOAuthError } from './auth/oauthStore';
@@ -33,6 +33,7 @@ import { apmaOAuthRouter } from './apma/apmaOAuthRouter';
 import { telephonyService } from './services/telephonyService';
 import { shipmentService } from './services/shipmentService';
 import { socialAccountService, type PersonalProvider } from './services/socialAccountService';
+import { normalizePlatform, normalizeSelectedPlatforms, isPersonalProvider } from './services/platformIdentity';
 
 dotenv.config();
 
@@ -131,6 +132,10 @@ async function authenticatedUser(req: Request): Promise<any | null> {
   return user || null;
 }
 
+async function personalConnectionAllowed(userId: string, provider: string): Promise<boolean> {
+  return isFeatureEnabled(`social_${provider}_connections`, userId);
+}
+
 app.get('/api/social-connections', async (req, res) => {
   try {
     const user = await authenticatedUser(req);
@@ -145,6 +150,7 @@ app.post('/api/social-connections/bluesky', async (req, res) => {
   try {
     const user = await authenticatedUser(req);
     if (!user) return res.status(401).json({ error: 'Unauthorized.' });
+    if (!(await personalConnectionAllowed(user.id, 'bluesky'))) return res.status(403).json({ error: 'Bluesky connections are temporarily unavailable.' });
     const handle = String(req.body?.handle || '').trim();
     const appPassword = String(req.body?.appPassword || '').trim();
     if (!handle || !appPassword) return res.status(400).json({ error: 'Handle and app password are required.' });
@@ -174,6 +180,7 @@ app.post('/api/social-connections/telegram/start', async (req, res) => {
   try {
     const user = await authenticatedUser(req);
     if (!user) return res.status(401).json({ error: 'Unauthorized.' });
+    if (!(await personalConnectionAllowed(user.id, 'telegram'))) return res.status(403).json({ error: 'Telegram connections are temporarily unavailable.' });
     const phone = String(req.body?.phone || '').trim();
     if (!phone) return res.status(400).json({ error: 'Phone number is required.' });
     return res.json(await socialAccountService.startTelegram(user.id, phone));
@@ -186,6 +193,7 @@ app.post('/api/social-connections/telegram/verify', async (req, res) => {
   try {
     const user = await authenticatedUser(req);
     if (!user) return res.status(401).json({ error: 'Unauthorized.' });
+    if (!(await personalConnectionAllowed(user.id, 'telegram'))) return res.status(403).json({ error: 'Telegram connections are temporarily unavailable.' });
     const requestId = String(req.body?.requestId || '');
     const code = String(req.body?.code || '').trim();
     const password = req.body?.password ? String(req.body.password) : undefined;
@@ -201,6 +209,7 @@ app.post('/api/social-connections/whatsapp-personal/start', async (req, res) => 
   try {
     const user = await authenticatedUser(req);
     if (!user) return res.status(401).json({ error: 'Unauthorized.' });
+    if (!(await personalConnectionAllowed(user.id, 'whatsapp_personal'))) return res.status(403).json({ error: 'WhatsApp personal connections are temporarily unavailable.' });
     const phone = String(req.body?.phone || '').trim();
     if (!phone) return res.status(400).json({ error: 'Phone number is required.' });
     return res.json(await socialAccountService.startWhatsAppPairing(user.id, phone));
@@ -213,6 +222,7 @@ app.post('/api/social-connections/signal/start', async (req, res) => {
   try {
     const user = await authenticatedUser(req);
     if (!user) return res.status(401).json({ error: 'Unauthorized.' });
+    if (!(await personalConnectionAllowed(user.id, 'signal_personal'))) return res.status(403).json({ error: 'Signal connections are temporarily unavailable.' });
     const phone = String(req.body?.phone || '').trim();
     if (!phone) return res.status(400).json({ error: 'Phone number is required.' });
     return res.json(await socialAccountService.startSignalVerification(user.id, phone));
@@ -225,10 +235,25 @@ app.post('/api/social-connections/signal/verify', async (req, res) => {
   try {
     const user = await authenticatedUser(req);
     if (!user) return res.status(401).json({ error: 'Unauthorized.' });
+    if (!(await personalConnectionAllowed(user.id, 'signal_personal'))) return res.status(403).json({ error: 'Signal connections are temporarily unavailable.' });
     const requestId = String(req.body?.requestId || '');
     const code = String(req.body?.code || '').trim();
     if (!requestId || !code) return res.status(400).json({ error: 'Verification request and code are required.' });
     return res.status(201).json({ connection: await socialAccountService.verifySignal(requestId, code) });
+  } catch (error: any) {
+    return res.status(400).json({ error: error.message });
+  }
+});
+
+app.post('/api/social-connections/delta-chat/connect', async (req, res) => {
+  try {
+    const user = await authenticatedUser(req);
+    if (!user) return res.status(401).json({ error: 'Unauthorized.' });
+    if (!(await personalConnectionAllowed(user.id, 'delta_chat'))) return res.status(403).json({ error: 'Delta Chat connections are temporarily unavailable.' });
+    const address = String(req.body?.address || '').trim();
+    const password = String(req.body?.password || '');
+    if (!address || !password) return res.status(400).json({ error: 'Email address and password are required.' });
+    return res.status(201).json({ connection: await socialAccountService.connectDeltaChat(user.id, address, password) });
   } catch (error: any) {
     return res.status(400).json({ error: error.message });
   }
@@ -239,7 +264,7 @@ app.delete('/api/social-connections/:provider', async (req, res) => {
     const user = await authenticatedUser(req);
     if (!user) return res.status(401).json({ error: 'Unauthorized.' });
     const provider = String(req.params.provider) as PersonalProvider;
-    if (!['telegram', 'whatsapp_personal', 'signal_personal', 'bluesky'].includes(provider)) {
+    if (!['telegram', 'whatsapp_personal', 'signal_personal', 'bluesky', 'delta_chat'].includes(provider)) {
       return res.status(400).json({ error: 'Unsupported personal provider.' });
     }
     await socialAccountService.remove(user.id, provider);
@@ -934,6 +959,21 @@ app.get('/api/platform-configs', async (req, res) => {
         person_urn: c.person_urn,
         org_urn: c.org_urn,
         open_id: c.open_id,
+        updated_at: c.updated_at,
+        connected: true,
+      };
+    }
+    const { data: personalConnections } = await supabase
+      .from('social_account_connections')
+      .select('provider, account_id, display_name, handle, status, updated_at')
+      .eq('user_id', user.id)
+      .eq('status', 'connected');
+    for (const c of personalConnections || []) {
+      connected[c.provider] = {
+        platform: c.provider,
+        page_id: c.account_id,
+        page_name: c.display_name || c.handle || c.provider,
+        handle: c.handle,
         updated_at: c.updated_at,
         connected: true,
       };
@@ -2022,12 +2062,10 @@ app.post('/api/ai/activate-agents', async (req, res) => {
           }
         }
 
-        const normalizedSelectedAccounts = Array.isArray(selectedAccounts)
-          ? [...new Set(selectedAccounts.map((account: unknown) => String(account).trim().toLowerCase()).filter(Boolean))]
-          : [];
+        const normalizedSelectedAccounts = normalizeSelectedPlatforms(selectedAccounts);
         const requestedPlatforms: string[] = (normalizedSelectedAccounts.length > 0
           ? normalizedSelectedAccounts
-          : Array.isArray(platforms) ? platforms.map((platform: unknown) => String(platform).trim().toLowerCase()).filter(Boolean) : []);
+          : normalizeSelectedPlatforms(platforms));
         if (requestedPlatforms.length > planLimits.platforms) {
           return res.status(403).json({
             error: 'PLAN_LIMIT_EXCEEDED',
@@ -2054,9 +2092,7 @@ app.post('/api/ai/activate-agents', async (req, res) => {
 
         const safeStrategyAccounts = Array.isArray(strategy?.selected_accounts) ? strategy.selected_accounts : [];
         const persistedPlatforms = safeStrategyAccounts.length > 0 ? safeStrategyAccounts : (Array.isArray(strategy.platforms) ? strategy.platforms : []);
-        const activePlatforms = (persistedPlatforms.length > 0 ? persistedPlatforms : requestedPlatforms)
-          .map((platform: unknown) => String(platform).trim().toLowerCase())
-          .filter(Boolean)
+        const activePlatforms = normalizeSelectedPlatforms(persistedPlatforms.length > 0 ? persistedPlatforms : requestedPlatforms)
           .slice(0, planLimits.platforms);
         if (activePlatforms.length === 0) {
             return res.status(409).json({ error: 'SOCIAL_ACCOUNTS_REQUIRED', message: 'This strategy has no selected social accounts. Generate it again and select a connected account.' });
@@ -2066,7 +2102,18 @@ app.post('/api/ai/activate-agents', async (req, res) => {
           .select('platform, access_token')
           .eq('user_id', user.id)
           .in('platform', activePlatforms);
-        const connectedPlatforms = new Set((activeConfigs || []).filter((config: any) => config.access_token).map((config: any) => String(config.platform).toLowerCase()));
+        const connectedPlatforms = new Set((activeConfigs || []).filter((config: any) => config.access_token).map((config: any) => normalizePlatform(config.platform)));
+        const personalPlatforms = activePlatforms.filter((platform) => isPersonalProvider(platform));
+        if (personalPlatforms.length) {
+          const { data: personalConnections } = await supabase
+            .from('social_account_connections')
+            .select('provider, status')
+            .eq('user_id', user.id)
+            .in('provider', personalPlatforms);
+          for (const connection of personalConnections || []) {
+            if (connection.status === 'connected') connectedPlatforms.add(normalizePlatform(connection.provider));
+          }
+        }
         const missingPlatforms = activePlatforms.filter((platform: string) => !connectedPlatforms.has(platform));
         if (missingPlatforms.length > 0) {
             return res.status(409).json({ error: 'SOCIAL_ACCOUNTS_REQUIRED', missing: missingPlatforms, message: `Reconnect these selected accounts before launching: ${missingPlatforms.join(', ')}.` });

@@ -4,6 +4,7 @@ import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { ArrowLeft, ArrowRight, Check, Link2, Plus } from 'lucide-react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAgentStore } from '../../store/agentStore';
+import useFeatureFlags from '../../hooks/useFeatureFlags';
 
 const colors = { bg: '#0B0F19', panel: '#121D2B', text: '#E2E8F0', muted: '#8FA3B8', cyan: '#00F0FF', border: '#233246' };
 
@@ -11,13 +12,15 @@ export default function AccountSelectionScreen() {
   const navigation = useNavigation<any>();
   const { connectedPlatforms, loadConnectedPlatforms } = useAgentStore();
   const [loading, setLoading] = useState(true);
+  const { isEnabled } = useFeatureFlags();
 
   useFocusEffect(useCallback(() => {
     setLoading(true);
     loadConnectedPlatforms().finally(() => setLoading(false));
   }, [loadConnectedPlatforms]));
 
-  const platforms = Object.values(connectedPlatforms || {}) as any[];
+  const platforms = (Object.values(connectedPlatforms || {}) as any[])
+    .filter((account) => isEnabled(`social_${account.platform}_connections`));
   const continueNext = () => navigation.navigate('AgentChat', { strategyAccountSelection: true });
 
   return (

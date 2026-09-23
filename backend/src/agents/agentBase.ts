@@ -9,10 +9,11 @@ export interface AgentTokens {
     twitter?: { access_token: string; refresh_token?: string };
     linkedin?: { access_token: string; person_urn?: string; org_urn?: string };
     tiktok?: { access_token: string; open_id?: string };
-    telegram?: { session: string; apiId: number; apiHash: string };
+    telegram?: { connected: true };
     whatsapp_personal?: { connected: true };
-    signal_personal?: { phone: string };
-    bluesky?: { accessJwt: string; refreshJwt?: string; did: string; handle?: string };
+    signal_personal?: { connected: true };
+    bluesky?: { connected: true };
+    delta_chat?: { connected: true };
 }
 
 export interface AgentTask {
@@ -150,13 +151,15 @@ export class AgentBase {
                 tokens.tiktok = { access_token: c.access_token, open_id: c.open_id };
             }
         }
-        for (const provider of ['telegram', 'whatsapp_personal', 'signal_personal', 'bluesky']) {
+        for (const provider of ['telegram', 'whatsapp_personal', 'signal_personal', 'bluesky', 'delta_chat']) {
             try {
-                const credential = await socialAccountService.credentials(userId, provider);
-                if (provider === 'telegram' && credential?.session) tokens.telegram = credential;
-                if (provider === 'whatsapp_personal' && credential) tokens.whatsapp_personal = { connected: true };
-                if (provider === 'signal_personal' && credential?.phone) tokens.signal_personal = credential;
-                if (provider === 'bluesky' && credential?.accessJwt) tokens.bluesky = credential;
+                const connection = await socialAccountService.get(userId, provider);
+                if (connection?.status !== 'connected') continue;
+                if (provider === 'telegram') tokens.telegram = { connected: true };
+                if (provider === 'whatsapp_personal') tokens.whatsapp_personal = { connected: true };
+                if (provider === 'signal_personal') tokens.signal_personal = { connected: true };
+                if (provider === 'bluesky') tokens.bluesky = { connected: true };
+                if (provider === 'delta_chat') tokens.delta_chat = { connected: true };
             } catch (error: any) {
                 this.log(`Could not load managed ${provider} credentials: ${error.message}`);
             }
@@ -798,6 +801,10 @@ Return STRICT JSON only (no markdown, no explanation):
                 const published = await socialAccountService.publish('bluesky', (tokens as any).__userId || '', body, mediaUrl);
                 return { platform: 'bluesky', platform_post_id: published.id, published_at: new Date().toISOString(), url: published.url };
             }
+            case 'delta_chat': {
+                const published = await socialAccountService.publish('delta_chat', (tokens as any).__userId || '', body, mediaUrl);
+                return { platform: 'delta_chat', platform_post_id: published.id, published_at: new Date().toISOString(), url: published.url };
+            }
             default: throw new Error(`Unsupported platform: ${platform}`);
         }
     }
@@ -859,10 +866,11 @@ Return STRICT JSON only (no markdown, no explanation):
             case 'telegram':
             case 'whatsapp_personal':
             case 'signal_personal':
+            case 'delta_chat':
                 await socialAccountService.sendMessage(platform.toLowerCase(), (tokens as any).__userId || '', recipientId, message);
                 break;
             case 'bluesky':
-                throw new Error('Bluesky direct messages are not available through the public API.');
+                throw new Error('Bluesky direct messages require the platform DM service and are not available through the current public API.');
             default: throw new Error(`Unsupported platform for DM: ${platform}`);
         }
     }
