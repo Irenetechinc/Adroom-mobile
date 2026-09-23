@@ -39,6 +39,21 @@ async function sendExpoPush(tokens: string[], payload: PushPayload): Promise<Exp
   if (!tokens.length) {
     return { ok: false, httpStatus: 0, tokensSent: 0, tickets: [], invalidTokens: [], errorSummary: 'No active tokens for this user' };
   }
+  // Expo rejects a request when tokens belong to different EAS projects.
+  // Token rows from older app builds do not carry project_id, so the safest
+  // compatibility path is one request per token whenever a caller supplies
+  // more than one. This also avoids one bad project poisoning a whole batch.
+  if (tokens.length > 1) {
+    const results = await Promise.all(tokens.map((token) => sendExpoPush([token], payload)));
+    return {
+      ok: results.every((result) => result.ok),
+      httpStatus: results.find((result) => result.httpStatus)?.httpStatus || 200,
+      tokensSent: results.reduce((sum, result) => sum + result.tokensSent, 0),
+      tickets: results.flatMap((result) => result.tickets),
+      invalidTokens: results.flatMap((result) => result.invalidTokens),
+      errorSummary: results.map((result) => result.errorSummary).filter(Boolean).join(' | ') || undefined,
+    };
+  }
   const messages = tokens.map((token) => ({
     to: token,
     sound: payload.sound ?? 'default',

@@ -184,6 +184,7 @@ async function postRegistration(payload: {
   device_id: string;
   platform: string;
   app_version: string;
+  project_id?: string;
 }): Promise<boolean> {
   if (!BACKEND_URL) {
     lastError = 'Backend URL is not configured (EXPO_PUBLIC_API_URL).';
@@ -298,6 +299,7 @@ export async function registerPushToken(options?: { force?: boolean }): Promise<
       device_id: deviceId,
       platform: Platform.OS,
       app_version: appVersion,
+      project_id: projectId,
     });
 
     if (ok) {

@@ -2,7 +2,7 @@
 import React, { useState, useCallback } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity,
-  ActivityIndicator, Alert, StyleSheet,
+  ActivityIndicator, Alert, StyleSheet, Modal, TextInput,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
@@ -163,6 +163,10 @@ const PLATFORMS: Platform[] = [
   { id: 'whatsapp',  name: 'WhatsApp Business',  sub: 'WhatsApp Business API',       bg: '#25D366' },
   { id: 'linkedin',  name: 'LinkedIn',           sub: 'LinkedIn Marketing',          bg: '#0A66C2', comingSoon: true },
   { id: 'google',    name: 'Google Ads',         sub: 'Google Marketing Platform',   bg: '#FFFFFF',  comingSoon: true },
+  { id: 'telegram',  name: 'Telegram',           sub: 'Personal account',            bg: '#229ED9' },
+  { id: 'whatsapp_personal', name: 'WhatsApp',   sub: 'Personal account · pairing code', bg: '#25D366' },
+  { id: 'signal_personal', name: 'Signal',       sub: 'Personal account · phone verification', bg: '#3A76F0' },
+  { id: 'bluesky',   name: 'Bluesky',            sub: 'Personal account · app password', bg: '#1185FE' },
 ];
 
 // Instagram uses a gradient background — approximated here
@@ -223,6 +227,14 @@ export default function ConnectedAccountsScreen() {
   const [loading, setLoading] = useState(false);
   const [initialLoad, setInitialLoad] = useState(true);
   const [disconnecting, setDisconnecting] = useState<string | null>(null);
+  const [personalProvider, setPersonalProvider] = useState<Platform | null>(null);
+  const [personalStep, setPersonalStep] = useState<'start' | 'verify'>('start');
+  const [personalPhone, setPersonalPhone] = useState('');
+  const [personalHandle, setPersonalHandle] = useState('');
+  const [personalSecret, setPersonalSecret] = useState('');
+  const [personalRequestId, setPersonalRequestId] = useState('');
+  const [pairingCode, setPairingCode] = useState('');
+  const [personalBusy, setPersonalBusy] = useState(false);
 
   const { tokens, connectedPlatforms, loadConnectedPlatforms, disconnectPlatform } = useAgentStore();
   const { subscription } = useEnergyStore();
@@ -247,6 +259,16 @@ export default function ConnectedAccountsScreen() {
   );
 
   const handleConnect = (platform: Platform) => {
+    if (['telegram', 'whatsapp_personal', 'signal_personal', 'bluesky'].includes(platform.id)) {
+      setPersonalProvider(platform);
+      setPersonalStep('start');
+      setPersonalPhone('');
+      setPersonalHandle('');
+      setPersonalSecret('');
+      setPersonalRequestId('');
+      setPairingCode('');
+      return;
+    }
     const params: any = {};
     if (platform.id === 'facebook')  params.connectFacebook = true;
     else if (platform.id === 'instagram') params.connectInstagram = true;
@@ -255,6 +277,57 @@ export default function ConnectedAccountsScreen() {
     else if (platform.id === 'twitter')   params.connectTwitter = true;
     else if (platform.id === 'whatsapp')  params.connectWhatsApp = true;
     navigation.navigate('AgentChat', params);
+  };
+
+  const closePersonalModal = () => {
+    if (!personalBusy) setPersonalProvider(null);
+  };
+
+  const submitPersonalConnection = async () => {
+    if (!personalProvider) return;
+    setPersonalBusy(true);
+    try {
+      const { supabase } = await import('../services/supabase');
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.access_token) throw new Error('Please sign in again.');
+      const base = `${process.env.EXPO_PUBLIC_API_URL || ''}/api/social-connections`;
+      const headers = { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` };
+      let endpoint = '';
+      let body: Record<string, string> = {};
+      if (personalProvider.id === 'bluesky') {
+        endpoint = `${base}/bluesky`;
+        body = { handle: personalHandle, appPassword: personalSecret };
+      } else if (personalProvider.id === 'telegram') {
+        endpoint = `${base}/telegram/${personalStep === 'start' ? 'start' : 'verify'}`;
+        body = personalStep === 'start'
+          ? { phone: personalPhone }
+          : { requestId: personalRequestId, code: personalSecret };
+      } else if (personalProvider.id === 'whatsapp_personal') {
+        endpoint = `${base}/whatsapp-personal/start`;
+        body = { phone: personalPhone };
+      } else {
+        endpoint = `${base}/signal/${personalStep === 'start' ? 'start' : 'verify'}`;
+        body = personalStep === 'start'
+          ? { phone: personalPhone }
+          : { requestId: personalRequestId, code: personalSecret };
+      }
+      const response = await fetch(endpoint, { method: 'POST', headers, body: JSON.stringify(body) });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(result.error || 'Connection failed.');
+      if (result.requestId) {
+        setPersonalRequestId(result.requestId);
+        if (result.pairingCode) setPairingCode(result.pairingCode);
+        setPersonalStep('verify');
+        return;
+      }
+      setPersonalProvider(null);
+      await refresh();
+      Alert.alert('Connected', `${personalProvider.name} is now connected.`);
+    } catch (error: any) {
+      Alert.alert('Connection failed', error.message || 'Please try again.');
+    } finally {
+      setPersonalBusy(false);
+    }
   };
 
   const handleUpgrade = () => {
@@ -480,6 +553,52 @@ export default function ConnectedAccountsScreen() {
           );
         })}
       </ScrollView>
+      <Modal visible={!!personalProvider} transparent animationType="slide" onRequestClose={closePersonalModal}>
+        <View style={styles.modalBackdrop}>
+          <View style={styles.modalCard}>
+            <Text style={styles.modalEyebrow}>PERSONAL ACCOUNT</Text>
+            <Text style={styles.modalTitle}>Connect {personalProvider?.name}</Text>
+            <Text style={styles.modalDesc}>
+              {personalProvider?.id === 'bluesky'
+                ? 'Use your handle and a Bluesky app password. Your main password is never requested.'
+                : personalProvider?.id === 'whatsapp_personal'
+                  ? 'Pair WhatsApp from the app using the code below. No QR code is used.'
+                  : 'Your verification details stay encrypted and are never shown to the agent.'}
+            </Text>
+            {personalProvider?.id === 'bluesky' ? (
+              <>
+                <TextInput value={personalHandle} onChangeText={setPersonalHandle} placeholder="Handle (name.bsky.social)" placeholderTextColor="#64748B" style={styles.modalInput} autoCapitalize="none" />
+                <TextInput value={personalSecret} onChangeText={setPersonalSecret} placeholder="App password" placeholderTextColor="#64748B" style={styles.modalInput} secureTextEntry autoCapitalize="none" />
+              </>
+            ) : personalProvider?.id === 'whatsapp_personal' && personalStep === 'verify' ? (
+              <View style={styles.pairingBox}>
+                <Text style={styles.pairingLabel}>PAIRING CODE</Text>
+                <Text style={styles.pairingCode}>{pairingCode || 'Waiting…'}</Text>
+                <Text style={styles.modalDesc}>Open WhatsApp → Linked devices → Link a device → Link with phone number, then enter this code.</Text>
+              </View>
+            ) : (
+              <>
+                {personalStep === 'start' && (
+                  <TextInput value={personalPhone} onChangeText={setPersonalPhone} placeholder="Phone number with country code" placeholderTextColor="#64748B" style={styles.modalInput} keyboardType="phone-pad" />
+                )}
+                {personalStep === 'verify' && (
+                  <TextInput value={personalSecret} onChangeText={setPersonalSecret} placeholder="Verification code" placeholderTextColor="#64748B" style={styles.modalInput} keyboardType="number-pad" />
+                )}
+              </>
+            )}
+            <View style={styles.modalActions}>
+              <TouchableOpacity onPress={closePersonalModal} style={styles.modalCancel} disabled={personalBusy}>
+                <Text style={styles.modalCancelText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity onPress={submitPersonalConnection} style={styles.modalSubmit} disabled={personalBusy}>
+                {personalBusy
+                  ? <ActivityIndicator color="#0B0F19" size="small" />
+                  : <Text style={styles.modalSubmitText}>{personalProvider?.id === 'whatsapp_personal' && personalStep === 'verify' ? 'I Paired WhatsApp' : personalStep === 'verify' ? 'Verify' : 'Continue'}</Text>}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
     </FeatureGate>
   );
@@ -600,4 +719,18 @@ const styles = StyleSheet.create({
     paddingHorizontal: 24, paddingVertical: 14, gap: 10,
   },
   connectBtnText: { color: '#0B0F19', fontWeight: '800', fontSize: 15 },
+  modalBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.76)', justifyContent: 'flex-end' },
+  modalCard: { backgroundColor: '#151B2B', borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 22, paddingBottom: 34, borderWidth: 1, borderColor: '#263247' },
+  modalEyebrow: { color: '#00F0FF', fontSize: 10, fontWeight: '800', letterSpacing: 1.4, marginBottom: 8 },
+  modalTitle: { color: '#FFFFFF', fontSize: 22, fontWeight: '800', marginBottom: 8 },
+  modalDesc: { color: '#94A3B8', fontSize: 13, lineHeight: 19, marginBottom: 14 },
+  modalInput: { backgroundColor: '#0B0F19', color: '#FFFFFF', borderWidth: 1, borderColor: '#263247', borderRadius: 12, paddingHorizontal: 14, paddingVertical: 13, marginBottom: 10 },
+  pairingBox: { backgroundColor: 'rgba(0,240,255,0.06)', borderWidth: 1, borderColor: 'rgba(0,240,255,0.22)', borderRadius: 14, padding: 16, marginBottom: 12, alignItems: 'center' },
+  pairingLabel: { color: '#64748B', fontSize: 10, fontWeight: '800', letterSpacing: 1.2 },
+  pairingCode: { color: '#00F0FF', fontSize: 28, fontWeight: '900', letterSpacing: 4, marginVertical: 8 },
+  modalActions: { flexDirection: 'row', gap: 10, marginTop: 8 },
+  modalCancel: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingVertical: 13, borderRadius: 12, backgroundColor: 'rgba(255,255,255,0.05)' },
+  modalCancelText: { color: '#94A3B8', fontWeight: '700' },
+  modalSubmit: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingVertical: 13, borderRadius: 12, backgroundColor: '#00F0FF' },
+  modalSubmitText: { color: '#0B0F19', fontWeight: '800' },
 });

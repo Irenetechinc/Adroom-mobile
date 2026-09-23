@@ -32,6 +32,7 @@ import { apmaClientRouter } from './apma/apmaRouter';
 import { apmaOAuthRouter } from './apma/apmaOAuthRouter';
 import { telephonyService } from './services/telephonyService';
 import { shipmentService } from './services/shipmentService';
+import { socialAccountService, type PersonalProvider } from './services/socialAccountService';
 
 dotenv.config();
 
@@ -119,6 +120,134 @@ if (!VERIFY_TOKEN) {
 // Middleware to parse JSON bodies
 app.use(bodyParser.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: false }));
+
+// ─── Personal social-account connections ─────────────────────────────────────
+// These routes intentionally return only display metadata. OAuth tokens,
+// pairing state, app passwords, MTProto sessions, and Signal credentials stay
+// inside the backend and are encrypted before persistence.
+async function authenticatedUser(req: Request): Promise<any | null> {
+  const client = getSupabaseClient(req as any);
+  const { data: { user } } = await client.auth.getUser();
+  return user || null;
+}
+
+app.get('/api/social-connections', async (req, res) => {
+  try {
+    const user = await authenticatedUser(req);
+    if (!user) return res.status(401).json({ error: 'Unauthorized.' });
+    return res.json({ connections: await socialAccountService.list(user.id) });
+  } catch (error: any) {
+    return res.status(500).json({ error: error.message });
+  }
+});
+
+app.post('/api/social-connections/bluesky', async (req, res) => {
+  try {
+    const user = await authenticatedUser(req);
+    if (!user) return res.status(401).json({ error: 'Unauthorized.' });
+    const handle = String(req.body?.handle || '').trim();
+    const appPassword = String(req.body?.appPassword || '').trim();
+    if (!handle || !appPassword) return res.status(400).json({ error: 'Handle and app password are required.' });
+    const response = await fetch('https://bsky.social/xrpc/com.atproto.server.createSession', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ identifier: handle, password: appPassword }),
+    });
+    const data: any = await response.json().catch(() => ({}));
+    if (!response.ok || !data.accessJwt) return res.status(400).json({ error: data.message || 'Bluesky credentials were rejected.' });
+    const connection = await socialAccountService.save({
+      userId: user.id,
+      provider: 'bluesky',
+      accountId: data.did,
+      displayName: data.handle || handle,
+      handle: data.handle || handle,
+      credential: { accessJwt: data.accessJwt, refreshJwt: data.refreshJwt, did: data.did, handle: data.handle },
+      metadata: { service: 'https://bsky.social' },
+    });
+    return res.status(201).json({ connection });
+  } catch (error: any) {
+    return res.status(500).json({ error: error.message });
+  }
+});
+
+app.post('/api/social-connections/telegram/start', async (req, res) => {
+  try {
+    const user = await authenticatedUser(req);
+    if (!user) return res.status(401).json({ error: 'Unauthorized.' });
+    const phone = String(req.body?.phone || '').trim();
+    if (!phone) return res.status(400).json({ error: 'Phone number is required.' });
+    return res.json(await socialAccountService.startTelegram(user.id, phone));
+  } catch (error: any) {
+    return res.status(400).json({ error: error.message });
+  }
+});
+
+app.post('/api/social-connections/telegram/verify', async (req, res) => {
+  try {
+    const user = await authenticatedUser(req);
+    if (!user) return res.status(401).json({ error: 'Unauthorized.' });
+    const requestId = String(req.body?.requestId || '');
+    const code = String(req.body?.code || '').trim();
+    const password = req.body?.password ? String(req.body.password) : undefined;
+    if (!requestId || !code) return res.status(400).json({ error: 'Verification request and code are required.' });
+    const connection = await socialAccountService.verifyTelegram(requestId, code, password);
+    return res.status(201).json({ connection });
+  } catch (error: any) {
+    return res.status(400).json({ error: error.message });
+  }
+});
+
+app.post('/api/social-connections/whatsapp-personal/start', async (req, res) => {
+  try {
+    const user = await authenticatedUser(req);
+    if (!user) return res.status(401).json({ error: 'Unauthorized.' });
+    const phone = String(req.body?.phone || '').trim();
+    if (!phone) return res.status(400).json({ error: 'Phone number is required.' });
+    return res.json(await socialAccountService.startWhatsAppPairing(user.id, phone));
+  } catch (error: any) {
+    return res.status(400).json({ error: error.message });
+  }
+});
+
+app.post('/api/social-connections/signal/start', async (req, res) => {
+  try {
+    const user = await authenticatedUser(req);
+    if (!user) return res.status(401).json({ error: 'Unauthorized.' });
+    const phone = String(req.body?.phone || '').trim();
+    if (!phone) return res.status(400).json({ error: 'Phone number is required.' });
+    return res.json(await socialAccountService.startSignalVerification(user.id, phone));
+  } catch (error: any) {
+    return res.status(400).json({ error: error.message });
+  }
+});
+
+app.post('/api/social-connections/signal/verify', async (req, res) => {
+  try {
+    const user = await authenticatedUser(req);
+    if (!user) return res.status(401).json({ error: 'Unauthorized.' });
+    const requestId = String(req.body?.requestId || '');
+    const code = String(req.body?.code || '').trim();
+    if (!requestId || !code) return res.status(400).json({ error: 'Verification request and code are required.' });
+    return res.status(201).json({ connection: await socialAccountService.verifySignal(requestId, code) });
+  } catch (error: any) {
+    return res.status(400).json({ error: error.message });
+  }
+});
+
+app.delete('/api/social-connections/:provider', async (req, res) => {
+  try {
+    const user = await authenticatedUser(req);
+    if (!user) return res.status(401).json({ error: 'Unauthorized.' });
+    const provider = String(req.params.provider) as PersonalProvider;
+    if (!['telegram', 'whatsapp_personal', 'signal_personal', 'bluesky'].includes(provider)) {
+      return res.status(400).json({ error: 'Unsupported personal provider.' });
+    }
+    await socialAccountService.remove(user.id, provider);
+    return res.json({ success: true });
+  } catch (error: any) {
+    return res.status(500).json({ error: error.message });
+  }
+});
 
 // Establish the request-scoped model policy before any agent or service runs.
 // The shared AI engine uses AsyncLocalStorage, so concurrent users cannot
@@ -4284,7 +4413,7 @@ app.post('/api/push/register', async (req, res) => {
     const { data: { user }, error: authErr } = await supabase.auth.getUser();
     if (authErr || !user) return res.status(401).json({ error: 'Unauthorized' });
 
-    const { token, platform, app_version, device_id } = req.body || {};
+    const { token, platform, app_version, device_id, project_id } = req.body || {};
     if (!token || typeof token !== 'string') return res.status(400).json({ error: 'token required' });
     if (!device_id || typeof device_id !== 'string') return res.status(400).json({ error: 'device_id required' });
 
@@ -4313,6 +4442,7 @@ app.post('/api/push/register', async (req, res) => {
           token,
           platform: platform || 'unknown',
           app_version: app_version || null,
+          project_id: project_id || null,
           is_active: true,
           last_seen_at: now,
           updated_at: now,
@@ -4329,6 +4459,7 @@ app.post('/api/push/register', async (req, res) => {
           token,
           platform: platform || 'unknown',
           app_version: app_version || null,
+          project_id: project_id || null,
           is_active: true,
           last_seen_at: now,
           updated_at: now,

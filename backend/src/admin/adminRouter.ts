@@ -553,7 +553,7 @@ router.post('/api/notifications', auth, async (req, res) => {
     const { target, title, body, data: extraData } = req.body;
     if (!target || !title || !body) return res.status(400).json({ error: 'target, title, body required' });
 
-    let tokenQuery = sb.from('device_push_tokens').select('token, user_id');
+    let tokenQuery = sb.from('device_push_tokens').select('token, user_id, project_id');
     if (target.startsWith('user:')) {
       tokenQuery = tokenQuery.eq('user_id', target.replace('user:', ''));
     } else if (target.startsWith('plan:')) {
@@ -572,11 +572,9 @@ router.post('/api/notifications', auth, async (req, res) => {
     }
 
     const messages = tokens.map(token => ({ to: token, title, body, data: extraData || {} }));
-    const chunkSize = 100;
-    const chunks = [];
-    for (let i = 0; i < messages.length; i += chunkSize) {
-      chunks.push(messages.slice(i, i + chunkSize));
-    }
+    // Never mix tokens from separate EAS projects. Older rows may not have a
+    // project_id, so send those individually as the compatibility-safe path.
+    const chunks = messages.map((message) => [message]);
 
     let successCount = 0;
     const results: any[] = [];

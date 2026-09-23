@@ -1,6 +1,7 @@
 import { SupabaseClient } from '@supabase/supabase-js';
 import { AIEngine, parseStructuredJson } from '../config/ai-models';
 import fetch from 'node-fetch';
+import { socialAccountService } from '../services/socialAccountService';
 
 export interface AgentTokens {
     facebook?: { access_token: string; page_id: string };
@@ -8,6 +9,10 @@ export interface AgentTokens {
     twitter?: { access_token: string; refresh_token?: string };
     linkedin?: { access_token: string; person_urn?: string; org_urn?: string };
     tiktok?: { access_token: string; open_id?: string };
+    telegram?: { session: string; apiId: number; apiHash: string };
+    whatsapp_personal?: { connected: true };
+    signal_personal?: { phone: string };
+    bluesky?: { accessJwt: string; refreshJwt?: string; did: string; handle?: string };
 }
 
 export interface AgentTask {
@@ -145,6 +150,18 @@ export class AgentBase {
                 tokens.tiktok = { access_token: c.access_token, open_id: c.open_id };
             }
         }
+        for (const provider of ['telegram', 'whatsapp_personal', 'signal_personal', 'bluesky']) {
+            try {
+                const credential = await socialAccountService.credentials(userId, provider);
+                if (provider === 'telegram' && credential?.session) tokens.telegram = credential;
+                if (provider === 'whatsapp_personal' && credential) tokens.whatsapp_personal = { connected: true };
+                if (provider === 'signal_personal' && credential?.phone) tokens.signal_personal = credential;
+                if (provider === 'bluesky' && credential?.accessJwt) tokens.bluesky = credential;
+            } catch (error: any) {
+                this.log(`Could not load managed ${provider} credentials: ${error.message}`);
+            }
+        }
+        (tokens as any).__userId = userId;
         return tokens;
     }
 
@@ -777,6 +794,10 @@ Return STRICT JSON only (no markdown, no explanation):
             case 'twitter': case 'x': return this.publishToTwitter(tokens.twitter, body);
             case 'linkedin': return this.publishToLinkedIn(tokens.linkedin, body);
             case 'tiktok': return this.publishToTikTok(tokens.tiktok, body, mediaUrl);
+            case 'bluesky': {
+                const published = await socialAccountService.publish('bluesky', (tokens as any).__userId || '', body, mediaUrl);
+                return { platform: 'bluesky', platform_post_id: published.id, published_at: new Date().toISOString(), url: published.url };
+            }
             default: throw new Error(`Unsupported platform: ${platform}`);
         }
     }
@@ -800,6 +821,7 @@ Return STRICT JSON only (no markdown, no explanation):
             case 'twitter': case 'x': await this.replyToTwitterPost(tokens.twitter, commentId, reply); break;
             case 'linkedin': await this.replyToLinkedInComment(tokens.linkedin, commentId, reply); break;
             case 'tiktok': if (!videoId) throw new Error('TikTok reply requires videoId'); await this.replyToTikTokComment(tokens.tiktok, videoId, commentId, reply); break;
+            case 'bluesky': throw new Error('Bluesky replies require the originating record URI and are not available for this task shape.');
             default: throw new Error(`Unsupported platform for reply: ${platform}`);
         }
     }
@@ -834,6 +856,13 @@ Return STRICT JSON only (no markdown, no explanation):
                     }
                 }
                 break;
+            case 'telegram':
+            case 'whatsapp_personal':
+            case 'signal_personal':
+                await socialAccountService.sendMessage(platform.toLowerCase(), (tokens as any).__userId || '', recipientId, message);
+                break;
+            case 'bluesky':
+                throw new Error('Bluesky direct messages are not available through the public API.');
             default: throw new Error(`Unsupported platform for DM: ${platform}`);
         }
     }
