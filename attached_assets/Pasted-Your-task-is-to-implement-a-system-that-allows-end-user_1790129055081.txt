@@ -1,0 +1,151 @@
+Your task is to implement a system that allows end-users to connect their personal accounts on Telegram, WhatsApp, 
+Signal, Bluesky, and Delta Chat to Adirum AI, enabling Adirum AI agents to carry out autonomous activities 
+on the connected accounts, just like already implemented for other social accounts on this app, where 
+required and when required. The agent will then perform messaging and social actions on their behalf. 
+The connection process must be as seamless and non-technical as possible for the user. You must implement 
+comprehensive anti-ban guardrails and human-like interaction patterns for every platform. You must 
+
+Telegram (User Account, Not Bot)
+Connection must be seamless: the user enters their phone number, receives a login code inside their Telegram app, 
+enters that code, and if two-factor authentication is enabled, enters their password. No QR code, no management bot, 
+no exposure of API ID, API hash, or session strings. The backend must embed Telegram's official API credentials so
+the user never sees or inputs them. After connection, the agent must carry out autonomous activities as a real 
+user account (MTProto), not a bot. This allows the agent to send and receive messages, send audio, video, links, 
+stickers, and other media, and to create and manage groups and channels (add/remove users, set permissions, edit settings). Note that bots cannot create groups, so the user account is required for these actions. Store the session securely on the server with strong encryption. Never log or expose session data to the agent's context. Allow the user to disconnect at any time. Anti-ban guardrails: implement FloodWait handling with exponential backoff and a circuit breaker that pauses the account after repeated FloodWaits. Randomize delays between actions, simulate typing indicators and read receipts, avoid mass messaging, use dedicated accounts, and warm up new accounts gradually. Monitor for ban signals and pause automation immediately if detected.
+
+WhatsApp (Baileys, Unofficial)
+Use the Baileys library to connect via WhatsApp Web. The user must link their device by entering a pairing code no qrcode scan. 
+The session must persist after the initial link. The Adirum AI agent 
+currently running autonomous activity on the account must be able to send and receive messages, 
+send media (audio, video, documents, stickers), post status updates, forward messages, and manage groups. 
+Anti-ban guardrails: implement human-like delays between messages (randomized), avoid bulk or spammy sends, 
+vary message content, avoid sending links in the first message to new contacts, use dedicated phone numbers, 
+warm up new numbers slowly, and monitor for disconnects or error patterns that indicate a ban. Implement a 
+circuit breaker that pauses sending after repeated failures. Be extremely cautious with any third-party "anti-ban" 
+packages—audit them for malware before use. Respect WhatsApp's undocumented rate limits by keeping activity 
+conversational and low-volume.
+
+Signal (Unofficial)
+Use an unofficial Signal API such as signal-cli. 
+The user must register a phone number: they provide the number, 
+receive an SMS code, and enter that code. The session must be stored securely. 
+Adirum AI agents must be able to send and receive messages, send media, and 
+participate in group chats. Anti-ban guardrails: respect Signal's strict rate 
+limits (assume they are very low). Implement long, randomized delays between actions. 
+Avoid mass messaging. Use a dedicated number. Monitor for registration blocks or bans 
+and pause immediately if detected.
+
+Bluesky
+Connection should require only a handle and an app password. The user generates an 
+app password in their Bluesky settings and provides it. No phone verification or approval process. 
+Adirum AI agents must be able to post, reply, like, repost, send direct messages, and follow or unfollow users. 
+Anti-ban guardrails: respect Bluesky's documented rate limits.
+Implement randomized delays between actions, avoid rapid-fire posting or following, and mimic human browsing patterns.
+Do not engage in aggressive follow/unfollow cycles. The agent must be able to send and receive messages, 
+send media, and participate in group chats. Anti-ban guardrails: respect email provider rate limits. 
+Implement human-like delays, avoid mass messaging, and monitor for delivery failures.
+
+General Anti-Ban and Human Flow Requirements (All Platforms)
+For every platform, implement randomized delays between actions. 
+Simulate typing indicators before sending messages. Mark incoming messages as read after 
+a natural delay. Avoid sending identical messages to multiple recipients. 
+Introduce variation in message content and timing. Implement daily sending limits per account and per recipient. 
+Track these limits and enforce them. Monitor for rate limit errors and back off exponentially. 
+Implement a circuit breaker that pauses the account for a cooldown period after too many errors. 
+Warm up new accounts: start with very low activity and gradually increase over days or weeks. 
+Store all session data and credentials with strong encryption. Never log sensitive data. 
+Never expose session tokens to the agent's reasoning context. The agent must behave like a 
+conscientious human user.
+
+Implement this system so that end-users can connect their accounts seamlessly, 
+just like other social accounts already implemented in this app: for Telegram, 
+only phone number and login code; for WhatsApp, pairing code only, no QR code; 
+for Signal, phone number and SMS code; for Bluesky, handle and app password. 
+No technical details such as API IDs, hashes, or session strings should ever
+ be requested from or shown to the user. Make sure the user can select these 
+accounts in the select account modal during the strategy creation flow, and 
+ensure connected accounts work in sync with every other agent, tool, and engine in this app.
+
+Conversation Agent and Lead Flow
+The conversation agent, when all AgentReachAdapter web search is completed: 
+1 result(s), [ConversationAgent] discover complete strategy=f69c6c83-2537-47f0-9f67-fe901e7ffb3d results=8, 
+[ConversationAgent] persist strategy=f69c6c83-2537-47f0-9f67-fe901e7ffb3d signals=8,
+[ConversationAgent] route strategy=f69c6c83-2537-47f0-9f67-fe901e7ffb3d routed=5, 
+[PushService] Conversation milestone for user f59c1315-7e97-477b-ab02-9bccbfdf5b63: 8 identified / 8 high-potential, 
+[ConversationAgent] notify strategy=f69c6c83-2537-47f0-9f67-fe901e7ffb3d changed=true identified=8 highPotential=8 engaged=5, 
+[AI:GEMINI-FLASH] [2026-09-22T21:50:05.705Z] generateStrategyEconomy ROUTE->free-provider has been done and high-potential 
+clients and engaged clients identified to engage, just like already implemented. The conversation agent shouldn't do another 
+conversation web search or social media search sweep again until the currently running agent requires new ones and enable all agents to able to trigger this when they required  and also enable conversation 
+agent to be able to detect when new once are required and also run sweep overal once every day. 
+After conversation has been identified by the AgentReachAdapter and the conversation agent has identified potential 
+clients, this data should be sent to the agent that is already implemented, whose job is to get all information about 
+the potential client that will enable the psychology agent to build a comprehensive psychology of all potential 
+clients identified and about to be engaged, before passing it to the agent responsible for messaging. 
+When the AI responsible for messaging receives this data, it should use it to build high-conversion conversations 
+that will close the deal to achivew user goal slected during strategy creation flow . 
+The agent should also use the connected and selected user account. The agent responsible for finding and collecting user 
+information should find the social handle or contact of the clients identified that the user has connected and 
+selected during strategy creation flow. For example, if the user during strategy creation flow selects Telegram, 
+WhatsApp, and Signal, and the strategy is approved and running, the agent responsible for getting identified 
+potential clients for that strategy's product, brand, or service should also get the identified clients' 
+social accounts that correspond with what the user selected for the actie runing strategy, 
+so that the autonomous agents can use the 
+user-selected account to engage them when psychology is done and marketing conversation is engaged. 
+Please note that agents don't use fixed rules or templates; all decisions must be dynamic and work 
+with the required tools, agents, and engines in this app seamlessly, and also other tools and agents 
+when and where required.
+
+Push Notification Error
+Also fix this push notification error, as the user is not getting push notifications but is only receiving in-app notifications:
+[PushService] Expo push HTTP error: 400 {"errors":[{"code":"PUSH_TOO_MANY_EXPERIENCE_IDS","type":"USER","message":"All push notification messages in the same request must be for the same project; check the details field to investigate conflicting tokens.","details":{"@iamnewtech/adroom-mobile":["ExponentPushToken[bFvF_ZJ9EFi2uv2oCcWfN7]","ExponentPushToken[A15JzWDPPmvL5zX5-Dw8jz]","ExponentPushToken[TSXousAm8EIb0FEc5jr9xV]","ExponentPus
+I need a workaround to fix this error. Utilise the technology already implemented in the AgentReach where opencli credentials are not required and the goal is still achieved seamlessly. Note that web search works fine; do not touch that. This is for the social accounts only.
+[AgentReachAdapter] reddit search failed: spawn opencli ENOENT
+[AgentReachAdapter] linkedin search failed: spawn opencli ENOENT
+[AgentReachAdapter] google_maps search failed: spawn opencli ENOENT
+[AgentReachAdapter] facebook search failed: spawn opencli ENOENT
+[AgentReachAdapter] instagram search failed: spawn opencli ENOENT
+[AgentReachAdapter] reddit search failed: spawn opencli ENOENT
+[AgentReachAdapter] linkedin search failed: spawn opencli ENOENT
+[AgentReachAdapter] google_maps search failed: spawn opencli ENOENT
+[AgentReachAdapter] facebook search failed: spawn opencli ENOENT
+[AgentReachAdapter] instagram search failed: spawn opencli ENOENT
+[AgentReachAdapter] reddit search failed: spawn opencli ENOENT
+[AgentReachAdapter] linkedin search failed: spawn opencli ENOENT
+[AgentReachAdapter] google_maps search failed: spawn opencli ENOENT
+
+Dashboard Redesign
+I need a dashboard screen redesign. I want this dashboard to show real-time milestones as they are being achieved 
+in real time, without the user refreshing the dashboard page. Note: no internal procedures or steps can be revealed, 
+and all milestones and metrix must be detailed so the user can understand what is going on. When the conversation agent 
+identifies a lead, the required agent responsible for finding all information about that client has found them. This client should be visible to the user in the lead screen in real time, even without reloading the screen manually. So when potential clients are identified, the number should be indicated in the lead screen. When they are engaged, the engaged ones should be shown in the lead screen. When the agent responsible for finding everything about potential clients has gotten data—their names, socials, and all data found but not sensitive or personal—this should be shown in the lead screen. The rest of the data, whether sensitive or personal, should be used in the back end by the required agent but not shown to the user in the front end. When the other required activities are being done, they should be shown to the user where and when required in the lead and conversation screen. Also do not forget to wire the new social account implementation to the conversation screen too, so conversations from these social accounts can be visible there. and also for when any agent achieves a mile stone this dahboard cannot be ideal it should be livlt and alway showing agent realtime activites that user needs to see but cnnot 
+shpw user becekdn or internal workflow or orecodufrese or how agent achives goals just result and all realtime dynamic data and metrixs
+
+Admin Controls
+I want the admin to be able to disable social account connection for individual users, and for all users.
+ Admin should also be able to turn on "coming soon" mode for social accounts for all users. 
+When this is turned on or off, it should take effect across the app, and most importantly,
+ in the connect social account screen when and where required
+
+Orchestrator Error
+Investigate and explain to me why I am getting this error. Is this supposed to work like this? If no, fix it.
+[Orchestrator] Processing 5 due tasks
+[Orchestrator] Skipping task b536f720-5761-4ca4-8a8b-e2b4b2f0f25b: web is not selected for strategy f69c6c83-2537-47f0-9f67-fe901e7ffb3d
+[Orchestrator] Skipping task b23aea28-6ff8-4fe8-b8b1-4b00adf4ca1e: web is not selected for strategy f69c6c83-2537-47f0-9f67-fe901e7ffb3d
+[Orchestrator] Skipping task 411379f6-4088-4103-83a7-ae7c4d39bced: web is not selected for strategy f69c6c83-2537-47f0-9f67-fe901e7ffb3d
+[Orchestrator] Skipping task 73614445-5bd5-41be-ada7-0f70e81be8d6: web is not selected for strategy f69c6c83-2537-47f0-9f67-fe901e7ffb3d
+[Orchestrator] Skipping task 5f250602-6954-4fed-89dd-68640425f077: web is not selected for strategy f69c6c83-2537-47f0-9f67-fe901e7ffb3d
+
+Social Media Content Generation Issue
+I also noticed that Facebook, Instagram, and TikTok videos, posts, and content are not being generated as already implemented in this app, 
+where and when required, even though the user has reconnected social accounts to curb old tokens and has selected them during the strategy creation flow and even when genrated they nothing is beeing posted to required accounts. 
+Please note: no hard-coded social platform. It must be what the user selects during the strategy creation flow.
+
+Reconnection Notifications Issue
+I also noticed that the user is being sent account reconnection in-app notifications for 
+accounts that are marked as "coming soon" and were not selected by the user during account strategy creation flow, 
+or even actively connected in the connect accounts screen. Fix this so that only currently connected social accounts 
+whose tokens can be refreshed or disconnected, and that the user has selected during any active and running strategy 
+creation flow, are sent to the user to reconnect if required and where required.
+
+i also noticed that graphics desinger agent uses hard coded templates remove thsi all templates must be according to what the intended platform the asset is going to be post be algorithm requires to see  and what trending in that category of product 
+and this must be curent realtime data same should go for the director agetn and vidoe editor agent 

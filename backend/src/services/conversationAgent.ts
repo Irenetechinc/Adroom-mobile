@@ -15,6 +15,13 @@ export const GOAL_OUTCOMES: Record<StrategyGoal, { target: string; signal: strin
 
 type Signal = ReachResult & { strategyId: string; userId: string; goal: StrategyGoal; intentScore: number; status: 'identified' | 'high_potential' | 'engaged' };
 type WorkflowState = { strategy: any; signals: Signal[]; identified: number; highPotential: number; engaged: number; routed: number };
+const PERSONAL_PLATFORMS = new Set(['telegram', 'whatsapp_personal', 'signal_personal', 'delta_chat']);
+
+function signalRecipient(signal: Signal): string | undefined {
+  const recipient = signal.metadata?.recipient || signal.authorId;
+  if (!recipient || recipient === signal.externalId || recipient === signal.url) return undefined;
+  return String(recipient).trim() || undefined;
+}
 
 const State = Annotation.Root({
   strategy: Annotation<any>,
@@ -105,19 +112,44 @@ export class ConversationAgent {
         })), { onConflict: 'strategy_id,platform,external_id' });
 
          // Keep the user-facing lead list in sync with discovery. Only public
-         // identity and the public interaction preview are persisted here;
-         // deeper research remains backend-only.
-         await this.supabase.from('agent_leads').upsert(state.signals.map((signal) => ({
+         // identity and the public interaction preview are persisted here.
+         // Personal channels are never treated as reachable unless discovery
+         // produced a real platform recipient, not a search-result URL.
+         const leadPayloads = state.signals.map((signal) => {
+           const recipient = signalRecipient(signal);
+           return {
            strategy_id: signal.strategyId,
            user_id: signal.userId,
            platform: signal.platform,
-           platform_user_id: signal.authorId || signal.externalId,
+           platform_user_id: recipient || `discovery:${signal.externalId}`,
            platform_username: signal.authorName,
            first_interaction: signal.text.slice(0, 1000),
            intent_score: signal.intentScore,
-           intent_signals: [{ source: signal.kind, url: signal.url || null }],
+           intent_signals: [{ source: signal.kind, url: signal.url || null, recipient: recipient || null, contact_ready: !PERSONAL_PLATFORMS.has(signal.platform) || Boolean(recipient) }],
            stage: signal.status === 'high_potential' ? 'identified' : 'identified',
-         })), { onConflict: 'user_id,platform,platform_user_id' });
+           };
+         });
+         const { data: leadRows } = await this.supabase
+           .from('agent_leads')
+           .upsert(leadPayloads, { onConflict: 'user_id,platform,platform_user_id' })
+           .select('id, platform, platform_user_id');
+
+         // Build a shared, privacy-scoped profile from the public signal and
+         // any user-owned conversation evidence. Sales, psychology, messaging,
+         // and tool agents can all consume the same lead_sales_profiles record.
+         const { leadProfileBuilder } = await import('./leadProfileBuilder');
+         await Promise.all((state.signals.filter((signal) => signal.status === 'high_potential')).map(async (signal) => {
+           const recipient = signalRecipient(signal);
+           const platformUserId = recipient || `discovery:${signal.externalId}`;
+           const lead = (leadRows || []).find((row: any) =>
+             row.platform === signal.platform && row.platform_user_id === platformUserId);
+           if (lead?.id) {
+             await leadProfileBuilder.buildForLead(signal.userId, lead.id).catch((error: any) => {
+               console.warn(`[ConversationAgent] lead profile enrichment skipped: ${error.message}`);
+               return null;
+             });
+           }
+         }));
       }
       return {};
     })
@@ -128,8 +160,21 @@ export class ConversationAgent {
       const topSignals = state.signals
         .filter((signal) => signal.status === 'high_potential')
         .filter((signal) => !selectedPlatforms.length || selectedPlatforms.includes(signal.platform))
+         .filter((signal) => !PERSONAL_PLATFORMS.has(signal.platform) || Boolean(signalRecipient(signal)))
         .slice(0, 5);
       for (const signal of topSignals) {
+         const recipient = signalRecipient(signal);
+         const platformUserId = recipient || `discovery:${signal.externalId}`;
+         const { data: lead } = await this.supabase
+           .from('agent_leads')
+           .select('id')
+           .eq('user_id', signal.userId)
+           .eq('platform', signal.platform)
+           .eq('platform_user_id', platformUserId)
+           .maybeSingle();
+         const { data: sharedProfile } = lead?.id
+           ? await this.supabase.from('lead_sales_profiles').select('profile').eq('user_id', signal.userId).eq('lead_id', lead.id).maybeSingle()
+           : { data: null };
         await this.supabase.from('agent_tasks').insert({
           strategy_id: signal.strategyId,
           user_id: signal.userId,
@@ -138,7 +183,18 @@ export class ConversationAgent {
           platform: signal.platform,
           scheduled_at: new Date().toISOString(),
           status: 'pending',
-          content: { signal_id: signal.externalId, author_name: signal.authorName, text: signal.text, url: signal.url, goal: signal.goal },
+           content: {
+             signal_id: signal.externalId,
+             lead_id: lead?.id || null,
+             author_name: signal.authorName,
+             recipient,
+             public_context: { platform: signal.platform, text: signal.text.slice(0, 2000), url: signal.url || null, kind: signal.kind },
+             lead_profile: sharedProfile?.profile || null,
+             share_with: ['psychology', 'messaging', 'tools', 'salesman'],
+             text: signal.text,
+             url: signal.url,
+             goal: signal.goal,
+           },
         });
       }
       console.log(`[ConversationAgent] route strategy=${state.strategy.id} routed=${topSignals.length}`);

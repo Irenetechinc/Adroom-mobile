@@ -43,6 +43,7 @@ export class LeadProfileBuilder {
     const messages = (messagesResult.data || []).filter((row: any) => row.direction !== 'outbound');
     const evidence = [
       lead.first_interaction ? { source: 'lead_record', text: String(lead.first_interaction).slice(0, 1200) } : null,
+      lead.intent_signals ? { source: 'public_signal_metadata', text: JSON.stringify(lead.intent_signals).slice(0, 2400) } : null,
       ...messages.map((row: any) => ({ source: 'conversation', text: String(row.message || '').slice(0, 1200), created_at: row.created_at })),
       ...(mentionsResult.data || []).map((row: any) => ({ source: 'public_mention', text: String(row.content_excerpt || '').slice(0, 1200), buying_signals: row.buying_signals })),
     ].filter(Boolean);

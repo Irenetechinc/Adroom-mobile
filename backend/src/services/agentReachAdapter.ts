@@ -57,22 +57,46 @@ function normalizePlatform(platform: string): string {
   return aliases[value] || value;
 }
 
+function extractRecipient(platform: string, url?: string, authorId?: string): string | undefined {
+  if (authorId) return String(authorId);
+  if (!url) return undefined;
+  try {
+    const parsed = new URL(url);
+    const path = parsed.pathname.replace(/^\/+|\/+$/g, '');
+    if (platform === 'telegram' && parsed.hostname.endsWith('t.me') && path && !path.startsWith('+')) return `@${path.split('/')[0]}`;
+    if (platform === 'whatsapp_personal' && parsed.hostname.endsWith('wa.me') && path) return path.split('/')[0];
+    if (platform === 'signal_personal' && parsed.hostname.endsWith('signal.me')) {
+      const match = url.match(/#p\/([^/?]+)/);
+      return match?.[1];
+    }
+    if (platform === 'bluesky' && parsed.hostname.endsWith('bsky.app') && path.startsWith('profile/')) {
+      return path.slice('profile/'.length).split('/')[0];
+    }
+  } catch {
+    // An invalid public URL is not a usable messaging recipient.
+  }
+  return undefined;
+}
+
 /** Adapter that follows the Agent-Reach routing model: channel-first, browser-session, with graceful fallback. */
 export class AgentReachAdapter {
   private mapItem(platform: string, item: any, index: number, query: string): ReachResult {
     const kind = (item.kind || item.type || item.category || '').toString().toLowerCase();
     const text = String(item.text || item.content || item.title || item.snippet || item.body || item.message || '');
 
+    const url = item.url || item.link || item.permalink || item.href || undefined;
+    const authorId = item.author_id || item.user?.id || item.user_id || undefined;
+    const recipient = extractRecipient(platform, url, authorId);
     return {
       platform,
       externalId: String(item.id || item.post_id || item.review_id || item.url || `${platform}:${query}:${index}`),
       authorName: String(item.author_name || item.author || item.username || item.user?.name || item.person || 'Unknown person'),
-      authorId: item.author_id || item.user?.id || item.user_id || undefined,
+      authorId,
       text,
-      url: item.url || item.link || item.permalink || item.href || undefined,
+      url,
       kind: kind.includes('comment') ? 'comment' : kind.includes('review') ? 'review' : kind.includes('message') ? 'message' : kind.includes('blog') ? 'blog' : 'post',
       capturedAt: item.captured_at || item.created_at || item.reviewed_at || new Date().toISOString(),
-      metadata: { adapter: 'agent-reach', raw: item },
+      metadata: { adapter: 'agent-reach', raw: item, ...(recipient ? { recipient } : {}) },
     };
   }
 
@@ -102,6 +126,10 @@ export class AgentReachAdapter {
       twitter: 'site:x.com OR site:twitter.com',
       x: 'site:x.com OR site:twitter.com',
       youtube: 'site:youtube.com',
+      telegram: 'site:t.me',
+      whatsapp_personal: 'site:wa.me',
+      signal_personal: 'site:signal.me',
+      bluesky: 'site:bsky.app',
     };
     const routedQuery = domains[normalized] ? `${query} ${domains[normalized]}` : query;
     try {

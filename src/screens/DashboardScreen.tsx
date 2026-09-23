@@ -210,7 +210,7 @@ interface PerfSummary {
 interface GmapsLead {
   id: string;
   platform_username: string;
-  platform: 'whatsapp' | 'email';
+  platform: string;
   intent_score: number;
   stage: string;
   created_at: string;
@@ -295,7 +295,6 @@ export default function DashboardScreen() {
           .from('agent_leads')
           .select('id, platform_username, platform, intent_score, stage, created_at, intent_signals')
           .eq('user_id', session.user.id)
-          .in('platform', ['whatsapp', 'email'])
           .order('created_at', { ascending: false })
           .limit(8),
         // Campaign wins: completed agent tasks from all agents (last 30 days)
@@ -318,6 +317,13 @@ export default function DashboardScreen() {
           .from('agent_leads')
           .select('id', { count: 'exact', head: true })
           .eq('user_id', session.user.id),
+        supabase
+          .from('strategy_conversation_runs')
+          .select('identified, high_potential, engaged, created_at')
+          .eq('user_id', session.user.id)
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle(),
       ]);
 
       setActiveStrategies((strategiesRes.data || []).map((strategy: any) => ({
@@ -334,6 +340,12 @@ export default function DashboardScreen() {
         summary: `${row.platform || 'Platform'} intelligence refreshed${row.trending_formats?.length ? `: ${row.trending_formats.slice(0, 2).join(', ')}` : ''}`,
       })));
       setGmapsLeads((gmapsRes.data as GmapsLead[]) || []);
+      const latestConversation = conversationRunsRes.data as any;
+      setConversationMilestones({
+        identified: Number(latestConversation?.identified || 0),
+        highPotential: Number(latestConversation?.high_potential || 0),
+        engaged: Number(latestConversation?.engaged || 0),
+      });
 
       // Deals + revenue total
       const deals = (dealsRes.data as ClosedDeal[]) || [];
@@ -734,6 +746,32 @@ export default function DashboardScreen() {
           </TouchableOpacity>
         </Animated.View>
 
+        {/* ── Conversation Discovery Milestones ── */}
+        <Animated.View entering={FadeInDown.delay(230).springify()} style={styles.section}>
+          <View style={styles.sectionHeader}>
+            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+              <MessageCircle size={18} color="#A78BFA" />
+              <Text style={styles.sectionTitle}>Conversation Discovery</Text>
+            </View>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
+              <View style={styles.liveDot} />
+              <Text style={styles.liveText}>LIVE</Text>
+            </View>
+          </View>
+          <View style={{ flexDirection: 'row', gap: 8 }}>
+            {[
+              { label: 'Identified', value: conversationMilestones.identified, color: '#00F0FF' },
+              { label: 'High potential', value: conversationMilestones.highPotential, color: '#F59E0B' },
+              { label: 'Engaged', value: conversationMilestones.engaged, color: '#10B981' },
+            ].map((milestone) => (
+              <View key={milestone.label} style={{ flex: 1, backgroundColor: '#151B2B', borderRadius: 12, borderWidth: 1, borderColor: '#1E293B', padding: 12 }}>
+                <Text style={{ color: milestone.color, fontSize: 22, fontWeight: '900' }}>{milestone.value}</Text>
+                <Text style={{ color: '#64748B', fontSize: 10, marginTop: 3 }}>{milestone.label}</Text>
+              </View>
+            ))}
+          </View>
+        </Animated.View>
+
         {/* Active Strategies */}
         <Animated.View entering={FadeInDown.delay(260).springify()} style={styles.section}>
           <View style={styles.sectionHeader}>
@@ -981,13 +1019,13 @@ export default function DashboardScreen() {
           )}
         </Animated.View>
 
-        {/* GMaps Leads Section */}
+        {/* Discovered Leads Section */}
         {gmapsLeads.length > 0 && (
           <Animated.View entering={FadeInDown.delay(325).springify()} style={styles.section}>
             <View style={styles.sectionHeader}>
               <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                <MapPin size={18} color="#00D9A5" />
-                <Text style={styles.sectionTitle}>Local Business Leads</Text>
+                <Users size={18} color="#00D9A5" />
+                <Text style={styles.sectionTitle}>Discovered Leads</Text>
               </View>
               <View style={styles.gmapsBadge}>
                 <Text style={styles.gmapsBadgeText}>{gmapsLeads.length}</Text>
@@ -997,13 +1035,13 @@ export default function DashboardScreen() {
             <View style={styles.gmapsCard}>
               <View style={styles.gmapsHeader}>
                 <Building2 size={12} color="#00D9A5" />
-                <Text style={styles.gmapsHeaderLabel}>DISCOVERED VIA GOOGLE MAPS</Text>
+                <Text style={styles.gmapsHeaderLabel}>PUBLIC AND CONNECTED SOURCES</Text>
                 <View style={styles.gmapsLiveDot} />
                 <Text style={styles.gmapsLiveText}>AUTO</Text>
               </View>
 
               {gmapsLeads.map((lead, i) => {
-                const sig = (lead.intent_signals || []).find(s => s.source === 'google_maps_discovery') ?? null;
+                const sig = (lead.intent_signals || [])[0] ?? null;
                 const score = Math.round((lead.intent_score ?? 0) * 100);
                 const scoreColor = score >= 75 ? '#10B981' : score >= 55 ? '#F59E0B' : '#64748B';
                 const stageColors: Record<string, string> = {
@@ -1026,15 +1064,18 @@ export default function DashboardScreen() {
                     style={[styles.gmapsRow, i < gmapsLeads.length - 1 && styles.gmapsRowBorder]}
                   >
                     <View style={styles.gmapsIconWrap}>
-                      {lead.platform === 'whatsapp'
+                      {lead.platform === 'whatsapp' || lead.platform === 'whatsapp_personal'
                         ? <Phone size={13} color="#25D366" />
-                        : <Mail size={13} color="#00F0FF" />
+                        : lead.platform === 'email'
+                          ? <Mail size={13} color="#00F0FF" />
+                          : <MessageCircle size={13} color="#A78BFA" />
                       }
                     </View>
 
                     <View style={{ flex: 1 }}>
                       <Text style={styles.gmapsBizName} numberOfLines={1}>{lead.platform_username}</Text>
                       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 2 }}>
+                        <Text style={styles.gmapsMeta}>{lead.platform.replace('_personal', '')}</Text>
                         {sig?.rating != null && (
                           <Text style={styles.gmapsMeta}>★ {sig.rating}</Text>
                         )}

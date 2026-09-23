@@ -1,0 +1,27 @@
+-- Durable inbound messages for personal providers.
+-- Apply this in the user's Supabase project. No Replit services are required.
+
+CREATE TABLE IF NOT EXISTS public.personal_inbound_messages (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  provider TEXT NOT NULL,
+  external_id TEXT NOT NULL,
+  sender_id TEXT NOT NULL,
+  message TEXT NOT NULL,
+  received_at TIMESTAMPTZ NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (user_id, provider, external_id)
+);
+
+CREATE INDEX IF NOT EXISTS personal_inbound_messages_lookup_idx
+  ON public.personal_inbound_messages (user_id, provider, received_at DESC);
+
+ALTER TABLE public.personal_inbound_messages ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Users can view their personal inbound messages"
+  ON public.personal_inbound_messages;
+CREATE POLICY "Users can view their personal inbound messages"
+  ON public.personal_inbound_messages FOR SELECT
+  USING (auth.uid() = user_id);
+
+NOTIFY pgrst, 'reload schema';

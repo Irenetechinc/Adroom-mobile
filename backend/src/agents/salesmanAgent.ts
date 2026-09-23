@@ -324,7 +324,7 @@ Return valid JSON only with this schema:
                     });
                     if (postImageUrl) this.log(`Sales graphic generated — ${postImageUrl.split('/').pop()}`);
                 } catch (e: any) {
-                    this.log(`GraphicsDesignerAgent failed (non-fatal): ${e.message}`);
+                    throw new Error(`GraphicsDesignerAgent failed: ${e.message}`);
                 }
             }
 

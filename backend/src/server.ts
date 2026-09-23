@@ -3839,8 +3839,8 @@ app.post('/api/admin/tokens/refresh', adminAuth, async (req, res) => {
 
 /**
  * GET /admin/critic — Serve the Critic Agent admin dashboard HTML.
- * Accessible at /admin/critic with no auth (internal Replit only) or with
- * ?token=<ADMIN_SECRET> for Railway prod.
+ * Requires an admin bearer token (or the legacy query-token form for the
+ * initial dashboard load). There is no unauthenticated internal-host bypass.
  */
 app.get('/admin/critic', adminAuth, (req, res) => {
   const fs = require('fs');
@@ -3848,7 +3848,9 @@ app.get('/admin/critic', adminAuth, (req, res) => {
   const file = path.join(__dirname, '../../admin-critic.html');
   if (fs.existsSync(file)) {
     res.setHeader('Content-Type', 'text/html; charset=utf-8');
-    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Cache-Control', 'no-store');
+    res.setHeader('Referrer-Policy', 'no-referrer');
+    res.setHeader('X-Content-Type-Options', 'nosniff');
     res.sendFile(file);
   } else {
     res.status(404).send('Admin critic dashboard HTML not found. Deploy the full backend bundle.');

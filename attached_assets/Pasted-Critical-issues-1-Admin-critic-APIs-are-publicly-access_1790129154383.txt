@@ -1,0 +1,151 @@
+Critical issues
+1. Admin critic APIs are publicly accessible
+backend/src/server.ts exposes:
+
+GET /admin/critic
+GET /api/admin/critic/stats
+GET /api/admin/critic/heatmap
+GET /api/admin/critic/logs
+POST /api/admin/tokens/refresh
+The critic dashboard comment says it is safe without authentication because it is “internal Replit only,” but the required deployment is Railway. Those routes can expose cross-user data or trigger administrative actions on a public Railway URL.
+
+Status: Broken security assumption
+
+2. Lead conversation navigation is broken
+In src/screens/LeadsScreen.tsx:
+
+const openConversation = (_lead: Lead) => {
+  navigation.navigate('Interactions' as any);
+};
+
+The selected lead is ignored. Tapping any lead only opens the general Interactions screen and does not open that lead’s conversation.
+
+Status: Broken
+
+3. Conversation discovery does not truly respect selected accounts
+backend/src/services/agentReachAdapter.ts always searches these default sources:
+
+['web', 'facebook', 'instagram', 'reddit', 'linkedin', 'google_maps']
+
+It then adds the selected platforms instead of replacing the defaults.
+
+This means a strategy selecting only Telegram or WhatsApp still searches unrelated sources. The later routing step prevents some outbound tasks, but the unrelated signals are still persisted in the database and can appear in the user’s lead/conversation views.
+
+Status: Partially implemented
+
+4. Personal-platform discovery does not produce reliable recipients
+The web search adapter returns search-result titles and snippets, but usually no real platform user ID. CONVERSATION_ENGAGE then falls back to:
+
+author_id || author_name || signal_id
+
+That means a personal-platform message may be addressed to a display name, URL-derived ID, or search-result identifier rather than an actual Telegram, WhatsApp, Signal, or Delta Chat recipient.
+
+Status: Partially implemented; outbound discovery engagement is unreliable
+
+Major functional gaps
+5. Personal-account “publishing” is mostly private messaging
+For Telegram, WhatsApp Personal, and Signal Personal, socialAccountService.publish() sends the content to the account’s own recipient.
+
+That is not public publishing:
+
+WhatsApp Personal does not publish a public feed post here.
+Signal does not have a public publishing feed.
+Telegram currently sends to the user’s own account.
+Delta Chat depends completely on the external bridge.
+Bluesky is the only personal provider with a real public post operation.
+Status: Partially implemented
+
+The app should either clearly label these as messaging destinations or implement provider-specific public/status/channel behavior where the provider supports it.
+
+6. Bluesky media is ignored
+Bluesky publishing accepts mediaUrl, but the request only creates a text record:
+
+collection: 'app.bsky.feed.post',
+record: {
+  text: ...,
+  createdAt: ...
+}
+
+No blob upload or embed field is created. Generated images or videos are therefore dropped when publishing to Bluesky.
+
+Status: Partially implemented
+
+7. WhatsApp inbound messages are lost during backend restarts
+WhatsApp inbound messages are held in an in-memory buffer:
+
+private readonly whatsappInbound = new Map<string, PersonalInboundMessage[]>();
+
+This works while the Railway process stays alive, but messages received while the service is restarting, deploying, or disconnected are not persisted and cannot be recovered from history.
+
+Credential state is persisted, but inbound message state is not.
+
+Status: Partially implemented; important Railway reliability gap
+
+8. Personal inbound processing only checks already-contacted leads
+inboundDmService.ts only processes leads where:
+
+.gt('dm_sequence_step', 0)
+
+So a new inbound message from a person who has not already received an outbound DM will not create a lead or conversation. That may be intentional for reply detection, but it does not satisfy a broader “discover all inbound personal conversations” requirement.
+
+Status: Partial scope
+
+User-visible gaps
+9. Lead inbox does not consistently include all lead types on Dashboard
+DashboardScreen.tsx limits its special lead query to:
+
+.in('platform', ['whatsapp', 'email'])
+
+The main Leads screen can display more platforms, but the Dashboard’s lead section excludes Telegram, Signal, Bluesky, Delta Chat, Facebook, Instagram, and other discovered leads.
+
+Status: Partially implemented
+
+10. Realtime is implemented, but migration state is not confirmed
+Realtime subscriptions exist for:
+
+agent_leads
+lead_dm_messages
+strategy_conversation_runs
+strategy_conversation_signals
+social_account_connections
+However, the backend logs still show:
+
+[APMA Migration] Skipped — SUPABASE_DB_URL or SUPABASE_DB_PASSWORD not set.
+
+The required Supabase tables, indexes, and realtime publication still need to be confirmed in the actual Supabase project. This is already covered by the proposed Supabase follow-up task.
+
+Status: Implemented in code, unverified in the live database
+
+11. Creative failure handling can create empty media URLs
+graphicsDesignerAgent.ts returns an asset with:
+
+url: ''
+
+when image generation fails.
+
+That causes inconsistent behavior:
+
+Facebook may continue without an image.
+Instagram throws because it requires an image.
+Other flows may publish or schedule a task with unusable media.
+The user may only see a failed task rather than a clear creative-generation error.
+Status: Partially implemented
+
+12. Video functionality depends on unverified Railway binaries
+Video editing invokes system-level ffmpeg, and Signal requires the signal-cli executable. These are not npm dependencies and are not confirmed in the Railway runtime.
+
+The code handles missing tools by failing, but the actual provider/video flows have not been validated on Railway.
+
+Status: Environment-dependent and unverified
+
+Security/deployment audit
+I found no Replit package dependency, database integration, or storage dependency in the current source. The remaining Replit references are comments and old assumptions, especially the unauthenticated admin critic route.
+
+The most urgent fix is the admin route protection. The next most important product fixes are:
+
+Fix lead-to-conversation navigation.
+Make conversation discovery honor selected sources.
+Prevent personal-platform engagement from using fake or unusable recipients.
+Persist WhatsApp inbound messages or explicitly document that downtime messages cannot be recovered.
+Clarify or implement real public publishing for personal accounts.
+Add Bluesky media upload support.

@@ -133,9 +133,28 @@ export class SocialAccountService {
         if (!current.some((item) => item.externalId === inbound.externalId)) {
           current.push(inbound);
           this.whatsappInbound.set(userId, current.slice(-200));
+          // Persist before the bounded in-memory buffer can age out. This
+          // keeps inbound events recoverable across Railway restarts.
+          void this.persistWhatsAppInbound(userId, inbound);
         }
       }
     });
+  }
+
+  private async persistWhatsAppInbound(userId: string, message: PersonalInboundMessage): Promise<void> {
+    const { error } = await this.supabase
+      .from('personal_inbound_messages')
+      .upsert({
+        user_id: userId,
+        provider: 'whatsapp_personal',
+        external_id: message.externalId,
+        sender_id: message.senderId,
+        message: message.text,
+        received_at: message.timestamp,
+      }, { onConflict: 'user_id,provider,external_id' });
+    if (error && !/relation .* does not exist|column .* does not exist/i.test(error.message)) {
+      console.error(`[SocialAccountService] WhatsApp inbound persistence failed: ${error.message}`);
+    }
   }
 
   private scheduleWhatsAppCredentialPersist(userId: string, authDir: string): void {
@@ -566,7 +585,7 @@ export class SocialAccountService {
     }
   }
 
-  async publish(provider: string, userId: string, text: string, mediaUrl?: string): Promise<{ id: string; url?: string }> {
+  async publish(provider: string, userId: string, text: string, mediaUrl?: string, destination?: string): Promise<{ id: string; url?: string }> {
     provider = normalizePlatform(provider);
     await this.assertProviderEnabled(userId, provider);
     if (provider === 'delta_chat') {
@@ -582,6 +601,10 @@ export class SocialAccountService {
       }
     }
     if (['telegram', 'whatsapp_personal', 'signal_personal'].includes(provider)) {
+      const requestedRecipient = String(destination || '').trim();
+      if (!requestedRecipient) {
+        throw new Error(`${provider} personal accounts are messaging destinations, not public feeds. A recipient is required.`);
+      }
       if (!(await this.reserveAction(userId, provider))) throw new Error(`${provider} daily safety limit reached or account is not ready.`);
       await this.safetyDelay(provider);
       const credential = await this.credentials(userId, provider);
@@ -624,7 +647,7 @@ export class SocialAccountService {
                 if (update.connection === 'close') { clearTimeout(timer); reject(new Error('WhatsApp connection closed.')); }
               });
             });
-            const phone = await this.personalSelfRecipient(userId, provider, credential);
+            const phone = requestedRecipient;
             const jid = phone.includes('@') ? phone : `${phone.replace(/\D/g, '')}@s.whatsapp.net`;
             await sock.sendPresenceUpdate?.('composing', jid);
             await new Promise((resolve) => setTimeout(resolve, 500 + Math.floor(Math.random() * 1200)));
@@ -641,10 +664,10 @@ export class SocialAccountService {
         }
 
         const exec = promisify(execFile);
-        const phone = await this.personalSelfRecipient(userId, provider, credential);
+        const phone = requestedRecipient;
         const configDir = await this.materializeSignalBundle(credential);
         try {
-          await exec('signal-cli', ['--config', configDir, '-u', phone, 'send', '-m', text.slice(0, 2000), phone], { timeout: 30000 });
+          await exec('signal-cli', ['--config', configDir, '-u', credential.phone, 'send', '-m', text.slice(0, 2000), phone], { timeout: 30000 });
         } finally {
           await fs.rm(configDir, { recursive: true, force: true });
         }
@@ -661,13 +684,47 @@ export class SocialAccountService {
       const credential = await this.credentials(userId, provider);
       if (!credential?.accessJwt || !credential?.did) throw new Error('Bluesky credentials are unavailable.');
       try {
+        let embed: any;
+        if (mediaUrl) {
+          const media = await this.fetchMediaForUpload(mediaUrl);
+          const uploadResponse = await fetch('https://bsky.social/xrpc/com.atproto.repo.uploadBlob', {
+            method: 'POST',
+            headers: {
+              Authorization: `Bearer ${credential.accessJwt}`,
+              'Content-Type': media.mimeType,
+            },
+            body: media.bytes as any,
+          });
+          const uploadData: any = await uploadResponse.json().catch(() => ({}));
+          if (!uploadResponse.ok || !uploadData.blob) {
+            throw new Error(uploadData.message || 'Bluesky media upload failed.');
+          }
+          if (media.mimeType.startsWith('image/')) {
+            embed = {
+              $type: 'app.bsky.embed.images',
+              images: [{ alt: text.slice(0, 300), image: uploadData.blob }],
+            };
+          } else if (media.mimeType.startsWith('video/')) {
+            embed = {
+              $type: 'app.bsky.embed.video',
+              video: uploadData.blob,
+              alt: text.slice(0, 300),
+            };
+          }
+        }
+
         const response = await fetch('https://bsky.social/xrpc/com.atproto.repo.createRecord', {
           method: 'POST',
           headers: { Authorization: `Bearer ${credential.accessJwt}`, 'Content-Type': 'application/json' },
           body: JSON.stringify({
             repo: credential.did,
             collection: 'app.bsky.feed.post',
-            record: { $type: 'app.bsky.feed.post', text: text.slice(0, 3000), createdAt: new Date().toISOString() },
+            record: {
+              $type: 'app.bsky.feed.post',
+              text: text.slice(0, 3000),
+              createdAt: new Date().toISOString(),
+              ...(embed ? { embed } : {}),
+            },
           }),
         });
         const data: any = await response.json().catch(() => ({}));
@@ -689,6 +746,23 @@ export class SocialAccountService {
       await fs.writeFile(path.join(tempDir, file), Buffer.from(String(encoded), 'base64'));
     }
     return tempDir;
+  }
+
+  private async fetchMediaForUpload(mediaUrl: string): Promise<{ bytes: Buffer; mimeType: string }> {
+    const value = String(mediaUrl || '').trim();
+    if (value.startsWith('data:')) {
+      const match = value.match(/^data:([^;,]+);base64,(.+)$/s);
+      if (!match) throw new Error('Generated media data is not a valid base64 data URI.');
+      return { mimeType: match[1], bytes: Buffer.from(match[2], 'base64') };
+    }
+
+    const response = await fetch(value);
+    if (!response.ok) throw new Error(`Media download failed with HTTP ${response.status}.`);
+    const mimeType = response.headers.get('content-type')?.split(';')[0].trim() || '';
+    if (!mimeType.startsWith('image/') && !mimeType.startsWith('video/')) {
+      throw new Error(`Media URL returned unsupported content type: ${mimeType || 'unknown'}.`);
+    }
+    return { mimeType, bytes: Buffer.from(await response.arrayBuffer()) };
   }
 
   async replyBluesky(userId: string, postUri: string, text: string): Promise<void> {
@@ -953,7 +1027,21 @@ export class SocialAccountService {
     // the connection listener; do not fabricate an empty successful poll.
     if (provider === 'whatsapp_personal') {
       await this.restoreWhatsAppSocket(userId, credential);
-      const messages = this.whatsappInbound.get(userId) || [];
+      const persisted = await this.supabase
+        .from('personal_inbound_messages')
+        .select('external_id, sender_id, message, received_at')
+        .eq('user_id', userId)
+        .eq('provider', 'whatsapp_personal')
+        .order('received_at', { ascending: false })
+        .limit(Math.min(100, Math.max(1, limit)));
+      const persistedMessages: PersonalInboundMessage[] = (persisted.data || []).map((message: any) => ({
+        externalId: String(message.external_id),
+        senderId: String(message.sender_id),
+        text: String(message.message || ''),
+        timestamp: String(message.received_at),
+      }));
+      const messages = [...persistedMessages, ...(this.whatsappInbound.get(userId) || [])]
+        .filter((message, index, all) => all.findIndex((candidate) => candidate.externalId === message.externalId) === index);
       const wanted = this.normalizeWhatsAppRecipient(recipient);
       return messages
         .filter((message) => !recipient || message.senderId === wanted || message.senderId.replace(/\D/g, '') === String(recipient).replace(/\D/g, ''))

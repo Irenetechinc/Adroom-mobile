@@ -341,25 +341,14 @@ Return ONLY the image prompt text, nothing else.
 
       if (!imageResult?.base64) {
         this.log(`Imagen 3 returned no image for fingerprint ${fingerprint}`);
-        return this.buildErrorAsset(brief, template, fingerprint);
+        throw new Error('Image generation returned no image data.');
       }
 
       // 6. Upload to Supabase storage
       const publicUrl = await this.uploadToStorage(imageResult.base64, imageResult.mimeType, fingerprint);
 
       if (!publicUrl) {
-        // Return as data URI if storage fails
-        const dataUri = `data:${imageResult.mimeType};base64,${imageResult.base64}`;
-        return {
-          url: dataUri,
-          platform: brief.platform,
-          contentType: template,
-          headline: brief.postContent.headline,
-          designStyle: template,
-          fingerprint,
-          generatedAt: new Date().toISOString(),
-          prompt: imagePrompt,
-        };
+        throw new Error('Generated image could not be uploaded to public storage.');
       }
 
       this.log(`Graphic generated ✓ — ${publicUrl.split('/').pop()}`);
@@ -390,20 +379,8 @@ Return ONLY the image prompt text, nothing else.
       };
     } catch (e: any) {
       this.log(`Graphic generation failed: ${e.message}`);
-      return this.buildErrorAsset(brief, 'fallback', fingerprint);
+      throw new Error(`Creative asset generation failed: ${e.message}`);
     }
-  }
-
-  private buildErrorAsset(brief: DesignBrief, template: string, fingerprint: string): DesignAsset {
-    return {
-      url: '',
-      platform: brief.platform,
-      contentType: template,
-      headline: brief.postContent.headline,
-      designStyle: template,
-      fingerprint,
-      generatedAt: new Date().toISOString(),
-    };
   }
 
   /**
@@ -558,7 +535,7 @@ Return ONLY the image prompt text, nothing else.
       return asset.url || undefined;
     } catch (e: any) {
       this.log(`getImageForPost failed: ${e.message}`);
-      return undefined;
+      throw new Error(`Creative asset generation failed: ${e.message}`);
     }
   }
 }

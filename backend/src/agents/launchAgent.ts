@@ -272,7 +272,7 @@ Return valid JSON only with this schema:
                     });
                     if (postImageUrl) this.log(`Launch graphic generated — ${postImageUrl.split('/').pop()}`);
                 } catch (e: any) {
-                    this.log(`GraphicsDesignerAgent failed (non-fatal): ${e.message}`);
+                    throw new Error(`GraphicsDesignerAgent failed: ${e.message}`);
                 }
             }
 
