@@ -7,8 +7,10 @@ WORKDIR /app
 # Copy backend package files
 COPY backend/package*.json ./
 
-# Install dependencies (deterministic, clean install from package-lock.json)
-RUN npm ci
+# Install dependencies (deterministic, clean install from package-lock.json).
+# The backend lockfile is generated with the repository's legacy-peer-deps
+# policy because Baileys declares media peers (including sharp).
+RUN npm ci --legacy-peer-deps
 
 # Copy backend source code
 COPY backend/ .
