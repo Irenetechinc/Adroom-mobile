@@ -15,7 +15,7 @@ export const GOAL_OUTCOMES: Record<StrategyGoal, { target: string; signal: strin
 
 type Signal = ReachResult & { strategyId: string; userId: string; goal: StrategyGoal; intentScore: number; status: 'identified' | 'high_potential' | 'engaged' };
 type WorkflowState = { strategy: any; signals: Signal[]; identified: number; highPotential: number; engaged: number; routed: number };
-const PERSONAL_PLATFORMS = new Set(['telegram', 'whatsapp_personal', 'signal_personal', 'delta_chat']);
+const PERSONAL_PLATFORMS = new Set(['telegram', 'whatsapp_personal', 'signal_personal', 'bluesky', 'delta_chat']);
 
 function signalRecipient(signal: Signal): string | undefined {
   const recipient = signal.metadata?.recipient || signal.authorId;
@@ -25,11 +25,11 @@ function signalRecipient(signal: Signal): string | undefined {
 
 const State = Annotation.Root({
   strategy: Annotation<any>,
-  signals: Annotation<Signal[]>({ reducer: (_, next) => next, default: () => [] }),
-  identified: Annotation<number>({ reducer: (_, next) => next, default: () => 0 }),
-  highPotential: Annotation<number>({ reducer: (_, next) => next, default: () => 0 }),
-  engaged: Annotation<number>({ reducer: (_, next) => next, default: () => 0 }),
-  routed: Annotation<number>({ reducer: (_, next) => next, default: () => 0 }),
+  signals: Annotation<Signal[]>({ reducer: (_: Signal[], next: Signal[]) => next, default: () => [] }),
+  identified: Annotation<number>({ reducer: (_: number, next: number) => next, default: () => 0 }),
+  highPotential: Annotation<number>({ reducer: (_: number, next: number) => next, default: () => 0 }),
+  engaged: Annotation<number>({ reducer: (_: number, next: number) => next, default: () => 0 }),
+  routed: Annotation<number>({ reducer: (_: number, next: number) => next, default: () => 0 }),
 });
 
 function normalizeGoal(goal: string): StrategyGoal {
@@ -184,6 +184,11 @@ export class ConversationAgent {
            // Personal channels are explicit recipient actions. Public
            // channels retain the conversation-engagement task contract.
            task_type: isPersonal ? 'SEND_PERSONAL_MESSAGE' : 'CONVERSATION_ENGAGE',
+          action_type: isPersonal ? 'send_personal_message' : 'public_engagement',
+          selected_account_id: signal.platform,
+          recipient_id: recipient || null,
+          conversation_id: signal.metadata?.conversation_id || null,
+          media: null,
           platform: signal.platform,
           scheduled_at: new Date().toISOString(),
           status: 'pending',

@@ -21,6 +21,7 @@ import FeatureGate from '../components/FeatureGate';
 import { useEnergyStore } from '../store/energyStore';
 import { Skeleton } from '../components/Skeleton';
 import useFeatureFlags from '../hooks/useFeatureFlags';
+import usePlatformCapabilities from '../hooks/usePlatformCapabilities';
 
 // ─── Brand SVG Icons ──────────────────────────────────────────────────────────
 
@@ -244,10 +245,14 @@ export default function ConnectedAccountsScreen() {
   const { tokens, connectedPlatforms, loadConnectedPlatforms, disconnectPlatform } = useAgentStore();
   const { subscription } = useEnergyStore();
   const { isEnabled } = useFeatureFlags();
+  const { capabilities } = usePlatformCapabilities();
   const plan = subscription?.plan ?? 'none';
   const isPro = plan === 'pro' || plan === 'pro_plus';
 
-  const isConnected = (id: string) => !!connectedPlatforms[id] || !!tokens[id];
+  const isConnected = (id: string) => {
+    const config = connectedPlatforms[id];
+    return !!tokens[id] || Boolean(config && (config.connected !== false || config.status === 'needs_reconnect'));
+  };
   const connectedCount = PLATFORMS.filter(p => !p.comingSoon && isConnected(p.id)).length;
   const isStarterLimited = !isPro && connectedCount >= 1;
 
@@ -462,16 +467,21 @@ export default function ConnectedAccountsScreen() {
           const connected = isConnected(platform.id);
           const enabled = isEnabled(`social_${platform.id}_connections`);
           const comingSoonFlag = isEnabled(`social_${platform.id}_coming_soon`, false);
-          const comingSoon = !!platform.comingSoon || comingSoonFlag || !enabled;
+          const comingSoon = !!platform.comingSoon || comingSoonFlag;
+          const disabled = !enabled;
+          const capability = capabilities[platform.id];
+          const missingServerConfig = capability?.reason === 'missing_server_configuration';
+          const blocked = comingSoon || disabled || missingServerConfig;
+          const needsReconnect = connectedPlatforms[platform.id]?.status === 'needs_reconnect';
           const disc = disconnecting === platform.id;
           const isProOnlyPlatform = platform.id === 'twitter';
-          const locked = !connected && !comingSoon && (isStarterLimited || (!isPro && isProOnlyPlatform));
+          const locked = !connected && !blocked && (isStarterLimited || (!isPro && isProOnlyPlatform));
 
           return (
             <Animated.View
               key={platform.id}
               entering={FadeInDown.delay(index * 60).springify()}
-              style={[styles.platformCard, (comingSoon || locked) && styles.platformCardDim]}
+              style={[styles.platformCard, (blocked || locked) && styles.platformCardDim]}
             >
               <View style={styles.platformHeader}>
                 <PlatformIconBg platform={platform} size={46} />
@@ -479,7 +489,18 @@ export default function ConnectedAccountsScreen() {
                   <Text style={[styles.platformName, (comingSoon || locked) && { opacity: 0.5 }]}>{platform.name}</Text>
                   <Text style={styles.platformSub}>{platform.sub}</Text>
                 </View>
-                {comingSoon ? (
+                {connected ? (
+                  <View style={[styles.statusBadge, { backgroundColor: needsReconnect ? 'rgba(245,158,11,0.12)' : 'rgba(16,185,129,0.12)' }]}>
+                    <View style={[styles.statusDot, { backgroundColor: needsReconnect ? '#F59E0B' : '#10B981' }]} />
+                    <Text style={[styles.statusText, { color: needsReconnect ? '#F59E0B' : '#34D399' }]}>
+                      {needsReconnect ? 'Needs reconnect' : 'Connected'}
+                    </Text>
+                  </View>
+                ) : disabled ? (
+                  <View style={styles.comingSoonBadge}><Text style={styles.comingSoonText}>DISABLED</Text></View>
+                ) : missingServerConfig ? (
+                  <View style={styles.comingSoonBadge}><Text style={styles.comingSoonText}>CONFIG REQUIRED</Text></View>
+                ) : comingSoon ? (
                   <View style={styles.comingSoonBadge}>
                     <Text style={styles.comingSoonText}>SOON</Text>
                   </View>
@@ -488,29 +509,48 @@ export default function ConnectedAccountsScreen() {
                     <Lock size={10} color="#F59E0B" />
                     <Text style={styles.lockedBadgeText}>PRO</Text>
                   </View>
-                ) : (
-                  <View style={[styles.statusBadge, connected
-                    ? { backgroundColor: 'rgba(16,185,129,0.12)' }
-                    : { backgroundColor: 'rgba(100,116,139,0.1)' }
-                  ]}>
-                    <View style={[styles.statusDot, { backgroundColor: connected ? '#10B981' : '#475569' }]} />
-                    <Text style={[styles.statusText, { color: connected ? '#34D399' : '#64748B' }]}>
-                      {connected ? 'Connected' : 'Not Linked'}
-                    </Text>
-                  </View>
-                )}
+                ) : <View style={[styles.statusBadge, { backgroundColor: 'rgba(100,116,139,0.1)' }]}><View style={[styles.statusDot, { backgroundColor: '#475569' }]} /><Text style={[styles.statusText, { color: '#64748B' }]}>Not Linked</Text></View>}
               </View>
 
-              {comingSoon && !connected ? (
+              {connected ? (
+                <View style={styles.connectedBody}>
+                  <View style={styles.accountInfoRow}>
+                    <View style={styles.accountAvatar}><Text style={styles.accountAvatarText}>{getConnectedLabel(platform).charAt(0).toUpperCase()}</Text></View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.accountName}>{getConnectedLabel(platform)}</Text>
+                      <Text style={styles.accountType}>{getConnectedSub(platform)}</Text>
+                    </View>
+                    <CheckCircle2 color={needsReconnect ? '#F59E0B' : '#10B981'} size={20} />
+                  </View>
+                  <View style={styles.activeBanner}>
+                    {needsReconnect ? <AlertCircle size={14} color="#F59E0B" /> : <ShieldCheck size={14} color="#10B981" />}
+                    <Text style={[styles.activeBannerText, needsReconnect && { color: '#F59E0B' }]}>
+                      {needsReconnect ? 'Reconnect this account to resume the selected strategy.' : disabled ? 'Connected, but disabled by an administrator.' : comingSoon ? 'Connected, but this provider is in coming-soon mode.' : `Autonomous publishing is active on ${platform.name}`}
+                    </Text>
+                  </View>
+                  <View style={styles.actionRow}>
+                    <TouchableOpacity onPress={() => handleConnect(platform)} style={styles.reconfigureBtn} activeOpacity={0.8}>
+                      <ExternalLink size={16} color="#00F0FF" /><Text style={styles.reconfigureBtnText}>Reconfigure</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity onPress={() => handleDisconnect(platform)} disabled={disc} style={styles.disconnectBtn} activeOpacity={0.8}>
+                      {disc ? <ActivityIndicator color="#EF4444" size="small" /> : <Link2Off size={16} color="#EF4444" />}
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              ) : blocked ? (
                 <View style={styles.lockedBody}>
-                  <Text style={styles.lockedTitle}>Coming soon</Text>
+                  <Text style={styles.lockedTitle}>{disabled ? 'Disabled' : 'Coming soon'}</Text>
                   <Text style={styles.lockedDesc}>
-                    {platform.comingSoon || comingSoonFlag
+                    {missingServerConfig
+                      ? `${platform.name} is not configured on the server yet.`
+                      : disabled
+                      ? `${platform.name} connections are disabled by an administrator.`
+                      : platform.comingSoon || comingSoonFlag
                       ? `${platform.name} connections are not available yet.`
                       : `${platform.name} connections are temporarily unavailable.`}
                   </Text>
                 </View>
-              ) : !comingSoon && (
+              ) : (
                 locked ? (
                   <View style={styles.lockedBody}>
                     <Lock size={28} color="#F59E0B" />
@@ -522,47 +562,6 @@ export default function ConnectedAccountsScreen() {
                       <Zap size={16} color="#000" />
                       <Text style={styles.upgradeBtnText}>Upgrade to Pro</Text>
                     </TouchableOpacity>
-                  </View>
-                ) : connected ? (
-                  <View style={styles.connectedBody}>
-                    <View style={styles.accountInfoRow}>
-                      <View style={styles.accountAvatar}>
-                        <Text style={styles.accountAvatarText}>
-                          {getConnectedLabel(platform).charAt(0).toUpperCase()}
-                        </Text>
-                      </View>
-                      <View style={{ flex: 1 }}>
-                        <Text style={styles.accountName}>{getConnectedLabel(platform)}</Text>
-                        <Text style={styles.accountType}>{getConnectedSub(platform)}</Text>
-                      </View>
-                      <CheckCircle2 color="#10B981" size={20} />
-                    </View>
-
-                    <View style={styles.activeBanner}>
-                      <ShieldCheck size={14} color="#10B981" />
-                      <Text style={styles.activeBannerText}>Autonomous publishing is active on {platform.name}</Text>
-                    </View>
-
-                    <View style={styles.actionRow}>
-                      <TouchableOpacity
-                        onPress={() => handleConnect(platform)}
-                        style={styles.reconfigureBtn}
-                        activeOpacity={0.8}
-                      >
-                        <ExternalLink size={16} color="#00F0FF" />
-                        <Text style={styles.reconfigureBtnText}>Reconfigure</Text>
-                      </TouchableOpacity>
-                      <TouchableOpacity
-                        onPress={() => handleDisconnect(platform)}
-                        disabled={disc}
-                        style={styles.disconnectBtn}
-                        activeOpacity={0.8}
-                      >
-                        {disc
-                          ? <ActivityIndicator color="#EF4444" size="small" />
-                          : <Link2Off size={16} color="#EF4444" />}
-                      </TouchableOpacity>
-                    </View>
                   </View>
                 ) : (
                   <View style={styles.notConnectedBody}>

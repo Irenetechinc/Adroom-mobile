@@ -105,34 +105,46 @@ export class GraphicsDesignerAgent {
     const [ipe, social, emotional, geo] = await Promise.all([
       this.supabase
         .from('platform_intelligence')
-        .select('platform, algorithm_priorities, trending_formats, predictions')
+        .select('platform, algorithm_priorities, trending_formats, predictions, captured_at')
         .eq('platform', platform)
         .order('captured_at', { ascending: false })
         .limit(2),
       this.supabase
         .from('social_conversations')
-        .select('topics, sentiment, reaction, intent')
+        .select('topics, sentiment, reaction, intent, collected_at')
         .eq('category', productCategory || '')
         .order('collected_at', { ascending: false })
         .limit(15),
       this.supabase
         .from('emotional_ownership')
-        .select('emotion, ownership_percentage, owner_brand')
+        .select('emotion, ownership_percentage, owner_brand, captured_at')
         .eq('category', productCategory || '')
         .order('ownership_percentage', { ascending: false })
         .limit(10),
       this.supabase
         .from('narrative_snapshots')
-        .select('region, dominant_narrative, emerging_topics')
+        .select('region, dominant_narrative, emerging_topics, captured_at')
         .order('captured_at', { ascending: false })
         .limit(5),
     ]);
 
+    const latestTimestamp = [ipe.data?.[0]?.captured_at, social.data?.[0]?.collected_at, emotional.data?.[0]?.captured_at, geo.data?.[0]?.captured_at]
+      .filter(Boolean)
+      .map((value) => new Date(value).getTime())
+      .filter((value) => Number.isFinite(value))
+      .sort((a, b) => b - a)[0];
+    const hasFreshIntelligence = Boolean(latestTimestamp && Date.now() - latestTimestamp <= 24 * 60 * 60 * 1000);
+    const freshness = {
+      sourceTimestamp: latestTimestamp ? new Date(latestTimestamp).toISOString() : null,
+      isFresh: hasFreshIntelligence,
+      fallback: hasFreshIntelligence ? null : 'current intelligence is missing or older than 24 hours',
+    };
     return {
       ipe: ipe.data || [],
       social: social.data || [],
       emotional: emotional.data || [],
       geo: geo.data || [],
+      freshness,
     };
   }
 
@@ -144,11 +156,10 @@ export class GraphicsDesignerAgent {
     const platformSignals = (intel.ipe || []).filter((entry: any) =>
       String(entry.platform || '').toLowerCase() === brief.platform.toLowerCase(),
     );
-    if (!platformSignals.length) {
-      throw new Error(`No current platform intelligence is available for ${brief.platform}.`);
-    }
+    const freshness = intel.freshness || { isFresh: false, fallback: 'intelligence metadata unavailable' };
     const prompt = `Choose one original visual concept for this specific post. Do not use a named template or a fixed catalog.
-Platform: ${brief.platform}; current platform intelligence: ${JSON.stringify(platformSignals[0])}
+Platform: ${brief.platform}; platform intelligence: ${JSON.stringify(platformSignals[0] || {})}
+Intelligence freshness: ${JSON.stringify(freshness)}. If stale or missing, explicitly choose a conservative platform-native fallback based on the supplied content and audience instead of pretending trends are current.
 Goal: ${brief.goal}; task: ${brief.postContent.taskType || 'post'}
 Headline: ${brief.postContent.headline}; body: ${brief.postContent.body.slice(0, 500)}
 Current algorithm signals: ${JSON.stringify(intel.ipe.slice(0, 2))}
@@ -168,9 +179,7 @@ Return one concise concept describing subject, composition, motion/energy, typog
     const platformSignals = (intel.ipe || []).filter((entry: any) =>
       String(entry.platform || '').toLowerCase() === brief.platform.toLowerCase(),
     );
-    if (!platformSignals.length) {
-      throw new Error(`No current platform intelligence is available for ${brief.platform}.`);
-    }
+    const freshness = intel.freshness || { isFresh: false, fallback: 'intelligence metadata unavailable' };
     const platformIntelligence = platformSignals[0];
     const productName = brief.product?.product_name || brief.product?.name || 'product';
     const productCategory = brief.product?.category || 'consumer product';
@@ -186,7 +195,8 @@ Create a precise, production-ready Imagen 3 image generation prompt for this pos
 UNIQUE POST FINGERPRINT: ${fingerprint}
 TEMPLATE: ${template}
 PLATFORM: ${brief.platform.toUpperCase()}
-CURRENT PLATFORM REQUIREMENTS: ${JSON.stringify(platformIntelligence)}
+CURRENT PLATFORM REQUIREMENTS: ${JSON.stringify(platformIntelligence || {})}
+INTELLIGENCE FRESHNESS: ${JSON.stringify(freshness)}
 AGENT GOAL: ${brief.goal}
 PRODUCT: ${productName} (${productCategory})
 
@@ -293,9 +303,9 @@ Return ONLY the image prompt text, nothing else.
       // 1. Pull live intelligence
       const intel = await this.fetchIntelligence(productCategory, brief.platform);
 
-      // 2. Select optimal design template
+      // 2. Select an original concept from current intelligence or an explicit fallback
        const template = await this.selectDesignConcept(brief, intel);
-      this.log(`Template selected: ${template} (fingerprint: ${fingerprint})`);
+       this.log(`Creative concept selected (fresh=${intel.freshness?.isFresh === true}, fingerprint: ${fingerprint})`);
 
       // 3. Get Director visual direction if not provided
       let direction = brief.direction;
@@ -357,6 +367,13 @@ Return ONLY the image prompt text, nothing else.
         image_url: publicUrl,
         prompt: imagePrompt,
         day_number: brief.dayNumber ?? 0,
+        intelligence_freshness: intel.freshness,
+        decision_metadata: {
+          platform: brief.platform,
+          category: productCategory,
+          goal: brief.goal,
+          mediaFormat: 'image',
+        },
         created_at: new Date().toISOString(),
       }); // fire-and-forget design history log
 

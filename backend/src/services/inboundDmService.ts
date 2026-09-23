@@ -466,7 +466,14 @@ Rules:
 
       await this.supabase.from('agent_tasks').insert({
         user_id: userId,
+        strategy_id: lead.strategy_id,
         task_type: 'INBOUND_REPLY',
+        action_type: ['telegram', 'whatsapp_personal', 'signal_personal', 'bluesky', 'delta_chat'].includes(String(lead.platform))
+          ? 'send_personal_message'
+          : 'public_engagement',
+        selected_account_id: lead.platform,
+        recipient_id: lead.platform_user_id,
+        conversation_id: null,
         status: 'pending',
         platform: lead.platform,
         scheduled_at: scheduleAt,

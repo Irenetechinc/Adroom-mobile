@@ -42,7 +42,18 @@ INSERT INTO feature_flags (flag_key, label, description, enabled) VALUES
   ('lead_profile_public_mentions','Public Mention Evidence','Allow public prospect excerpts in sales profiles',     true),
   ('calling_ui',            'Calling UI',               'Show call activity and calling controls in the app',         true),
   ('shipping_ui',           'Shipping UI',              'Show order and shipment tracking in the app',                true),
-  ('outreach_preferences_ui','Outreach Preferences UI', 'Show outreach preference controls in the app',               true)
+  ('outreach_preferences_ui','Outreach Preferences UI', 'Show outreach preference controls in the app',               true),
+  ('social_facebook_connections','Facebook Connections','Allow Facebook account connections and execution',true),
+  ('social_instagram_connections','Instagram Connections','Allow Instagram account connections and execution',true),
+  ('social_tiktok_connections','TikTok Connections','Allow TikTok account connections and execution',true),
+  ('social_twitter_connections','X/Twitter Connections','Allow X/Twitter account connections and execution',true),
+  ('social_linkedin_connections','LinkedIn Connections','Allow LinkedIn account connections and execution',true),
+  ('social_whatsapp_connections','WhatsApp Business Connections','Allow WhatsApp Business account connections and execution',true),
+  ('social_telegram_connections','Telegram Connections','Allow Telegram personal account connections and execution',true),
+  ('social_whatsapp_personal_connections','Personal WhatsApp Connections','Allow personal WhatsApp account connections and execution',true),
+  ('social_signal_personal_connections','Signal Connections','Allow Signal account connections and execution',true),
+  ('social_bluesky_connections','Bluesky Connections','Allow Bluesky account connections and execution',true),
+  ('social_delta_chat_connections','Delta Chat Connections','Allow Delta Chat account connections and execution',true)
 ON CONFLICT (flag_key) DO NOTHING;
 
 NOTIFY pgrst, 'reload schema';

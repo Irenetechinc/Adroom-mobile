@@ -4,6 +4,7 @@ import TrialPromoModal from '../components/TrialPromoModal';
 import { Skeleton } from '../components/Skeleton';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
+import { createRealtimeEventGuard } from '../utils/realtimeEventGuard';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../types';
 import { supabase } from '../services/supabase';
@@ -400,6 +401,7 @@ export default function DashboardScreen() {
   // Realtime agent task subscription
   useEffect(() => {
     if (!session?.user) return;
+    const eventGuard = createRealtimeEventGuard();
     const channel = supabase
       .channel('agent_tasks_live')
       .on(
@@ -410,27 +412,29 @@ export default function DashboardScreen() {
           table: 'agent_tasks',
           filter: `user_id=eq.${session.user.id}`,
         },
-        () => { fetchData(); },
+        (payload) => { eventGuard.schedule(payload, fetchData); },
       )
       .subscribe();
     agentSubRef.current = channel;
-    return () => { supabase.removeChannel(channel); };
+    return () => { eventGuard.dispose(); supabase.removeChannel(channel); };
   }, [session?.user?.id]);
 
   useEffect(() => {
     if (!session?.user) return;
+    const eventGuard = createRealtimeEventGuard();
     const intelligenceChannel = supabase
       .channel('platform_intelligence_live')
       .on('postgres_changes', {
         event: '*', schema: 'public', table: 'platform_intelligence',
-      }, () => { fetchData(); })
+      }, (payload) => { eventGuard.schedule(payload, fetchData); })
       .subscribe();
     intelligenceSubRef.current = intelligenceChannel;
-    return () => { supabase.removeChannel(intelligenceChannel); };
+    return () => { eventGuard.dispose(); supabase.removeChannel(intelligenceChannel); };
   }, [session?.user?.id]);
 
   useEffect(() => {
     if (!session?.user) return;
+    const eventGuard = createRealtimeEventGuard();
     const strategyChannel = supabase
       .channel('strategies_live')
       .on('postgres_changes', {
@@ -438,9 +442,9 @@ export default function DashboardScreen() {
         schema: 'public',
         table: 'strategies',
         filter: `user_id=eq.${session.user.id}`,
-      }, () => { fetchData(); })
+      }, (payload) => { eventGuard.schedule(payload, fetchData); })
       .subscribe();
-    return () => { supabase.removeChannel(strategyChannel); };
+    return () => { eventGuard.dispose(); supabase.removeChannel(strategyChannel); };
   }, [session?.user?.id]);
 
   // Conversation milestones and discovered signals are separate tables from
@@ -448,6 +452,7 @@ export default function DashboardScreen() {
   // discovery/data collection changes, without requiring a manual refresh.
   useEffect(() => {
     if (!session?.user) return;
+    const eventGuard = createRealtimeEventGuard();
     const conversationChannel = supabase
       .channel('conversation_milestones_live')
       .on('postgres_changes', {
@@ -455,20 +460,21 @@ export default function DashboardScreen() {
         schema: 'public',
         table: 'strategy_conversation_runs',
         filter: `user_id=eq.${session.user.id}`,
-      }, () => { fetchData(); })
+       }, (payload) => { eventGuard.schedule(payload, fetchData); })
       .on('postgres_changes', {
         event: '*',
         schema: 'public',
         table: 'strategy_conversation_signals',
         filter: `user_id=eq.${session.user.id}`,
-      }, () => { fetchData(); })
+       }, (payload) => { eventGuard.schedule(payload, fetchData); })
       .subscribe();
-    return () => { supabase.removeChannel(conversationChannel); };
+    return () => { eventGuard.dispose(); supabase.removeChannel(conversationChannel); };
   }, [session?.user?.id]);
 
   // Realtime subscription for closed deals
   useEffect(() => {
     if (!session?.user) return;
+    const eventGuard = createRealtimeEventGuard();
     const dealsChannel = supabase
       .channel('agent_deals_live')
       .on(
@@ -479,16 +485,17 @@ export default function DashboardScreen() {
           table: 'agent_deals',
           filter: `user_id=eq.${session.user.id}`,
         },
-        () => { fetchData(); },
+        (payload) => { eventGuard.schedule(payload, fetchData); },
       )
       .subscribe();
     dealsSubRef.current = dealsChannel;
-    return () => { supabase.removeChannel(dealsChannel); };
+    return () => { eventGuard.dispose(); supabase.removeChannel(dealsChannel); };
   }, [session?.user?.id]);
 
   // Realtime subscription for Google Maps leads (new business contacts discovered)
   useEffect(() => {
     if (!session?.user) return;
+    const eventGuard = createRealtimeEventGuard();
     const gmapsChannel = supabase
       .channel('gmaps_leads_live')
       .on(
@@ -499,11 +506,11 @@ export default function DashboardScreen() {
           table: 'agent_leads',
           filter: `user_id=eq.${session.user.id}`,
         },
-        () => { fetchData(); },
+        (payload) => { eventGuard.schedule(payload, fetchData); },
       )
       .subscribe();
     gmapsSubRef.current = gmapsChannel;
-    return () => { supabase.removeChannel(gmapsChannel); };
+    return () => { eventGuard.dispose(); supabase.removeChannel(gmapsChannel); };
   }, [session?.user?.id]);
 
   useEffect(() => { fetchData(); fetchEnergy(); }, [session]);

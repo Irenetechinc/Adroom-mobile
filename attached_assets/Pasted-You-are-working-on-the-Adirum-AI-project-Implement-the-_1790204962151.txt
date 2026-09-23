@@ -1,0 +1,494 @@
+You are working on the Adirum AI project. Implement the remaining requirements for personal social accounts, autonomous agent routing, inbound conversations, push notifications, dashboard realtime updates, admin controls, content publishing, and dynamic creative generation.
+
+Non-negotiable project constraints
+Use Railway for backend hosting.
+Use Supabase for the database.
+Do not add Replit hosting, databases, integrations, dependencies, registries, or deployment services.
+Use only public npm packages from:
+https://registry.npmjs.org/
+Do not ask end users for:
+Telegram API ID
+Telegram API hash
+Telegram session strings
+WhatsApp auth files
+Signal session files
+Access tokens
+Private credentials
+Keep all provider credentials and session data server-side and encrypted.
+Never expose credentials or session data to agent reasoning context, frontend responses, logs, notifications, or dashboard data.
+Do not use hard-coded social platforms in agent behavior. Always use the platforms selected by the user during strategy creation.
+Do not treat Telegram, WhatsApp, Signal, or Delta Chat like public-feed platforms. They require recipients or conversations.
+Respect each provider’s terms, documented limits, privacy requirements, and anti-spam rules. Do not implement ban evasion or stealth behavior intended to bypass platform enforcement.
+Phase 1: Inspect before editing
+Before changing code:
+
+Inspect the current implementation and preserve existing architecture.
+Check:
+replit.md
+.agents/memory/MEMORY.md
+backend package files and lockfiles
+Dockerfile
+social-account services
+agent orchestrator
+scheduler
+conversation agent
+inbound message service
+push service
+feature flags
+admin router
+dashboard, leads, conversations, and account-selection screens
+all relevant Supabase migrations
+Search for existing implementations before adding new ones.
+Do not rewrite working features unnecessarily.
+Create a clear implementation plan in your response before editing.
+Keep the work in coherent phases and verify each phase.
+Phase 2: Fix the inbound-message schema contract first
+There is currently a production-blocking mismatch:
+
+backend/personal_inbound_messages_migration.sql defines received_at
+Backend code writes and reads message_timestamp
+Align the schema and code consistently.
+
+Requirements:
+
+Choose one canonical timestamp field.
+Update all readers, writers, indexes, queries, and migrations to use the same field.
+Add a safe migration for existing production databases.
+Do not silently ignore missing-column errors.
+Add explicit logging when inbound persistence fails.
+Ensure duplicate messages remain idempotent using:
+user_id + provider + external_id
+Add or update tests for:
+WhatsApp inbound persistence
+Telegram inbound persistence
+Signal inbound persistence
+Bluesky inbound persistence
+duplicate event handling
+migration compatibility
+Phase 3: Complete personal-account connection flows
+Telegram
+Maintain the existing MTProto flow:
+
+User enters phone number.
+Telegram sends login code.
+User enters login code.
+If required, user enters their Telegram 2FA password.
+Server stores only the encrypted user session and phone/account metadata.
+Server-side Telegram API credentials must come only from Railway environment variables.
+Never return API ID, API hash, or session string to the mobile app.
+Verify:
+
+expired verification requests
+invalid codes
+invalid 2FA passwords
+reconnecting an existing account
+disconnecting an account
+expired sessions
+Telegram authorization errors
+WhatsApp
+Maintain pairing-code authentication and do not reintroduce QR code requirements.
+
+Implement:
+
+Persistent encrypted Baileys auth storage in Supabase.
+Live socket restoration on backend startup.
+Reconnection with bounded exponential backoff.
+Correct cleanup on logout or disconnect.
+Detection of logged-out, banned, or invalid sessions.
+Safe credential persistence after every relevant Baileys credential update.
+Durable inbound message persistence.
+Inbound event deduplication.
+Recovery after Railway process restarts.
+Do not rely only on in-memory sockets. The persistent auth bundle must be the source for restoring the session, while live sockets must remain active for realtime inbound events.
+
+Signal
+Maintain the signal-cli implementation and add:
+
+Clear runtime validation that signal-cli is installed.
+Registration and verification error handling.
+Encrypted auth bundle persistence.
+Temporary-directory cleanup.
+Registration-block and invalid-session detection.
+Inbound message persistence.
+Media attachment support.
+Group conversation support where supported by the installed Signal CLI version.
+Explicit configuration errors when the binary is unavailable.
+Bluesky
+Maintain handle and app-password login.
+
+Verify and complete:
+
+Post creation.
+Replies.
+Likes.
+Reposts.
+Follow/unfollow.
+Direct messages.
+Media uploads.
+Inbound message retrieval.
+Rate-limit handling.
+Session expiration and reconnect handling.
+Do not claim group-chat support unless Bluesky’s configured API actually supports it. If it does not, show the capability as unavailable rather than silently pretending it works.
+
+Delta Chat
+Delta Chat must either be fully supported through the configured bridge or clearly gated as unavailable.
+
+Requirements:
+
+Validate DELTA_CHAT_BRIDGE_URL.
+Support optional bridge authentication using DELTA_CHAT_BRIDGE_TOKEN.
+Define and document the bridge contract for:
+connect
+send
+publish, if supported
+receive/inbound events
+disconnect
+Store only the opaque bridge credential in encrypted storage.
+Do not expose the bridge credential to the client or agents.
+If inbound events are not supported by the bridge, do not show Delta Chat as fully supported.
+Add timeout, authentication, and bridge-unavailable errors.
+Add a clear coming-soon or unavailable state when the bridge is not configured.
+Phase 4: Implement complete safety controls
+Build safety controls into one shared service instead of duplicating logic per provider.
+
+Every outbound action must:
+
+Verify that the provider is selected for the active strategy.
+Verify that the account is currently connected.
+Verify that the account is not paused or in cooldown.
+Enforce account-level daily limits.
+Enforce recipient-level daily limits where applicable.
+Enforce warm-up limits for new accounts.
+Enforce randomized delay ranges appropriate to the provider.
+Enforce duplicate-message prevention.
+Record action success or failure.
+Record provider error details without storing sensitive data.
+Apply exponential cooldown after repeated failures.
+Stop sending after ban, block, unauthorized, or rate-limit signals.
+Require explicit reconnect or administrator action when the account needs reconnection.
+Do not use a generic text match as the only ban-detection mechanism. Add provider-specific error classification where possible.
+
+Ensure the action reservation is concurrency-safe. Two simultaneous workers must not both bypass the same daily account or recipient limit.
+
+Typing indicators and read receipts must be best effort. Failure to send a typing indicator must not fail the entire outbound message.
+
+Phase 5: Separate public publishing from personal messaging
+Fix the task model so personal accounts are not incorrectly treated as public-feed accounts.
+
+Implement separate action types:
+
+Public publishing
+For platforms such as Facebook Pages, Instagram, TikTok, and other public-feed providers:
+
+publish_public_post
+Personal messaging
+For Telegram, WhatsApp, Signal, Bluesky DMs, and Delta Chat:
+
+send_personal_message
+Personal messaging tasks must contain:
+
+provider
+selected account
+recipient identifier
+conversation identifier when available
+message content
+optional media
+strategy ID
+lead ID
+scheduling metadata
+Do not allow a personal platform publish task to silently fall back to an unspecified recipient.
+
+If the system does not know the recipient handle, phone number, chat ID, or conversation ID, the task must remain pending or be marked as unable to proceed with a clear reason.
+
+Phase 6: Connect the conversation and lead pipeline
+The conversation flow must be:
+
+Discovery finds a potential lead.
+Lead is persisted.
+Research agent gathers permitted non-sensitive information.
+Psychology or qualification agent receives the research.
+Messaging agent receives the approved lead context.
+The messaging agent selects only a connected account selected in the active strategy.
+The system resolves the lead’s corresponding social contact.
+A personal messaging task is created with an explicit recipient.
+The outbound action passes through safety controls.
+Replies are persisted and shown in the conversation screen.
+Engagement milestones are updated in the lead and dashboard screens.
+Requirements:
+
+Web discovery remains available.
+Do not use web as an outbound social account.
+Do not rerun discovery repeatedly when no new discovery is needed.
+Keep the daily sweep.
+Allow agents to request a new sweep when current data is insufficient.
+Do not expose sensitive personal information in the frontend.
+Show only permitted names, handles, public profile data, engagement state, and useful non-sensitive research.
+Keep sensitive research backend-only.
+Add tests covering:
+
+selected personal platform
+unselected personal platform
+missing recipient
+missing social handle
+disconnected account
+expired account
+account paused by safety controls
+inbound reply from a personal platform
+duplicate inbound event
+lead engagement state update
+Phase 7: Fix account reconnection notifications
+Reconnection notifications must only be sent when all of the following are true:
+
+The account is currently or previously connected for that user.
+The account is selected in an active and running strategy.
+The account requires reconnection or token refresh.
+The provider is not merely marked coming soon.
+The provider is not only displayed in the connection screen.
+The user never connected that account only because it appears in the provider list.
+The notification is not generated for a missing account setup.
+Apply this rule consistently to:
+
+orchestrator tasks
+token refresh jobs
+scheduled publishing
+personal accounts
+legacy business/social accounts
+Add regression tests for:
+
+coming-soon provider
+unselected connected account
+selected connected account with expired credentials
+unconnected provider
+disconnected account
+selected account in an inactive strategy
+Phase 8: Complete push notification delivery
+The existing project-aware grouping fix must be preserved.
+
+Verify:
+
+device_push_tokens.project_id migration is applied.
+Tokens are registered with the current EAS project ID.
+Tokens are grouped by project before Expo requests.
+Legacy unscoped tokens are retired safely.
+Invalid tokens are deactivated.
+Expo response tickets are inspected.
+Firebase/Expo credential failures produce actionable diagnostics.
+Push notifications are tested on a current development or production mobile build, not Expo Go.
+The mobile build uses the deployed Railway URL.
+Push errors do not prevent in-app notifications or agent execution.
+Add a backend diagnostic endpoint or admin test action that clearly reports:
+
+active token count
+token project IDs
+Expo request result
+invalid token count
+Firebase/Expo error classification
+Do not expose push tokens in user-facing screens.
+
+Phase 9: Complete realtime dashboard, leads, and conversations
+The dashboard must update without manual refresh.
+
+Show user-facing results only, not internal agent procedures.
+
+Realtime UI must include:
+
+Identified lead count.
+High-potential lead count.
+Engaged lead count.
+New lead rows.
+Lead research summary that is safe to display.
+Social handles discovered for the selected platforms.
+Conversation activity.
+Message delivery state.
+Replies received.
+Reconnection status where relevant.
+Agent milestones.
+Content-generation milestones.
+Publishing results.
+Errors that require user action.
+Do not display:
+
+internal prompts
+hidden chain-of-thought
+private research
+credentials
+session identifiers
+internal agent decision procedures
+provider auth details
+Use Supabase realtime or the project’s existing realtime mechanism consistently. Ensure subscriptions are cleaned up when screens unmount.
+
+Add tests or manual verification for:
+
+dashboard updates while open
+leads screen updates while open
+conversation screen updates while open
+reconnecting after temporary network loss
+duplicate realtime events
+stale event ordering
+Phase 10: Admin controls and coming-soon behavior
+Implement and verify:
+
+Global enable/disable for each social account ui and connection feture in the connect scoial account screen.
+Per-user override for each social accounts.
+Global coming-soon mode.
+Correct distinction between:
+disabled
+coming soon
+connected
+needs reconnect
+unavailable because server configuration is missing
+Immediate effect in:
+connect account screen
+account selection screen
+strategy creation
+strategy launch
+orchestrator
+token refresh
+reconnect notifications
+The current runtime has admin login disabled because ADMIN_EMAIL and ADMIN_PASSWORD are not configured. Document the required Railway variables and verify admin controls after they are configured.
+
+Phase 11: Complete dynamic content generation and publishing
+For Facebook, Instagram, TikTok, and other existing public platforms:
+
+Use only the platforms selected in the strategy.
+Do not hard-code a fixed platform list inside generation decisions.
+Confirm that generated content is compatible with the selected platform.
+Confirm that the correct connected account is used.
+Confirm publishing success or failure.
+Persist publishing status.
+Retry only according to safe provider limits.
+Mark failed publishing tasks clearly.
+Send user notifications only when action is required.
+Test text, image, video, and platform-specific formats.
+Perform an end-to-end test for each dynamically selected platform:
+
+strategy selected platform
+→ content generated
+→ media generated if required
+→ correct account selected
+→ publish task created
+→ task executed
+→ result persisted
+→ dashboard updated
+→ user notified if necessary
+Do not mark this complete based only on the presence of generator functions.
+
+Phase 12: Remove template-driven creative behavior
+Graphics, director, and video-editor agents must use current intelligence and platform context.
+
+Requirements:
+
+Remove hard-coded visual templates that determine output structure regardless of platform.
+Use:
+selected platform
+content category
+current trend data
+product type
+target audience
+campaign goal
+media format
+historical performance
+Validate whether trend data is current before using it.
+If trend data is stale or missing, use an explicit fallback and record that fallback.
+Do not silently use stale trends.
+Store the source timestamp or freshness metadata for trend inputs.
+Ensure the graphics designer, director, and video editor all receive the same current intelligence context where appropriate.
+Add tests proving that different platforms and categories can produce different creative decisions.
+Add logging that records only safe decision metadata, not private prompts or secrets.
+Phase 13: Supabase migrations and production setup
+Create or update migrations as needed, but do not assume they are applied.
+
+Required migrations include:
+
+social_accounts_migration.sql
+social_accounts_safety_migration.sql
+feature_flags_migration.sql
+personal_inbound_messages_migration.sql
+push_project_migration.sql
+feature_strategy_logistics_migration.sql
+lead-message migrations
+token-refresh migrations
+any conversation schema migrations required by the current backend
+Every migration must be:
+
+Idempotent where practical.
+Safe for existing data.
+Explicit about renamed columns.
+Tested against a clean database.
+Tested against an existing database.
+Documented for manual Supabase execution.
+Do not run destructive migrations without clearly describing the consequence first.
+
+Phase 14: Railway environment checklist
+Document and verify these variables where applicable:
+
+SUPABASE_URL
+SUPABASE_SERVICE_ROLE_KEY
+SESSION_SECRET or ENCRYPTION_KEY
+TELEGRAM_API_ID
+TELEGRAM_API_HASH
+DELTA_CHAT_BRIDGE_URL
+DELTA_CHAT_BRIDGE_TOKEN
+SUPABASE_DB_URL
+SUPABASE_DB_PASSWORD
+ADMIN_EMAIL
+ADMIN_PASSWORD
+EXPO_PUBLIC_API_URL
+Also verify all existing AI, media, storage, and payment variables required by the current application.
+
+Railway must provide:
+
+a long-running backend process
+correct Docker start configuration
+correct port binding
+outbound network access
+installed signal-cli
+temporary filesystem access
+enough memory for Baileys and media operations
+safe process restart behavior
+no secrets in logs
+Do not add Replit deployment dependencies.
+
+Phase 15: Verification requirements
+Before reporting completion:
+
+Run the project’s type checks.
+Run backend tests.
+Run frontend tests where available.
+Run migration validation.
+Run a clean dependency installation.
+Build the Docker image.
+Confirm runtime dependencies are available in the final image.
+Start the backend.
+Check workflow logs.
+Check browser console logs.
+Test API health.
+Test each connection flow.
+Test disconnect.
+Test account selection.
+Test strategy launch.
+Test personal outbound messaging.
+Test inbound message persistence.
+Test realtime dashboard updates.
+Test push notification registration and delivery.
+Test token-refresh notification filtering.
+Test admin feature flags.
+Test content generation and publishing for dynamically selected platforms.
+Test creative generation with current versus stale trend data.
+Do not claim production readiness unless Railway and Supabase have been explicitly verified.
+
+Required final report
+At the end, provide:
+
+Files changed.
+Migrations added or modified.
+Environment variables required.
+Railway configuration required.
+Supabase setup required.
+Tests run and their results.
+Features verified locally.
+Features verified against live services.
+Remaining limitations.
+Any requirement that is intentionally unavailable because a provider does not support it.
+Any manual production steps still required.
+Do not hide incomplete behavior behind generic success responses. Fail clearly and provide actionable error messages.

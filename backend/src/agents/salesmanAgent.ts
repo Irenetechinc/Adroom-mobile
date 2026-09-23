@@ -5,7 +5,7 @@ import { pushService } from '../services/pushService';
 import { discoverBusinesses, buildOutreachMessage, buildOutreachMessageAI, type PlaceBusiness } from '../services/googleMapsService';
 import { sendEmailViaResend } from '../services/resendEmailService';
 import { socialAccountService } from '../services/socialAccountService';
-import { normalizePlatform } from '../services/platformIdentity';
+import { isPersonalProvider, normalizePlatform, normalizeSelectedPlatforms } from '../services/platformIdentity';
 
 export class SalesmanAgent extends AgentBase {
     constructor(supabase: SupabaseClient) {
@@ -447,9 +447,11 @@ Return valid JSON only with this schema:
         const content = task.content || {};
         const platform = normalizePlatform(task.platform);
             const recipient = String(
-                content.recipient
+                task.recipient_id
+                || content.recipient_id
+                || content.recipient
                 || content.author_id
-                || (['telegram', 'whatsapp_personal', 'signal_personal', 'bluesky', 'delta_chat'].includes(platform)
+                || (isPersonalProvider(platform)
                   ? ''
                   : content.author_name)
                 || content.signal_id
@@ -458,7 +460,7 @@ Return valid JSON only with this schema:
         if (!recipient) {
                 await this.failTask(
                     taskId,
-                    ['telegram', 'whatsapp_personal', 'signal_personal', 'bluesky', 'delta_chat'].includes(platform)
+                    isPersonalProvider(platform)
                       ? 'Personal message task has no explicit recipient or conversation identifier.'
                       : 'Conversation engagement has no public recipient identity.',
                 );
@@ -468,9 +470,25 @@ Return valid JSON only with this schema:
         try {
             const { data: strategy } = await this.supabase
                 .from('strategies')
-                .select('product_id, goal, title, product_memory')
+                .select('product_id, goal, title, product_memory, selected_accounts, platforms, is_active, status')
                 .eq('id', task.strategy_id)
                 .maybeSingle();
+            if (!strategy || strategy.is_active !== true || strategy.status !== 'active') {
+                await this.failTask(taskId, 'Personal message task strategy is not active.');
+                return;
+            }
+            const selectedPlatforms = normalizeSelectedPlatforms(strategy.selected_accounts || strategy.platforms || []);
+            if (!selectedPlatforms.includes(platform)) {
+                await this.failTask(taskId, `Personal platform ${platform} is not selected by the active strategy.`);
+                return;
+            }
+            if (isPersonalProvider(platform)) {
+                const connection = await socialAccountService.get(task.user_id, platform);
+                if (!connection || connection.status !== 'connected') {
+                    await this.failTask(taskId, `Personal account ${platform} is not connected.`);
+                    return;
+                }
+            }
             const product = strategy?.product_id ? await this.getProductDetails(strategy.product_id) : (strategy?.product_memory || {});
             const { data: existingLead } = await this.supabase
                 .from('agent_leads')

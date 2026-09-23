@@ -10,3 +10,4 @@
 - [Backend dependency verification](package-management-backend.md) — nested backend installs should use the backend workflow; root package-manager installs can create unrelated lockfile drift.
 - [Expo push project routing](expo-push-project-routing.md) — batch tokens by EAS project and retire unscoped legacy rows; never send mixed-project tokens together.
 - [Credential-free discovery routing](credential-free-discovery-routing.md) — keep web as the fallback and only search strategy-selected social sources; never turn discovery results into web outbound work.
+- [Root package install drift](root-package-install-drift.md) — package installation helpers can rewrite root ranges and registry URLs; verify and restore package manifests before finishing.

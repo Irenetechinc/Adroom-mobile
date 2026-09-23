@@ -9,6 +9,7 @@ import { energyService } from '../services/energyService';
 import { randomUUID } from 'crypto';
 import { normalizePlatform, normalizeSelectedPlatforms, isPersonalProvider } from '../services/platformIdentity';
 import { socialAccountService } from '../services/socialAccountService';
+import { canNotifyReconnect } from '../services/reconnectEligibility';
 
 type GoalType = 'SALESMAN' | 'AWARENESS' | 'PROMOTION' | 'LAUNCH' | string;
 
@@ -192,7 +193,7 @@ export class AgentOrchestrator {
 
         const { data: dueTasks, error } = await this.supabase
             .from('agent_tasks')
-            .select('id, agent_type, strategy_id, user_id, task_type, platform, strategies(selected_accounts, platforms)')
+            .select('id, agent_type, strategy_id, user_id, task_type, platform, action_type, selected_account_id, recipient_id, conversation_id, content, strategies(selected_accounts, platforms)')
             .eq('status', 'pending')
             .lte('scheduled_at', now)
             .neq('task_type', 'LEAD_SCAN')       // Lead scans handled separately
@@ -246,6 +247,47 @@ export class AgentOrchestrator {
                     }).eq('id', task.id);
                     continue;
                 }
+                if (isPersonalProvider(taskPlatform)) {
+                    const taskContent = task.content && typeof task.content === 'object' ? task.content : {};
+                    const actionType = String((task as any).action_type || taskContent.action_type || '').toLowerCase();
+                    const recipient = String(
+                        (task as any).recipient_id
+                        || taskContent.recipient_id
+                        || taskContent.recipient
+                        || taskContent.platform_user_id
+                        || taskContent.author_id
+                        || '',
+                    ).trim();
+                    const conversationId = String(
+                        (task as any).conversation_id
+                        || taskContent.conversation_id
+                        || '',
+                    ).trim();
+                    if (actionType && actionType !== 'send_personal_message') {
+                        await this.supabase.from('agent_tasks').update({
+                            status: 'skipped',
+                            error_message: 'Personal accounts only support send_personal_message tasks.',
+                        }).eq('id', task.id);
+                        continue;
+                    }
+                    if (!recipient && !conversationId) {
+                        await this.supabase.from('agent_tasks').update({
+                            status: 'skipped',
+                            error_message: 'Personal message task requires recipient_id or conversation_id.',
+                        }).eq('id', task.id);
+                        continue;
+                    }
+                    if ((task as any).selected_account_id) {
+                        const selectedAccount = normalizePlatform((task as any).selected_account_id);
+                        if (selectedAccount !== taskPlatform) {
+                            await this.supabase.from('agent_tasks').update({
+                                status: 'skipped',
+                                error_message: 'Personal message selected account does not match task platform.',
+                            }).eq('id', task.id);
+                            continue;
+                        }
+                    }
+                }
                 let connectionReady = false;
                 if (isPersonalProvider(taskPlatform)) {
                     const personal = await socialAccountService.get(task.user_id, taskPlatform);
@@ -276,7 +318,7 @@ export class AgentOrchestrator {
                     const wasConnected = isPersonalProvider(taskPlatform)
                       ? Boolean(await socialAccountService.get(task.user_id, taskPlatform))
                       : Boolean((await this.supabase.from('ad_configs').select('platform').eq('user_id', task.user_id).eq('platform', taskPlatform).maybeSingle()).data);
-                    if (selected.includes(taskPlatform) && wasConnected) try {
+                    if (selected.includes(taskPlatform) && wasConnected && await canNotifyReconnect(task.user_id, taskPlatform, this.supabase)) try {
                         const { pushService } = await import('../services/pushService');
                         await pushService.notifyTokenRefreshFailed(task.user_id, taskPlatform);
                     } catch (notificationError: any) {
@@ -319,7 +361,8 @@ export class AgentOrchestrator {
                 executed++;
             } catch (err: any) {
                 console.error(`[Orchestrator] Task ${task.id} execution error: ${err.message}`);
-                if (/invalid|expired|unauthorized|401|access token|oauth/i.test(String(err.message || ''))) {
+                if (/invalid|expired|unauthorized|401|access token|oauth/i.test(String(err.message || ''))
+                    && await canNotifyReconnect(task.user_id, task.platform, this.supabase)) {
                     try {
                         const { pushService } = await import('../services/pushService');
                         await pushService.notifyTokenRefreshFailed(task.user_id, task.platform);
@@ -376,6 +419,34 @@ export class AgentOrchestrator {
             if (!(await this.claimTask(task.id))) continue;
 
             try {
+                const specialPlatform = normalizePlatform(task.platform);
+                if (isPersonalProvider(specialPlatform)) {
+                    const content = task.content && typeof task.content === 'object' ? task.content : {};
+                    const recipient = String(
+                        task.recipient_id || content.recipient_id || content.recipient || content.platform_user_id
+                        || content.lead_psid || '',
+                    ).trim();
+                    const { data: strategy } = await this.supabase
+                        .from('strategies')
+                        .select('selected_accounts, platforms, is_active, status')
+                        .eq('id', task.strategy_id)
+                        .maybeSingle();
+                    const selected = normalizeSelectedPlatforms(strategy?.selected_accounts || strategy?.platforms || []);
+                    if (!strategy || strategy.is_active !== true || strategy.status !== 'active' || !selected.includes(specialPlatform)) {
+                        await this.supabase.from('agent_tasks').update({
+                            status: 'skipped',
+                            error_message: 'Personal task requires an active strategy with this provider selected.',
+                        }).eq('id', task.id);
+                        continue;
+                    }
+                    if (!recipient) {
+                        await this.supabase.from('agent_tasks').update({
+                            status: 'skipped',
+                            error_message: 'Personal task has no explicit recipient_id or conversation recipient.',
+                        }).eq('id', task.id);
+                        continue;
+                    }
+                }
                 // ─── LEAD SCAN ────────────────────────────────────────────────────────────
                 if (task.task_type === 'LEAD_SCAN' && task.agent_type === 'SALESMAN') {
                     const agent = new SalesmanAgent(this.supabase);

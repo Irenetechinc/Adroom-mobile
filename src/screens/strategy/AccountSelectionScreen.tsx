@@ -6,6 +6,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAgentStore } from '../../store/agentStore';
 import { useStrategyCreationStore } from '../../store/strategyCreationStore';
 import useFeatureFlags from '../../hooks/useFeatureFlags';
+import usePlatformCapabilities from '../../hooks/usePlatformCapabilities';
 
 const colors = { bg: '#0B0F19', panel: '#121D2B', text: '#E2E8F0', muted: '#8FA3B8', cyan: '#00F0FF', border: '#233246' };
 
@@ -15,6 +16,7 @@ export default function AccountSelectionScreen() {
   const { productData, setProductData } = useStrategyCreationStore();
   const [loading, setLoading] = useState(true);
   const { isEnabled } = useFeatureFlags();
+  const { capabilities } = usePlatformCapabilities();
 
   useFocusEffect(useCallback(() => {
     setLoading(true);
@@ -22,7 +24,14 @@ export default function AccountSelectionScreen() {
   }, [loadConnectedPlatforms]));
 
   const platforms = (Object.values(connectedPlatforms || {}) as any[])
-    .filter((account) => isEnabled(`social_${account.platform}_connections`));
+    .filter((account) => {
+      const platform = String(account.platform || account.provider || '').toLowerCase();
+      const capability = capabilities[platform];
+      return account.connected !== false
+        && account.status !== 'needs_reconnect'
+        && isEnabled(`social_${platform}_connections`)
+        && capability?.available !== false;
+    });
   const selected = productData.selectedAccounts || [];
   const toggle = (platform: string) => {
     setProductData({
@@ -44,7 +53,7 @@ export default function AccountSelectionScreen() {
       <View style={styles.header}><TouchableOpacity onPress={() => navigation.goBack()}><ArrowLeft color={colors.text} size={22} /></TouchableOpacity><Text style={styles.headerTitle}>Choose channels</Text><View style={{ width: 22 }} /></View>
       <ScrollView contentContainerStyle={styles.content}>
         <View style={styles.intro}><View style={styles.icon}><Link2 color={colors.cyan} size={22} /></View><Text style={styles.title}>Where should this strategy run?</Text><Text style={styles.subtitle}>Select the connected accounts Adirum AI should use for this campaign. Your choice stays specific to this strategy.</Text></View>
-        {loading ? <ActivityIndicator color={colors.cyan} style={{ marginTop: 32 }} /> : platforms.length ? platforms.map((account: any) => {
+         {loading ? <ActivityIndicator color={colors.cyan} style={{ marginTop: 32 }} /> : platforms.length ? platforms.map((account: any) => {
           const platform = String(account.platform || account.provider || '').toLowerCase();
           const isSelected = selected.includes(platform);
           return (
@@ -57,7 +66,7 @@ export default function AccountSelectionScreen() {
               {isSelected ? <Check color={colors.bg} size={18} /> : <Plus color={colors.muted} size={18} />}
             </TouchableOpacity>
           );
-        }) : <TouchableOpacity style={styles.connectCard} onPress={() => navigation.navigate('ConnectedAccounts')}><Link2 color={colors.cyan} size={22} /><View style={{ flex: 1 }}><Text style={styles.connectTitle}>Connect an account</Text><Text style={styles.connectText}>Connect a social account, then return here to select it for this strategy.</Text></View><ArrowRight color={colors.cyan} size={18} /></TouchableOpacity>}
+         }) : <TouchableOpacity style={styles.connectCard} onPress={() => navigation.navigate('ConnectedAccounts')}><Link2 color={colors.cyan} size={22} /><View style={{ flex: 1 }}><Text style={styles.connectTitle}>Connect an available account</Text><Text style={styles.connectText}>Only enabled, configured, connected accounts can be selected for a strategy. Reconnect or configure unavailable accounts first.</Text></View><ArrowRight color={colors.cyan} size={18} /></TouchableOpacity>}
       </ScrollView>
       <View style={styles.footer}><TouchableOpacity style={styles.next} onPress={continueNext}><Text style={styles.nextText}>Choose accounts</Text><ArrowRight color={colors.bg} size={18} /></TouchableOpacity></View>
     </SafeAreaView>

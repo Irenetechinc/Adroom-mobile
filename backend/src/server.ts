@@ -1036,8 +1036,7 @@ app.get('/api/platform-configs', async (req, res) => {
     const { data: personalConnections } = await supabase
       .from('social_account_connections')
       .select('provider, account_id, display_name, handle, status, updated_at')
-      .eq('user_id', user.id)
-      .eq('status', 'connected');
+      .eq('user_id', user.id);
     for (const c of personalConnections || []) {
       connected[c.provider] = {
         platform: c.provider,
@@ -1045,12 +1044,54 @@ app.get('/api/platform-configs', async (req, res) => {
         page_name: c.display_name || c.handle || c.provider,
         handle: c.handle,
         updated_at: c.updated_at,
-        connected: true,
+        connected: c.status === 'connected',
+        status: c.status,
       };
     }
     return res.status(200).json({ configs: connected });
   } catch (e: any) {
     return res.status(500).json({ error: e?.message });
+  }
+});
+
+/**
+ * Capability state for account setup screens. This deliberately returns only
+ * booleans and safe status labels; provider credentials and session material
+ * never leave the backend.
+ */
+app.get('/api/platform-capabilities', async (req, res) => {
+  try {
+    const supabase = getSupabaseClient(req as any);
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return res.status(401).json({ error: 'Unauthorized.' });
+
+    const providers = ['facebook', 'instagram', 'tiktok', 'twitter', 'whatsapp', 'linkedin', 'google', 'telegram', 'whatsapp_personal', 'signal_personal', 'bluesky', 'delta_chat'];
+    const configs = await Promise.all(providers.map(async (provider) => {
+      const [enabled, comingSoon] = await Promise.all([
+        isSocialConnectionEnabled(user.id, provider),
+        isSocialComingSoon(user.id, provider),
+      ]);
+      const configured =
+        provider === 'telegram'
+          ? Boolean(process.env.TELEGRAM_API_ID && process.env.TELEGRAM_API_HASH)
+          : provider === 'delta_chat'
+            ? Boolean(process.env.DELTA_CHAT_BRIDGE_URL)
+            : provider === 'signal_personal'
+              ? Boolean(process.env.SIGNAL_CLI_PATH || process.env.SIGNAL_CLI_AVAILABLE === 'true')
+              : true;
+      const available = enabled && !comingSoon && configured;
+      const reason = !enabled
+        ? 'disabled'
+        : comingSoon
+          ? 'coming_soon'
+          : !configured
+            ? 'missing_server_configuration'
+            : 'available';
+      return { provider, enabled, comingSoon, configured, available, reason };
+    }));
+    return res.status(200).json({ capabilities: configs });
+  } catch (e: any) {
+    return res.status(500).json({ error: e?.message || 'Could not load platform capabilities.' });
   }
 });
 

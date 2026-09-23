@@ -82,6 +82,40 @@ function publicConnection(row: any): SocialConnectionPublic {
   };
 }
 
+function classifyProviderError(provider: string, message: string): {
+  code: string;
+  cooldown: boolean;
+  banned: boolean;
+  requiresReconnect: boolean;
+} {
+  const value = String(message || '').toLowerCase();
+  if (provider === 'telegram' && /floodwait|flood wait/.test(value)) {
+    return { code: 'telegram_flood_wait', cooldown: true, banned: false, requiresReconnect: false };
+  }
+  if (provider === 'whatsapp_personal' && /logged.?out|401|bad session|connection closed.*logged/.test(value)) {
+    return { code: 'whatsapp_logged_out', cooldown: false, banned: false, requiresReconnect: true };
+  }
+  if (provider === 'signal_personal' && /unregistered|invalid.*(session|account)|banned|registration denied/.test(value)) {
+    return { code: /banned|registration denied/.test(value) ? 'signal_registration_blocked' : 'signal_invalid_session', cooldown: false, banned: /banned/.test(value), requiresReconnect: true };
+  }
+  if (provider === 'bluesky' && /auth.?token|jwt|session|expired|unauthorized|401/.test(value)) {
+    return { code: 'bluesky_session_expired', cooldown: false, banned: false, requiresReconnect: true };
+  }
+  if (provider === 'delta_chat' && /401|403|unauthorized|authentication/.test(value)) {
+    return { code: 'delta_chat_bridge_auth', cooldown: false, banned: false, requiresReconnect: true };
+  }
+  if (/banned|blocked|account disabled|forbidden/.test(value)) {
+    return { code: 'provider_account_blocked', cooldown: true, banned: true, requiresReconnect: false };
+  }
+  if (/rate.?limit|too many requests|429|cooldown/.test(value)) {
+    return { code: 'provider_rate_limited', cooldown: true, banned: false, requiresReconnect: false };
+  }
+  if (/unauthoriz|invalid.?token|expired|access token|oauth|401/.test(value)) {
+    return { code: 'provider_credentials_expired', cooldown: false, banned: false, requiresReconnect: true };
+  }
+  return { code: 'provider_action_failed', cooldown: false, banned: false, requiresReconnect: false };
+}
+
 export class SocialAccountService {
   private readonly supabase = getServiceSupabaseClient();
   private readonly pendingTelegram = new Map<string, any>();
@@ -563,77 +597,71 @@ export class SocialAccountService {
   async reserveAction(userId: string, provider: string, recipient?: string): Promise<boolean> {
     provider = normalizePlatform(provider);
     if (!(await isFeatureEnabled(`social_${provider}_connections`, userId))) return false;
-    const row = await this.get(userId, provider);
-    // A safety pause is an intentional stop, not a transient error. It must
-    // remain blocked until an explicit reconnect/admin action clears it.
-    if (!row || !['connected', 'error'].includes(String(row.status))) return false;
-    if (row.cooldown_until && new Date(row.cooldown_until).getTime() > Date.now()) return false;
-    // A transient error or an expired circuit-breaker cooldown is recoverable.
-    // Do not leave an account permanently unusable after one failed send.
-    if (row.status !== 'connected') {
-      await this.supabase.from('social_account_connections').update({
-        status: 'connected',
-        consecutive_errors: 0,
-        cooldown_until: null,
-        updated_at: new Date().toISOString(),
-      }).eq('id', row.id);
-    }
-    const today = new Date().toISOString().slice(0, 10);
-    const actionsToday = row.action_day === today ? Number(row.actions_today || 0) : 0;
-    const configuredLimit = Number(row.daily_limit || 20);
-    // New accounts ramp up slowly. Existing rows without a warmup timestamp
-    // keep their configured limit so reconnects do not unexpectedly throttle
-    // established accounts.
-    const warmupDays = row.warmup_started_at
-      ? Math.max(0, Math.floor((Date.now() - new Date(row.warmup_started_at).getTime()) / 86400000))
-      : 999;
-    const warmupLimit = warmupDays < 1 ? 3 : warmupDays < 3 ? 8 : warmupDays < 7 ? 15 : configuredLimit;
-    if (actionsToday >= Math.min(configuredLimit, warmupLimit)) return false;
     const recipientKey = recipient
       ? crypto.createHash('sha256').update(String(recipient)).digest('hex').slice(0, 24)
       : null;
-    const recipientActions = row.recipient_action_day === today && row.recipient_actions && typeof row.recipient_actions === 'object'
-      ? { ...row.recipient_actions }
-      : {};
-    const recipientLimit = Math.max(1, Math.min(5, Math.floor(Number(row.daily_limit || 20) / 4)));
-    if (recipientKey && Number(recipientActions[recipientKey] || 0) >= recipientLimit) return false;
-    if (recipientKey) recipientActions[recipientKey] = Number(recipientActions[recipientKey] || 0) + 1;
-    const { error } = await this.supabase.from('social_account_connections').update({
-      action_day: today,
-      actions_today: actionsToday + 1,
-      recipient_action_day: today,
-      recipient_actions: recipientActions,
-      last_action_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    }).eq('id', row.id).eq('actions_today', Number(row.actions_today || 0));
-    return !error;
+    const { data, error } = await this.supabase.rpc('reserve_social_action', {
+      p_user_id: userId,
+      p_provider: provider,
+      p_recipient_hash: recipientKey,
+    });
+    if (error) {
+      console.error(`[SocialAccountService] Atomic action reservation failed for ${provider}: ${error.message}`);
+      return false;
+    }
+    return data?.allowed === true;
   }
 
   async recordError(userId: string, provider: string, message: string): Promise<void> {
     provider = normalizePlatform(provider);
     const row = await this.get(userId, provider);
     const consecutiveErrors = Number(row?.consecutive_errors || 0) + 1;
-    const shouldPause = consecutiveErrors >= 3 || /floodwait|rate.limit|too many requests|ban/i.test(message);
+    const classification = classifyProviderError(provider, message);
+    const shouldPause = consecutiveErrors >= 3 || classification.cooldown;
     const cooldownUntil = shouldPause
       ? new Date(Date.now() + Math.min(6 * 60 * 60 * 1000, 15 * 60 * 1000 * Math.pow(2, Math.min(consecutiveErrors - 3, 4)))).toISOString()
       : null;
+    const nextStatus = classification.requiresReconnect
+      ? 'needs_reconnect'
+      : classification.banned
+        ? 'paused'
+        : shouldPause ? 'paused' : 'error';
     await this.supabase.from('social_account_connections').update({
-      status: /ban|unauthoriz|expired/i.test(message) ? 'needs_reconnect' : shouldPause ? 'paused' : 'error',
-      last_error: message.slice(0, 500),
+      status: nextStatus,
+      last_error: `${classification.code}: ${message}`.slice(0, 500),
       consecutive_errors: consecutiveErrors,
       cooldown_until: cooldownUntil,
       updated_at: new Date().toISOString(),
     }).eq('user_id', userId).eq('provider', provider);
+    await this.supabase.from('social_action_log').insert({
+      user_id: userId,
+      provider,
+      action_type: 'send_personal_message',
+      status: 'failure',
+      error_code: classification.code,
+      safe_error: message.slice(0, 500),
+    }).then(({ error }) => {
+      if (error) console.error(`[SocialAccountService] Action failure log failed: ${error.message}`);
+    });
   }
 
   async recordSuccess(userId: string, provider: string): Promise<void> {
+    const normalized = normalizePlatform(provider);
     await this.supabase.from('social_account_connections').update({
       consecutive_errors: 0,
       cooldown_until: null,
       status: 'connected',
       last_error: null,
       updated_at: new Date().toISOString(),
-    }).eq('user_id', userId).eq('provider', normalizePlatform(provider));
+    }).eq('user_id', userId).eq('provider', normalized);
+    await this.supabase.from('social_action_log').insert({
+      user_id: userId,
+      provider: normalized,
+      action_type: 'send_personal_message',
+      status: 'success',
+    }).then(({ error }) => {
+      if (error) console.error(`[SocialAccountService] Action success log failed: ${error.message}`);
+    });
   }
 
   private async safetyDelay(provider: string): Promise<void> {

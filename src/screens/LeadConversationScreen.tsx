@@ -11,6 +11,7 @@ import {
   View, Text, ScrollView, TouchableOpacity, StyleSheet,
   ActivityIndicator, RefreshControl,
 } from 'react-native';
+import { createRealtimeEventGuard } from '../utils/realtimeEventGuard';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { useFocusEffect } from '@react-navigation/native';
@@ -156,18 +157,19 @@ export default function LeadConversationScreen() {
 
   useEffect(() => {
     if (!session?.user?.id || !lead?.id) return;
+    const eventGuard = createRealtimeEventGuard();
     const channel = supabase
       .channel(`lead_conversation_${lead.id}`)
       .on('postgres_changes', {
         event: '*', schema: 'public', table: 'lead_dm_messages',
         filter: `lead_id=eq.${lead.id}`,
-      }, () => { fetchData(); })
+      }, (payload) => { eventGuard.schedule(payload, fetchData); })
       .on('postgres_changes', {
         event: '*', schema: 'public', table: 'agent_tasks',
         filter: `user_id=eq.${session.user.id}`,
-      }, () => { fetchData(); })
+      }, (payload) => { eventGuard.schedule(payload, fetchData); })
       .subscribe();
-    return () => { supabase.removeChannel(channel); };
+    return () => { eventGuard.dispose(); supabase.removeChannel(channel); };
   }, [session?.user?.id, lead?.id, fetchData]);
 
   const onRefresh = () => {
