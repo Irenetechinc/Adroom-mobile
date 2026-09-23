@@ -447,7 +447,8 @@ export default function ConnectedAccountsScreen() {
         {PLATFORMS.map((platform, index) => {
           const connected = isConnected(platform.id);
           const enabled = isEnabled(`social_${platform.id}_connections`);
-          const comingSoon = !!platform.comingSoon || !enabled;
+          const comingSoonFlag = isEnabled(`social_${platform.id}_coming_soon`, false);
+          const comingSoon = !!platform.comingSoon || comingSoonFlag || !enabled;
           const disc = disconnecting === platform.id;
           const isProOnlyPlatform = platform.id === 'twitter';
           const locked = !connected && !comingSoon && (isStarterLimited || (!isPro && isProOnlyPlatform));
@@ -490,7 +491,7 @@ export default function ConnectedAccountsScreen() {
                 <View style={styles.lockedBody}>
                   <Text style={styles.lockedTitle}>Coming soon</Text>
                   <Text style={styles.lockedDesc}>
-                    {platform.comingSoon
+                    {platform.comingSoon || comingSoonFlag
                       ? `${platform.name} connections are not available yet.`
                       : `${platform.name} connections are temporarily unavailable.`}
                   </Text>

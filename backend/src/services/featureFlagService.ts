@@ -84,6 +84,17 @@ export async function isEnabled(flagKey: string, userId?: string): Promise<boole
   return true;
 }
 
+/** Provider-specific controls used by both the API and mobile connection UI. */
+export async function isSocialConnectionEnabled(userId: string, provider: string): Promise<boolean> {
+  const normalized = String(provider || '').trim().toLowerCase();
+  return isEnabled(`social_${normalized}_connections`, userId);
+}
+
+export async function isSocialComingSoon(userId: string, provider: string): Promise<boolean> {
+  const normalized = String(provider || '').trim().toLowerCase();
+  return isEnabled(`social_${normalized}_coming_soon`, userId);
+}
+
 /** Returns all global flags (for admin & mobile list endpoint). */
 export async function getAllFlags(): Promise<FeatureFlag[]> {
   return fetchGlobalFlags();

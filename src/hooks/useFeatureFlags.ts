@@ -69,7 +69,7 @@ export function useFeatureFlags() {
     return () => { mountedRef.current = false; };
   }, []);
 
-  const isEnabled = (key: string): boolean => flags[key] ?? true;
+  const isEnabled = (key: string, defaultValue = true): boolean => flags[key] ?? defaultValue;
 
   return { isEnabled, flags };
 }

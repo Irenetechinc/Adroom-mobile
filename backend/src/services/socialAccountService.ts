@@ -254,6 +254,11 @@ export class SocialAccountService {
     await new Promise((resolve) => setTimeout(resolve, min + Math.floor(Math.random() * (max - min + 1))));
   }
 
+  private async personalSelfRecipient(userId: string, provider: string, credential: any): Promise<string> {
+    const row = await this.get(userId, provider);
+    return String(row?.account_id || credential?.phone || credential?.handle || '');
+  }
+
   async startTelegram(userId: string, phone: string): Promise<{ requestId: string; status: string }> {
     const apiId = Number(process.env.TELEGRAM_API_ID || 0);
     const apiHash = process.env.TELEGRAM_API_HASH;
@@ -384,7 +389,90 @@ export class SocialAccountService {
     provider = normalizePlatform(provider);
     await this.assertProviderEnabled(userId, provider);
     if (provider === 'delta_chat') {
-      return this.deltaChatRequest(userId, 'publish', { text, mediaUrl });
+      if (!(await this.reserveAction(userId, provider))) throw new Error(`${provider} daily safety limit reached or account is not ready.`);
+      await this.safetyDelay(provider);
+      try {
+        const result = await this.deltaChatRequest(userId, 'publish', { text, mediaUrl });
+        await this.recordSuccess(userId, provider);
+        return { id: String(result?.id || `delta-chat:${Date.now()}`), url: result?.url };
+      } catch (error: any) {
+        await this.recordError(userId, provider, error.message);
+        throw error;
+      }
+    }
+    if (['telegram', 'whatsapp_personal', 'signal_personal'].includes(provider)) {
+      if (!(await this.reserveAction(userId, provider))) throw new Error(`${provider} daily safety limit reached or account is not ready.`);
+      await this.safetyDelay(provider);
+      const credential = await this.credentials(userId, provider);
+      if (!credential) throw new Error(`${provider} credentials are unavailable.`);
+      try {
+        if (provider === 'telegram') {
+          const telegram = require('telegram');
+          const client = new telegram.TelegramClient(
+            new telegram.sessions.StringSession(credential.session),
+            Number(credential.apiId),
+            credential.apiHash,
+            { connectionRetries: 3 },
+          );
+          await client.connect();
+          const me = await client.getMe();
+          const result = mediaUrl
+            ? await client.sendFile(me, { file: mediaUrl, caption: text.slice(0, 4000) })
+            : await client.sendMessage(me, { message: text.slice(0, 4000) });
+          await client.disconnect();
+          await this.recordSuccess(userId, provider);
+          return { id: String(result?.id || `telegram:${Date.now()}`), url: credential.handle ? `https://t.me/${String(credential.handle).replace(/^@/, '')}` : undefined };
+        }
+
+        if (provider === 'whatsapp_personal') {
+          let baileys: any;
+          try { baileys = require('@whiskeysockets/baileys'); } catch { throw new Error('WhatsApp pairing service is not installed.'); }
+          const tempDir = path.join(os.tmpdir(), 'adroom-whatsapp-publish', crypto.randomUUID());
+          await fs.mkdir(tempDir, { recursive: true });
+          try {
+            for (const [file, encoded] of Object.entries(credential.bundle || {})) {
+              await fs.writeFile(path.join(tempDir, file), Buffer.from(String(encoded), 'base64'));
+            }
+            const { state, saveCreds } = await baileys.useMultiFileAuthState(tempDir);
+            const sock = baileys.default({ auth: state, printQRInTerminal: false });
+            sock.ev.on('creds.update', saveCreds);
+            await new Promise<void>((resolve, reject) => {
+              const timer = setTimeout(() => reject(new Error('WhatsApp connection timed out.')), 30000);
+              sock.ev.on('connection.update', (update: any) => {
+                if (update.connection === 'open') { clearTimeout(timer); resolve(); }
+                if (update.connection === 'close') { clearTimeout(timer); reject(new Error('WhatsApp connection closed.')); }
+              });
+            });
+            const phone = await this.personalSelfRecipient(userId, provider, credential);
+            const jid = phone.includes('@') ? phone : `${phone.replace(/\D/g, '')}@s.whatsapp.net`;
+            await sock.sendPresenceUpdate?.('composing', jid);
+            await new Promise((resolve) => setTimeout(resolve, 500 + Math.floor(Math.random() * 1200)));
+            const message = mediaUrl
+              ? { document: { url: mediaUrl }, fileName: 'adirum-creative', caption: text.slice(0, 4000) }
+              : { text: text.slice(0, 4000) };
+            const result = await sock.sendMessage(jid, message);
+            sock.end(undefined);
+            await this.recordSuccess(userId, provider);
+            return { id: String(result?.key?.id || `whatsapp:${Date.now()}`) };
+          } finally {
+            await fs.rm(tempDir, { recursive: true, force: true });
+          }
+        }
+
+        const exec = promisify(execFile);
+        const phone = await this.personalSelfRecipient(userId, provider, credential);
+        const configDir = await this.materializeSignalBundle(credential);
+        try {
+          await exec('signal-cli', ['--config', configDir, '-u', phone, 'send', '-m', text.slice(0, 2000), phone], { timeout: 30000 });
+        } finally {
+          await fs.rm(configDir, { recursive: true, force: true });
+        }
+        await this.recordSuccess(userId, provider);
+        return { id: `signal:${Date.now()}` };
+      } catch (error: any) {
+        await this.recordError(userId, provider, error.message);
+        throw error;
+      }
     }
     if (provider === 'bluesky') {
       if (!(await this.reserveAction(userId, provider))) throw new Error(`${provider} daily safety limit reached or account is not ready.`);
@@ -411,6 +499,15 @@ export class SocialAccountService {
       }
     }
     throw new Error(`Publishing is not supported for ${provider} yet.`);
+  }
+
+  private async materializeSignalBundle(credential: any): Promise<string> {
+    const tempDir = path.join(os.tmpdir(), 'adroom-signal-publish', crypto.randomUUID());
+    await fs.mkdir(tempDir, { recursive: true });
+    for (const [file, encoded] of Object.entries(credential?.bundle || {})) {
+      await fs.writeFile(path.join(tempDir, file), Buffer.from(String(encoded), 'base64'));
+    }
+    return tempDir;
   }
 
   async replyBluesky(userId: string, postUri: string, text: string): Promise<void> {
@@ -451,7 +548,7 @@ export class SocialAccountService {
   async sendMessage(provider: string, userId: string, recipient: string, text: string): Promise<void> {
     provider = normalizePlatform(provider);
     await this.assertProviderEnabled(userId, provider);
-    if (!(await this.reserveAction(userId, provider))) throw new Error(`${provider} daily safety limit reached or account is not ready.`);
+    if (!(await this.reserveAction(userId, provider, recipient))) throw new Error(`${provider} daily safety limit reached or account is not ready.`);
     await this.safetyDelay(provider);
     const credential = await this.credentials(userId, provider);
     if (!credential) throw new Error(`${provider} credentials are unavailable.`);

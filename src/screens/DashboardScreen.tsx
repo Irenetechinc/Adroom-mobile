@@ -241,6 +241,7 @@ export default function DashboardScreen() {
   const [revenueCurrency, setRevenueCurrency] = useState('USD');
   const [perfSummary, setPerfSummary] = useState<PerfSummary>({ reach: 0, likes: 0, comments: 0, shares: 0, dms_sent: 0, leads_captured: 0, clicks: 0, conversions: 0 });
   const [allLeadsCount, setAllLeadsCount] = useState(0);
+  const [conversationMilestones, setConversationMilestones] = useState({ identified: 0, highPotential: 0, engaged: 0 });
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const agentSubRef = useRef<any>(null);
@@ -255,7 +256,7 @@ export default function DashboardScreen() {
       const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
       const [
         strategiesRes, logsRes, tasksRes, dealsRes, completedStratsRes,
-        gmapsRes, achievementsRes, perfRes, leadsCountRes,
+        gmapsRes, achievementsRes, perfRes, leadsCountRes, conversationRunsRes,
       ] = await Promise.all([
         supabase
           .from('strategies')

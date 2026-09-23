@@ -23,7 +23,12 @@ import { pushService } from './services/pushService';
 import { CommunicationService } from './services/communicationService';
 import { energyCheck, deductEnergyForUser } from './services/energyMiddleware';
 import { checkFeatureAccess, getSubscriptionGuard, SUBSCRIPTION_PLAN_LIMITS } from './services/subscriptionGuard';
-import { getFlagsForUser as getFeatureFlagsForUser, isEnabled as isFeatureEnabled } from './services/featureFlagService';
+import {
+  getFlagsForUser as getFeatureFlagsForUser,
+  isEnabled as isFeatureEnabled,
+  isSocialConnectionEnabled,
+  isSocialComingSoon,
+} from './services/featureFlagService';
 import adminRouter from './admin/adminRouter';
 import authPagesRouter from './auth/authPagesRouter';
 import { popOAuthEntry, setOAuthCode, setOAuthError } from './auth/oauthStore';
@@ -133,7 +138,8 @@ async function authenticatedUser(req: Request): Promise<any | null> {
 }
 
 async function personalConnectionAllowed(userId: string, provider: string): Promise<boolean> {
-  return isFeatureEnabled(`social_${provider}_connections`, userId);
+  return (await isSocialConnectionEnabled(userId, provider))
+    && !(await isSocialComingSoon(userId, provider));
 }
 
 app.get('/api/social-connections', async (req, res) => {
@@ -141,6 +147,24 @@ app.get('/api/social-connections', async (req, res) => {
     const user = await authenticatedUser(req);
     if (!user) return res.status(401).json({ error: 'Unauthorized.' });
     return res.json({ connections: await socialAccountService.list(user.id) });
+  } catch (error: any) {
+    return res.status(500).json({ error: error.message });
+  }
+});
+
+app.get('/api/social-connections/availability', async (req, res) => {
+  try {
+    const user = await authenticatedUser(req);
+    if (!user) return res.status(401).json({ error: 'Unauthorized.' });
+    const providers = ['telegram', 'whatsapp_personal', 'signal_personal', 'bluesky', 'delta_chat'];
+    const availability = Object.fromEntries(await Promise.all(providers.map(async (provider) => [
+      provider,
+      {
+        enabled: await isSocialConnectionEnabled(user.id, provider),
+        comingSoon: await isSocialComingSoon(user.id, provider),
+      },
+    ])));
+    return res.json({ availability });
   } catch (error: any) {
     return res.status(500).json({ error: error.message });
   }

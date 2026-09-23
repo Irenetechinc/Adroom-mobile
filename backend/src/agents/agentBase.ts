@@ -797,6 +797,12 @@ Return STRICT JSON only (no markdown, no explanation):
             case 'twitter': case 'x': return this.publishToTwitter(tokens.twitter, body);
             case 'linkedin': return this.publishToLinkedIn(tokens.linkedin, body);
             case 'tiktok': return this.publishToTikTok(tokens.tiktok, body, mediaUrl);
+            case 'telegram':
+            case 'whatsapp_personal':
+            case 'signal_personal': {
+                const published = await socialAccountService.publish(platform.toLowerCase(), (tokens as any).__userId || '', body, mediaUrl);
+                return { platform: platform.toLowerCase(), platform_post_id: published.id, published_at: new Date().toISOString(), url: published.url };
+            }
             case 'bluesky': {
                 const published = await socialAccountService.publish('bluesky', (tokens as any).__userId || '', body, mediaUrl);
                 return { platform: 'bluesky', platform_post_id: published.id, published_at: new Date().toISOString(), url: published.url };
@@ -828,6 +834,12 @@ Return STRICT JSON only (no markdown, no explanation):
             case 'twitter': case 'x': await this.replyToTwitterPost(tokens.twitter, commentId, reply); break;
             case 'linkedin': await this.replyToLinkedInComment(tokens.linkedin, commentId, reply); break;
             case 'tiktok': if (!videoId) throw new Error('TikTok reply requires videoId'); await this.replyToTikTokComment(tokens.tiktok, videoId, commentId, reply); break;
+            case 'telegram':
+            case 'whatsapp_personal':
+            case 'signal_personal':
+            case 'delta_chat':
+                await socialAccountService.sendMessage(platform.toLowerCase(), (tokens as any).__userId || '', commentId, reply);
+                break;
             case 'bluesky':
                 await socialAccountService.replyBluesky((tokens as any).__userId || '', commentId, reply);
                 break;

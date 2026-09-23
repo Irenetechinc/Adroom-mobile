@@ -35,7 +35,7 @@ interface ExpoSendResult {
   rawResponse?: string;
 }
 
-async function sendExpoPush(tokens: string[], payload: PushPayload): Promise<ExpoSendResult> {
+async function sendExpoPush(tokens: DeviceTokenRow[], payload: PushPayload): Promise<ExpoSendResult> {
   if (!tokens.length) {
     return { ok: false, httpStatus: 0, tokensSent: 0, tickets: [], invalidTokens: [], errorSummary: 'No active tokens for this user' };
   }
@@ -43,6 +43,9 @@ async function sendExpoPush(tokens: string[], payload: PushPayload): Promise<Exp
   // Token rows from older app builds do not carry project_id, so the safest
   // compatibility path is one request per token whenever a caller supplies
   // more than one. This also avoids one bad project poisoning a whole batch.
+  // Never mix tokens from different EAS projects in one Expo request. Older
+  // rows may not have project_id, so one token per request is the only safe
+  // compatibility path for the full history of this table.
   if (tokens.length > 1) {
     const results = await Promise.all(tokens.map((token) => sendExpoPush([token], payload)));
     return {
@@ -55,7 +58,7 @@ async function sendExpoPush(tokens: string[], payload: PushPayload): Promise<Exp
     };
   }
   const messages = tokens.map((token) => ({
-    to: token,
+    to: token.token,
     sound: payload.sound ?? 'default',
     title: payload.title,
     body: payload.body,
@@ -95,7 +98,7 @@ async function sendExpoPush(tokens: string[], payload: PushPayload): Promise<Exp
           errCode === 'InvalidCredentials' ||
           errCode === 'MismatchSenderId'
         ) {
-          const token = tokens[idx];
+          const token = tokens[idx]?.token;
           if (token) invalid.push(token);
         }
       }
@@ -118,14 +121,30 @@ async function sendExpoPush(tokens: string[], payload: PushPayload): Promise<Exp
   }
 }
 
-async function getUserTokens(userId: string): Promise<string[]> {
+interface DeviceTokenRow {
+  token: string;
+  project_id?: string | null;
+}
+
+async function getUserTokens(userId: string): Promise<DeviceTokenRow[]> {
   const supabase = getServiceSupabaseClient();
-  const { data } = await supabase
+  const withProject = await supabase
     .from('device_push_tokens')
-    .select('token')
+    .select('token,project_id')
     .eq('user_id', userId)
     .eq('is_active', true);
-  return (data ?? []).map((r: any) => r.token).filter(Boolean);
+  // project_id was added after the original token table. Keep delivery
+  // working during a rolling Supabase migration.
+  const data = withProject.error
+    ? (await supabase
+      .from('device_push_tokens')
+      .select('token')
+      .eq('user_id', userId)
+      .eq('is_active', true)).data
+    : withProject.data;
+  return (data ?? [])
+    .map((r: any) => ({ token: String(r.token || ''), project_id: r.project_id || null }))
+    .filter((r: DeviceTokenRow) => Boolean(r.token));
 }
 
 async function insertNotification(

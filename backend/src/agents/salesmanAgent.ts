@@ -4,10 +4,26 @@ import { AIEngine } from '../config/ai-models';
 import { pushService } from '../services/pushService';
 import { discoverBusinesses, buildOutreachMessage, buildOutreachMessageAI, type PlaceBusiness } from '../services/googleMapsService';
 import { sendEmailViaResend } from '../services/resendEmailService';
+import { socialAccountService } from '../services/socialAccountService';
+import { normalizePlatform } from '../services/platformIdentity';
 
 export class SalesmanAgent extends AgentBase {
     constructor(supabase: SupabaseClient) {
         super(supabase, 'SALESMAN');
+    }
+
+    private async sendLeadMessage(userId: string, platform: string, recipient: string, message: string, tokens: AgentTokens): Promise<boolean> {
+        const normalized = normalizePlatform(platform);
+        const personalProvider = normalized === 'whatsapp' ? 'whatsapp_personal' : normalized;
+        if (['telegram', 'whatsapp_personal', 'signal_personal', 'bluesky', 'delta_chat'].includes(personalProvider)) {
+            await socialAccountService.sendMessage(personalProvider, userId, recipient, message);
+            return true;
+        }
+        if ((normalized === 'facebook' || normalized === 'instagram') && tokens.facebook && recipient) {
+            await this.sendFacebookDM(tokens.facebook, recipient, message);
+            return true;
+        }
+        return false;
     }
 
     /**
@@ -207,6 +223,10 @@ Return valid JSON only with this schema:
         // ─── INBOUND_REPLY: Lead sent a message back — read full history, craft real reply ──
         if (task.task_type === 'INBOUND_REPLY') {
             await this.executeInboundReply(taskId, task);
+            return;
+        }
+        if (task.task_type === 'CONVERSATION_ENGAGE') {
+            await this.executeConversationEngage(taskId, task);
             return;
         }
         // ────────────────────────────────────────────────────────────────────────
@@ -415,6 +435,93 @@ Return valid JSON only with this schema:
         } catch (err: any) {
             this.log(`Task ${taskId} failed: ${err.message}`);
             await this.failTask(taskId, err.message);
+        }
+    }
+
+    /**
+     * Turn a high-intent discovery signal into a real lead conversation.
+     * Discovery-only sources never reach this method; ConversationAgent routes
+     * only the strategy's selected outbound platforms.
+     */
+    private async executeConversationEngage(taskId: string, task: any): Promise<void> {
+        const content = task.content || {};
+        const platform = normalizePlatform(task.platform);
+        const recipient = String(content.author_id || content.author_name || content.signal_id || '').trim();
+        if (!recipient) {
+            await this.failTask(taskId, 'Conversation engagement has no public recipient identity.');
+            return;
+        }
+
+        try {
+            const { data: strategy } = await this.supabase
+                .from('strategies')
+                .select('product_id, goal, title, product_memory')
+                .eq('id', task.strategy_id)
+                .maybeSingle();
+            const product = strategy?.product_id ? await this.getProductDetails(strategy.product_id) : (strategy?.product_memory || {});
+            const { data: existingLead } = await this.supabase
+                .from('agent_leads')
+                .select('*')
+                .eq('user_id', task.user_id)
+                .eq('strategy_id', task.strategy_id)
+                .eq('platform', platform)
+                .eq('platform_user_id', recipient)
+                .maybeSingle();
+
+            let lead = existingLead;
+            if (!lead) {
+                const { data: createdLead } = await this.supabase.from('agent_leads').insert({
+                    strategy_id: task.strategy_id,
+                    user_id: task.user_id,
+                    platform,
+                    platform_user_id: recipient,
+                    platform_username: content.author_name || recipient,
+                    first_interaction: String(content.text || '').slice(0, 1000),
+                    intent_score: Number(content.intent_score || 0.7),
+                    intent_signals: [{ source: 'conversation_agent', url: content.url || null }],
+                    stage: 'identified',
+                }).select('*').single();
+                lead = createdLead;
+            }
+            if (!lead) throw new Error('Could not create the discovered lead record.');
+
+            const { leadProfileBuilder } = await import('../services/leadProfileBuilder');
+            const profile = await leadProfileBuilder.buildForLead(task.user_id, lead.id).catch(() => null);
+            const prompt = `Write the first respectful, human conversation message to a high-intent prospect.
+Goal: ${strategy?.goal || 'sales'}
+Product or service: ${JSON.stringify(product || {}).slice(0, 5000)}
+Public signal: ${String(content.text || '').slice(0, 2500)}
+Lead preparation profile: ${JSON.stringify(profile || {}).slice(0, 5000)}
+Platform: ${platform}
+Do not claim private facts or invent a relationship. Address the public signal directly, be useful, and ask at most one natural next question. No mass-message language, no hard-coded script, no emojis unless the signal uses them. Return JSON: {"message":"..."}`;
+            const response = await this.ai.generateStrategy({}, prompt);
+            const message = String(response.parsedJson?.message || '').trim();
+            if (!message) throw new Error('AI could not generate a conversation message.');
+
+            const tokens = await this.getTokens(task.user_id);
+            const sent = await this.sendLeadMessage(task.user_id, platform, recipient, message, tokens);
+            await this.supabase.from('lead_dm_messages').insert({
+                lead_id: lead.id,
+                user_id: task.user_id,
+                direction: 'outbound',
+                message,
+                platform,
+                sequence_step: 1,
+                meta: { triggered_by: 'CONVERSATION_ENGAGE', signal_id: content.signal_id || null, sent },
+            });
+            await this.supabase.from('agent_leads').update({
+                stage: sent ? 'engaged' : 'identified',
+                dm_sequence_step: sent ? 1 : 0,
+                last_contacted_at: sent ? new Date().toISOString() : null,
+            }).eq('id', lead.id);
+            await this.supabase.from('agent_tasks').update({
+                status: sent ? 'done' : 'failed',
+                executed_at: new Date().toISOString(),
+                error_message: sent ? null : `No connected ${platform} account could send this conversation.`,
+                result: { action: 'conversation_engage', lead_id: lead.id, sent, platform },
+            }).eq('id', taskId);
+        } catch (error: any) {
+            await this.failTask(taskId, error.message);
         }
     }
 
@@ -633,12 +740,14 @@ HISTORY: ${conversationThread}`);
                 // Send the AI-generated redirect — log it as outbound
                 let sent = false;
                 try {
-                    const pid = platform_user_id || lead.platform_user_id;
                     const tok = await this.getTokens(task.user_id);
-                    if ((lead.platform === 'facebook' || lead.platform === 'instagram') && tok.facebook && pid) {
-                        await this.sendFacebookDM(tok.facebook, pid, guard.dynamicRedirect);
-                        sent = true;
-                    }
+                    sent = await this.sendLeadMessage(
+                        task.user_id,
+                        lead.platform,
+                        platform_user_id || lead.platform_user_id,
+                        guard.dynamicRedirect,
+                        tok,
+                    );
                 } catch {}
                 try {
                     await this.supabase.from('lead_dm_messages').insert({
@@ -777,11 +886,13 @@ Return JSON: { "message": "the reply text", "reasoning": "why this reply" }`;
         // Send the reply via the correct platform
         let sent = false;
         try {
-            const pid = platform_user_id || lead.platform_user_id;
-            if ((lead.platform === 'facebook' || lead.platform === 'instagram') && tokens.facebook && pid) {
-                await this.sendFacebookDM(tokens.facebook, pid, reply);
-                sent = true;
-            }
+            sent = await this.sendLeadMessage(
+                task.user_id,
+                lead.platform,
+                platform_user_id || lead.platform_user_id,
+                reply,
+                tokens,
+            );
             // Additional platforms as they gain DM API support
         } catch (e: any) {
             this.log(`INBOUND_REPLY send failed: ${e.message}`);
@@ -982,10 +1093,7 @@ Return JSON: { "message": "the reply" }`;
 
         let sent = false;
         try {
-            if ((lead.platform === 'facebook' || lead.platform === 'instagram') && tokens.facebook && lead.platform_user_id) {
-                await this.sendFacebookDM(tokens.facebook, lead.platform_user_id, reply);
-                sent = true;
-            }
+            sent = await this.sendLeadMessage(task.user_id, lead.platform, lead.platform_user_id, reply, tokens);
         } catch (e: any) { this.log(`Payment response send failed: ${e.message}`); }
 
         await this.supabase.from('lead_dm_messages').insert({
@@ -1206,8 +1314,10 @@ Return JSON: { "message": "string" }
                 const message = response.parsedJson?.message;
                 if (!message) continue;
 
-                if (lead.platform === 'facebook' && tokens.facebook) {
-                    await this.sendFacebookDM(tokens.facebook, lead.platform_user_id, message);
+                const sent = await this.sendLeadMessage(userId, lead.platform, lead.platform_user_id, message, tokens);
+                if (!sent) {
+                    this.log(`Follow-up skipped — no connected ${lead.platform} account for ${lead.platform_username}`);
+                    continue;
                 }
 
                 const nextLeadStage = lead.dm_sequence_step >= 2 ? 'nurturing' : 'engaged';
@@ -1381,10 +1491,7 @@ Return JSON:
         // Send the closing DM via platform
         let dmSent = false;
         try {
-            if (lead.platform === 'facebook' && tokens.facebook) {
-                await this.sendFacebookDM(tokens.facebook, lead.platform_user_id, closing.message);
-                dmSent = true;
-            }
+            dmSent = await this.sendLeadMessage(userId, lead.platform, lead.platform_user_id, closing.message, tokens);
         } catch (e: any) {
             this.log(`Closing DM send failed: ${e.message}`);
         }

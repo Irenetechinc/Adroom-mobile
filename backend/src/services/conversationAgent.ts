@@ -122,7 +122,13 @@ export class ConversationAgent {
       return {};
     })
     .addNode('route', async (state: WorkflowState) => {
-      const topSignals = state.signals.filter((signal) => signal.status === 'high_potential').slice(0, 5);
+      const selectedPlatforms = normalizeSelectedPlatforms(state.strategy.selected_accounts || state.strategy.platforms || []);
+      // Web is a discovery fallback, not an outbound channel. Only create
+      // engagement tasks for a platform the user selected for this strategy.
+      const topSignals = state.signals
+        .filter((signal) => signal.status === 'high_potential')
+        .filter((signal) => !selectedPlatforms.length || selectedPlatforms.includes(signal.platform))
+        .slice(0, 5);
       for (const signal of topSignals) {
         await this.supabase.from('agent_tasks').insert({
           strategy_id: signal.strategyId,
