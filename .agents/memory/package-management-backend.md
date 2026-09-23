@@ -20,3 +20,9 @@ When compiling the backend in a production environment, explicitly include devel
 **Why:** `NODE_ENV=production` causes npm to omit development packages by default, which can make `npm run build` fail with `tsc: not found`.
 
 **How to apply:** Use the dev-inclusive install for the build stage, then prune only after compilation in a multi-stage or production image workflow.
+
+The production backend image uses separate builder and runtime stages; TypeScript, ts-node, and type packages belong only in the builder install, while the runtime uses `npm ci --omit=dev`.
+
+**Why:** A single-stage production build intermittently omitted the compiler under Railway's production environment and also kept build tooling in the runtime image.
+
+**How to apply:** Keep build-only packages in `devDependencies`, compile in the builder stage, and copy only compiled output plus production dependencies into the final image.
