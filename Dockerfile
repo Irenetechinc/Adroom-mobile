@@ -1,5 +1,5 @@
 # Use Node.js 20 LTS
-FROM node:20-alpine
+FROM node:20-bookworm-slim
 
 # Set working directory to backend
 WORKDIR /app
@@ -7,8 +7,8 @@ WORKDIR /app
 # Copy backend package files
 COPY backend/package*.json ./
 
-# Install dependencies
-RUN npm install
+# Install dependencies (deterministic, clean install from package-lock.json)
+RUN npm ci
 
 # Copy backend source code
 COPY backend/ .
