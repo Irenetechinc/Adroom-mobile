@@ -9,3 +9,4 @@
 - [WhatsApp live sessions](whatsapp-live-sessions.md) — Baileys inbound activity needs a retained live socket; temporary auth bundles do not provide reliable message history.
 - [Backend dependency verification](package-management-backend.md) — nested backend installs should use the backend workflow; root package-manager installs can create unrelated lockfile drift.
 - [Expo push project routing](expo-push-project-routing.md) — batch tokens by EAS project and retire unscoped legacy rows; never send mixed-project tokens together.
+- [Credential-free discovery routing](credential-free-discovery-routing.md) — keep web as the fallback and only search strategy-selected social sources; never turn discovery results into web outbound work.

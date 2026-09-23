@@ -136,6 +136,11 @@ export class SocialAccountService {
           // Persist before the bounded in-memory buffer can age out. This
           // keeps inbound events recoverable across Railway restarts.
           void this.persistWhatsAppInbound(userId, inbound);
+          if (message.key) {
+            setTimeout(() => {
+              void Promise.resolve(sock.readMessages?.([message.key])).catch(() => {});
+            }, 1400 + Math.floor(Math.random() * 2600));
+          }
         }
       }
     });
@@ -154,6 +159,64 @@ export class SocialAccountService {
       }, { onConflict: 'user_id,provider,external_id' });
     if (error && !/relation .* does not exist|column .* does not exist/i.test(error.message)) {
       console.error(`[SocialAccountService] WhatsApp inbound persistence failed: ${error.message}`);
+    }
+  }
+
+  private messageFingerprint(recipient: string, text: string): string {
+    return crypto.createHash('sha256')
+      .update(`${String(recipient).trim().toLowerCase()}\n${String(text).trim().toLowerCase()}`)
+      .digest('hex');
+  }
+
+  private async assertMessageVariation(userId: string, provider: string, recipient: string, text: string): Promise<void> {
+    const row = await this.get(userId, provider);
+    const fingerprints = Array.isArray(row?.metadata?.recent_outbound_fingerprints)
+      ? row.metadata.recent_outbound_fingerprints
+      : [];
+    const fingerprint = this.messageFingerprint(recipient, text);
+    if (fingerprints.some((item: any) => item?.fingerprint === fingerprint
+      && Date.now() - new Date(item.createdAt || 0).getTime() < 30 * 24 * 60 * 60 * 1000)) {
+      throw new Error('This account recently sent identical content to this recipient. Create a natural variation before sending again.');
+    }
+  }
+
+  private async rememberMessageFingerprint(userId: string, provider: string, recipient: string, text: string): Promise<void> {
+    const row = await this.get(userId, provider);
+    if (!row) return;
+    const existing = Array.isArray(row.metadata?.recent_outbound_fingerprints)
+      ? row.metadata.recent_outbound_fingerprints
+      : [];
+    const next = [
+      ...existing,
+      { fingerprint: this.messageFingerprint(recipient, text), createdAt: new Date().toISOString() },
+    ].slice(-100);
+    await this.supabase.from('social_account_connections').update({
+      metadata: { ...(row.metadata || {}), recent_outbound_fingerprints: next },
+      updated_at: new Date().toISOString(),
+    }).eq('id', row.id);
+  }
+
+  private async sendTyping(provider: string, credential: any, recipient: string, clientOrSocket?: any): Promise<void> {
+    try {
+      if (provider === 'telegram' && clientOrSocket) {
+        const telegram = require('telegram');
+        await clientOrSocket.invoke(new telegram.Api.messages.SetTyping({
+          peer: recipient,
+          action: new telegram.Api.SendMessageTypingAction(),
+        }));
+      } else if (provider === 'whatsapp_personal' && clientOrSocket) {
+        await clientOrSocket.sendPresenceUpdate?.('composing', this.normalizeWhatsAppRecipient(recipient));
+      } else if (provider === 'signal_personal') {
+        const exec = promisify(execFile);
+        const configDir = await this.materializeSignalBundle(credential);
+        try {
+          await exec('signal-cli', ['--config', configDir, '-u', credential.phone, 'sendTyping', recipient], { timeout: 10000 });
+        } finally {
+          await fs.rm(configDir, { recursive: true, force: true }).catch(() => {});
+        }
+      }
+    } catch {
+      // Typing is best effort and must not make a provider unavailable.
     }
   }
 
@@ -605,6 +668,7 @@ export class SocialAccountService {
       if (!requestedRecipient) {
         throw new Error(`${provider} personal accounts are messaging destinations, not public feeds. A recipient is required.`);
       }
+      await this.assertMessageVariation(userId, provider, requestedRecipient, text);
       if (!(await this.reserveAction(userId, provider))) throw new Error(`${provider} daily safety limit reached or account is not ready.`);
       await this.safetyDelay(provider);
       const credential = await this.credentials(userId, provider);
@@ -620,14 +684,8 @@ export class SocialAccountService {
           );
           await client.connect();
            const recipient = requestedRecipient;
-           try {
-             await client.invoke(new telegram.Api.messages.SetTyping({
-               peer: recipient,
-               action: new telegram.Api.SendMessageTypingAction(),
-             }));
-           } catch {
-             // Typing indicators are best-effort and vary by Telegram peer.
-           }
+            await this.sendTyping(provider, credential, recipient, client);
+            await new Promise((resolve) => setTimeout(resolve, 600 + Math.floor(Math.random() * 1600)));
           const result = mediaUrl
              ? await client.sendFile(recipient, { file: mediaUrl, caption: text.slice(0, 4000) })
              : await client.sendMessage(recipient, { message: text.slice(0, 4000) });
@@ -642,19 +700,22 @@ export class SocialAccountService {
            const jid = requestedRecipient.includes('@')
              ? requestedRecipient
              : `${requestedRecipient.replace(/\D/g, '')}@s.whatsapp.net`;
-           await liveSocket.sendPresenceUpdate?.('composing', jid);
-           await new Promise((resolve) => setTimeout(resolve, 500 + Math.floor(Math.random() * 1200)));
+            await this.sendTyping(provider, credential, jid, liveSocket);
+            await new Promise((resolve) => setTimeout(resolve, 500 + Math.floor(Math.random() * 1200)));
             const mediaPayload = mediaUrl
               ? await this.buildWhatsAppMediaMessage(mediaUrl, text)
               : null;
             const result = await liveSocket.sendMessage(jid, mediaPayload?.message || { text: text.slice(0, 4000) });
             if (mediaPayload?.filePath) await fs.rm(mediaPayload.filePath, { force: true }).catch(() => {});
            await this.recordSuccess(userId, provider);
+            await this.rememberMessageFingerprint(userId, provider, requestedRecipient, text);
            return { id: String(result?.key?.id || `whatsapp:${Date.now()}`) };
         }
 
         const exec = promisify(execFile);
         const phone = requestedRecipient;
+         await this.sendTyping(provider, credential, phone);
+         await new Promise((resolve) => setTimeout(resolve, 900 + Math.floor(Math.random() * 2600)));
         const configDir = await this.materializeSignalBundle(credential);
          let attachmentPath: string | null = null;
         try {
@@ -671,6 +732,7 @@ export class SocialAccountService {
           await fs.rm(configDir, { recursive: true, force: true });
         }
         await this.recordSuccess(userId, provider);
+         await this.rememberMessageFingerprint(userId, provider, requestedRecipient, text);
         return { id: `signal:${Date.now()}` };
       } catch (error: any) {
         await this.recordError(userId, provider, error.message);
@@ -678,6 +740,7 @@ export class SocialAccountService {
       }
     }
     if (provider === 'bluesky') {
+      await this.assertMessageVariation(userId, provider, destination || 'public-feed', text);
       if (!(await this.reserveAction(userId, provider))) throw new Error(`${provider} daily safety limit reached or account is not ready.`);
       await this.safetyDelay(provider);
       const credential = await this.credentials(userId, provider);
@@ -729,6 +792,7 @@ export class SocialAccountService {
         const data: any = await response.json().catch(() => ({}));
         if (!response.ok || !data.uri) throw new Error(data.message || 'Bluesky publication failed.');
         await this.recordSuccess(userId, provider);
+        await this.rememberMessageFingerprint(userId, provider, destination || 'public-feed', text);
         return { id: data.uri, url: credential.handle ? `https://bsky.app/profile/${credential.handle}` : undefined };
       } catch (error: any) {
         await this.recordError(userId, provider, error.message);
@@ -849,6 +913,7 @@ export class SocialAccountService {
   async sendMessage(provider: string, userId: string, recipient: string, text: string): Promise<void> {
     provider = normalizePlatform(provider);
     await this.assertProviderEnabled(userId, provider);
+    await this.assertMessageVariation(userId, provider, recipient, text);
     if (!(await this.reserveAction(userId, provider, recipient))) throw new Error(`${provider} daily safety limit reached or account is not ready.`);
     await this.safetyDelay(provider);
     const credential = await this.credentials(userId, provider);
@@ -886,9 +951,12 @@ export class SocialAccountService {
           { connectionRetries: 3 },
         );
         await client.connect();
+        await this.sendTyping(provider, credential, recipient, client);
+        await new Promise((resolve) => setTimeout(resolve, 600 + Math.floor(Math.random() * 1600)));
         await client.sendMessage(recipient, { message: text.slice(0, 4000) });
         await client.disconnect();
         await this.recordSuccess(userId, provider);
+        await this.rememberMessageFingerprint(userId, provider, recipient, text);
         return;
       }
 
@@ -898,8 +966,11 @@ export class SocialAccountService {
         const liveSocket = await this.restoreWhatsAppSocket(userId, credential);
         if (liveSocket) {
           const jid = recipient.includes('@') ? recipient : `${recipient.replace(/\D/g, '')}@s.whatsapp.net`;
+          await this.sendTyping(provider, credential, jid, liveSocket);
+          await new Promise((resolve) => setTimeout(resolve, 500 + Math.floor(Math.random() * 1200)));
           await liveSocket.sendMessage(jid, { text: text.slice(0, 4000) });
           await this.recordSuccess(userId, provider);
+          await this.rememberMessageFingerprint(userId, provider, recipient, text);
           return;
         }
         const tempDir = path.join(os.tmpdir(), 'adroom-whatsapp-send', crypto.randomUUID());
@@ -919,6 +990,8 @@ export class SocialAccountService {
             });
           });
           const jid = recipient.includes('@') ? recipient : `${recipient.replace(/\D/g, '')}@s.whatsapp.net`;
+          await this.sendTyping(provider, credential, jid, sock);
+          await new Promise((resolve) => setTimeout(resolve, 500 + Math.floor(Math.random() * 1200)));
           await sock.sendMessage(jid, { text: text.slice(0, 4000) });
           sock.end(undefined);
         } finally {
@@ -944,6 +1017,7 @@ export class SocialAccountService {
         const message: any = await messageResponse.json().catch(() => ({}));
         if (!messageResponse.ok) throw new Error(message.message || 'Bluesky message failed.');
         await this.recordSuccess(userId, provider);
+        await this.rememberMessageFingerprint(userId, provider, recipient, text);
         return;
       }
     } catch (error: any) {
@@ -980,7 +1054,7 @@ export class SocialAccountService {
       await client.connect();
       try {
         const messages = await client.getMessages(recipient, { limit: Math.min(50, Math.max(1, limit)) });
-        return (messages || [])
+         const inbound = (messages || [])
           .filter((message: any) => !message?.out && String(message?.message || '').trim())
           .map((message: any) => ({
             externalId: `telegram:${message.id}`,
@@ -988,6 +1062,11 @@ export class SocialAccountService {
             text: String(message.message).trim(),
             timestamp: new Date(Number(message.date || 0) * 1000 || Date.now()).toISOString(),
           }));
+         if (inbound.length) {
+           await new Promise((resolve) => setTimeout(resolve, 1200 + Math.floor(Math.random() * 1800)));
+           try { await client.markAsRead?.(recipient); } catch {}
+         }
+         return inbound;
       } finally {
         await client.disconnect();
       }

@@ -56,12 +56,13 @@ class InboundDmService {
   async runCycle(): Promise<void> {
     console.log('[InboundDM] Starting inbound reply detection cycle...');
 
-    // Get all users with active SALESMAN strategies that have contacted leads
+    // Replies can belong to any active strategy goal. The messaging agent is
+    // still the executor, but restricting discovery to SALESMAN strategies
+    // silently drops replies for awareness, promotion, and launch campaigns.
     const { data: strategies } = await this.supabase
       .from('strategies')
       .select('id, user_id')
       .eq('is_active', true)
-      .eq('agent_type', 'SALESMAN');
 
     if (!strategies?.length) {
       console.log('[InboundDM] No active SALESMAN strategies — skipping');

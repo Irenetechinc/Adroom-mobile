@@ -150,7 +150,10 @@ export class AgentReachAdapter {
   }
 
   async searchAcrossSources(query: string, extraSources: string[] = []): Promise<ReachResult[]> {
-    const defaultSources = ['web', 'facebook', 'instagram', 'reddit', 'linkedin', 'google_maps'];
+    // Web is the credential-free discovery fallback. Other social sources are
+    // opt-in so a strategy never broadens discovery or creates work for
+    // accounts the user did not select.
+    const defaultSources = ['web'];
     const sources = Array.from(new Set([...defaultSources, ...extraSources.map(normalizePlatform)])).filter(Boolean);
 
     const results = await Promise.all(

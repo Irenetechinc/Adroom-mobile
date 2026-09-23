@@ -52,6 +52,7 @@ function scoreSignal(text: string, goal: StrategyGoal, terms: string[]): number 
 
 export class ConversationAgent {
   private readonly supabase = getServiceSupabaseClient();
+  private readonly runningStrategies = new Set<string>();
   private readonly graph = new StateGraph(State)
     .addNode('discover', async (state: WorkflowState) => {
       const strategy = state.strategy;
@@ -226,6 +227,10 @@ export class ConversationAgent {
     .compile();
 
   async runForStrategy(strategy: any): Promise<{ identified: number; highPotential: number; engaged: number; routed: number }> {
+    if (this.runningStrategies.has(strategy.id)) {
+      console.log(`[ConversationAgent] sweep already running strategy=${strategy.id}; skipping concurrent request`);
+      return { identified: 0, highPotential: 0, engaged: 0, routed: 0 };
+    }
     const { data: latest } = await this.supabase
       .from('strategy_conversation_runs')
       .select('created_at')
@@ -237,11 +242,24 @@ export class ConversationAgent {
       console.log(`[ConversationAgent] daily sweep already completed strategy=${strategy.id}; skipping duplicate search`);
       return { identified: 0, highPotential: 0, engaged: 0, routed: 0 };
     }
-    return this.graph.invoke({ strategy, signals: [], identified: 0, highPotential: 0, engaged: 0, routed: 0 }) as Promise<any>;
+    this.runningStrategies.add(strategy.id);
+    try {
+      return await this.graph.invoke({ strategy, signals: [], identified: 0, highPotential: 0, engaged: 0, routed: 0 }) as any;
+    } finally {
+      this.runningStrategies.delete(strategy.id);
+    }
   }
 
   async runOnDemand(strategy: any): Promise<{ identified: number; highPotential: number; engaged: number; routed: number }> {
-    return this.graph.invoke({ strategy, signals: [], identified: 0, highPotential: 0, engaged: 0, routed: 0 }) as Promise<any>;
+    if (this.runningStrategies.has(strategy.id)) {
+      return { identified: 0, highPotential: 0, engaged: 0, routed: 0 };
+    }
+    this.runningStrategies.add(strategy.id);
+    try {
+      return await this.graph.invoke({ strategy, signals: [], identified: 0, highPotential: 0, engaged: 0, routed: 0 }) as any;
+    } finally {
+      this.runningStrategies.delete(strategy.id);
+    }
   }
 }
 
