@@ -96,6 +96,37 @@ export class SocialAccountService {
   private readonly whatsappPersistTimers = new Map<string, NodeJS.Timeout>();
   private readonly whatsappInbound = new Map<string, PersonalInboundMessage[]>();
 
+  /**
+   * Telegram's MTProto app credentials belong to Adirum's server, not to an
+   * end user. They are loaded only from server secrets and are never copied
+   * into a user's encrypted connection record or returned from an API route.
+   */
+  private telegramAppConfig(): { apiId: number; apiHash: string } {
+    const apiId = Number(process.env.TELEGRAM_API_ID || process.env.TELEGRAM_APP_API_ID || 0);
+    const apiHash = String(process.env.TELEGRAM_API_HASH || process.env.TELEGRAM_APP_API_HASH || '').trim();
+    if (!apiId || !apiHash) {
+      console.error('[SocialAccountService] Telegram server credentials are not configured.');
+      throw new Error('TELEGRAM_SERVER_NOT_READY');
+    }
+    return { apiId, apiHash };
+  }
+
+  private telegramClient(session: string): any {
+    let telegram: any;
+    try {
+      telegram = require('telegram');
+    } catch {
+      throw new Error('TELEGRAM_SERVER_NOT_READY');
+    }
+    const { apiId, apiHash } = this.telegramAppConfig();
+    return new telegram.TelegramClient(
+      new telegram.sessions.StringSession(session || ''),
+      apiId,
+      apiHash,
+      { connectionRetries: 3 },
+    );
+  }
+
   private whatsappMessageText(message: any): string {
     const content = message?.message || {};
     return String(
@@ -387,8 +418,29 @@ export class SocialAccountService {
   }
 
   async credentials(userId: string, provider: string): Promise<any | null> {
-    const row = await this.get(userId, normalizePlatform(provider));
-    return row ? decrypt(row) : null;
+    const normalized = normalizePlatform(provider);
+    const row = await this.get(userId, normalized);
+    if (!row) return null;
+    const credential = decrypt(row);
+    if (
+      normalized === 'telegram'
+      && credential
+      && (Object.prototype.hasOwnProperty.call(credential, 'apiId')
+        || Object.prototype.hasOwnProperty.call(credential, 'apiHash'))
+    ) {
+      // Older connections stored the server app credentials alongside the
+      // user's session. Remove those fields the next time the record is read.
+      const sanitized = { session: credential.session, phone: credential.phone };
+      const encrypted = encrypt(sanitized);
+      await this.supabase.from('social_account_connections').update({
+        credential_ciphertext: encrypted.ciphertext,
+        credential_iv: encrypted.iv,
+        credential_tag: encrypted.tag,
+        updated_at: new Date().toISOString(),
+      }).eq('id', row.id);
+      return sanitized;
+    }
+    return credential;
   }
 
   async remove(userId: string, provider: string): Promise<void> {
@@ -500,9 +552,7 @@ export class SocialAccountService {
   }
 
   async startTelegram(userId: string, phone: string): Promise<{ requestId: string; status: string }> {
-    const apiId = Number(process.env.TELEGRAM_API_ID || 0);
-    const apiHash = process.env.TELEGRAM_API_HASH;
-    if (!apiId || !apiHash) throw new Error('Telegram connection is not configured on the server.');
+    const { apiId, apiHash } = this.telegramAppConfig();
     let telegram: any;
     try { telegram = require('telegram'); } catch { throw new Error('Telegram connection service is not installed.'); }
     const client = new telegram.TelegramClient(new telegram.sessions.StringSession(''), apiId, apiHash, { connectionRetries: 5 });
@@ -514,7 +564,7 @@ export class SocialAccountService {
       settings: new telegram.Api.auth.CodeSettings({}),
     }));
     const requestId = crypto.randomUUID();
-    this.pendingTelegram.set(requestId, { userId, client, phone, phoneCodeHash: result.phoneCodeHash, apiId, apiHash });
+    this.pendingTelegram.set(requestId, { userId, client, phone, phoneCodeHash: result.phoneCodeHash });
     return { requestId, status: 'verification_code_sent' };
   }
 
@@ -548,7 +598,9 @@ export class SocialAccountService {
       accountId: String(me?.id || pending.phone),
       displayName: [me?.firstName, me?.lastName].filter(Boolean).join(' ') || pending.phone,
       handle: me?.username ? `@${me.username}` : pending.phone,
-      credential: { session, phone: pending.phone, apiId: pending.apiId, apiHash: pending.apiHash },
+      // Only the user's session and phone are stored. The app credentials
+      // remain server-scoped and are loaded from secrets when needed.
+      credential: { session, phone: pending.phone },
     });
   }
 
@@ -675,13 +727,7 @@ export class SocialAccountService {
       if (!credential) throw new Error(`${provider} credentials are unavailable.`);
       try {
         if (provider === 'telegram') {
-          const telegram = require('telegram');
-          const client = new telegram.TelegramClient(
-            new telegram.sessions.StringSession(credential.session),
-            Number(credential.apiId),
-            credential.apiHash,
-            { connectionRetries: 3 },
-          );
+          const client = this.telegramClient(credential.session);
           await client.connect();
            const recipient = requestedRecipient;
             await this.sendTyping(provider, credential, recipient, client);
@@ -943,13 +989,7 @@ export class SocialAccountService {
       }
 
       if (provider === 'telegram') {
-        const telegram = require('telegram');
-        const client = new telegram.TelegramClient(
-          new telegram.sessions.StringSession(credential.session),
-          Number(credential.apiId),
-          credential.apiHash,
-          { connectionRetries: 3 },
-        );
+        const client = this.telegramClient(credential.session);
         await client.connect();
         await this.sendTyping(provider, credential, recipient, client);
         await new Promise((resolve) => setTimeout(resolve, 600 + Math.floor(Math.random() * 1600)));
@@ -1044,13 +1084,7 @@ export class SocialAccountService {
     if (!credential) throw new Error(`${provider} credentials are unavailable.`);
 
     if (provider === 'telegram') {
-      const telegram = require('telegram');
-      const client = new telegram.TelegramClient(
-        new telegram.sessions.StringSession(credential.session),
-        Number(credential.apiId),
-        credential.apiHash,
-        { connectionRetries: 3 },
-      );
+      const client = this.telegramClient(credential.session);
       await client.connect();
       try {
         const messages = await client.getMessages(recipient, { limit: Math.min(50, Math.max(1, limit)) });

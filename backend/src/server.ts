@@ -143,6 +143,17 @@ async function personalConnectionAllowed(userId: string, provider: string): Prom
     && !(await isSocialComingSoon(userId, provider));
 }
 
+function personalConnectionError(error: any, provider: string): string {
+  const message = String(error?.message || '');
+  if (
+    message === 'TELEGRAM_SERVER_NOT_READY'
+    || /not configured on this server|service is not installed|runtime is not configured/i.test(message)
+  ) {
+    return `${provider} is temporarily unavailable. Please try again later.`;
+  }
+  return message || 'Connection failed. Please try again.';
+}
+
 app.get('/api/social-connections', async (req, res) => {
   try {
     const user = await authenticatedUser(req);
@@ -195,7 +206,8 @@ app.post('/api/strategy/:id/conversation-sweep', async (req, res) => {
     const result = await conversationAgent.runOnDemand(strategy);
     return res.json({ result });
   } catch (error: any) {
-    return res.status(400).json({ error: error.message });
+    return res.status(error?.message === 'TELEGRAM_SERVER_NOT_READY' ? 503 : 400)
+      .json({ error: personalConnectionError(error, 'Telegram') });
   }
 });
 
@@ -238,7 +250,8 @@ app.post('/api/social-connections/telegram/start', async (req, res) => {
     if (!phone) return res.status(400).json({ error: 'Phone number is required.' });
     return res.json(await socialAccountService.startTelegram(user.id, phone));
   } catch (error: any) {
-    return res.status(400).json({ error: error.message });
+    return res.status(error?.message === 'TELEGRAM_SERVER_NOT_READY' ? 503 : 400)
+      .json({ error: personalConnectionError(error, 'Telegram') });
   }
 });
 
@@ -254,7 +267,8 @@ app.post('/api/social-connections/telegram/verify', async (req, res) => {
     const connection = await socialAccountService.verifyTelegram(requestId, code, password);
     return res.status(201).json({ connection });
   } catch (error: any) {
-    return res.status(400).json({ error: error.message });
+    return res.status(/not installed|not configured on this server/i.test(String(error?.message || '')) ? 503 : 400)
+      .json({ error: personalConnectionError(error, 'Signal') });
   }
 });
 
@@ -267,7 +281,8 @@ app.post('/api/social-connections/whatsapp-personal/start', async (req, res) => 
     if (!phone) return res.status(400).json({ error: 'Phone number is required.' });
     return res.json(await socialAccountService.startWhatsAppPairing(user.id, phone));
   } catch (error: any) {
-    return res.status(400).json({ error: error.message });
+    return res.status(/not installed|not configured on this server/i.test(String(error?.message || '')) ? 503 : 400)
+      .json({ error: personalConnectionError(error, 'Signal') });
   }
 });
 
@@ -280,7 +295,8 @@ app.post('/api/social-connections/signal/start', async (req, res) => {
     if (!phone) return res.status(400).json({ error: 'Phone number is required.' });
     return res.json(await socialAccountService.startSignalVerification(user.id, phone));
   } catch (error: any) {
-    return res.status(400).json({ error: error.message });
+    return res.status(/not configured on this server/i.test(String(error?.message || '')) ? 503 : 400)
+      .json({ error: personalConnectionError(error, 'Delta Chat') });
   }
 });
 
