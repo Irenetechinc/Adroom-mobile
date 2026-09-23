@@ -24,6 +24,24 @@ BEGIN
   ) THEN
     ALTER TABLE public.personal_inbound_messages
       RENAME COLUMN received_at TO message_timestamp;
+  ELSIF EXISTS (
+    SELECT 1
+    FROM information_schema.columns
+    WHERE table_schema = 'public'
+      AND table_name = 'personal_inbound_messages'
+      AND column_name = 'received_at'
+  ) AND EXISTS (
+    SELECT 1
+    FROM information_schema.columns
+    WHERE table_schema = 'public'
+      AND table_name = 'personal_inbound_messages'
+      AND column_name = 'message_timestamp'
+  ) THEN
+    -- A partial migration can leave both columns behind. Keep the canonical
+    -- field populated from legacy data before enforcing NOT NULL.
+    UPDATE public.personal_inbound_messages
+       SET message_timestamp = COALESCE(message_timestamp, received_at, created_at)
+     WHERE message_timestamp IS NULL;
   ELSIF NOT EXISTS (
     SELECT 1
     FROM information_schema.columns
@@ -36,9 +54,14 @@ BEGIN
     UPDATE public.personal_inbound_messages
       SET message_timestamp = created_at
       WHERE message_timestamp IS NULL;
-    ALTER TABLE public.personal_inbound_messages
-      ALTER COLUMN message_timestamp SET NOT NULL;
   END IF;
+
+  UPDATE public.personal_inbound_messages
+     SET message_timestamp = COALESCE(message_timestamp, created_at)
+   WHERE message_timestamp IS NULL;
+
+  ALTER TABLE public.personal_inbound_messages
+    ALTER COLUMN message_timestamp SET NOT NULL;
 END $$;
 
 DROP INDEX IF EXISTS public.personal_inbound_messages_lookup_idx;

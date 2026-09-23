@@ -34,6 +34,11 @@ export interface VideoEditResult {
   scriptText: string;
   estimatedDuration: number;
   platformOptimizations: string[];
+  intelligenceFreshness: {
+    sourceTimestamp: string | null;
+    isFresh: boolean;
+    fallback: string | null;
+  };
   status: 'plan_ready';
   message: string;
 }
@@ -53,7 +58,7 @@ export class SmartVideoEditor {
     const [platformIntel, socialSignals] = await Promise.all([
       this.supabase
         .from('platform_intelligence')
-        .select('platform, algorithm_priorities, trending_formats, optimal_times, predictions, risks')
+        .select('platform, algorithm_priorities, trending_formats, optimal_times, predictions, risks, captured_at')
         .eq('platform', request.platform.toLowerCase())
         .order('captured_at', { ascending: false })
         .limit(2),
@@ -70,6 +75,18 @@ export class SmartVideoEditor {
     if (!currentPlatformIntel) {
       throw new Error(`No current platform intelligence is available for ${request.platform}.`);
     }
+    const capturedAt = currentPlatformIntel.captured_at
+      ? new Date(currentPlatformIntel.captured_at).getTime()
+      : NaN;
+    const isFresh = Number.isFinite(capturedAt)
+      && Date.now() - capturedAt <= 24 * 60 * 60 * 1000;
+    const intelligenceFreshness = {
+      sourceTimestamp: Number.isFinite(capturedAt) ? new Date(capturedAt).toISOString() : null,
+      isFresh,
+      fallback: isFresh
+        ? null
+        : 'platform intelligence is missing or older than 24 hours; use conservative platform-native decisions',
+    };
 
     const directorNote = request.directionPrefix
       ? `\nDIRECTOR VISUAL DIRECTION: ${request.directionPrefix}\nVISUAL MOOD: ${request.visualMood || 'modern'}\nApply this direction to all text overlays, pacing, and caption style choices.`
@@ -86,6 +103,8 @@ ${directorNote}
 
 CURRENT PLATFORM INTELLIGENCE:
 ${JSON.stringify(currentPlatformIntel)}
+INTELLIGENCE FRESHNESS:
+${JSON.stringify(intelligenceFreshness)}
 
 CURRENT AUDIENCE SIGNALS:
 ${JSON.stringify(socialSignals.data || [])}
@@ -112,7 +131,7 @@ Generate a professional video edit plan as JSON:
 
 Rules:
 - Hook must grab attention in first 3 seconds
- - Respect any current duration or format limits contained in the platform intelligence
+  - Respect duration or format limits only when the intelligence is fresh; otherwise state and use a conservative platform-native fallback
 - Make it feel native to ${request.platform}
 - Optimize for ${request.goal} conversion
     `;
@@ -141,6 +160,7 @@ Rules:
       scriptText: plan.scriptText,
       estimatedDuration: Number(plan.estimatedDuration),
       platformOptimizations: Array.isArray(plan.platformOptimizations) ? plan.platformOptimizations : [],
+      intelligenceFreshness,
       status: 'plan_ready',
       message: `Edit plan ready for ${request.platform}. Adirum AI will apply this plan when executing the campaign.`,
     };
@@ -153,7 +173,10 @@ Rules:
         user_id: userId,
         strategy_id: strategyId,
         source_video_uri: videoUri,
-        edit_plan: editResult.editPlan,
+        edit_plan: {
+          ...editResult.editPlan,
+          __intelligenceFreshness: editResult.intelligenceFreshness,
+        },
         script_text: editResult.scriptText,
         estimated_duration: editResult.estimatedDuration,
         platform_optimizations: editResult.platformOptimizations,

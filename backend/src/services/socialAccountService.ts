@@ -5,7 +5,7 @@ import path from 'path';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
 import { getServiceSupabaseClient } from '../config/supabase';
-import { normalizePlatform } from './platformIdentity';
+import { normalizePlatform, normalizeSelectedPlatforms } from './platformIdentity';
 import { isEnabled as isFeatureEnabled } from './featureFlagService';
 
 export type PersonalProvider = 'telegram' | 'whatsapp_personal' | 'signal_personal' | 'bluesky' | 'delta_chat';
@@ -42,6 +42,10 @@ function encryptionKey(): Buffer {
   const secret = process.env.SESSION_SECRET || process.env.ENCRYPTION_KEY;
   if (!secret) throw new Error('Server encryption is not configured.');
   return crypto.createHash('sha256').update(secret).digest();
+}
+
+function signalCliPath(): string {
+  return String(process.env.SIGNAL_CLI_PATH || 'signal-cli').trim() || 'signal-cli';
 }
 
 function encrypt(value: unknown): EncryptedValue {
@@ -290,7 +294,7 @@ export class SocialAccountService {
         const exec = promisify(execFile);
         const configDir = await this.materializeSignalBundle(credential);
         try {
-          await exec('signal-cli', ['--config', configDir, '-u', credential.phone, 'sendTyping', recipient], { timeout: 10000 });
+          await exec(signalCliPath(), ['--config', configDir, '-u', credential.phone, 'sendTyping', recipient], { timeout: 10000 });
         } finally {
           await fs.rm(configDir, { recursive: true, force: true }).catch(() => {});
         }
@@ -597,6 +601,24 @@ export class SocialAccountService {
   async reserveAction(userId: string, provider: string, recipient?: string): Promise<boolean> {
     provider = normalizePlatform(provider);
     if (!(await isFeatureEnabled(`social_${provider}_connections`, userId))) return false;
+    const { data: activeStrategies, error: strategyError } = await this.supabase
+      .from('strategies')
+      .select('selected_accounts, platforms')
+      .eq('user_id', userId)
+      .eq('is_active', true)
+      .eq('status', 'active');
+    if (strategyError) {
+      console.error(`[SocialAccountService] Active strategy selection check failed for ${provider}: ${strategyError.message}`);
+      return false;
+    }
+    const selectedByActiveStrategy = (activeStrategies || []).some((strategy: any) => {
+      const selected = normalizeSelectedPlatforms(strategy.selected_accounts || strategy.platforms || []);
+      return selected.includes(provider);
+    });
+    if (!selectedByActiveStrategy) {
+      console.warn(`[SocialAccountService] Blocked ${provider} action because no active strategy selected it.`);
+      return false;
+    }
     const recipientKey = recipient
       ? crypto.createHash('sha256').update(String(recipient)).digest('hex').slice(0, 24)
       : null;
@@ -791,7 +813,7 @@ export class SocialAccountService {
     const authDir = path.join(os.tmpdir(), 'adroom-signal', requestId);
     await fs.mkdir(authDir, { recursive: true });
     try {
-      await exec('signal-cli', ['--config', authDir, '-u', phone, 'register'], { timeout: 30000 });
+      await exec(signalCliPath(), ['--config', authDir, '-u', phone, 'register'], { timeout: 30000 });
     } catch (error: any) {
       await fs.rm(authDir, { recursive: true, force: true });
       throw new Error(error?.code === 'ENOENT' ? 'Signal registration service is not installed.' : 'Signal could not send a verification code.');
@@ -805,7 +827,7 @@ export class SocialAccountService {
     if (!pending) throw new Error('Signal verification has expired. Start again.');
     const exec = promisify(execFile);
     try {
-      await exec('signal-cli', ['--config', pending.authDir, '-u', pending.phone, 'verify', code], { timeout: 30000 });
+      await exec(signalCliPath(), ['--config', pending.authDir, '-u', pending.phone, 'verify', code], { timeout: 30000 });
       const bundle: Record<string, string> = {};
       for (const file of await fs.readdir(pending.authDir)) {
         const stat = await fs.stat(path.join(pending.authDir, file));
@@ -897,7 +919,7 @@ export class SocialAccountService {
              args.push('--attachment', attachment.filePath);
            }
            args.push(phone);
-           await exec('signal-cli', args, { timeout: 30000 });
+            await exec(signalCliPath(), args, { timeout: 30000 });
         } finally {
            if (attachmentPath) await fs.rm(attachmentPath, { force: true }).catch(() => {});
           await fs.rm(configDir, { recursive: true, force: true });
@@ -1105,7 +1127,7 @@ export class SocialAccountService {
           for (const [file, encoded] of Object.entries(credential.bundle || {})) {
             await fs.writeFile(path.join(tempDir, file), Buffer.from(String(encoded), 'base64'));
           }
-          await exec('signal-cli', ['--config', tempDir, '-u', credential.phone, 'send', '-m', text.slice(0, 2000), recipient], { timeout: 30000 });
+          await exec(signalCliPath(), ['--config', tempDir, '-u', credential.phone, 'send', '-m', text.slice(0, 2000), recipient], { timeout: 30000 });
         } finally {
           await fs.rm(tempDir, { recursive: true, force: true });
         }
@@ -1236,7 +1258,7 @@ export class SocialAccountService {
       const exec = promisify(execFile);
       const configDir = await this.materializeSignalBundle(credential);
       try {
-        const result = await exec('signal-cli', [
+        const result = await exec(signalCliPath(), [
           '--config', configDir,
           '-u', credential.phone,
           'receive',

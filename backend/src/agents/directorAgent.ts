@@ -31,6 +31,11 @@ export interface VisualDirection {
   should_use_user_video: boolean;
   user_video_rationale?: string;
   reasoning: string;
+  intelligence_freshness?: {
+    sourceTimestamp: string | null;
+    isFresh: boolean;
+    fallback: string | null;
+  };
   _profileId?: string;
 }
 
@@ -78,7 +83,7 @@ export class DirectorAgent {
       this.psychologist.getProfileForProduct(params.productId || '', params.product?.category),
       this.supabase
         .from('platform_intelligence')
-        .select('platform, algorithm_priorities, trending_formats, optimal_times, predictions')
+        .select('platform, algorithm_priorities, trending_formats, optimal_times, predictions, captured_at')
         .order('captured_at', { ascending: false })
         .limit(5),
       this.supabase
@@ -106,6 +111,23 @@ export class DirectorAgent {
       .update(`${params.userId}-${productName}-${params.product?.category || ''}-${Date.now()}`)
       .digest('hex')
       .slice(0, 14);
+    const latestPlatformTimestamp = (platformIntel.data || [])
+      .map((entry: any) => new Date(entry.captured_at || 0).getTime())
+      .filter((timestamp: number) => Number.isFinite(timestamp) && timestamp > 0)
+      .sort((a: number, b: number) => b - a)[0];
+    const intelligenceFreshness = {
+      sourceTimestamp: latestPlatformTimestamp
+        ? new Date(latestPlatformTimestamp).toISOString()
+        : null,
+      isFresh: Boolean(
+        latestPlatformTimestamp
+        && Date.now() - latestPlatformTimestamp <= 24 * 60 * 60 * 1000,
+      ),
+      fallback: latestPlatformTimestamp
+        && Date.now() - latestPlatformTimestamp <= 24 * 60 * 60 * 1000
+        ? null
+        : 'platform intelligence is missing or older than 24 hours; use conservative platform-native direction',
+    };
 
     const prompt = `
 You are the DIRECTOR — the world's greatest virtual creative director for marketing.
@@ -132,6 +154,8 @@ ${JSON.stringify(psychProfile)}
 
 PLATFORM ALGORITHM INTELLIGENCE (what's working right now):
 ${JSON.stringify(platformIntel.data?.slice(0, 3))}
+INTELLIGENCE FRESHNESS:
+${JSON.stringify(intelligenceFreshness)}
 
 EMOTIONAL OWNERSHIP MAP (what emotions competitors own — find the gap):
 ${JSON.stringify(emotionalOwnership.data?.slice(0, 8))}
@@ -202,6 +226,7 @@ OUTPUT JSON:
     }
 
     direction.unique_fingerprint = userSeed;
+    direction.intelligence_freshness = intelligenceFreshness;
 
     if (typeof direction.should_use_user_video !== 'boolean') {
       direction.should_use_user_video = params.hasUserVideo === true;
@@ -229,6 +254,7 @@ OUTPUT JSON:
           social_signals: (socialTrends.data || []).length,
           emotional_signals: (emotionalOwnership.data || []).length,
           has_user_video: params.hasUserVideo,
+          intelligence_freshness: intelligenceFreshness,
         },
         updated_at: new Date().toISOString(),
       })

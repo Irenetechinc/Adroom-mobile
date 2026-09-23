@@ -11,7 +11,7 @@
  * - Platform-optimized compositions (Instagram 4:5, TikTok 9:16, LinkedIn 1.91:1, etc.)
  * - Unique per-post fingerprint: no repetition ever
  * - Real-time attention-grabbing design driven by live data
- * - Intelligent template selection: hero, lifestyle, testimonial, countdown, story, carousel, quote-card
+ * - Per-post creative concept selection from current platform and audience intelligence
  * - Works with SALESMAN, AWARENESS, PROMOTION, LAUNCH agents on demand
  * - Generates preview batches for strategy approval screen (7-day asset preview)
  */
@@ -149,15 +149,15 @@ export class GraphicsDesignerAgent {
   }
 
   /**
-   * Select the optimal design template for this specific post context.
-   * Uses intelligence + goal + task type to pick the highest-impact template.
+   * Select an original creative concept for this specific post context.
+   * The model must derive the concept from live platform, audience, product, and goal data.
    */
-  private async selectDesignConcept(brief: DesignBrief, intel: any): Promise<string> {
+  private async selectCreativeConcept(brief: DesignBrief, intel: any): Promise<string> {
     const platformSignals = (intel.ipe || []).filter((entry: any) =>
       String(entry.platform || '').toLowerCase() === brief.platform.toLowerCase(),
     );
     const freshness = intel.freshness || { isFresh: false, fallback: 'intelligence metadata unavailable' };
-    const prompt = `Choose one original visual concept for this specific post. Do not use a named template or a fixed catalog.
+    const prompt = `Choose one original visual concept for this specific post. Do not use a named template, fixed catalog, or reusable layout.
 Platform: ${brief.platform}; platform intelligence: ${JSON.stringify(platformSignals[0] || {})}
 Intelligence freshness: ${JSON.stringify(freshness)}. If stale or missing, explicitly choose a conservative platform-native fallback based on the supplied content and audience instead of pretending trends are current.
 Goal: ${brief.goal}; task: ${brief.postContent.taskType || 'post'}
@@ -175,7 +175,7 @@ Return one concise concept describing subject, composition, motion/energy, typog
    * Build the world-class Imagen 3 prompt for this specific graphic.
    * Every prompt is data-driven from intelligence engines + unique fingerprint.
    */
-  private async buildImagePrompt(brief: DesignBrief, template: string, fingerprint: string, intel: any): Promise<string> {
+  private async buildImagePrompt(brief: DesignBrief, creativeConcept: string, fingerprint: string, intel: any): Promise<string> {
     const platformSignals = (intel.ipe || []).filter((entry: any) =>
       String(entry.platform || '').toLowerCase() === brief.platform.toLowerCase(),
     );
@@ -193,7 +193,7 @@ You are the world's greatest AI art director for social media advertising.
 Create a precise, production-ready Imagen 3 image generation prompt for this post.
 
 UNIQUE POST FINGERPRINT: ${fingerprint}
-TEMPLATE: ${template}
+AI-SELECTED CREATIVE CONCEPT: ${creativeConcept}
 PLATFORM: ${brief.platform.toUpperCase()}
 CURRENT PLATFORM REQUIREMENTS: ${JSON.stringify(platformIntelligence || {})}
 INTELLIGENCE FRESHNESS: ${JSON.stringify(freshness)}
@@ -221,8 +221,8 @@ DIRECTOR'S VISUAL DIRECTION: ${brief.direction ? `
 - Trust elements to include: ${brief.direction.trust_elements?.join(', ')}
 - AVOID: ${brief.direction.avoid_elements?.join(', ')}` : 'apply best judgment based on intelligence data'}
 
-DESIGN RULES FOR ${template.toUpperCase()}:
-${this.getTemplateRules(template, brief.goal, brief.platform)}
+CREATIVE DECISION DIRECTIVE:
+${this.getCreativeConceptDirective(creativeConcept, brief.goal, brief.platform)}
 
 ABSOLUTE REQUIREMENTS:
 - This fingerprint (${fingerprint}) must be expressed in color tones, composition angle, or lighting signature
@@ -247,8 +247,8 @@ Return ONLY the image prompt text, nothing else.
     throw new Error(`The image prompt generator returned no usable prompt for ${brief.platform}.`);
   }
 
-  private getTemplateRules(concept: string, _goal: string, platform: string): string {
-    return `Use this AI-selected original concept, not a reusable template: ${concept}. Preserve platform-native safe zones, readable hierarchy, and a clear product/brand focal point for ${platform}.`;
+  private getCreativeConceptDirective(concept: string, _goal: string, platform: string): string {
+    return `Use this AI-selected original concept, not a reusable layout: ${concept}. Preserve platform-native safe zones, readable hierarchy, and a clear product/brand focal point for ${platform}.`;
   }
 
   private getGoalVisualCTA(goal: string): string {
@@ -304,7 +304,7 @@ Return ONLY the image prompt text, nothing else.
       const intel = await this.fetchIntelligence(productCategory, brief.platform);
 
       // 2. Select an original concept from current intelligence or an explicit fallback
-       const template = await this.selectDesignConcept(brief, intel);
+       const creativeConcept = await this.selectCreativeConcept(brief, intel);
        this.log(`Creative concept selected (fresh=${intel.freshness?.isFresh === true}, fingerprint: ${fingerprint})`);
 
       // 3. Get Director visual direction if not provided
@@ -329,7 +329,7 @@ Return ONLY the image prompt text, nothing else.
       // 4. Build precision Imagen 3 prompt
       const imagePrompt = await this.buildImagePrompt(
         { ...brief, direction },
-        template,
+         creativeConcept,
         fingerprint,
         intel
       );
@@ -362,7 +362,7 @@ Return ONLY the image prompt text, nothing else.
         strategy_id: brief.strategyId,
         platform: brief.platform,
         goal: brief.goal,
-        template,
+         creative_concept: creativeConcept,
         fingerprint,
         image_url: publicUrl,
         prompt: imagePrompt,
@@ -380,9 +380,9 @@ Return ONLY the image prompt text, nothing else.
       return {
         url: publicUrl,
         platform: brief.platform,
-        contentType: template,
+         contentType: 'image',
         headline: brief.postContent.headline,
-        designStyle: template,
+         designStyle: creativeConcept,
         fingerprint,
         generatedAt: new Date().toISOString(),
         prompt: imagePrompt,
