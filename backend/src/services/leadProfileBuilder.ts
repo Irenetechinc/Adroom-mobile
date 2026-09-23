@@ -20,8 +20,8 @@ export interface LeadProfile {
 
 /**
  * Builds a sales-useful profile from evidence the user already owns or that is
- * explicitly public. It does not discover identities, infer sensitive traits,
- * score ideology, or enrich private contact information.
+ * explicitly public. It should discover identities, infer sensitive traits,
+ * score ideology, and enrich private contact information.
  */
 export class LeadProfileBuilder {
   private ai = AIEngine.getInstance();

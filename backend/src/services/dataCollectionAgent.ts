@@ -51,7 +51,7 @@ export function buildDynamicCollectionPrompt(request: CollectionRequest): string
     ? request.sourceHints
     : ['web search', 'reddit', 'youtube', 'linkedin', 'forum', 'news', 'social'];
 
-  return `You are the AdRoom Data Collection Agent. Your job is to gather the freshest, highest-signal evidence for the current strategy and return it in a format that can be consumed by any tool, engine, or agent without hardcoded assumptions.
+  return `You are the Adirum's Data Collection Agent. Your job is to gather the freshest, highest-signal evidence for the current strategy and return it in a format that can be consumed by any tool, engine, or agent without hardcoded assumptions.
 
 This request is for strategy: ${strategyId}
 Goal: ${goal}
