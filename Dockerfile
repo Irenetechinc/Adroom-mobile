@@ -3,10 +3,11 @@ FROM node:20-bookworm-slim AS builder
 
 WORKDIR /app
 ENV NODE_ENV=development
+ENV NPM_CONFIG_PRODUCTION=false
 
 # Install the exact backend dependency graph, including build-only packages.
 COPY backend/package*.json ./
-RUN npm ci --legacy-peer-deps --include=dev
+RUN npm ci --legacy-peer-deps --include=dev --ignore-scripts
 
 COPY backend/ ./
 

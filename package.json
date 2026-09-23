@@ -8,8 +8,7 @@
     "android": "expo start --android",
     "ios": "expo start --ios",
     "web": "expo start --web --port 5000 --host 0.0.0.0",
-    "test": "jest",
-    "postinstall": "node scripts/patch-metro.js && node scripts/scrub-lockfile.js"
+    "test": "jest"
   },
   "dependencies": {
     "@langchain/langgraph": "^1.4.17",
