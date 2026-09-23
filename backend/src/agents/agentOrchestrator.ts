@@ -224,8 +224,14 @@ export class AgentOrchestrator {
                 const allowedPlatforms = new Set(normalizeSelectedPlatforms(strategyAccounts));
                 const taskPlatform = normalizePlatform(task.platform);
                 if (!allowedPlatforms.has(taskPlatform)) {
-                    console.info(`[Orchestrator] Task ${task.id} is outside the selected account set; marking it skipped.`);
-                    await this.supabase.from('agent_tasks').update({ status: 'skipped', error_message: 'Platform is not selected for this strategy.' }).eq('id', task.id);
+                    const discoveryOnly = taskPlatform === 'web';
+                    console.info(`[Orchestrator] Task ${task.id} is ${discoveryOnly ? 'discovery-only' : 'outside the selected account set'}; marking it skipped.`);
+                    await this.supabase.from('agent_tasks').update({
+                        status: 'skipped',
+                        error_message: discoveryOnly
+                          ? 'Web discovery is not an outbound channel for this strategy.'
+                          : 'Platform is not selected for this strategy.',
+                    }).eq('id', task.id);
                     continue;
                 }
                 let connectionReady = false;

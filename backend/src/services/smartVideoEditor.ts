@@ -50,21 +50,10 @@ export class SmartVideoEditor {
   async generateEditPlan(request: VideoEditRequest): Promise<VideoEditResult> {
     console.log(`[SmartVideoEditor] Generating edit plan for ${request.productName} → ${request.platform}`);
 
-    const platformSpecs: Record<string, any> = {
-      instagram: { ratio: '9:16', maxDuration: 90, captionStyle: 'bold_center', filters: ['contrast_boost', 'warm_tone'] },
-      tiktok: { ratio: '9:16', maxDuration: 60, captionStyle: 'dynamic_captions', filters: ['vibrant', 'sharp'] },
-      facebook: { ratio: '16:9', maxDuration: 240, captionStyle: 'subtitle_bottom', filters: ['natural'] },
-      twitter: { ratio: '16:9', maxDuration: 140, captionStyle: 'bold_top', filters: ['clean'] },
-      youtube: { ratio: '16:9', maxDuration: 600, captionStyle: 'professional', filters: ['cinematic'] },
-      linkedin: { ratio: '1:1', maxDuration: 180, captionStyle: 'professional', filters: ['corporate'] },
-    };
-
-    const spec = platformSpecs[request.platform.toLowerCase()];
-    if (!spec) throw new Error(`Video editing is not configured for ${request.platform}.`);
     const [platformIntel, socialSignals] = await Promise.all([
       this.supabase
         .from('platform_intelligence')
-        .select('algorithm_priorities, trending_formats, optimal_times, predictions')
+        .select('platform, algorithm_priorities, trending_formats, optimal_times, predictions, risks')
         .eq('platform', request.platform.toLowerCase())
         .order('captured_at', { ascending: false })
         .limit(2),
@@ -74,6 +63,13 @@ export class SmartVideoEditor {
         .order('collected_at', { ascending: false })
         .limit(12),
     ]);
+    if (platformIntel.error) {
+      throw new Error(`Platform intelligence lookup failed: ${platformIntel.error.message}`);
+    }
+    const currentPlatformIntel = platformIntel.data?.[0];
+    if (!currentPlatformIntel) {
+      throw new Error(`No current platform intelligence is available for ${request.platform}.`);
+    }
 
     const directorNote = request.directionPrefix
       ? `\nDIRECTOR VISUAL DIRECTION: ${request.directionPrefix}\nVISUAL MOOD: ${request.visualMood || 'modern'}\nApply this direction to all text overlays, pacing, and caption style choices.`
@@ -85,13 +81,11 @@ You are Adirum AI's Smart Video Editor. Create a professional video editing plan
 PRODUCT: ${request.productName}
 MARKETING GOAL: ${request.goal}
 PLATFORM: ${request.platform}
-ASPECT RATIO: ${spec.ratio}
-MAX DURATION: ${spec.maxDuration}s
 USER INSTRUCTIONS: ${request.instructions || 'Create the best ad possible'}
 ${directorNote}
 
 CURRENT PLATFORM INTELLIGENCE:
-${JSON.stringify(platformIntel.data || [])}
+${JSON.stringify(currentPlatformIntel)}
 
 CURRENT AUDIENCE SIGNALS:
 ${JSON.stringify(socialSignals.data || [])}
@@ -108,9 +102,9 @@ Generate a professional video edit plan as JSON:
   ],
   "music": "Music vibe description (e.g. upbeat electronic, emotional acoustic)",
   "cta": "Call to action text and placement",
-  "aspectRatio": "${spec.ratio}",
-  "filters": ${JSON.stringify(spec.filters)},
-  "captionStyle": "${spec.captionStyle}",
+  "aspectRatio": "derive from current platform intelligence",
+  "filters": ["derive from current platform intelligence"],
+  "captionStyle": "derive from current platform intelligence",
   "scriptText": "Full voiceover script",
   "estimatedDuration": total_seconds,
   "platformOptimizations": ["platform-specific optimization 1", "optimization 2", "optimization 3"]
@@ -118,7 +112,7 @@ Generate a professional video edit plan as JSON:
 
 Rules:
 - Hook must grab attention in first 3 seconds
-- Total duration must be under ${spec.maxDuration} seconds
+ - Respect any current duration or format limits contained in the platform intelligence
 - Make it feel native to ${request.platform}
 - Optimize for ${request.goal} conversion
     `;
@@ -128,19 +122,25 @@ Rules:
 
     if (!plan) throw new Error('AI failed to generate video edit plan.');
 
+    if (!plan.hook || !Array.isArray(plan.scenes) || !plan.music || !plan.cta ||
+      !plan.aspectRatio || !Array.isArray(plan.filters) || !plan.captionStyle ||
+      !plan.scriptText || !Number.isFinite(Number(plan.estimatedDuration))) {
+      throw new Error(`Video editor returned an incomplete plan for ${request.platform}.`);
+    }
+
     return {
       editPlan: {
         hook: plan.hook,
-        scenes: plan.scenes || [],
+        scenes: plan.scenes,
         music: plan.music,
         cta: plan.cta,
-        aspectRatio: plan.aspectRatio || spec.ratio,
-        filters: plan.filters || spec.filters,
-        captionStyle: plan.captionStyle || spec.captionStyle,
+        aspectRatio: plan.aspectRatio,
+        filters: plan.filters,
+        captionStyle: plan.captionStyle,
       },
-      scriptText: plan.scriptText || '',
-      estimatedDuration: plan.estimatedDuration || 30,
-      platformOptimizations: plan.platformOptimizations || [],
+      scriptText: plan.scriptText,
+      estimatedDuration: Number(plan.estimatedDuration),
+      platformOptimizations: Array.isArray(plan.platformOptimizations) ? plan.platformOptimizations : [],
       status: 'plan_ready',
       message: `Edit plan ready for ${request.platform}. Adirum AI will apply this plan when executing the campaign.`,
     };

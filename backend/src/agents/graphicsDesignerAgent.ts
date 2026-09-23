@@ -71,16 +71,6 @@ export interface PreviewAsset {
   error?: string;
 }
 
-// Platform-specific canvas specs
-const PLATFORM_SPECS: Record<string, { aspectRatio: string; orientation: string; primaryZone: string; visualPriority: string }> = {
-  instagram: { aspectRatio: '4:5', orientation: 'portrait', primaryZone: 'upper-third', visualPriority: 'aesthetic-first' },
-  tiktok: { aspectRatio: '9:16', orientation: 'vertical-full', primaryZone: 'center-overlay', visualPriority: 'motion-energy' },
-  facebook: { aspectRatio: '16:9', orientation: 'landscape', primaryZone: 'rule-of-thirds', visualPriority: 'scroll-stopping' },
-  linkedin: { aspectRatio: '1.91:1', orientation: 'wide-landscape', primaryZone: 'centered', visualPriority: 'authority-credibility' },
-  twitter: { aspectRatio: '16:9', orientation: 'landscape', primaryZone: 'centered-impact', visualPriority: 'immediate-clarity' },
-  x: { aspectRatio: '16:9', orientation: 'landscape', primaryZone: 'centered-impact', visualPriority: 'immediate-clarity' },
-};
-
 export class GraphicsDesignerAgent {
   private ai: AIEngine;
   private supabase: ReturnType<typeof getServiceSupabaseClient>;
@@ -151,17 +141,23 @@ export class GraphicsDesignerAgent {
    * Uses intelligence + goal + task type to pick the highest-impact template.
    */
   private async selectDesignConcept(brief: DesignBrief, intel: any): Promise<string> {
-    const platformSpec = PLATFORM_SPECS[brief.platform.toLowerCase()];
+    const platformSignals = (intel.ipe || []).filter((entry: any) =>
+      String(entry.platform || '').toLowerCase() === brief.platform.toLowerCase(),
+    );
+    if (!platformSignals.length) {
+      throw new Error(`No current platform intelligence is available for ${brief.platform}.`);
+    }
     const prompt = `Choose one original visual concept for this specific post. Do not use a named template or a fixed catalog.
-Platform: ${brief.platform}; canvas: ${JSON.stringify(platformSpec || {})}
+Platform: ${brief.platform}; current platform intelligence: ${JSON.stringify(platformSignals[0])}
 Goal: ${brief.goal}; task: ${brief.postContent.taskType || 'post'}
 Headline: ${brief.postContent.headline}; body: ${brief.postContent.body.slice(0, 500)}
 Current algorithm signals: ${JSON.stringify(intel.ipe.slice(0, 2))}
 Current audience signals: ${JSON.stringify(intel.social.slice(0, 8))}
 Return one concise concept describing subject, composition, motion/energy, typography treatment, and why it is native to this platform.`;
     const result = await this.ai.generateStrategy({}, prompt);
-    return result.text?.trim().replace(/^"|"$/g, '').slice(0, 800)
-      || `Original ${brief.platform}-native composition derived from the post content and current audience signals.`;
+    const concept = result.text?.trim().replace(/^"|"$/g, '').slice(0, 800);
+    if (!concept) throw new Error(`The creative director returned no concept for ${brief.platform}.`);
+    return concept;
   }
 
   /**
@@ -169,7 +165,13 @@ Return one concise concept describing subject, composition, motion/energy, typog
    * Every prompt is data-driven from intelligence engines + unique fingerprint.
    */
   private async buildImagePrompt(brief: DesignBrief, template: string, fingerprint: string, intel: any): Promise<string> {
-    const spec = PLATFORM_SPECS[brief.platform.toLowerCase()] || PLATFORM_SPECS.instagram;
+    const platformSignals = (intel.ipe || []).filter((entry: any) =>
+      String(entry.platform || '').toLowerCase() === brief.platform.toLowerCase(),
+    );
+    if (!platformSignals.length) {
+      throw new Error(`No current platform intelligence is available for ${brief.platform}.`);
+    }
+    const platformIntelligence = platformSignals[0];
     const productName = brief.product?.product_name || brief.product?.name || 'product';
     const productCategory = brief.product?.category || 'consumer product';
 
@@ -183,9 +185,8 @@ Create a precise, production-ready Imagen 3 image generation prompt for this pos
 
 UNIQUE POST FINGERPRINT: ${fingerprint}
 TEMPLATE: ${template}
-PLATFORM: ${brief.platform.toUpperCase()} (${spec.aspectRatio} aspect ratio, ${spec.orientation})
-PRIMARY VISUAL ZONE: ${spec.primaryZone}
-VISUAL PRIORITY: ${spec.visualPriority}
+PLATFORM: ${brief.platform.toUpperCase()}
+CURRENT PLATFORM REQUIREMENTS: ${JSON.stringify(platformIntelligence)}
 AGENT GOAL: ${brief.goal}
 PRODUCT: ${productName} (${productCategory})
 
@@ -217,11 +218,11 @@ ABSOLUTE REQUIREMENTS:
 - This fingerprint (${fingerprint}) must be expressed in color tones, composition angle, or lighting signature
 - ZERO generic stock photo energy — must feel custom-crafted for this exact product and moment
 - Platform-native: feels like it belongs on ${brief.platform}, not copied from another platform
-- ${spec.visualPriority.replace('-', ' ')} is the #1 visual priority
+- Follow the current platform requirements above; do not import assumptions from another platform
 - Photorealistic commercial photography or bold graphic art — never clip-art or generic illustration
 - 8K ultra-sharp resolution, professional color grading
 
-Generate a Imagen 3 prompt (max 280 characters) that produces a ${spec.orientation} ${template} for ${brief.platform}.
+Generate a Imagen 3 prompt (max 280 characters) that produces the current platform-native composition described by the intelligence above.
 The image must DEMAND attention and drive toward: ${this.getGoalVisualCTA(brief.goal)}
 
 Return ONLY the image prompt text, nothing else.
@@ -230,13 +231,10 @@ Return ONLY the image prompt text, nothing else.
     const result = await this.ai.generateStrategy({}, designDirective);
     const rawPrompt = result.text?.trim().replace(/^"|"$/g, '').replace(/```.*?```/gs, '').trim() || '';
 
-    // Ensure we have a substantive prompt
     if (rawPrompt.length > 30) {
       return rawPrompt.substring(0, 280);
     }
-
-    // Fallback: build a strong default prompt
-    return this.buildFallbackPrompt(brief, template, spec, fingerprint);
+    throw new Error(`The image prompt generator returned no usable prompt for ${brief.platform}.`);
   }
 
   private getTemplateRules(concept: string, _goal: string, platform: string): string {
@@ -251,11 +249,6 @@ Return ONLY the image prompt text, nothing else.
       LAUNCH: 'excitement and anticipation — viewer must feel like they are witnessing something new',
     };
     return ctas[goal] || 'engagement and brand recognition';
-  }
-
-  private buildFallbackPrompt(brief: DesignBrief, template: string, spec: any, fingerprint: string): string {
-    const product = brief.product?.product_name || brief.product?.name || 'product';
-    return `Original ${brief.platform}-native visual concept for ${product}; ${template}; ${spec.orientation} format; reflect the post headline "${brief.postContent.headline}" and CTA "${brief.postContent.cta || ''}", commercial quality, unique composition ${fingerprint}`;
   }
 
   /**

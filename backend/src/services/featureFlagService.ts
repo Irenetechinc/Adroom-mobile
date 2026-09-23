@@ -93,7 +93,17 @@ export async function isSocialConnectionEnabled(userId: string, provider: string
 
 export async function isSocialComingSoon(userId: string, provider: string): Promise<boolean> {
   const normalized = normalizePlatform(provider);
-  return isEnabled(`social_${normalized}_coming_soon`, userId);
+  const flagKey = `social_${normalized}_coming_soon`;
+  const [flags, overrides] = await Promise.all([
+    fetchGlobalFlags(),
+    fetchUserOverrides(userId),
+  ]);
+  const override = overrides.find((entry) => entry.flag_key === flagKey);
+  if (override) return override.enabled;
+  const flag = flags.find((entry) => entry.flag_key === flagKey);
+  // Coming-soon is opt-in. Older migrations did not create these flags, and
+  // an absent flag must not hide a provider or block an existing connection.
+  return flag?.enabled === true;
 }
 
 /** Returns all global flags (for admin & mobile list endpoint). */

@@ -7,3 +7,4 @@
 - [Expo validation environment](expo-validation-environment.md) — this workspace sets NODE_ENV=production, so dev binaries are omitted during local package installs; use clean-install and Expo Doctor checks accordingly.
 - [Conversation schema compatibility](conversation-schema-compatibility.md) — keep Supabase conversation tables and lead-message timestamps aligned with backend readers and mobile realtime.
 - [WhatsApp live sessions](whatsapp-live-sessions.md) — Baileys inbound activity needs a retained live socket; temporary auth bundles do not provide reliable message history.
+- [Backend dependency verification](package-management-backend.md) — nested backend installs should use the backend workflow; root package-manager installs can create unrelated lockfile drift.

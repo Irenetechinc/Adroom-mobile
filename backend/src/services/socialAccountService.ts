@@ -150,7 +150,7 @@ export class SocialAccountService {
         external_id: message.externalId,
         sender_id: message.senderId,
         message: message.text,
-        received_at: message.timestamp,
+        message_timestamp: message.timestamp,
       }, { onConflict: 'user_id,provider,external_id' });
     if (error && !/relation .* does not exist|column .* does not exist/i.test(error.message)) {
       console.error(`[SocialAccountService] WhatsApp inbound persistence failed: ${error.message}`);
@@ -619,48 +619,37 @@ export class SocialAccountService {
             { connectionRetries: 3 },
           );
           await client.connect();
-          const me = await client.getMe();
+           const recipient = requestedRecipient;
+           try {
+             await client.invoke(new telegram.Api.messages.SetTyping({
+               peer: recipient,
+               action: new telegram.Api.SendMessageTypingAction(),
+             }));
+           } catch {
+             // Typing indicators are best-effort and vary by Telegram peer.
+           }
           const result = mediaUrl
-            ? await client.sendFile(me, { file: mediaUrl, caption: text.slice(0, 4000) })
-            : await client.sendMessage(me, { message: text.slice(0, 4000) });
+             ? await client.sendFile(recipient, { file: mediaUrl, caption: text.slice(0, 4000) })
+             : await client.sendMessage(recipient, { message: text.slice(0, 4000) });
           await client.disconnect();
           await this.recordSuccess(userId, provider);
           return { id: String(result?.id || `telegram:${Date.now()}`), url: credential.handle ? `https://t.me/${String(credential.handle).replace(/^@/, '')}` : undefined };
         }
 
         if (provider === 'whatsapp_personal') {
-          let baileys: any;
-          try { baileys = require('@whiskeysockets/baileys'); } catch { throw new Error('WhatsApp pairing service is not installed.'); }
-          const tempDir = path.join(os.tmpdir(), 'adroom-whatsapp-publish', crypto.randomUUID());
-          await fs.mkdir(tempDir, { recursive: true });
-          try {
-            for (const [file, encoded] of Object.entries(credential.bundle || {})) {
-              await fs.writeFile(path.join(tempDir, file), Buffer.from(String(encoded), 'base64'));
-            }
-            const { state, saveCreds } = await baileys.useMultiFileAuthState(tempDir);
-            const sock = baileys.default({ auth: state, printQRInTerminal: false });
-            sock.ev.on('creds.update', saveCreds);
-            await new Promise<void>((resolve, reject) => {
-              const timer = setTimeout(() => reject(new Error('WhatsApp connection timed out.')), 30000);
-              sock.ev.on('connection.update', (update: any) => {
-                if (update.connection === 'open') { clearTimeout(timer); resolve(); }
-                if (update.connection === 'close') { clearTimeout(timer); reject(new Error('WhatsApp connection closed.')); }
-              });
-            });
-            const phone = requestedRecipient;
-            const jid = phone.includes('@') ? phone : `${phone.replace(/\D/g, '')}@s.whatsapp.net`;
-            await sock.sendPresenceUpdate?.('composing', jid);
-            await new Promise((resolve) => setTimeout(resolve, 500 + Math.floor(Math.random() * 1200)));
-            const message = mediaUrl
-              ? { document: { url: mediaUrl }, fileName: 'adirum-creative', caption: text.slice(0, 4000) }
-              : { text: text.slice(0, 4000) };
-            const result = await sock.sendMessage(jid, message);
-            sock.end(undefined);
-            await this.recordSuccess(userId, provider);
-            return { id: String(result?.key?.id || `whatsapp:${Date.now()}`) };
-          } finally {
-            await fs.rm(tempDir, { recursive: true, force: true });
-          }
+           const liveSocket = await this.restoreWhatsAppSocket(userId, credential);
+           if (!liveSocket) throw new Error('WhatsApp live session is not connected. Reconnect the account and try again.');
+           const jid = requestedRecipient.includes('@')
+             ? requestedRecipient
+             : `${requestedRecipient.replace(/\D/g, '')}@s.whatsapp.net`;
+           await liveSocket.sendPresenceUpdate?.('composing', jid);
+           await new Promise((resolve) => setTimeout(resolve, 500 + Math.floor(Math.random() * 1200)));
+           const message = mediaUrl
+             ? { document: { url: mediaUrl }, fileName: 'adirum-creative', caption: text.slice(0, 4000) }
+             : { text: text.slice(0, 4000) };
+           const result = await liveSocket.sendMessage(jid, message);
+           await this.recordSuccess(userId, provider);
+           return { id: String(result?.key?.id || `whatsapp:${Date.now()}`) };
         }
 
         const exec = promisify(execFile);
@@ -1029,16 +1018,16 @@ export class SocialAccountService {
       await this.restoreWhatsAppSocket(userId, credential);
       const persisted = await this.supabase
         .from('personal_inbound_messages')
-        .select('external_id, sender_id, message, received_at')
+         .select('external_id, sender_id, message, message_timestamp')
         .eq('user_id', userId)
         .eq('provider', 'whatsapp_personal')
-        .order('received_at', { ascending: false })
+         .order('message_timestamp', { ascending: false })
         .limit(Math.min(100, Math.max(1, limit)));
       const persistedMessages: PersonalInboundMessage[] = (persisted.data || []).map((message: any) => ({
         externalId: String(message.external_id),
         senderId: String(message.sender_id),
         text: String(message.message || ''),
-        timestamp: String(message.received_at),
+         timestamp: String(message.message_timestamp),
       }));
       const messages = [...persistedMessages, ...(this.whatsappInbound.get(userId) || [])]
         .filter((message, index, all) => all.findIndex((candidate) => candidate.externalId === message.externalId) === index);

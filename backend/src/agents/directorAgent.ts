@@ -196,7 +196,10 @@ OUTPUT JSON:
 `;
 
     const response = await this.ai.generateStrategy({}, prompt);
-    const direction: VisualDirection = response.parsedJson || this.getDefaultDirection(params.userId, params.product);
+    const direction: VisualDirection = response.parsedJson;
+    if (!direction) {
+      throw new Error('Director could not generate a visual direction from current intelligence.');
+    }
 
     direction.unique_fingerprint = userSeed;
 
@@ -258,32 +261,4 @@ OUTPUT JSON:
     return (data?.visual_identity as VisualDirection) || null;
   }
 
-  private getDefaultDirection(userId: string, product: any): VisualDirection {
-    const seed = crypto.createHash('sha256').update(`${userId}-default-${Date.now()}`).digest('hex').slice(0, 14);
-    return {
-      color_palette: { primary: '#00F0FF', secondary: '#1E293B', accent: '#F59E0B', background: '#0B0F19', text: '#F1F5F9' },
-      typography: { style: 'bold-impact', weight: 'heavy', size_scale: 'large-dominant' },
-      visual_mood: 'confident-modern',
-      composition_style: 'product-hero-centered',
-      motion_style: 'fast-cut-kinetic',
-      lighting: 'high-key studio clean',
-      texture: 'clean-minimal-white',
-      unique_fingerprint: seed,
-      image_generation_prefix: `Commercial product photography, ${product?.product_name || product?.name || 'product'}, clean studio, high contrast, cinematic quality`,
-      video_style_guide: 'Fast cuts every 2-3 seconds, bold text overlays, product hero shots, high energy',
-      platform_adaptations: {
-        tiktok: 'Vertical 9:16, hook in first 2s, trending-style text overlays',
-        instagram: 'Square or vertical, lifestyle aesthetic, save-worthy composition',
-        facebook: 'Horizontal 16:9, story-driven, captions visible',
-        linkedin: 'Professional tone, clean corporate aesthetic',
-        twitter: 'Bold headline image, text-readable at small size',
-      },
-      emotional_tone: 'confident',
-      trust_elements: ['Clear product visibility', 'Clean professional presentation'],
-      avoid_elements: ['Cluttered backgrounds', 'Low-quality textures'],
-      should_use_user_video: false,
-      user_video_rationale: 'Default: generating optimized video from product details',
-      reasoning: 'Default direction — will be refined as real-time intelligence data is collected',
-    };
-  }
 }

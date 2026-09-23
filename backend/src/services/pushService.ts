@@ -403,6 +403,15 @@ export const pushService = {
     const normalizedPlatform = normalizePlatform(platform);
     const personal = isPersonalProvider(normalizedPlatform);
 
+    // Coming-soon providers are not actionable connections. This guard is
+    // intentionally evaluated at send time so an admin toggle takes effect
+    // without waiting for a token-refresh job to be recreated.
+    const { isSocialComingSoon } = await import('./featureFlagService');
+    if (await isSocialComingSoon(userId, normalizedPlatform)) {
+      console.log(`[PushService] Skipping reconnect warning for ${normalizedPlatform} user ${userId} — provider is coming soon`);
+      return;
+    }
+
     // A refresh warning is actionable only when the account is selected by a
     // running strategy and was actually connected. This prevents warnings for
     // coming-soon, disconnected, or never-selected platforms.
