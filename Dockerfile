@@ -1,25 +1,33 @@
-# Use Node.js 20 LTS
-FROM node:20-bookworm-slim
+# Build the backend with compiler tooling isolated from the runtime image.
+FROM node:20-bookworm-slim AS builder
 
-# Set working directory to backend
 WORKDIR /app
+ENV NODE_ENV=development
 
-# Copy backend package files
+# Install the exact backend dependency graph, including build-only packages.
 COPY backend/package*.json ./
-
-# Install dependencies (deterministic, clean install from package-lock.json).
-# The backend lockfile is generated with the repository's legacy-peer-deps
-# policy because Baileys declares media peers (including sharp).
 RUN npm ci --legacy-peer-deps --include=dev
 
-# Copy backend source code
-COPY backend/ .
+COPY backend/ ./
 
-# Build TypeScript code
+# Fail at the install/build boundary if the compiler was not installed.
+RUN test -x node_modules/.bin/tsc
 RUN npm run build
 
-# Expose the port the app runs on
-EXPOSE 8000
+# Production image: no TypeScript, ts-node, or @types packages.
+FROM node:20-bookworm-slim AS runtime
 
-# Start the server
-CMD ["npm", "start"]
+WORKDIR /app
+ENV NODE_ENV=production
+
+COPY backend/package*.json ./
+RUN npm ci --legacy-peer-deps --omit=dev --ignore-scripts
+
+COPY --from=builder /app/dist ./dist
+COPY --from=builder /app/public /public
+
+# The admin route resolves this file from the container root at runtime.
+COPY admin-critic.html /admin-critic.html
+
+EXPOSE 8000
+CMD ["node", "dist/server.js"]
