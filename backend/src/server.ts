@@ -29,7 +29,7 @@ import {
   isSocialConnectionEnabled,
   isSocialComingSoon,
 } from './services/featureFlagService';
-import adminRouter from './admin/adminRouter';
+import adminRouter, { auth as adminAuth } from './admin/adminRouter';
 import authPagesRouter from './auth/authPagesRouter';
 import { popOAuthEntry, setOAuthCode, setOAuthError } from './auth/oauthStore';
 import { validateEmailAsync } from './utils/emailValidator';
@@ -3772,7 +3772,7 @@ app.get('/api/admin/cma/stats', async (req, res) => {
  * Token Refresh — Admin: view token expiry status for all connected platforms
  * GET /api/admin/tokens/status
  */
-app.get('/api/admin/tokens/status', async (req, res) => {
+app.get('/api/admin/tokens/status', adminAuth, async (req, res) => {
   try {
     const supabase = getServiceSupabaseClient();
     const now = new Date();
@@ -3823,7 +3823,7 @@ app.get('/api/admin/tokens/status', async (req, res) => {
  * Token Refresh — Admin: manually trigger the refresh sweep immediately
  * POST /api/admin/tokens/refresh
  */
-app.post('/api/admin/tokens/refresh', async (req, res) => {
+app.post('/api/admin/tokens/refresh', adminAuth, async (req, res) => {
   try {
     const { tokenRefreshService: trs } = await import('./services/tokenRefreshService');
     res.json({ ok: true, message: 'Token refresh sweep started' });
@@ -3842,7 +3842,7 @@ app.post('/api/admin/tokens/refresh', async (req, res) => {
  * Accessible at /admin/critic with no auth (internal Replit only) or with
  * ?token=<ADMIN_SECRET> for Railway prod.
  */
-app.get('/admin/critic', (req, res) => {
+app.get('/admin/critic', adminAuth, (req, res) => {
   const fs = require('fs');
   const path = require('path');
   const file = path.join(__dirname, '../../admin-critic.html');
@@ -3858,7 +3858,7 @@ app.get('/admin/critic', (req, res) => {
 /**
  * GET /api/admin/critic/stats — aggregate critic stats across ALL users + APMA.
  */
-app.get('/api/admin/critic/stats', async (_req, res) => {
+app.get('/api/admin/critic/stats', adminAuth, async (_req, res) => {
   try {
     const { criticAgentService } = await import('./services/criticAgentService');
     const stats = await criticAgentService.getStats();
@@ -3871,7 +3871,7 @@ app.get('/api/admin/critic/stats', async (_req, res) => {
 /**
  * GET /api/admin/critic/heatmap — 7-day rolling avg per agent×platform (all users).
  */
-app.get('/api/admin/critic/heatmap', async (_req, res) => {
+app.get('/api/admin/critic/heatmap', adminAuth, async (_req, res) => {
   try {
     const { criticAgentService } = await import('./services/criticAgentService');
     const cells = await criticAgentService.getHeatmapData(); // no userId = all users
@@ -3885,7 +3885,7 @@ app.get('/api/admin/critic/heatmap', async (_req, res) => {
  * GET /api/admin/critic/logs — recent critic evaluation logs.
  * ?limit=50&verdict=rejected&agent=SALESMAN
  */
-app.get('/api/admin/critic/logs', async (req, res) => {
+app.get('/api/admin/critic/logs', adminAuth, async (req, res) => {
   try {
     const limit    = Math.min(parseInt(String(req.query.limit  ?? '50')), 200);
     const verdict  = req.query.verdict as string | undefined;
@@ -3901,7 +3901,7 @@ app.get('/api/admin/critic/logs', async (req, res) => {
 /**
  * POST /api/admin/critic/improve/:agentType — trigger AI auto-improvement coaching.
  */
-app.post('/api/admin/critic/improve/:agentType', async (req, res) => {
+app.post('/api/admin/critic/improve/:agentType', adminAuth, async (req, res) => {
   try {
     const { agentType } = req.params;
     const { criticAgentService } = await import('./services/criticAgentService');
@@ -3915,7 +3915,7 @@ app.post('/api/admin/critic/improve/:agentType', async (req, res) => {
 /**
  * GET /api/admin/critic/thresholds — get auto-pause thresholds per agent.
  */
-app.get('/api/admin/critic/thresholds', async (_req, res) => {
+app.get('/api/admin/critic/thresholds', adminAuth, async (_req, res) => {
   try {
     const { criticAgentService } = await import('./services/criticAgentService');
     const thresholds = await criticAgentService.getPauseThresholds();
@@ -3929,7 +3929,7 @@ app.get('/api/admin/critic/thresholds', async (_req, res) => {
  * PUT /api/admin/critic/thresholds — set auto-pause score threshold per agent.
  * Body: { "SALESMAN": 40, "AWARENESS": 45 }
  */
-app.put('/api/admin/critic/thresholds', async (req, res) => {
+app.put('/api/admin/critic/thresholds', adminAuth, async (req, res) => {
   try {
     const thresholds = req.body;
     if (!thresholds || typeof thresholds !== 'object') {

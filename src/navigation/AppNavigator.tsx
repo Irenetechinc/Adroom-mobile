@@ -31,6 +31,7 @@ import NotificationsScreen from '../screens/NotificationsScreen';
 import AboutScreen from '../screens/AboutScreen';
 import ReferralScreen from '../screens/ReferralScreen';
 import LeadsScreen from '../screens/LeadsScreen';
+import LeadConversationScreen from '../screens/LeadConversationScreen';
 import CallLogsScreen from '../screens/CallLogsScreen';
 import ShipmentsScreen from '../screens/ShipmentsScreen';
 import OutreachPreferencesScreen from '../screens/OutreachPreferencesScreen';
@@ -187,6 +188,11 @@ export default function AppNavigator() {
             <Stack.Screen
               name="Leads"
               component={LeadsScreen}
+              options={{ headerShown: false }}
+            />
+            <Stack.Screen
+              name="LeadConversation"
+              component={LeadConversationScreen}
               options={{ headerShown: false }}
             />
             <Stack.Screen name="CallLogs" component={CallLogsScreen} options={{ headerShown: false }} />

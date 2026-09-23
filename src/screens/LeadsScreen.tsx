@@ -289,8 +289,8 @@ export default function LeadsScreen({ route }: Props) {
   const strategyId = route?.params?.strategyId ?? null;
   const platformFilter = route?.params?.platform ?? null;
 
-  const openConversation = (_lead: Lead) => {
-    navigation.navigate('Interactions' as any);
+  const openConversation = (lead: Lead) => {
+    navigation.navigate('LeadConversation', { lead });
   };
 
   const [leads, setLeads] = useState<Lead[]>([]);

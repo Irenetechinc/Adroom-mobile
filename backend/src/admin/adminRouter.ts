@@ -48,7 +48,7 @@ function verifyToken(token: string): { e: string } | null {
 }
 
 // ─── Admin auth middleware ────────────────────────────────────────────────────
-function auth(req: Request, res: Response, next: NextFunction) {
+export function auth(req: Request, res: Response, next: NextFunction) {
   const token = req.headers.authorization?.replace('Bearer ', '') || req.query.token as string;
   if (!token) return res.status(401).json({ error: 'Unauthorized' });
   const payload = verifyToken(token);
