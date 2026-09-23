@@ -94,6 +94,8 @@ export class SocialAccountService {
   private readonly whatsappSockets = new Map<string, any>();
   private readonly whatsappAuthDirs = new Map<string, string>();
   private readonly whatsappPersistTimers = new Map<string, NodeJS.Timeout>();
+  private readonly whatsappReconnectTimers = new Map<string, NodeJS.Timeout>();
+  private readonly whatsappReconnectAttempts = new Map<string, number>();
   private readonly whatsappInbound = new Map<string, PersonalInboundMessage[]>();
 
   /**
@@ -178,18 +180,31 @@ export class SocialAccountService {
   }
 
   private async persistWhatsAppInbound(userId: string, message: PersonalInboundMessage): Promise<void> {
+    await this.persistInboundMessages(userId, 'whatsapp_personal', [message]);
+  }
+
+  private async persistInboundMessages(
+    userId: string,
+    provider: string,
+    messages: PersonalInboundMessage[],
+  ): Promise<void> {
+    if (!messages.length) return;
+    const rows = messages.map((message) => ({
+      user_id: userId,
+      provider: normalizePlatform(provider),
+      external_id: message.externalId,
+      sender_id: message.senderId,
+      message: message.text,
+      message_timestamp: message.timestamp,
+    }));
     const { error } = await this.supabase
       .from('personal_inbound_messages')
-      .upsert({
-        user_id: userId,
-        provider: 'whatsapp_personal',
-        external_id: message.externalId,
-        sender_id: message.senderId,
-        message: message.text,
-        message_timestamp: message.timestamp,
-      }, { onConflict: 'user_id,provider,external_id' });
-    if (error && !/relation .* does not exist|column .* does not exist/i.test(error.message)) {
-      console.error(`[SocialAccountService] WhatsApp inbound persistence failed: ${error.message}`);
+      .upsert(rows, { onConflict: 'user_id,provider,external_id' });
+    if (error) {
+      console.error(
+        `[SocialAccountService] ${normalizePlatform(provider)} inbound persistence failed `
+        + `(user=${userId}, count=${messages.length}): ${error.message}`,
+      );
     }
   }
 
@@ -304,9 +319,25 @@ export class SocialAccountService {
     this.whatsappAuthDirs.set(userId, authDir);
     sock.ev.on('connection.update', async (update: any) => {
       if (update.connection !== 'close') return;
+      const statusCode = Number(update?.lastDisconnect?.error?.output?.statusCode || 0);
+      const terminal = [401, 403, 405].includes(statusCode);
       if (this.whatsappSockets.get(userId) === sock) this.whatsappSockets.delete(userId);
       if (this.whatsappAuthDirs.get(userId) === authDir) this.whatsappAuthDirs.delete(userId);
       await fs.rm(authDir, { recursive: true, force: true }).catch(() => {});
+      if (terminal) {
+        const message = statusCode === 403
+          ? 'WhatsApp session was rejected or banned. Reconnect the account.'
+          : 'WhatsApp session expired or was logged out. Reconnect the account.';
+        console.error(`[SocialAccountService] WhatsApp session for ${userId} requires reconnect (${statusCode || 'auth failure'})`);
+        await this.supabase.from('social_account_connections').update({
+          status: 'needs_reconnect',
+          last_error: message,
+          updated_at: new Date().toISOString(),
+        }).eq('user_id', userId).eq('provider', 'whatsapp_personal');
+        this.whatsappReconnectAttempts.delete(userId);
+      } else {
+        this.scheduleWhatsAppReconnect(userId);
+      }
     });
 
     try {
@@ -316,6 +347,7 @@ export class SocialAccountService {
           if (update.connection === 'open') {
             clearTimeout(timer);
             this.whatsappSockets.set(userId, sock);
+            this.whatsappReconnectAttempts.delete(userId);
             resolve();
           }
           if (update.connection === 'close') {
@@ -330,6 +362,58 @@ export class SocialAccountService {
       this.whatsappAuthDirs.delete(userId);
       await fs.rm(authDir, { recursive: true, force: true });
       throw error;
+    }
+  }
+
+  private scheduleWhatsAppReconnect(userId: string): void {
+    if (this.whatsappReconnectTimers.has(userId)) return;
+    const attempt = Math.min(6, Number(this.whatsappReconnectAttempts.get(userId) || 0));
+    const delayMs = Math.min(60_000, 2_000 * Math.pow(2, attempt));
+    this.whatsappReconnectAttempts.set(userId, attempt + 1);
+    const timer = setTimeout(async () => {
+      this.whatsappReconnectTimers.delete(userId);
+      try {
+        const row = await this.get(userId, 'whatsapp_personal');
+        if (!row || row.status !== 'connected') return;
+        const credential = decrypt(row);
+        if (!credential) throw new Error('Encrypted WhatsApp credentials are unavailable.');
+        await this.restoreWhatsAppSocket(userId, credential);
+        console.log(`[SocialAccountService] WhatsApp session restored for ${userId}`);
+      } catch (error: any) {
+        console.error(`[SocialAccountService] WhatsApp reconnect attempt failed for ${userId}: ${error.message}`);
+        const row = await this.get(userId, 'whatsapp_personal').catch(() => null);
+        if (row?.status === 'connected') this.scheduleWhatsAppReconnect(userId);
+      }
+    }, delayMs);
+    this.whatsappReconnectTimers.set(userId, timer);
+    console.warn(`[SocialAccountService] Scheduling WhatsApp reconnect for ${userId} in ${delayMs}ms`);
+  }
+
+  /**
+   * Rehydrate every connected WhatsApp auth bundle after a Railway process
+   * restart. The encrypted Supabase bundle is the source of truth; the live
+   * socket is deliberately process-local and rebuilt here.
+   */
+  async restoreConnectedWhatsAppSockets(): Promise<void> {
+    const { data, error } = await this.supabase
+      .from('social_account_connections')
+      .select('user_id, status, credential_ciphertext, credential_iv, credential_tag')
+      .eq('provider', 'whatsapp_personal')
+      .eq('status', 'connected');
+    if (error) {
+      console.error(`[SocialAccountService] WhatsApp startup restore query failed: ${error.message}`);
+      return;
+    }
+    for (const row of data || []) {
+      try {
+        const credential = decrypt(row);
+        if (!credential) throw new Error('Encrypted auth bundle is unavailable.');
+        await this.restoreWhatsAppSocket(row.user_id, credential);
+        console.log(`[SocialAccountService] Restored WhatsApp live session for ${row.user_id}`);
+      } catch (restoreError: any) {
+        console.error(`[SocialAccountService] WhatsApp startup restore failed for ${row.user_id}: ${restoreError.message}`);
+        this.scheduleWhatsAppReconnect(row.user_id);
+      }
     }
   }
 
@@ -445,6 +529,13 @@ export class SocialAccountService {
 
   async remove(userId: string, provider: string): Promise<void> {
     provider = normalizePlatform(provider);
+    if (provider === 'delta_chat') {
+      // Let the configured bridge release the account before deleting the
+      // local opaque credential. If it cannot acknowledge disconnect, keep the
+      // local row so an operator can retry instead of orphaning the bridge
+      // session.
+      await this.deltaChatRequest(userId, 'disconnect', {});
+    }
     const { error } = await this.supabase
       .from('social_account_connections')
       .delete()
@@ -455,6 +546,10 @@ export class SocialAccountService {
       .eq('user_id', userId)
       .eq('platform', provider);
     if (provider === 'whatsapp_personal') {
+      const reconnectTimer = this.whatsappReconnectTimers.get(userId);
+      if (reconnectTimer) clearTimeout(reconnectTimer);
+      this.whatsappReconnectTimers.delete(userId);
+      this.whatsappReconnectAttempts.delete(userId);
       const socket = this.whatsappSockets.get(userId);
       try { socket?.end(undefined); } catch {}
       this.whatsappSockets.delete(userId);
@@ -469,7 +564,9 @@ export class SocialAccountService {
     provider = normalizePlatform(provider);
     if (!(await isFeatureEnabled(`social_${provider}_connections`, userId))) return false;
     const row = await this.get(userId, provider);
-    if (!row || !['connected', 'error', 'paused'].includes(String(row.status))) return false;
+    // A safety pause is an intentional stop, not a transient error. It must
+    // remain blocked until an explicit reconnect/admin action clears it.
+    if (!row || !['connected', 'error'].includes(String(row.status))) return false;
     if (row.cooldown_until && new Date(row.cooldown_until).getTime() > Date.now()) return false;
     // A transient error or an expired circuit-breaker cooldown is recoverable.
     // Do not leave an account permanently unusable after one failed send.
@@ -1100,7 +1197,8 @@ export class SocialAccountService {
            await new Promise((resolve) => setTimeout(resolve, 1200 + Math.floor(Math.random() * 1800)));
            try { await client.markAsRead?.(recipient); } catch {}
          }
-         return inbound;
+          await this.persistInboundMessages(userId, provider, inbound);
+          return inbound;
       } finally {
         await client.disconnect();
       }
@@ -1118,7 +1216,7 @@ export class SocialAccountService {
           '--max-messages', String(Math.min(100, Math.max(1, limit))),
           '--json',
         ], { timeout: 15000 });
-        return result.stdout
+        const inbound = result.stdout
           .split(/\r?\n/)
           .map((line) => {
             try { return JSON.parse(line); } catch { return null; }
@@ -1139,6 +1237,8 @@ export class SocialAccountService {
           .filter((message: PersonalInboundMessage) =>
             message.text && (!recipient || message.senderId === recipient),
           );
+        await this.persistInboundMessages(userId, provider, inbound);
+        return inbound;
       } finally {
         await fs.rm(configDir, { recursive: true, force: true });
       }
@@ -1158,7 +1258,7 @@ export class SocialAccountService {
       if (!convoResponse.ok || !convo.convo?.id) return [];
       const messagesResponse = await fetch(`https://bsky.social/xrpc/chat.bsky.convo.getMessages?convoId=${encodeURIComponent(convo.convo.id)}&limit=${Math.min(50, Math.max(1, limit))}`, { headers });
       const messages: any = await messagesResponse.json().catch(() => ({}));
-      return (messages?.messages || [])
+       const inbound = (messages?.messages || [])
         .filter((message: any) => message?.sender?.did !== credential.did && String(message?.message?.text || '').trim())
         .map((message: any) => ({
           externalId: `bluesky:${message.id}`,
@@ -1166,12 +1266,14 @@ export class SocialAccountService {
           text: String(message.message.text).trim(),
           timestamp: message.sentAt || new Date().toISOString(),
         }));
+       await this.persistInboundMessages(userId, provider, inbound);
+       return inbound;
     }
 
     if (provider === 'delta_chat') {
       const result = await this.deltaChatRequest(userId, 'receive', { recipient, limit });
       const messages = Array.isArray(result) ? result : (result?.messages || []);
-      return messages
+      const inbound = messages
         .map((message: any) => ({
           externalId: `delta-chat:${message.id || message.messageId || crypto.createHash('sha256').update(JSON.stringify(message)).digest('hex').slice(0, 20)}`,
           senderId: String(message.senderId || message.sender || recipient),
@@ -1179,6 +1281,8 @@ export class SocialAccountService {
           timestamp: message.timestamp || message.createdAt || new Date().toISOString(),
         }))
         .filter((message: PersonalInboundMessage) => Boolean(message.text));
+      await this.persistInboundMessages(userId, provider, inbound);
+      return inbound;
     }
 
     // Baileys does not expose reliable historical message retrieval for a
@@ -1186,13 +1290,17 @@ export class SocialAccountService {
     // the connection listener; do not fabricate an empty successful poll.
     if (provider === 'whatsapp_personal') {
       await this.restoreWhatsAppSocket(userId, credential);
-      const persisted = await this.supabase
+       const persisted = await this.supabase
         .from('personal_inbound_messages')
          .select('external_id, sender_id, message, message_timestamp')
         .eq('user_id', userId)
         .eq('provider', 'whatsapp_personal')
          .order('message_timestamp', { ascending: false })
         .limit(Math.min(100, Math.max(1, limit)));
+       if (persisted.error) {
+         console.error(`[SocialAccountService] WhatsApp inbound history read failed: ${persisted.error.message}`);
+         throw new Error(`WhatsApp inbound history is unavailable: ${persisted.error.message}`);
+       }
       const persistedMessages: PersonalInboundMessage[] = (persisted.data || []).map((message: any) => ({
         externalId: String(message.external_id),
         senderId: String(message.sender_id),
@@ -1235,17 +1343,43 @@ export class SocialAccountService {
   private async deltaChatRequest(userId: string, operation: string, body: Record<string, unknown>): Promise<any> {
     const bridgeUrl = String(process.env.DELTA_CHAT_BRIDGE_URL || '').replace(/\/+$/, '');
     if (!bridgeUrl) throw new Error('Delta Chat is not configured on this server. Ask the administrator to configure the Delta Chat bridge.');
+    if (!['connect', 'send', 'publish', 'receive', 'disconnect'].includes(operation)) {
+      throw new Error(`Delta Chat operation "${operation}" is not supported.`);
+    }
+    let parsedUrl: URL;
+    try {
+      parsedUrl = new URL(bridgeUrl);
+    } catch {
+      throw new Error('DELTA_CHAT_BRIDGE_URL is invalid. Use an https URL.');
+    }
+    if (!['https:', 'http:'].includes(parsedUrl.protocol)) {
+      throw new Error('DELTA_CHAT_BRIDGE_URL must use http or https.');
+    }
     const credential = operation === 'connect' ? undefined : (await this.credentials(userId, 'delta_chat'))?.bridgeCredential;
-    const response = await fetch(`${bridgeUrl}/${operation}`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        ...(process.env.DELTA_CHAT_BRIDGE_TOKEN ? { Authorization: `Bearer ${process.env.DELTA_CHAT_BRIDGE_TOKEN}` } : {}),
-      },
-      body: JSON.stringify({ userId, credential, ...body }),
-    });
+    let response: any;
+    try {
+      response = await fetch(`${bridgeUrl}/${operation}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(process.env.DELTA_CHAT_BRIDGE_TOKEN ? { Authorization: `Bearer ${process.env.DELTA_CHAT_BRIDGE_TOKEN}` } : {}),
+        },
+        body: JSON.stringify({ userId, credential, ...body }),
+        signal: AbortSignal.timeout(15_000),
+      });
+    } catch (error: any) {
+      if (error?.name === 'TimeoutError' || error?.name === 'AbortError') {
+        throw new Error(`Delta Chat bridge timed out during ${operation}.`);
+      }
+      throw new Error(`Delta Chat bridge unavailable during ${operation}.`);
+    }
     const data: any = await response.json().catch(() => ({}));
-    if (!response.ok) throw new Error(data.error || data.message || `Delta Chat ${operation} failed.`);
+    if (!response.ok) {
+      if (response.status === 401 || response.status === 403) {
+        throw new Error(`Delta Chat bridge authentication failed during ${operation}.`);
+      }
+      throw new Error(data.error || data.message || `Delta Chat ${operation} failed.`);
+    }
     return data;
   }
 }

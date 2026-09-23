@@ -621,6 +621,7 @@ export const pushService = {
 
   async sendTest(userId: string): Promise<{
     tokensFound: number;
+    projectIds: Array<{ project_id: string | null; active_count: number }>;
     result: ExpoSendResult;
     devices: Array<{ device_id: string; platform: string; app_version: string | null; last_seen_at: string }>;
   }> {
@@ -640,6 +641,12 @@ export const pushService = {
       app_version: r.app_version,
       last_seen_at: r.last_seen_at,
     }));
+    const projectCounts = new Map<string, number>();
+    for (const row of rows ?? []) {
+      const projectId = String(row.project_id || '').trim() || null;
+      const key = projectId || '(unscoped)';
+      projectCounts.set(key, (projectCounts.get(key) || 0) + 1);
+    }
 
     const result = await sendExpoPush(tokens, {
       title: 'Adirum AI Test Push',
@@ -650,6 +657,14 @@ export const pushService = {
 
     // Don't insert into user_notifications for test pushes — keep the
     // bell uncluttered.
-    return { tokensFound: tokens.length, result, devices };
+    return {
+      tokensFound: tokens.length,
+      projectIds: Array.from(projectCounts.entries()).map(([project_id, active_count]) => ({
+        project_id: project_id === '(unscoped)' ? null : project_id,
+        active_count,
+      })),
+      result,
+      devices,
+    };
   },
 };

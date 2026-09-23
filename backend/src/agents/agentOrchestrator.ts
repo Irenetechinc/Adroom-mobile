@@ -234,6 +234,18 @@ export class AgentOrchestrator {
                     }).eq('id', task.id);
                     continue;
                 }
+                if (
+                    isPersonalProvider(taskPlatform)
+                    && !['SEND_PERSONAL_MESSAGE', 'CONVERSATION_ENGAGE', 'INBOUND_REPLY'].includes(String(task.task_type))
+                ) {
+                    const reason = 'Personal platforms require an explicit recipient message task; public publishing is not allowed.';
+                    console.info(`[Orchestrator] Task ${task.id} blocked — ${reason}`);
+                    await this.supabase.from('agent_tasks').update({
+                        status: 'skipped',
+                        error_message: reason,
+                    }).eq('id', task.id);
+                    continue;
+                }
                 let connectionReady = false;
                 if (isPersonalProvider(taskPlatform)) {
                     const personal = await socialAccountService.get(task.user_id, taskPlatform);

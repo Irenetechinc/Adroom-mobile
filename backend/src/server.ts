@@ -174,6 +174,7 @@ app.get('/api/social-connections/availability', async (req, res) => {
       {
         enabled: await isSocialConnectionEnabled(user.id, provider),
         comingSoon: await isSocialComingSoon(user.id, provider),
+         serverConfigured: provider !== 'delta_chat' || Boolean(String(process.env.DELTA_CHAT_BRIDGE_URL || '').trim()),
       },
     ])));
     return res.json({ availability });
@@ -267,8 +268,8 @@ app.post('/api/social-connections/telegram/verify', async (req, res) => {
     const connection = await socialAccountService.verifyTelegram(requestId, code, password);
     return res.status(201).json({ connection });
   } catch (error: any) {
-    return res.status(/not installed|not configured on this server/i.test(String(error?.message || '')) ? 503 : 400)
-      .json({ error: personalConnectionError(error, 'Signal') });
+      return res.status(/not installed|not configured on this server/i.test(String(error?.message || '')) ? 503 : 400)
+      .json({ error: personalConnectionError(error, 'Telegram') });
   }
 });
 
@@ -281,8 +282,8 @@ app.post('/api/social-connections/whatsapp-personal/start', async (req, res) => 
     if (!phone) return res.status(400).json({ error: 'Phone number is required.' });
     return res.json(await socialAccountService.startWhatsAppPairing(user.id, phone));
   } catch (error: any) {
-    return res.status(/not installed|not configured on this server/i.test(String(error?.message || '')) ? 503 : 400)
-      .json({ error: personalConnectionError(error, 'Signal') });
+      return res.status(/not installed|not configured on this server/i.test(String(error?.message || '')) ? 503 : 400)
+      .json({ error: personalConnectionError(error, 'WhatsApp') });
   }
 });
 
@@ -295,8 +296,8 @@ app.post('/api/social-connections/signal/start', async (req, res) => {
     if (!phone) return res.status(400).json({ error: 'Phone number is required.' });
     return res.json(await socialAccountService.startSignalVerification(user.id, phone));
   } catch (error: any) {
-    return res.status(/not configured on this server/i.test(String(error?.message || '')) ? 503 : 400)
-      .json({ error: personalConnectionError(error, 'Delta Chat') });
+      return res.status(/not configured on this server|not installed/i.test(String(error?.message || '')) ? 503 : 400)
+      .json({ error: personalConnectionError(error, 'Signal') });
   }
 });
 
@@ -4674,6 +4675,7 @@ app.post('/api/push/test', async (req, res) => {
       diagnosis,
       actionable,
       tokensFound: out.tokensFound,
+      projectIds: out.projectIds,
       devices: out.devices,
       expo: {
         ok: out.result.ok,
@@ -5660,6 +5662,11 @@ app.listen(PORT, async () => {
   // Ensure required Supabase Storage buckets exist (fixes "Bucket not found" on
   // fresh deployments where the bucket was never manually created).
   await ensureStorageBuckets();
+
+  // Restore encrypted WhatsApp auth bundles into live Baileys sockets before
+  // background inbound polling starts. Failure is logged and retried with
+  // bounded backoff; it must not prevent the API from serving health checks.
+  await socialAccountService.restoreConnectedWhatsAppSockets();
 
   // Restore CMA persisted state (economy override etc) before starting loops
   try {

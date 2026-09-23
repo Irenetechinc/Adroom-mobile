@@ -176,11 +176,14 @@ export class ConversationAgent {
          const { data: sharedProfile } = lead?.id
            ? await this.supabase.from('lead_sales_profiles').select('profile').eq('user_id', signal.userId).eq('lead_id', lead.id).maybeSingle()
            : { data: null };
-        await this.supabase.from('agent_tasks').insert({
+         const isPersonal = PERSONAL_PLATFORMS.has(signal.platform);
+         await this.supabase.from('agent_tasks').insert({
           strategy_id: signal.strategyId,
           user_id: signal.userId,
           agent_type: signal.goal,
-          task_type: 'CONVERSATION_ENGAGE',
+           // Personal channels are explicit recipient actions. Public
+           // channels retain the conversation-engagement task contract.
+           task_type: isPersonal ? 'SEND_PERSONAL_MESSAGE' : 'CONVERSATION_ENGAGE',
           platform: signal.platform,
           scheduled_at: new Date().toISOString(),
           status: 'pending',
@@ -195,6 +198,11 @@ export class ConversationAgent {
              text: signal.text,
              url: signal.url,
              goal: signal.goal,
+             action_type: isPersonal ? 'send_personal_message' : 'public_engagement',
+              provider: signal.platform,
+              selected_account: signal.platform,
+              conversation_id: signal.metadata?.conversation_id || null,
+              media: null,
            },
         });
       }

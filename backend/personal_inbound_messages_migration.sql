@@ -8,13 +8,13 @@ CREATE TABLE IF NOT EXISTS public.personal_inbound_messages (
   external_id TEXT NOT NULL,
   sender_id TEXT NOT NULL,
   message TEXT NOT NULL,
-  received_at TIMESTAMPTZ NOT NULL,
+  message_timestamp TIMESTAMPTZ NOT NULL,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   UNIQUE (user_id, provider, external_id)
 );
 
 CREATE INDEX IF NOT EXISTS personal_inbound_messages_lookup_idx
-  ON public.personal_inbound_messages (user_id, provider, received_at DESC);
+  ON public.personal_inbound_messages (user_id, provider, message_timestamp DESC);
 
 ALTER TABLE public.personal_inbound_messages ENABLE ROW LEVEL SECURITY;
 

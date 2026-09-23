@@ -357,7 +357,7 @@ class InboundDmService {
     }).catch(() => { /* best-effort */ });
 
     // ── Store inbound message ─────────────────────────────────────────────────
-    await this.supabase.from('lead_dm_messages').insert({
+    const { error: insertError } = await this.supabase.from('lead_dm_messages').insert({
       lead_id: lead.id,
       user_id: userId,
       direction: 'inbound',
@@ -369,6 +369,13 @@ class InboundDmService {
         sender_psid: msg.senderPsid,
       },
     });
+    if (insertError) {
+      // The unique expression index in the lead-message migration makes this
+      // race-safe when two pollers observe the same provider event.
+      if (/duplicate key|unique constraint/i.test(insertError.message)) return;
+      console.error(`[InboundDM] Inbound message persistence failed for ${msg.externalId}: ${insertError.message}`);
+      throw new Error(`Inbound message persistence failed: ${insertError.message}`);
+    }
 
     // ── AI: classify the reply and decide next action ─────────────────────────
     await this.scoreAndActOnReply(userId, lead, msg.text);

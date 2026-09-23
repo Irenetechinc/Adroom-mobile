@@ -225,7 +225,7 @@ Return valid JSON only with this schema:
             await this.executeInboundReply(taskId, task);
             return;
         }
-        if (task.task_type === 'CONVERSATION_ENGAGE') {
+        if (task.task_type === 'CONVERSATION_ENGAGE' || task.task_type === 'SEND_PERSONAL_MESSAGE') {
             await this.executeConversationEngage(taskId, task);
             return;
         }
@@ -446,9 +446,22 @@ Return valid JSON only with this schema:
     private async executeConversationEngage(taskId: string, task: any): Promise<void> {
         const content = task.content || {};
         const platform = normalizePlatform(task.platform);
-        const recipient = String(content.author_id || content.author_name || content.signal_id || '').trim();
+            const recipient = String(
+                content.recipient
+                || content.author_id
+                || (['telegram', 'whatsapp_personal', 'signal_personal', 'bluesky', 'delta_chat'].includes(platform)
+                  ? ''
+                  : content.author_name)
+                || content.signal_id
+                || '',
+            ).trim();
         if (!recipient) {
-            await this.failTask(taskId, 'Conversation engagement has no public recipient identity.');
+                await this.failTask(
+                    taskId,
+                    ['telegram', 'whatsapp_personal', 'signal_personal', 'bluesky', 'delta_chat'].includes(platform)
+                      ? 'Personal message task has no explicit recipient or conversation identifier.'
+                      : 'Conversation engagement has no public recipient identity.',
+                );
             return;
         }
 
@@ -507,7 +520,12 @@ Do not claim private facts or invent a relationship. Address the public signal d
                 message,
                 platform,
                 sequence_step: 1,
-                meta: { triggered_by: 'CONVERSATION_ENGAGE', signal_id: content.signal_id || null, sent },
+                meta: {
+                    triggered_by: task.task_type,
+                    action_type: content.action_type || 'public_engagement',
+                    signal_id: content.signal_id || null,
+                    sent,
+                },
             });
             await this.supabase.from('agent_leads').update({
                 stage: sent ? 'engaged' : 'identified',
