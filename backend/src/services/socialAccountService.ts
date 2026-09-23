@@ -78,7 +78,7 @@ function publicConnection(row: any): SocialConnectionPublic {
 export class SocialAccountService {
   private readonly supabase = getServiceSupabaseClient();
   private readonly pendingTelegram = new Map<string, any>();
-    private readonly pendingSignal = new Map<string, { userId: string; phone: string; createdAt: number }>();
+  private readonly pendingSignal = new Map<string, { userId: string; phone: string; createdAt: number; authDir: string }>();
   private readonly pendingWhatsApp = new Map<string, { userId: string; phone: string; sock: any; authDir: string }>();
 
   private async assertProviderEnabled(userId: string, provider: string): Promise<void> {
@@ -342,13 +342,16 @@ export class SocialAccountService {
 
   async startSignalVerification(userId: string, phone: string): Promise<{ requestId: string; status: string }> {
     const exec = promisify(execFile);
+    const requestId = crypto.randomUUID();
+    const authDir = path.join(os.tmpdir(), 'adroom-signal', requestId);
+    await fs.mkdir(authDir, { recursive: true });
     try {
-      await exec('signal-cli', ['-u', phone, 'register'], { timeout: 30000 });
+      await exec('signal-cli', ['--config', authDir, '-u', phone, 'register'], { timeout: 30000 });
     } catch (error: any) {
+      await fs.rm(authDir, { recursive: true, force: true });
       throw new Error(error?.code === 'ENOENT' ? 'Signal registration service is not installed.' : 'Signal could not send a verification code.');
     }
-    const requestId = crypto.randomUUID();
-    this.pendingSignal.set(requestId, { userId, phone, createdAt: Date.now() });
+    this.pendingSignal.set(requestId, { userId, phone, createdAt: Date.now(), authDir });
     return { requestId, status: 'verification_code_sent' };
   }
 
@@ -356,16 +359,25 @@ export class SocialAccountService {
     const pending = this.pendingSignal.get(requestId);
     if (!pending) throw new Error('Signal verification has expired. Start again.');
     const exec = promisify(execFile);
-    await exec('signal-cli', ['-u', pending.phone, 'verify', code], { timeout: 30000 });
-    this.pendingSignal.delete(requestId);
-    return this.save({
-      userId: pending.userId,
-      provider: 'signal_personal',
-      accountId: pending.phone,
-      displayName: pending.phone,
-      handle: pending.phone,
-      credential: { phone: pending.phone },
-    });
+    try {
+      await exec('signal-cli', ['--config', pending.authDir, '-u', pending.phone, 'verify', code], { timeout: 30000 });
+      const bundle: Record<string, string> = {};
+      for (const file of await fs.readdir(pending.authDir)) {
+        const stat = await fs.stat(path.join(pending.authDir, file));
+        if (stat.isFile()) bundle[file] = (await fs.readFile(path.join(pending.authDir, file))).toString('base64');
+      }
+      this.pendingSignal.delete(requestId);
+      return this.save({
+        userId: pending.userId,
+        provider: 'signal_personal',
+        accountId: pending.phone,
+        displayName: pending.phone,
+        handle: pending.phone,
+        credential: { phone: pending.phone, bundle },
+      });
+    } finally {
+      await fs.rm(pending.authDir, { recursive: true, force: true });
+    }
   }
 
   async publish(provider: string, userId: string, text: string, mediaUrl?: string): Promise<{ id: string; url?: string }> {
@@ -401,6 +413,41 @@ export class SocialAccountService {
     throw new Error(`Publishing is not supported for ${provider} yet.`);
   }
 
+  async replyBluesky(userId: string, postUri: string, text: string): Promise<void> {
+    if (!(await this.reserveAction(userId, 'bluesky'))) throw new Error('Bluesky daily safety limit reached or account is not ready.');
+    await this.safetyDelay('bluesky');
+    const credential = await this.credentials(userId, 'bluesky');
+    if (!credential?.accessJwt || !credential?.did) throw new Error('Bluesky credentials are unavailable.');
+    try {
+      const threadResponse = await fetch(`https://bsky.social/xrpc/app.bsky.feed.getPostThread?uri=${encodeURIComponent(postUri)}`);
+      const thread: any = await threadResponse.json().catch(() => ({}));
+      const post = thread?.thread?.post;
+      if (!threadResponse.ok || !post?.cid || !post?.uri) throw new Error('Bluesky post could not be resolved for reply.');
+      const parent = { uri: post.uri, cid: post.cid };
+      const root = post.record?.reply?.root || parent;
+      const response = await fetch('https://bsky.social/xrpc/com.atproto.repo.createRecord', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${credential.accessJwt}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          repo: credential.did,
+          collection: 'app.bsky.feed.post',
+          record: {
+            $type: 'app.bsky.feed.post',
+            text: text.slice(0, 3000),
+            createdAt: new Date().toISOString(),
+            reply: { root, parent },
+          },
+        }),
+      });
+      const data: any = await response.json().catch(() => ({}));
+      if (!response.ok || !data.uri) throw new Error(data.message || 'Bluesky reply failed.');
+      await this.recordSuccess(userId, 'bluesky');
+    } catch (error: any) {
+      await this.recordError(userId, 'bluesky', error.message);
+      throw error;
+    }
+  }
+
   async sendMessage(provider: string, userId: string, recipient: string, text: string): Promise<void> {
     provider = normalizePlatform(provider);
     await this.assertProviderEnabled(userId, provider);
@@ -418,7 +465,16 @@ export class SocialAccountService {
       }
 
       if (provider === 'signal_personal') {
-        await exec('signal-cli', ['-u', credential.phone, 'send', '-m', text.slice(0, 2000), recipient], { timeout: 30000 });
+        const tempDir = path.join(os.tmpdir(), 'adroom-signal-send', crypto.randomUUID());
+        await fs.mkdir(tempDir, { recursive: true });
+        try {
+          for (const [file, encoded] of Object.entries(credential.bundle || {})) {
+            await fs.writeFile(path.join(tempDir, file), Buffer.from(String(encoded), 'base64'));
+          }
+          await exec('signal-cli', ['--config', tempDir, '-u', credential.phone, 'send', '-m', text.slice(0, 2000), recipient], { timeout: 30000 });
+        } finally {
+          await fs.rm(tempDir, { recursive: true, force: true });
+        }
         await this.recordSuccess(userId, provider);
         return;
       }

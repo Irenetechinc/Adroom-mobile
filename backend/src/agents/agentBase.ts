@@ -828,7 +828,9 @@ Return STRICT JSON only (no markdown, no explanation):
             case 'twitter': case 'x': await this.replyToTwitterPost(tokens.twitter, commentId, reply); break;
             case 'linkedin': await this.replyToLinkedInComment(tokens.linkedin, commentId, reply); break;
             case 'tiktok': if (!videoId) throw new Error('TikTok reply requires videoId'); await this.replyToTikTokComment(tokens.tiktok, videoId, commentId, reply); break;
-            case 'bluesky': throw new Error('Bluesky replies require the originating record URI and are not available for this task shape.');
+            case 'bluesky':
+                await socialAccountService.replyBluesky((tokens as any).__userId || '', commentId, reply);
+                break;
             default: throw new Error(`Unsupported platform for reply: ${platform}`);
         }
     }
@@ -870,7 +872,8 @@ Return STRICT JSON only (no markdown, no explanation):
                 await socialAccountService.sendMessage(platform.toLowerCase(), (tokens as any).__userId || '', recipientId, message);
                 break;
             case 'bluesky':
-                throw new Error('Bluesky direct messages require the platform DM service and are not available through the current public API.');
+                await socialAccountService.sendMessage('bluesky', (tokens as any).__userId || '', recipientId, message);
+                break;
             default: throw new Error(`Unsupported platform for DM: ${platform}`);
         }
     }

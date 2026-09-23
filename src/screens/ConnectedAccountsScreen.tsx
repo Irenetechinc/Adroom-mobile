@@ -263,7 +263,7 @@ export default function ConnectedAccountsScreen() {
   );
 
   const handleConnect = (platform: Platform) => {
-    if (['telegram', 'whatsapp_personal', 'signal_personal', 'bluesky'].includes(platform.id)) {
+    if (['telegram', 'whatsapp_personal', 'signal_personal', 'bluesky', 'delta_chat'].includes(platform.id)) {
       setPersonalProvider(platform);
       setPersonalStep('start');
       setPersonalPhone('');
