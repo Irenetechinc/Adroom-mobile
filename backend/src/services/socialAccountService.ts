@@ -87,6 +87,138 @@ export class SocialAccountService {
   private readonly pendingTelegram = new Map<string, any>();
   private readonly pendingSignal = new Map<string, { userId: string; phone: string; createdAt: number; authDir: string }>();
   private readonly pendingWhatsApp = new Map<string, { userId: string; phone: string; sock: any; authDir: string }>();
+  // Keep one live Baileys socket per connected user while the backend process
+  // is running. WhatsApp does not expose reliable history from a freshly
+  // materialized auth bundle, so inbound events must be buffered as they arrive
+  // and then consumed by the shared inbound-DM pipeline.
+  private readonly whatsappSockets = new Map<string, any>();
+  private readonly whatsappAuthDirs = new Map<string, string>();
+  private readonly whatsappPersistTimers = new Map<string, NodeJS.Timeout>();
+  private readonly whatsappInbound = new Map<string, PersonalInboundMessage[]>();
+
+  private whatsappMessageText(message: any): string {
+    const content = message?.message || {};
+    return String(
+      content.conversation
+      || content.extendedTextMessage?.text
+      || content.imageMessage?.caption
+      || content.videoMessage?.caption
+      || content.documentMessage?.caption
+      || content.buttonsResponseMessage?.selectedDisplayText
+      || content.listResponseMessage?.title
+      || '',
+    ).trim();
+  }
+
+  private normalizeWhatsAppRecipient(value: string): string {
+    const raw = String(value || '').trim();
+    return raw.includes('@') ? raw : `${raw.replace(/\D/g, '')}@s.whatsapp.net`;
+  }
+
+  private attachWhatsAppInbound(userId: string, sock: any): void {
+    sock.ev.on('messages.upsert', (event: any) => {
+      for (const message of event?.messages || []) {
+        if (message?.key?.fromMe) continue;
+        const text = this.whatsappMessageText(message);
+        const senderId = String(message?.key?.remoteJid || '').trim();
+        if (!text || !senderId) continue;
+        const timestampValue = Number(message?.messageTimestamp || 0);
+        const inbound: PersonalInboundMessage = {
+          externalId: `whatsapp:${String(message?.key?.id || crypto.createHash('sha256').update(JSON.stringify(message)).digest('hex').slice(0, 24))}`,
+          senderId,
+          text,
+          timestamp: new Date(timestampValue > 1e12 ? timestampValue : (timestampValue * 1000 || Date.now())).toISOString(),
+        };
+        const current = this.whatsappInbound.get(userId) || [];
+        if (!current.some((item) => item.externalId === inbound.externalId)) {
+          current.push(inbound);
+          this.whatsappInbound.set(userId, current.slice(-200));
+        }
+      }
+    });
+  }
+
+  private scheduleWhatsAppCredentialPersist(userId: string, authDir: string): void {
+    const existing = this.whatsappPersistTimers.get(userId);
+    if (existing) clearTimeout(existing);
+    const timer = setTimeout(() => {
+      this.whatsappPersistTimers.delete(userId);
+      this.persistWhatsAppCredentials(userId, authDir).catch((error: any) => {
+        console.error(`[SocialAccountService] WhatsApp credential persistence failed: ${error.message}`);
+      });
+    }, 1000);
+    this.whatsappPersistTimers.set(userId, timer);
+  }
+
+  private async persistWhatsAppCredentials(userId: string, authDir: string): Promise<void> {
+    const row = await this.get(userId, 'whatsapp_personal');
+    if (!row) return;
+    const bundle: Record<string, string> = {};
+    for (const file of await fs.readdir(authDir)) {
+      const fullPath = path.join(authDir, file);
+      if ((await fs.stat(fullPath)).isFile()) {
+        bundle[file] = (await fs.readFile(fullPath)).toString('base64');
+      }
+    }
+    const encrypted = encrypt({ bundle });
+    await this.supabase.from('social_account_connections').update({
+      credential_ciphertext: encrypted.ciphertext,
+      credential_iv: encrypted.iv,
+      credential_tag: encrypted.tag,
+      updated_at: new Date().toISOString(),
+    }).eq('id', row.id);
+  }
+
+  private async restoreWhatsAppSocket(userId: string, credential: any): Promise<any | null> {
+    const current = this.whatsappSockets.get(userId);
+    if (current) return current;
+    let baileys: any;
+    try { baileys = require('@whiskeysockets/baileys'); } catch { return null; }
+    if (!credential?.bundle || typeof credential.bundle !== 'object') return null;
+
+    const authDir = path.join(os.tmpdir(), 'adroom-whatsapp-live', crypto.randomUUID());
+    await fs.mkdir(authDir, { recursive: true });
+    for (const [file, encoded] of Object.entries(credential.bundle)) {
+      await fs.writeFile(path.join(authDir, file), Buffer.from(String(encoded), 'base64'));
+    }
+    const { state, saveCreds } = await baileys.useMultiFileAuthState(authDir);
+    const sock = baileys.default({ auth: state, printQRInTerminal: false, browser: ['Adirum AI', 'Chrome', '1.0.0'] });
+    sock.ev.on('creds.update', (update: any) => {
+      void saveCreds(update);
+      this.scheduleWhatsAppCredentialPersist(userId, authDir);
+    });
+    this.attachWhatsAppInbound(userId, sock);
+    this.whatsappAuthDirs.set(userId, authDir);
+    sock.ev.on('connection.update', async (update: any) => {
+      if (update.connection !== 'close') return;
+      if (this.whatsappSockets.get(userId) === sock) this.whatsappSockets.delete(userId);
+      if (this.whatsappAuthDirs.get(userId) === authDir) this.whatsappAuthDirs.delete(userId);
+      await fs.rm(authDir, { recursive: true, force: true }).catch(() => {});
+    });
+
+    try {
+      await new Promise<void>((resolve, reject) => {
+        const timer = setTimeout(() => reject(new Error('WhatsApp connection timed out.')), 30000);
+        sock.ev.on('connection.update', (update: any) => {
+          if (update.connection === 'open') {
+            clearTimeout(timer);
+            this.whatsappSockets.set(userId, sock);
+            resolve();
+          }
+          if (update.connection === 'close') {
+            clearTimeout(timer);
+            reject(new Error('WhatsApp connection closed.'));
+          }
+        });
+      });
+      return sock;
+    } catch (error) {
+      try { sock.end(error); } catch {}
+      this.whatsappAuthDirs.delete(userId);
+      await fs.rm(authDir, { recursive: true, force: true });
+      throw error;
+    }
+  }
 
   private async assertProviderEnabled(userId: string, provider: string): Promise<void> {
     const normalized = normalizePlatform(provider);
@@ -188,6 +320,15 @@ export class SocialAccountService {
     await this.supabase.from('ad_configs').delete()
       .eq('user_id', userId)
       .eq('platform', provider);
+    if (provider === 'whatsapp_personal') {
+      const socket = this.whatsappSockets.get(userId);
+      try { socket?.end(undefined); } catch {}
+      this.whatsappSockets.delete(userId);
+      const authDir = this.whatsappAuthDirs.get(userId);
+      this.whatsappAuthDirs.delete(userId);
+      if (authDir) await fs.rm(authDir, { recursive: true, force: true }).catch(() => {});
+      this.whatsappInbound.delete(userId);
+    }
   }
 
   async reserveAction(userId: string, provider: string, recipient?: string): Promise<boolean> {
@@ -336,10 +477,26 @@ export class SocialAccountService {
     const authDir = path.join(os.tmpdir(), 'adroom-whatsapp', requestId);
     const { state, saveCreds } = await baileys.useMultiFileAuthState(authDir);
     const sock = baileys.default({ auth: state, printQRInTerminal: false, browser: ['Adirum AI', 'Chrome', '1.0.0'] });
-    sock.ev.on('creds.update', saveCreds);
+    sock.ev.on('creds.update', (update: any) => {
+      void saveCreds(update);
+      this.scheduleWhatsAppCredentialPersist(userId, authDir);
+    });
+    this.attachWhatsAppInbound(userId, sock);
+    this.pendingWhatsApp.set(requestId, { userId, phone, sock, authDir });
     sock.ev.on('connection.update', async (update: any) => {
+      if (update.connection === 'close') {
+        this.pendingWhatsApp.delete(requestId);
+        if (this.whatsappSockets.get(userId) === sock) this.whatsappSockets.delete(userId);
+        this.whatsappAuthDirs.delete(userId);
+        await fs.rm(authDir, { recursive: true, force: true }).catch(() => {});
+        return;
+      }
       if (update.connection !== 'open') return;
       try {
+        // Baileys writes credentials asynchronously in response to the open
+        // event. Give the final creds.update event time to finish before the
+        // encrypted bundle is copied to Supabase.
+        await new Promise((resolve) => setTimeout(resolve, 300));
         const files = await fs.readdir(authDir);
         const bundle: Record<string, string> = {};
         for (const file of files) bundle[file] = (await fs.readFile(path.join(authDir, file))).toString('base64');
@@ -351,15 +508,22 @@ export class SocialAccountService {
           handle: phone,
           credential: { bundle },
         });
-        await fs.rm(authDir, { recursive: true, force: true });
+        this.whatsappSockets.set(userId, sock);
+        this.whatsappAuthDirs.set(userId, authDir);
       } catch (error: any) {
         await this.recordError(userId, 'whatsapp_personal', error.message);
       }
       this.pendingWhatsApp.delete(requestId);
     });
-    const pairingCode = await sock.requestPairingCode(phone.replace(/\D/g, ''));
-    this.pendingWhatsApp.set(requestId, { userId, phone, sock, authDir });
-    return { requestId, pairingCode };
+    try {
+      const pairingCode = await sock.requestPairingCode(phone.replace(/\D/g, ''));
+      return { requestId, pairingCode };
+    } catch (error) {
+      this.pendingWhatsApp.delete(requestId);
+      try { sock.end(error); } catch {}
+      await fs.rm(authDir, { recursive: true, force: true });
+      throw error;
+    }
   }
 
   async startSignalVerification(userId: string, phone: string): Promise<{ requestId: string; status: string }> {
@@ -611,6 +775,13 @@ export class SocialAccountService {
       if (provider === 'whatsapp_personal') {
         let baileys: any;
         try { baileys = require('@whiskeysockets/baileys'); } catch { throw new Error('WhatsApp pairing service is not installed.'); }
+        const liveSocket = await this.restoreWhatsAppSocket(userId, credential);
+        if (liveSocket) {
+          const jid = recipient.includes('@') ? recipient : `${recipient.replace(/\D/g, '')}@s.whatsapp.net`;
+          await liveSocket.sendMessage(jid, { text: text.slice(0, 4000) });
+          await this.recordSuccess(userId, provider);
+          return;
+        }
         const tempDir = path.join(os.tmpdir(), 'adroom-whatsapp-send', crypto.randomUUID());
         await fs.mkdir(tempDir, { recursive: true });
         try {
@@ -781,7 +952,12 @@ export class SocialAccountService {
     // freshly materialized auth bundle. Live WhatsApp events are handled by
     // the connection listener; do not fabricate an empty successful poll.
     if (provider === 'whatsapp_personal') {
-      return [];
+      await this.restoreWhatsAppSocket(userId, credential);
+      const messages = this.whatsappInbound.get(userId) || [];
+      const wanted = this.normalizeWhatsAppRecipient(recipient);
+      return messages
+        .filter((message) => !recipient || message.senderId === wanted || message.senderId.replace(/\D/g, '') === String(recipient).replace(/\D/g, ''))
+        .slice(-Math.min(50, Math.max(1, limit)));
     }
 
     return [];

@@ -6,3 +6,4 @@
 - [Feature Flags system](feature-flags.md) — global + per-user flags; mobile hook defaults true on error/missing table; needs feature_flags_migration.sql run in Supabase.
 - [Expo validation environment](expo-validation-environment.md) — this workspace sets NODE_ENV=production, so dev binaries are omitted during local package installs; use clean-install and Expo Doctor checks accordingly.
 - [Conversation schema compatibility](conversation-schema-compatibility.md) — keep Supabase conversation tables and lead-message timestamps aligned with backend readers and mobile realtime.
+- [WhatsApp live sessions](whatsapp-live-sessions.md) — Baileys inbound activity needs a retained live socket; temporary auth bundles do not provide reliable message history.

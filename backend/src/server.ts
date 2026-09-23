@@ -39,6 +39,7 @@ import { telephonyService } from './services/telephonyService';
 import { shipmentService } from './services/shipmentService';
 import { socialAccountService, type PersonalProvider } from './services/socialAccountService';
 import { normalizePlatform, normalizeSelectedPlatforms, isPersonalProvider } from './services/platformIdentity';
+import { conversationAgent } from './services/conversationAgent';
 
 dotenv.config();
 
@@ -167,6 +168,34 @@ app.get('/api/social-connections/availability', async (req, res) => {
     return res.json({ availability });
   } catch (error: any) {
     return res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * Run a fresh conversation discovery sweep for one active strategy.
+ * The normal scheduler uses the 24-hour guard; this endpoint is the explicit
+ * on-demand path used when another agent or the user needs new prospects.
+ */
+app.post('/api/strategy/:id/conversation-sweep', async (req, res) => {
+  try {
+    const user = await authenticatedUser(req);
+    if (!user) return res.status(401).json({ error: 'Unauthorized.' });
+    const strategyId = String(req.params.id || '');
+    const { data: strategy, error } = await getServiceSupabaseClient()
+      .from('strategies')
+      .select('id, user_id, title, goal, product_memory, selected_accounts, platforms, is_active, status')
+      .eq('id', strategyId)
+      .eq('user_id', user.id)
+      .maybeSingle();
+    if (error) throw new Error(error.message);
+    if (!strategy) return res.status(404).json({ error: 'Strategy not found.' });
+    if (!strategy.is_active || strategy.status !== 'active') {
+      return res.status(409).json({ error: 'Only an active strategy can run a conversation sweep.' });
+    }
+    const result = await conversationAgent.runOnDemand(strategy);
+    return res.json({ result });
+  } catch (error: any) {
+    return res.status(400).json({ error: error.message });
   }
 });
 

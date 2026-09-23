@@ -59,6 +59,7 @@ const SCHED_DEEP_ANALYSIS_CRON    = process.env.SCHED_DEEP_ANALYSIS_CRON    || '
 const SCHED_DATA_COLLECTION_CRON   = process.env.SCHED_DATA_COLLECTION_CRON   || '*/20 * * * *'; // Shared live evidence collection every 20 minutes while active strategies exist
 const SCHED_CALLS_CRON             = process.env.SCHED_CALLS_CRON             || '* * * * *';   // Provider call queue every minute
 const SCHED_COORDINATOR_CRON       = process.env.SCHED_COORDINATOR_CRON       || '*/10 * * * *'; // Cross-agent coordination every 10 minutes
+const SCHED_CONVERSATION_DAILY_CRON = process.env.SCHED_CONVERSATION_DAILY_CRON || '30 0 * * *'; // Guaranteed daily prospect sweep
 
 export class SchedulerService {
     private ipe: PlatformIntelligenceEngine;
@@ -358,6 +359,17 @@ export class SchedulerService {
                 }
             } catch (e: any) {
                 console.error('[Scheduler] Agent execution error:', e.message);
+            }
+        });
+
+        // Guaranteed daily discovery sweep. Strategy coordination also checks
+        // for stale runs, but this separate loop ensures discovery remains
+        // active when coordination is paused or a deployment misses a cycle.
+        cron.schedule(SCHED_CONVERSATION_DAILY_CRON, async () => {
+            try {
+                await this.withCycleLock('conversation_daily_sweep', () => this.runConversationMonitoring(), 30 * 60 * 1000);
+            } catch (e: any) {
+                console.error('[Scheduler] Daily conversation sweep error:', e.message);
             }
         });
 
