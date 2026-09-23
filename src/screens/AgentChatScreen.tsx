@@ -1117,7 +1117,19 @@ const StrategyAccountSelectionCard = ({
         </TouchableOpacity>
       );
     })}
-{!disabled && <View style={{ marginTop: 12 }}><Text style={styles.selectionSub}>Connect another platform:</Text>{['facebook', 'instagram', 'tiktok', 'linkedin', 'twitter', 'whatsapp'].filter((platform) => !accounts.some((account: any) => String(account.platform || '').toLowerCase() === platform)).map((platform) => <TouchableOpacity key={platform} onPress={() => onConnect(platform)} style={styles.retrySkipBtn}><Text style={{ color: '#CBD5E1', fontWeight: '700' }}>Connect {platform}</Text></TouchableOpacity>)}<TouchableOpacity onPress={onContinue} disabled={!selected.length} style={[styles.primaryBtn, { marginTop: 8 }, !selected.length && styles.cardDisabled]}><Text style={styles.primaryBtnText}>Continue with selected accounts</Text></TouchableOpacity></View>}
+    {!disabled && <View style={{ marginTop: 12 }}>
+      <Text style={styles.selectionSub}>Connect another platform:</Text>
+      {['facebook', 'instagram', 'tiktok', 'linkedin', 'twitter', 'whatsapp', 'telegram', 'whatsapp_personal', 'signal_personal', 'bluesky', 'delta_chat']
+        .filter((platform) => !accounts.some((account: any) => String(account.platform || account.provider || '').toLowerCase() === platform))
+        .map((platform) => (
+          <TouchableOpacity key={platform} onPress={() => onConnect(platform)} style={styles.retrySkipBtn}>
+            <Text style={{ color: '#CBD5E1', fontWeight: '700' }}>Connect {platform.replace('_personal', '').replace('_', ' ')}</Text>
+          </TouchableOpacity>
+        ))}
+      <TouchableOpacity onPress={onContinue} disabled={!selected.length} style={[styles.primaryBtn, { marginTop: 8 }, !selected.length && styles.cardDisabled]}>
+        <Text style={styles.primaryBtnText}>Continue with selected accounts</Text>
+      </TouchableOpacity>
+    </View>}
   </View>
 );
 
@@ -2030,7 +2042,16 @@ export default function AgentChatScreen({ navigation, route }: Props) {
             accounts={item.uiData?.accounts || []}
             selected={productData.selectedAccounts || []}
             onToggle={(platform) => setProductData({ selectedAccounts: productData.selectedAccounts.includes(platform) ? productData.selectedAccounts.filter(item => item !== platform) : [...productData.selectedAccounts, platform] })}
-            onConnect={(platform) => navigation.navigate('AgentChat', { strategyAccountSelection: true, ...(platform === 'facebook' ? { connectFacebook: true } : platform === 'instagram' ? { connectInstagram: true } : platform === 'tiktok' ? { connectTikTok: true } : platform === 'linkedin' ? { connectLinkedIn: true } : platform === 'twitter' ? { connectTwitter: true } : { connectWhatsApp: true }) })}
+            onConnect={(platform) => {
+              if (['telegram', 'whatsapp_personal', 'signal_personal', 'bluesky', 'delta_chat'].includes(platform)) {
+                navigation.navigate('ConnectedAccounts');
+                return;
+              }
+              navigation.navigate('AgentChat', {
+                strategyAccountSelection: true,
+                ...(platform === 'facebook' ? { connectFacebook: true } : platform === 'instagram' ? { connectInstagram: true } : platform === 'tiktok' ? { connectTikTok: true } : platform === 'linkedin' ? { connectLinkedIn: true } : platform === 'twitter' ? { connectTwitter: true } : { connectWhatsApp: true }),
+              });
+            }}
             onContinue={() => handleDurationSelection(productDetails.selectedDuration || 7)}
             disabled={isDisabled}
           />

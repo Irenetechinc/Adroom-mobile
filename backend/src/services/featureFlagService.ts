@@ -1,4 +1,5 @@
 import { getServiceSupabaseClient } from '../config/supabase';
+import { normalizePlatform } from './platformIdentity';
 
 export interface FeatureFlag {
   flag_key:    string;
@@ -86,12 +87,12 @@ export async function isEnabled(flagKey: string, userId?: string): Promise<boole
 
 /** Provider-specific controls used by both the API and mobile connection UI. */
 export async function isSocialConnectionEnabled(userId: string, provider: string): Promise<boolean> {
-  const normalized = String(provider || '').trim().toLowerCase();
+  const normalized = normalizePlatform(provider);
   return isEnabled(`social_${normalized}_connections`, userId);
 }
 
 export async function isSocialComingSoon(userId: string, provider: string): Promise<boolean> {
-  const normalized = String(provider || '').trim().toLowerCase();
+  const normalized = normalizePlatform(provider);
   return isEnabled(`social_${normalized}_coming_soon`, userId);
 }
 

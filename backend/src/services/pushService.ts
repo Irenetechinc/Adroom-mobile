@@ -1,4 +1,5 @@
 import { getServiceSupabaseClient } from '../config/supabase';
+import { normalizePlatform, isPersonalProvider } from './platformIdentity';
 
 const EXPO_PUSH_URL = 'https://exp.host/--/api/v2/push/send';
 
@@ -399,8 +400,8 @@ export const pushService = {
    */
   async notifyTokenRefreshFailed(userId: string, platform: string): Promise<void> {
     const supabase = getServiceSupabaseClient();
-    const normalizedPlatform = String(platform || '').trim().toLowerCase();
-    const personal = ['telegram', 'whatsapp_personal', 'signal_personal', 'bluesky', 'delta_chat'].includes(normalizedPlatform);
+    const normalizedPlatform = normalizePlatform(platform);
+    const personal = isPersonalProvider(normalizedPlatform);
 
     // A refresh warning is actionable only when the account is selected by a
     // running strategy and was actually connected. This prevents warnings for
@@ -415,7 +416,7 @@ export const pushService = {
       const accounts = Array.isArray(strategy.selected_accounts) ? strategy.selected_accounts : strategy.platforms;
       return Array.isArray(accounts) && accounts.some((item: any) => {
         const value = typeof item === 'object' ? item.platform || item.provider || item.id : item;
-        return String(value || '').trim().toLowerCase() === normalizedPlatform;
+        return normalizePlatform(value) === normalizedPlatform;
       });
     });
     if (!selected) {
@@ -424,7 +425,7 @@ export const pushService = {
     }
     const connectionQuery = personal
       ? supabase.from('social_account_connections').select('status').eq('user_id', userId).eq('provider', normalizedPlatform).maybeSingle()
-      : supabase.from('ad_configs').select('access_token').eq('user_id', userId).eq('platform', normalizedPlatform).maybeSingle();
+      : supabase.from('ad_configs').select('access_token').eq('user_id', userId).in('platform', [normalizedPlatform, ...(normalizedPlatform === 'twitter' ? ['x'] : [])]).maybeSingle();
     const { data: connection } = await connectionQuery;
     const connectionRow: any = connection;
     if (!connectionRow || (personal ? connectionRow.status !== 'needs_reconnect' : !connectionRow.access_token)) {

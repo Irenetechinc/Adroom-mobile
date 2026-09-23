@@ -9,6 +9,7 @@ CREATE TABLE IF NOT EXISTS lead_dm_messages (
   sequence_step   INT DEFAULT 0,
   platform        TEXT,
   sent_at         TIMESTAMPTZ DEFAULT NOW(),
+  created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   meta            JSONB DEFAULT '{}'
 );
 CREATE INDEX IF NOT EXISTS idx_lead_dm_messages_lead_id ON lead_dm_messages(lead_id);

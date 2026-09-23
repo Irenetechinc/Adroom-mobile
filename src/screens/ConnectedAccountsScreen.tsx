@@ -235,6 +235,8 @@ export default function ConnectedAccountsScreen() {
   const [personalHandle, setPersonalHandle] = useState('');
   const [personalAddress, setPersonalAddress] = useState('');
   const [personalSecret, setPersonalSecret] = useState('');
+  const [telegramPassword, setTelegramPassword] = useState('');
+  const [telegramNeedsPassword, setTelegramNeedsPassword] = useState(false);
   const [personalRequestId, setPersonalRequestId] = useState('');
   const [pairingCode, setPairingCode] = useState('');
   const [personalBusy, setPersonalBusy] = useState(false);
@@ -270,6 +272,8 @@ export default function ConnectedAccountsScreen() {
       setPersonalHandle('');
       setPersonalAddress('');
       setPersonalSecret('');
+      setTelegramPassword('');
+      setTelegramNeedsPassword(false);
       setPersonalRequestId('');
       setPairingCode('');
       return;
@@ -306,7 +310,11 @@ export default function ConnectedAccountsScreen() {
         endpoint = `${base}/telegram/${personalStep === 'start' ? 'start' : 'verify'}`;
         body = personalStep === 'start'
           ? { phone: personalPhone }
-          : { requestId: personalRequestId, code: personalSecret };
+          : {
+            requestId: personalRequestId,
+            code: personalSecret,
+            ...(telegramNeedsPassword && telegramPassword ? { password: telegramPassword } : {}),
+          };
       } else if (personalProvider.id === 'whatsapp_personal') {
         endpoint = `${base}/whatsapp-personal/start`;
         body = { phone: personalPhone };
@@ -323,7 +331,13 @@ export default function ConnectedAccountsScreen() {
       }
       const response = await fetch(endpoint, { method: 'POST', headers, body: JSON.stringify(body) });
       const result = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(result.error || 'Connection failed.');
+      if (!response.ok) {
+        if (personalProvider.id === 'telegram' && result.error === 'TELEGRAM_2FA_REQUIRED') {
+          setTelegramNeedsPassword(true);
+          throw new Error('Telegram requires your two-step verification password.');
+        }
+        throw new Error(result.error || 'Connection failed.');
+      }
       if (result.requestId) {
         setPersonalRequestId(result.requestId);
         if (result.pairingCode) setPairingCode(result.pairingCode);
@@ -584,6 +598,8 @@ export default function ConnectedAccountsScreen() {
                 ? 'Use your handle and a Bluesky app password. Your main password is never requested.'
                 : personalProvider?.id === 'whatsapp_personal'
                   ? 'Pair WhatsApp from the app using the code below. No QR code is used.'
+                  : personalProvider?.id === 'telegram' && telegramNeedsPassword
+                    ? 'Enter the Telegram two-step verification password to finish signing in.'
                   : 'Your verification details stay encrypted and are never shown to the agent.'}
             </Text>
              {personalProvider?.id === 'bluesky' ? (
@@ -609,6 +625,9 @@ export default function ConnectedAccountsScreen() {
                 )}
                 {personalStep === 'verify' && (
                   <TextInput value={personalSecret} onChangeText={setPersonalSecret} placeholder="Verification code" placeholderTextColor="#64748B" style={styles.modalInput} keyboardType="number-pad" />
+                )}
+                {personalProvider?.id === 'telegram' && telegramNeedsPassword && (
+                  <TextInput value={telegramPassword} onChangeText={setTelegramPassword} placeholder="Telegram two-step verification password" placeholderTextColor="#64748B" style={styles.modalInput} secureTextEntry autoCapitalize="none" />
                 )}
               </>
             )}

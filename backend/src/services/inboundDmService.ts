@@ -13,11 +13,18 @@
  *   - Facebook Messenger (page conversations API)
  *   - Instagram DM (Instagram Graph API)
  *   - Twitter/X DM (v2 API, elevated access required — gracefully skipped if unavailable)
+ *   - Telegram, Signal, Bluesky, and Delta Chat personal conversations
+ *     (provider history/bridge APIs)
+ *   - WhatsApp personal messages are received from its live Baileys socket;
+ *     Baileys does not provide reliable history retrieval from a temporary
+ *     auth bundle.
  */
 
 import { getServiceSupabaseClient } from '../config/supabase';
 import { AIEngine } from '../config/ai-models';
 import { pushService } from './pushService';
+import { socialAccountService } from './socialAccountService';
+import { isPersonalProvider, normalizePlatform } from './platformIdentity';
 
 const FB_GRAPH = 'https://graph.facebook.com/v25.0';
 
@@ -96,10 +103,15 @@ class InboundDmService {
       .eq('user_id', userId)
       .not('access_token', 'is', null);
 
-    if (!configs?.length) return;
+    const { data: personalConnections } = await this.supabase
+      .from('social_account_connections')
+      .select('provider, status')
+      .eq('user_id', userId)
+      .eq('status', 'connected');
+    if ((!configs || configs.length === 0) && (!personalConnections || personalConnections.length === 0)) return;
 
     const tokenMap: Record<string, any> = {};
-    for (const cfg of configs) tokenMap[cfg.platform] = cfg;
+    for (const cfg of configs || []) tokenMap[cfg.platform] = cfg;
 
     // Group leads by platform
     const byPlatform: Record<string, LeadRow[]> = {};
@@ -110,6 +122,15 @@ class InboundDmService {
 
     // Process each platform
     for (const [platform, platformLeads] of Object.entries(byPlatform)) {
+      const normalizedPlatform = normalizePlatform(platform);
+      if (isPersonalProvider(normalizedPlatform)) {
+        try {
+          await this.processPersonal(userId, normalizedPlatform, platformLeads);
+        } catch (e: any) {
+          console.error(`[InboundDM] ${normalizedPlatform} check failed for user ${userId}:`, e.message);
+        }
+        continue;
+      }
       const cfg = tokenMap[platform];
       if (!cfg) continue;
 
@@ -128,6 +149,32 @@ class InboundDmService {
         }
       } catch (e: any) {
         console.error(`[InboundDM] ${platform} check failed for user ${userId}:`, e.message);
+      }
+    }
+  }
+
+  private async processPersonal(userId: string, provider: string, leads: LeadRow[]): Promise<void> {
+    // A lead may have multiple recent replies. The shared storeInbound method
+    // handles deduplication and runs the same classifier/follow-up logic as
+    // the business-account channels.
+    for (const lead of leads) {
+      const cutoff = lead.last_contacted_at
+        ? new Date(lead.last_contacted_at).getTime()
+        : new Date(lead.created_at).getTime();
+      const messages = await socialAccountService.receiveMessages(
+        userId,
+        provider,
+        lead.platform_user_id,
+        25,
+      );
+      for (const message of messages) {
+        if (new Date(message.timestamp).getTime() <= cutoff) continue;
+        await this.storeInbound(userId, lead, {
+          externalId: message.externalId,
+          senderPsid: message.senderId,
+          text: message.text,
+          timestamp: message.timestamp,
+        });
       }
     }
   }

@@ -2,6 +2,7 @@ import { SupabaseClient } from '@supabase/supabase-js';
 import { AIEngine, parseStructuredJson } from '../config/ai-models';
 import fetch from 'node-fetch';
 import { socialAccountService } from '../services/socialAccountService';
+import { normalizePlatform } from '../services/platformIdentity';
 
 export interface AgentTokens {
     facebook?: { access_token: string; page_id: string };
@@ -62,7 +63,7 @@ export class AgentBase {
         const combined = [...(platforms || []), ...(fallback || [])];
         return Array.from(new Set(
             combined
-                .map((platform) => String(platform || '').trim().toLowerCase())
+                .map((platform) => normalizePlatform(platform))
                 .filter(Boolean)
         ));
     }
@@ -779,19 +780,20 @@ Return STRICT JSON only (no markdown, no explanation):
     // ─── UNIFIED PUBLISH DISPATCHER ──────────────────────────────────────────────
 
     async publishToplatform(platform: string, tokens: AgentTokens, body: string, mediaUrl?: string): Promise<PublishResult> {
+        const normalizedPlatform = normalizePlatform(platform);
         const { criticAgentService } = await import('../services/criticAgentService');
         const review = await criticAgentService.validateBeforePublish({
             output: body,
             agentType: this.agentType,
             taskType: 'PUBLISH',
-            platform,
+            platform: normalizedPlatform,
             operation: 'publish_to_platform',
         });
         if (review.verdict !== 'approved') {
             throw new Error(`Critic blocked ${platform} publication: ${review.issues.join('; ') || 'quality threshold not met'}`);
         }
-        this.log(`Dispatching publish to ${platform}`);
-        switch (platform.toLowerCase()) {
+        this.log(`Dispatching publish to ${normalizedPlatform}`);
+        switch (normalizedPlatform) {
             case 'facebook': return this.publishToFacebook(tokens.facebook, body, mediaUrl);
             case 'instagram': return this.publishToInstagram(tokens.instagram, body, mediaUrl);
             case 'twitter': case 'x': return this.publishToTwitter(tokens.twitter, body);
@@ -800,8 +802,8 @@ Return STRICT JSON only (no markdown, no explanation):
             case 'telegram':
             case 'whatsapp_personal':
             case 'signal_personal': {
-                const published = await socialAccountService.publish(platform.toLowerCase(), (tokens as any).__userId || '', body, mediaUrl);
-                return { platform: platform.toLowerCase(), platform_post_id: published.id, published_at: new Date().toISOString(), url: published.url };
+                const published = await socialAccountService.publish(normalizedPlatform, (tokens as any).__userId || '', body, mediaUrl);
+                return { platform: normalizedPlatform, platform_post_id: published.id, published_at: new Date().toISOString(), url: published.url };
             }
             case 'bluesky': {
                 const published = await socialAccountService.publish('bluesky', (tokens as any).__userId || '', body, mediaUrl);
@@ -816,19 +818,20 @@ Return STRICT JSON only (no markdown, no explanation):
     }
 
     async replyToComment(platform: string, tokens: AgentTokens, commentId: string, reply: string, videoId?: string): Promise<void> {
+        const normalizedPlatform = normalizePlatform(platform);
         const { criticAgentService } = await import('../services/criticAgentService');
         const review = await criticAgentService.validateBeforePublish({
             output: reply,
             agentType: this.agentType,
             taskType: 'COMMENT_REPLY',
-            platform,
+            platform: normalizedPlatform,
             operation: 'reply_to_comment',
         });
         if (review.verdict !== 'approved') {
             throw new Error(`Critic blocked ${platform} reply: ${review.issues.join('; ') || 'quality threshold not met'}`);
         }
-        this.log(`Dispatching reply on ${platform} to comment ${commentId}`);
-        switch (platform.toLowerCase()) {
+        this.log(`Dispatching reply on ${normalizedPlatform} to comment ${commentId}`);
+        switch (normalizedPlatform) {
             case 'facebook': await this.replyToFacebookComment(tokens.facebook, commentId, reply); break;
             case 'instagram': await this.replyToInstagramComment(tokens.instagram, commentId, reply); break;
             case 'twitter': case 'x': await this.replyToTwitterPost(tokens.twitter, commentId, reply); break;
@@ -838,7 +841,7 @@ Return STRICT JSON only (no markdown, no explanation):
             case 'whatsapp_personal':
             case 'signal_personal':
             case 'delta_chat':
-                await socialAccountService.sendMessage(platform.toLowerCase(), (tokens as any).__userId || '', commentId, reply);
+                await socialAccountService.sendMessage(normalizedPlatform, (tokens as any).__userId || '', commentId, reply);
                 break;
             case 'bluesky':
                 await socialAccountService.replyBluesky((tokens as any).__userId || '', commentId, reply);
@@ -848,19 +851,20 @@ Return STRICT JSON only (no markdown, no explanation):
     }
 
     async sendDM(platform: string, tokens: AgentTokens, recipientId: string, message: string): Promise<void> {
+        const normalizedPlatform = normalizePlatform(platform);
         const { criticAgentService } = await import('../services/criticAgentService');
         const review = await criticAgentService.validateBeforePublish({
             output: message,
             agentType: this.agentType,
             taskType: 'DIRECT_MESSAGE',
-            platform,
+            platform: normalizedPlatform,
             operation: 'send_direct_message',
         });
         if (review.verdict !== 'approved') {
             throw new Error(`Critic blocked ${platform} message: ${review.issues.join('; ') || 'quality threshold not met'}`);
         }
-        this.log(`Dispatching DM on ${platform} to ${recipientId}`);
-        switch (platform.toLowerCase()) {
+        this.log(`Dispatching DM on ${normalizedPlatform} to ${recipientId}`);
+        switch (normalizedPlatform) {
             case 'facebook': await this.sendFacebookDM(tokens.facebook, recipientId, message); break;
             case 'instagram': await this.sendInstagramDM(tokens.instagram, recipientId, message); break;
             case 'twitter': case 'x': await this.sendTwitterDM(tokens.twitter, recipientId, message); break;
@@ -881,7 +885,7 @@ Return STRICT JSON only (no markdown, no explanation):
             case 'whatsapp_personal':
             case 'signal_personal':
             case 'delta_chat':
-                await socialAccountService.sendMessage(platform.toLowerCase(), (tokens as any).__userId || '', recipientId, message);
+                await socialAccountService.sendMessage(normalizedPlatform, (tokens as any).__userId || '', recipientId, message);
                 break;
             case 'bluesky':
                 await socialAccountService.sendMessage('bluesky', (tokens as any).__userId || '', recipientId, message);

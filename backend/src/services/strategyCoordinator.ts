@@ -2,6 +2,7 @@ import { getServiceSupabaseClient } from '../config/supabase';
 import { conversationAgent } from './conversationAgent';
 import { dataCollectionAgent } from './dataCollectionAgent';
 import { AgentOrchestrator } from '../agents/agentOrchestrator';
+import { normalizeSelectedPlatforms } from './platformIdentity';
 
 const MIN_CONVERSATION_GAP_MS = 5 * 60 * 1000;
 const MIN_COLLECTION_GAP_MS = 20 * 60 * 1000;
@@ -12,9 +13,7 @@ function ageMs(value?: string | null): number {
 }
 
 function normalizePlatforms(value: unknown): string[] {
-  return Array.from(new Set((Array.isArray(value) ? value : [])
-    .map((platform) => String(platform || '').trim().toLowerCase())
-    .filter(Boolean)));
+  return normalizeSelectedPlatforms(value);
 }
 
 /**

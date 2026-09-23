@@ -4,6 +4,7 @@ import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { ArrowLeft, ArrowRight, Check, Link2, Plus } from 'lucide-react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAgentStore } from '../../store/agentStore';
+import { useStrategyCreationStore } from '../../store/strategyCreationStore';
 import useFeatureFlags from '../../hooks/useFeatureFlags';
 
 const colors = { bg: '#0B0F19', panel: '#121D2B', text: '#E2E8F0', muted: '#8FA3B8', cyan: '#00F0FF', border: '#233246' };
@@ -11,6 +12,7 @@ const colors = { bg: '#0B0F19', panel: '#121D2B', text: '#E2E8F0', muted: '#8FA3
 export default function AccountSelectionScreen() {
   const navigation = useNavigation<any>();
   const { connectedPlatforms, loadConnectedPlatforms } = useAgentStore();
+  const { productData, setProductData } = useStrategyCreationStore();
   const [loading, setLoading] = useState(true);
   const { isEnabled } = useFeatureFlags();
 
@@ -21,14 +23,41 @@ export default function AccountSelectionScreen() {
 
   const platforms = (Object.values(connectedPlatforms || {}) as any[])
     .filter((account) => isEnabled(`social_${account.platform}_connections`));
-  const continueNext = () => navigation.navigate('AgentChat', { strategyAccountSelection: true });
+  const selected = productData.selectedAccounts || [];
+  const toggle = (platform: string) => {
+    setProductData({
+      selectedAccounts: selected.includes(platform)
+        ? selected.filter((item) => item !== platform)
+        : [...selected, platform],
+    });
+  };
+  const continueNext = () => {
+    if (!selected.length) {
+      Alert.alert('Select an account', 'Choose at least one connected account for this strategy.');
+      return;
+    }
+    navigation.navigate('AgentChat', { strategyAccountSelection: true });
+  };
 
   return (
     <SafeAreaView style={styles.safe}>
       <View style={styles.header}><TouchableOpacity onPress={() => navigation.goBack()}><ArrowLeft color={colors.text} size={22} /></TouchableOpacity><Text style={styles.headerTitle}>Choose channels</Text><View style={{ width: 22 }} /></View>
       <ScrollView contentContainerStyle={styles.content}>
         <View style={styles.intro}><View style={styles.icon}><Link2 color={colors.cyan} size={22} /></View><Text style={styles.title}>Where should this strategy run?</Text><Text style={styles.subtitle}>Select the connected accounts Adirum AI should use for this campaign. Your choice stays specific to this strategy.</Text></View>
-        {loading ? <ActivityIndicator color={colors.cyan} style={{ marginTop: 32 }} /> : <TouchableOpacity style={styles.connectCard} onPress={continueNext}><Link2 color={colors.cyan} size={22} /><View style={{ flex: 1 }}><Text style={styles.connectTitle}>{platforms.length ? 'Continue in Adirum AI' : 'Open account connection'}</Text><Text style={styles.connectText}>Adirum AI will show connected accounts here and use its existing connection flow for any account you still need.</Text></View><ArrowRight color={colors.cyan} size={18} /></TouchableOpacity>}
+        {loading ? <ActivityIndicator color={colors.cyan} style={{ marginTop: 32 }} /> : platforms.length ? platforms.map((account: any) => {
+          const platform = String(account.platform || account.provider || '').toLowerCase();
+          const isSelected = selected.includes(platform);
+          return (
+            <TouchableOpacity key={platform} style={[styles.account, isSelected && styles.accountSelected]} onPress={() => toggle(platform)}>
+              <View style={[styles.accountMark, isSelected && styles.accountMarkSelected]}><Text style={styles.accountLetter}>{platform.charAt(0).toUpperCase()}</Text></View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.accountName}>{account.page_name || account.display_name || account.handle || platform}</Text>
+                <Text style={styles.accountPlatform}>{platform.replace('_personal', '').replace('_', ' ')}</Text>
+              </View>
+              {isSelected ? <Check color={colors.bg} size={18} /> : <Plus color={colors.muted} size={18} />}
+            </TouchableOpacity>
+          );
+        }) : <TouchableOpacity style={styles.connectCard} onPress={() => navigation.navigate('ConnectedAccounts')}><Link2 color={colors.cyan} size={22} /><View style={{ flex: 1 }}><Text style={styles.connectTitle}>Connect an account</Text><Text style={styles.connectText}>Connect a social account, then return here to select it for this strategy.</Text></View><ArrowRight color={colors.cyan} size={18} /></TouchableOpacity>}
       </ScrollView>
       <View style={styles.footer}><TouchableOpacity style={styles.next} onPress={continueNext}><Text style={styles.nextText}>Choose accounts</Text><ArrowRight color={colors.bg} size={18} /></TouchableOpacity></View>
     </SafeAreaView>

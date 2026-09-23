@@ -431,6 +431,29 @@ export default function DashboardScreen() {
     return () => { supabase.removeChannel(strategyChannel); };
   }, [session?.user?.id]);
 
+  // Conversation milestones and discovered signals are separate tables from
+  // the generic task stream. Subscribe to both so the dashboard updates when
+  // discovery/data collection changes, without requiring a manual refresh.
+  useEffect(() => {
+    if (!session?.user) return;
+    const conversationChannel = supabase
+      .channel('conversation_milestones_live')
+      .on('postgres_changes', {
+        event: '*',
+        schema: 'public',
+        table: 'strategy_conversation_runs',
+        filter: `user_id=eq.${session.user.id}`,
+      }, () => { fetchData(); })
+      .on('postgres_changes', {
+        event: '*',
+        schema: 'public',
+        table: 'strategy_conversation_signals',
+        filter: `user_id=eq.${session.user.id}`,
+      }, () => { fetchData(); })
+      .subscribe();
+    return () => { supabase.removeChannel(conversationChannel); };
+  }, [session?.user?.id]);
+
   // Realtime subscription for closed deals
   useEffect(() => {
     if (!session?.user) return;

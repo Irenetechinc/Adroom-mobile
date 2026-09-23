@@ -10,6 +10,13 @@ import { isEnabled as isFeatureEnabled } from './featureFlagService';
 
 export type PersonalProvider = 'telegram' | 'whatsapp_personal' | 'signal_personal' | 'bluesky' | 'delta_chat';
 
+export interface PersonalInboundMessage {
+  externalId: string;
+  senderId: string;
+  text: string;
+  timestamp: string;
+}
+
 export interface SocialConnectionPublic {
   id: string;
   provider: PersonalProvider;
@@ -187,8 +194,18 @@ export class SocialAccountService {
     provider = normalizePlatform(provider);
     if (!(await isFeatureEnabled(`social_${provider}_connections`, userId))) return false;
     const row = await this.get(userId, provider);
-    if (!row || row.status !== 'connected') return false;
+    if (!row || !['connected', 'error', 'paused'].includes(String(row.status))) return false;
     if (row.cooldown_until && new Date(row.cooldown_until).getTime() > Date.now()) return false;
+    // A transient error or an expired circuit-breaker cooldown is recoverable.
+    // Do not leave an account permanently unusable after one failed send.
+    if (row.status !== 'connected') {
+      await this.supabase.from('social_account_connections').update({
+        status: 'connected',
+        consecutive_errors: 0,
+        cooldown_until: null,
+        updated_at: new Date().toISOString(),
+      }).eq('id', row.id);
+    }
     const today = new Date().toISOString().slice(0, 10);
     const actionsToday = row.action_day === today ? Number(row.actions_today || 0) : 0;
     const configuredLimit = Number(row.daily_limit || 20);
@@ -644,6 +661,130 @@ export class SocialAccountService {
     }
 
     throw new Error(`Messaging is not supported for ${provider} yet.`);
+  }
+
+  /**
+   * Read recent inbound messages for the personal providers that expose a
+   * server-side history API. The caller owns lead matching, deduplication,
+   * scoring, and notifications so all channels share the existing pipeline.
+   */
+  async receiveMessages(
+    userId: string,
+    provider: string,
+    recipient: string,
+    limit = 25,
+  ): Promise<PersonalInboundMessage[]> {
+    provider = normalizePlatform(provider);
+    const credential = await this.credentials(userId, provider);
+    if (!credential) throw new Error(`${provider} credentials are unavailable.`);
+
+    if (provider === 'telegram') {
+      const telegram = require('telegram');
+      const client = new telegram.TelegramClient(
+        new telegram.sessions.StringSession(credential.session),
+        Number(credential.apiId),
+        credential.apiHash,
+        { connectionRetries: 3 },
+      );
+      await client.connect();
+      try {
+        const messages = await client.getMessages(recipient, { limit: Math.min(50, Math.max(1, limit)) });
+        return (messages || [])
+          .filter((message: any) => !message?.out && String(message?.message || '').trim())
+          .map((message: any) => ({
+            externalId: `telegram:${message.id}`,
+            senderId: String(message.senderId?.value || message.senderId || recipient),
+            text: String(message.message).trim(),
+            timestamp: new Date(Number(message.date || 0) * 1000 || Date.now()).toISOString(),
+          }));
+      } finally {
+        await client.disconnect();
+      }
+    }
+
+    if (provider === 'signal_personal') {
+      const exec = promisify(execFile);
+      const configDir = await this.materializeSignalBundle(credential);
+      try {
+        const result = await exec('signal-cli', [
+          '--config', configDir,
+          '-u', credential.phone,
+          'receive',
+          '--timeout', '1',
+          '--max-messages', String(Math.min(100, Math.max(1, limit))),
+          '--json',
+        ], { timeout: 15000 });
+        return result.stdout
+          .split(/\r?\n/)
+          .map((line) => {
+            try { return JSON.parse(line); } catch { return null; }
+          })
+          .filter(Boolean)
+          .map((event: any) => {
+            const envelope = event?.envelope || event;
+            const text = String(envelope?.dataMessage?.message || '').trim();
+            const senderId = String(envelope?.sourceNumber || envelope?.source || '');
+            const timestamp = Number(envelope?.timestamp || Date.now());
+            return {
+              externalId: `signal:${timestamp}:${senderId}`,
+              senderId,
+              text,
+              timestamp: new Date(timestamp < 1e12 ? timestamp * 1000 : timestamp).toISOString(),
+            };
+          })
+          .filter((message: PersonalInboundMessage) =>
+            message.text && (!recipient || message.senderId === recipient),
+          );
+      } finally {
+        await fs.rm(configDir, { recursive: true, force: true });
+      }
+    }
+
+    if (provider === 'bluesky') {
+      const didResponse = await fetch(`https://bsky.social/xrpc/com.atproto.identity.resolveHandle?handle=${encodeURIComponent(recipient.replace(/^@/, ''))}`);
+      const didData: any = await didResponse.json().catch(() => ({}));
+      if (!didResponse.ok || !didData.did) return [];
+      const headers = { Authorization: `Bearer ${credential.accessJwt}`, 'Content-Type': 'application/json' };
+      const convoResponse = await fetch('https://bsky.social/xrpc/chat.bsky.convo.getConvoForMembers', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ members: [credential.did, didData.did] }),
+      });
+      const convo: any = await convoResponse.json().catch(() => ({}));
+      if (!convoResponse.ok || !convo.convo?.id) return [];
+      const messagesResponse = await fetch(`https://bsky.social/xrpc/chat.bsky.convo.getMessages?convoId=${encodeURIComponent(convo.convo.id)}&limit=${Math.min(50, Math.max(1, limit))}`, { headers });
+      const messages: any = await messagesResponse.json().catch(() => ({}));
+      return (messages?.messages || [])
+        .filter((message: any) => message?.sender?.did !== credential.did && String(message?.message?.text || '').trim())
+        .map((message: any) => ({
+          externalId: `bluesky:${message.id}`,
+          senderId: String(message.sender?.did || recipient),
+          text: String(message.message.text).trim(),
+          timestamp: message.sentAt || new Date().toISOString(),
+        }));
+    }
+
+    if (provider === 'delta_chat') {
+      const result = await this.deltaChatRequest(userId, 'receive', { recipient, limit });
+      const messages = Array.isArray(result) ? result : (result?.messages || []);
+      return messages
+        .map((message: any) => ({
+          externalId: `delta-chat:${message.id || message.messageId || crypto.createHash('sha256').update(JSON.stringify(message)).digest('hex').slice(0, 20)}`,
+          senderId: String(message.senderId || message.sender || recipient),
+          text: String(message.text || message.message || '').trim(),
+          timestamp: message.timestamp || message.createdAt || new Date().toISOString(),
+        }))
+        .filter((message: PersonalInboundMessage) => Boolean(message.text));
+    }
+
+    // Baileys does not expose reliable historical message retrieval for a
+    // freshly materialized auth bundle. Live WhatsApp events are handled by
+    // the connection listener; do not fabricate an empty successful poll.
+    if (provider === 'whatsapp_personal') {
+      return [];
+    }
+
+    return [];
   }
 
   /**

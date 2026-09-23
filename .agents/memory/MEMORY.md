@@ -5,3 +5,4 @@
 - [ThinkingIndicator suppression fix](thinking-indicator.md) — STRATEGY_GENERATION must take priority over hasStreamingInProgress in ListFooterComponent so it shows even while typewriter plays.
 - [Feature Flags system](feature-flags.md) — global + per-user flags; mobile hook defaults true on error/missing table; needs feature_flags_migration.sql run in Supabase.
 - [Expo validation environment](expo-validation-environment.md) — this workspace sets NODE_ENV=production, so dev binaries are omitted during local package installs; use clean-install and Expo Doctor checks accordingly.
+- [Conversation schema compatibility](conversation-schema-compatibility.md) — keep Supabase conversation tables and lead-message timestamps aligned with backend readers and mobile realtime.

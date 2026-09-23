@@ -133,7 +133,7 @@ export class AgentOrchestrator {
             .eq('strategy_id', params.strategyId)
             .in('status', ['pending', 'scheduled']);
         const invalidTaskIds = (plannedTasks || [])
-            .filter((task: any) => task.platform !== 'internal' && !allowedPlatforms.has(String(task.platform || '').toLowerCase()))
+            .filter((task: any) => task.platform !== 'internal' && !allowedPlatforms.has(normalizePlatform(task.platform)))
             .map((task: any) => task.id);
         if (invalidTaskIds.length > 0) {
             await this.supabase.from('agent_tasks').delete().in('id', invalidTaskIds);
