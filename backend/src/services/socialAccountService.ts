@@ -5,6 +5,7 @@ import path from 'path';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
 import { getServiceSupabaseClient } from '../config/supabase';
+import { normalizePlatform } from './platformIdentity';
 
 export type PersonalProvider = 'telegram' | 'whatsapp_personal' | 'signal_personal' | 'bluesky';
 
@@ -76,7 +77,7 @@ function publicConnection(row: any): SocialConnectionPublic {
 export class SocialAccountService {
   private readonly supabase = getServiceSupabaseClient();
   private readonly pendingTelegram = new Map<string, any>();
-  private readonly pendingSignal = new Map<string, { userId: string; phone: string }>();
+  private readonly pendingSignal = new Map<string, { userId: string; phone: string; createdAt: number }>();
   private readonly pendingWhatsApp = new Map<string, { userId: string; phone: string; sock: any; authDir: string }>();
 
   async list(userId: string): Promise<SocialConnectionPublic[]> {
@@ -93,6 +94,7 @@ export class SocialAccountService {
   }
 
   async get(userId: string, provider: string): Promise<any | null> {
+    provider = normalizePlatform(provider);
     const { data, error } = await this.supabase
       .from('social_account_connections')
       .select('*')
@@ -113,13 +115,14 @@ export class SocialAccountService {
     metadata?: Record<string, unknown>;
     dailyLimit?: number;
   }): Promise<SocialConnectionPublic> {
+    const provider = normalizePlatform(params.provider) as PersonalProvider;
     const encrypted = encrypt(params.credential);
     const now = new Date().toISOString();
     const { data, error } = await this.supabase
       .from('social_account_connections')
       .upsert({
         user_id: params.userId,
-        provider: params.provider,
+        provider,
         account_id: params.accountId || null,
         display_name: params.displayName || null,
         handle: params.handle || null,
@@ -141,10 +144,10 @@ export class SocialAccountService {
     // as missing; secret material stays in the encrypted table above.
     await this.supabase.from('ad_configs').upsert({
       user_id: params.userId,
-      platform: params.provider,
-      account_id: params.accountId || params.handle || params.provider,
-      page_id: params.accountId || params.handle || params.provider,
-      page_name: params.displayName || params.handle || params.provider,
+      platform: provider,
+      account_id: params.accountId || params.handle || provider,
+      page_id: params.accountId || params.handle || provider,
+      page_name: params.displayName || params.handle || provider,
       access_token: 'managed_social_connection',
       connection_type: 'personal',
       updated_at: now,
@@ -154,11 +157,12 @@ export class SocialAccountService {
   }
 
   async credentials(userId: string, provider: string): Promise<any | null> {
-    const row = await this.get(userId, provider);
+    const row = await this.get(userId, normalizePlatform(provider));
     return row ? decrypt(row) : null;
   }
 
   async remove(userId: string, provider: string): Promise<void> {
+    provider = normalizePlatform(provider);
     const { error } = await this.supabase
       .from('social_account_connections')
       .delete()
@@ -170,27 +174,65 @@ export class SocialAccountService {
       .eq('platform', provider);
   }
 
-  async reserveAction(userId: string, provider: string): Promise<boolean> {
+  async reserveAction(userId: string, provider: string, recipient?: string): Promise<boolean> {
+    provider = normalizePlatform(provider);
     const row = await this.get(userId, provider);
     if (!row || row.status !== 'connected') return false;
+    if (row.cooldown_until && new Date(row.cooldown_until).getTime() > Date.now()) return false;
     const today = new Date().toISOString().slice(0, 10);
     const actionsToday = row.action_day === today ? Number(row.actions_today || 0) : 0;
     if (actionsToday >= Number(row.daily_limit || 20)) return false;
+    const recipientKey = recipient
+      ? crypto.createHash('sha256').update(String(recipient)).digest('hex').slice(0, 24)
+      : null;
+    const recipientActions = row.recipient_action_day === today && row.recipient_actions && typeof row.recipient_actions === 'object'
+      ? { ...row.recipient_actions }
+      : {};
+    const recipientLimit = Math.max(1, Math.min(5, Math.floor(Number(row.daily_limit || 20) / 4)));
+    if (recipientKey && Number(recipientActions[recipientKey] || 0) >= recipientLimit) return false;
+    if (recipientKey) recipientActions[recipientKey] = Number(recipientActions[recipientKey] || 0) + 1;
     const { error } = await this.supabase.from('social_account_connections').update({
       action_day: today,
       actions_today: actionsToday + 1,
+      recipient_action_day: today,
+      recipient_actions: recipientActions,
       last_action_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
-    }).eq('id', row.id);
+    }).eq('id', row.id).eq('actions_today', Number(row.actions_today || 0));
     return !error;
   }
 
   async recordError(userId: string, provider: string, message: string): Promise<void> {
+    provider = normalizePlatform(provider);
+    const row = await this.get(userId, provider);
+    const consecutiveErrors = Number(row?.consecutive_errors || 0) + 1;
+    const shouldPause = consecutiveErrors >= 3 || /floodwait|rate.limit|too many requests|ban/i.test(message);
+    const cooldownUntil = shouldPause
+      ? new Date(Date.now() + Math.min(6 * 60 * 60 * 1000, 15 * 60 * 1000 * Math.pow(2, Math.min(consecutiveErrors - 3, 4)))).toISOString()
+      : null;
     await this.supabase.from('social_account_connections').update({
-      status: /ban|rate.limit|unauthoriz|expired/i.test(message) ? 'needs_reconnect' : 'error',
+      status: /ban|unauthoriz|expired/i.test(message) ? 'needs_reconnect' : shouldPause ? 'paused' : 'error',
       last_error: message.slice(0, 500),
+      consecutive_errors: consecutiveErrors,
+      cooldown_until: cooldownUntil,
       updated_at: new Date().toISOString(),
     }).eq('user_id', userId).eq('provider', provider);
+  }
+
+  async recordSuccess(userId: string, provider: string): Promise<void> {
+    await this.supabase.from('social_account_connections').update({
+      consecutive_errors: 0,
+      cooldown_until: null,
+      status: 'connected',
+      last_error: null,
+      updated_at: new Date().toISOString(),
+    }).eq('user_id', userId).eq('provider', normalizePlatform(provider));
+  }
+
+  private async safetyDelay(provider: string): Promise<void> {
+    const min = normalizePlatform(provider) === 'signal_personal' ? 1500 : 350;
+    const max = normalizePlatform(provider) === 'signal_personal' ? 4000 : 1400;
+    await new Promise((resolve) => setTimeout(resolve, min + Math.floor(Math.random() * (max - min + 1))));
   }
 
   async startTelegram(userId: string, phone: string): Promise<{ requestId: string; status: string }> {
