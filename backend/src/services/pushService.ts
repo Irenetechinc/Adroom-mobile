@@ -40,15 +40,30 @@ async function sendExpoPush(tokens: DeviceTokenRow[], payload: PushPayload): Pro
   if (!tokens.length) {
     return { ok: false, httpStatus: 0, tokensSent: 0, tickets: [], invalidTokens: [], errorSummary: 'No active tokens for this user' };
   }
-  // Expo rejects a request when tokens belong to different EAS projects.
-  // Token rows from older app builds do not carry project_id, so the safest
-  // compatibility path is one request per token whenever a caller supplies
-  // more than one. This also avoids one bad project poisoning a whole batch.
-  // Never mix tokens from different EAS projects in one Expo request. Older
-  // rows may not have project_id, so one token per request is the only safe
-  // compatibility path for the full history of this table.
-  if (tokens.length > 1) {
-    const results = await Promise.all(tokens.map((token) => sendExpoPush([token], payload)));
+  // Expo's API contract is one EAS project per request. Grouping by the
+  // recorded project is the real fix for mixed-project devices: it preserves
+  // delivery to valid installations without making one request per token.
+  const projectGroups = new Map<string, DeviceTokenRow[]>();
+  for (const token of tokens) {
+    const project = String(token.project_id || '').trim();
+    if (!project) continue;
+    const group = projectGroups.get(project) || [];
+    group.push(token);
+    projectGroups.set(project, group);
+  }
+  const unscoped = tokens.filter((token) => !String(token.project_id || '').trim());
+  if (unscoped.length) {
+    console.warn(`[PushService] Ignoring ${unscoped.length} legacy token(s) without an EAS project ID; the app will re-register them.`);
+    await deactivateInvalidTokens(unscoped.map((token) => token.token));
+  }
+  const routableTokens = Array.from(projectGroups.values()).flat();
+  if (!routableTokens.length) {
+    return { ok: false, httpStatus: 0, tokensSent: 0, tickets: [], invalidTokens: [], errorSummary: 'No project-scoped active tokens for this user' };
+  }
+  if (projectGroups.size > 1) {
+    const results = await Promise.all(
+      Array.from(projectGroups.values()).map((group) => sendExpoPush(group, payload)),
+    );
     return {
       ok: results.every((result) => result.ok),
       httpStatus: results.find((result) => result.httpStatus)?.httpStatus || 200,
@@ -58,7 +73,7 @@ async function sendExpoPush(tokens: DeviceTokenRow[], payload: PushPayload): Pro
       errorSummary: results.map((result) => result.errorSummary).filter(Boolean).join(' | ') || undefined,
     };
   }
-  const messages = tokens.map((token) => ({
+  const messages = routableTokens.map((token) => ({
     to: token.token,
     sound: payload.sound ?? 'default',
     title: payload.title,
@@ -79,7 +94,7 @@ async function sendExpoPush(tokens: DeviceTokenRow[], payload: PushPayload): Pro
     const rawText = await res.text();
     if (!res.ok) {
       console.error('[PushService] Expo push HTTP error:', res.status, rawText.slice(0, 400));
-      return { ok: false, httpStatus: res.status, tokensSent: tokens.length, tickets: [], invalidTokens: [], errorSummary: `Expo HTTP ${res.status}`, rawResponse: rawText.slice(0, 600) };
+      return { ok: false, httpStatus: res.status, tokensSent: routableTokens.length, tickets: [], invalidTokens: [], errorSummary: `Expo HTTP ${res.status}`, rawResponse: rawText.slice(0, 600) };
     }
 
     let json: any = null;
@@ -99,7 +114,7 @@ async function sendExpoPush(tokens: DeviceTokenRow[], payload: PushPayload): Pro
           errCode === 'InvalidCredentials' ||
           errCode === 'MismatchSenderId'
         ) {
-          const token = tokens[idx]?.token;
+          const token = routableTokens[idx]?.token;
           if (token) invalid.push(token);
         }
       }
@@ -110,7 +125,7 @@ async function sendExpoPush(tokens: DeviceTokenRow[], payload: PushPayload): Pro
     return {
       ok: allOk,
       httpStatus: res.status,
-      tokensSent: tokens.length,
+      tokensSent: routableTokens.length,
       tickets,
       invalidTokens: invalid,
       errorSummary: errorMessages.length ? errorMessages.join(' | ') : undefined,
@@ -118,7 +133,7 @@ async function sendExpoPush(tokens: DeviceTokenRow[], payload: PushPayload): Pro
     };
   } catch (e: any) {
     console.error('[PushService] Network error sending push:', e.message);
-    return { ok: false, httpStatus: 0, tokensSent: tokens.length, tickets: [], invalidTokens: [], errorSummary: `Network error: ${e.message}` };
+    return { ok: false, httpStatus: 0, tokensSent: routableTokens.length, tickets: [], invalidTokens: [], errorSummary: `Network error: ${e.message}` };
   }
 }
 
@@ -612,11 +627,13 @@ export const pushService = {
     const supabase = getServiceSupabaseClient();
     const { data: rows } = await supabase
       .from('device_push_tokens')
-      .select('token, device_id, platform, app_version, last_seen_at')
+      .select('token, project_id, device_id, platform, app_version, last_seen_at')
       .eq('user_id', userId)
       .eq('is_active', true);
 
-    const tokens = (rows ?? []).map((r: any) => r.token).filter(Boolean);
+    const tokens = (rows ?? [])
+      .map((r: any) => ({ token: String(r.token || ''), project_id: r.project_id || null }))
+      .filter((r: DeviceTokenRow) => Boolean(r.token));
     const devices = (rows ?? []).map((r: any) => ({
       device_id: String(r.device_id || '').slice(0, 8) + '…',
       platform: r.platform,

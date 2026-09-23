@@ -644,10 +644,11 @@ export class SocialAccountService {
              : `${requestedRecipient.replace(/\D/g, '')}@s.whatsapp.net`;
            await liveSocket.sendPresenceUpdate?.('composing', jid);
            await new Promise((resolve) => setTimeout(resolve, 500 + Math.floor(Math.random() * 1200)));
-           const message = mediaUrl
-             ? { document: { url: mediaUrl }, fileName: 'adirum-creative', caption: text.slice(0, 4000) }
-             : { text: text.slice(0, 4000) };
-           const result = await liveSocket.sendMessage(jid, message);
+            const mediaPayload = mediaUrl
+              ? await this.buildWhatsAppMediaMessage(mediaUrl, text)
+              : null;
+            const result = await liveSocket.sendMessage(jid, mediaPayload?.message || { text: text.slice(0, 4000) });
+            if (mediaPayload?.filePath) await fs.rm(mediaPayload.filePath, { force: true }).catch(() => {});
            await this.recordSuccess(userId, provider);
            return { id: String(result?.key?.id || `whatsapp:${Date.now()}`) };
         }
@@ -655,9 +656,18 @@ export class SocialAccountService {
         const exec = promisify(execFile);
         const phone = requestedRecipient;
         const configDir = await this.materializeSignalBundle(credential);
+         let attachmentPath: string | null = null;
         try {
-          await exec('signal-cli', ['--config', configDir, '-u', credential.phone, 'send', '-m', text.slice(0, 2000), phone], { timeout: 30000 });
+           const args = ['--config', configDir, '-u', credential.phone, 'send', '-m', text.slice(0, 2000)];
+           if (mediaUrl) {
+             const attachment = await this.materializeMediaAttachment(mediaUrl, 'adroom-signal-attachment');
+             attachmentPath = attachment.filePath;
+             args.push('--attachment', attachment.filePath);
+           }
+           args.push(phone);
+           await exec('signal-cli', args, { timeout: 30000 });
         } finally {
+           if (attachmentPath) await fs.rm(attachmentPath, { force: true }).catch(() => {});
           await fs.rm(configDir, { recursive: true, force: true });
         }
         await this.recordSuccess(userId, provider);
@@ -735,6 +745,53 @@ export class SocialAccountService {
       await fs.writeFile(path.join(tempDir, file), Buffer.from(String(encoded), 'base64'));
     }
     return tempDir;
+  }
+
+  private async materializeMediaAttachment(mediaUrl: string, prefix: string): Promise<{ filePath: string; mimeType: string }> {
+    const value = String(mediaUrl || '').trim();
+    if (!value) throw new Error('Media URL is empty.');
+
+    let bytes: Buffer;
+    let mimeType = '';
+    if (value.startsWith('data:')) {
+      const match = value.match(/^data:([^;,]+);base64,(.+)$/s);
+      if (!match) throw new Error('Generated media data is not a valid base64 data URI.');
+      mimeType = match[1];
+      bytes = Buffer.from(match[2], 'base64');
+    } else {
+      const response = await fetch(value);
+      if (!response.ok) throw new Error(`Media download failed with HTTP ${response.status}.`);
+      mimeType = response.headers.get('content-type')?.split(';')[0].trim() || '';
+      bytes = Buffer.from(await response.arrayBuffer());
+    }
+
+    const extensionByMime: Record<string, string> = {
+      'image/jpeg': '.jpg',
+      'image/png': '.png',
+      'image/webp': '.webp',
+      'video/mp4': '.mp4',
+      'audio/mpeg': '.mp3',
+      'audio/ogg': '.ogg',
+      'application/pdf': '.pdf',
+    };
+    const extension = extensionByMime[mimeType] || path.extname(value.split('?')[0]).slice(0, 8) || '.bin';
+    const filePath = path.join(os.tmpdir(), prefix, `${crypto.randomUUID()}${extension}`);
+    await fs.mkdir(path.dirname(filePath), { recursive: true });
+    await fs.writeFile(filePath, bytes);
+    return { filePath, mimeType };
+  }
+
+  private async buildWhatsAppMediaMessage(mediaUrl: string, caption: string): Promise<{ message: any; filePath: string }> {
+    const media = await this.materializeMediaAttachment(mediaUrl, 'adroom-whatsapp-media');
+    const base = { url: media.filePath };
+    const common = { caption: caption.slice(0, 4000) };
+    if (media.mimeType.startsWith('image/')) return { message: { image: base, ...common }, filePath: media.filePath };
+    if (media.mimeType.startsWith('video/')) return { message: { video: base, ...common }, filePath: media.filePath };
+    if (media.mimeType.startsWith('audio/')) return { message: { audio: base, ptt: false }, filePath: media.filePath };
+    return {
+      message: { document: base, fileName: `adirum-creative${path.extname(media.filePath)}`, ...common },
+      filePath: media.filePath,
+    };
   }
 
   private async fetchMediaForUpload(mediaUrl: string): Promise<{ bytes: Buffer; mimeType: string }> {

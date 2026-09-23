@@ -40,6 +40,7 @@ interface LastRegistration {
   device_id: string;
   user_id: string;
   app_version: string;
+  project_id: string;
   registered_at: number;
 }
 
@@ -287,6 +288,7 @@ export async function registerPushToken(options?: { force?: boolean }): Promise<
         last.device_id === deviceId &&
         last.user_id === userId &&
         last.app_version === appVersion &&
+        last.project_id === projectId &&
         Date.now() - last.registered_at < REREGISTER_AFTER_MS
       ) {
         await setPending(false);
@@ -308,6 +310,7 @@ export async function registerPushToken(options?: { force?: boolean }): Promise<
         device_id: deviceId,
         user_id: userId,
         app_version: appVersion,
+        project_id: projectId,
         registered_at: Date.now(),
       });
       await setPending(false);

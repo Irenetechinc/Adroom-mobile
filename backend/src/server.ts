@@ -1706,9 +1706,7 @@ app.post('/api/ai/generate-strategy', async (req, res) => {
         const { data: { user } } = await supabase.auth.getUser();
         if (!user) return res.status(401).json({ error: 'Unauthorized.' });
 
-        const requestedAccounts = Array.isArray(selectedAccounts)
-          ? [...new Set(selectedAccounts.map((account: unknown) => String(account).trim().toLowerCase()).filter(Boolean))]
-          : [];
+        const requestedAccounts = normalizeSelectedPlatforms(selectedAccounts);
         if (requestedAccounts.length === 0) {
           return res.status(400).json({
             error: 'SOCIAL_ACCOUNTS_REQUIRED',
@@ -1723,6 +1721,13 @@ app.post('/api/ai/generate-strategy', async (req, res) => {
             .in('platform', requestedAccounts);
           if (accountError) return res.status(500).json({ error: 'Could not verify selected social accounts.' });
           const connected = new Set((connectedAccounts || []).map((account: any) => String(account.platform).toLowerCase()));
+          const { data: personalAccounts } = await supabase
+            .from('social_account_connections')
+            .select('provider, status')
+            .eq('user_id', user.id)
+            .eq('status', 'connected')
+            .in('provider', requestedAccounts.filter((account) => isPersonalProvider(account)));
+          for (const account of personalAccounts || []) connected.add(normalizePlatform(account.provider));
           const missing = requestedAccounts.filter((account: string) => !connected.has(account));
           if (missing.length > 0) {
             return res.status(409).json({
@@ -4526,6 +4531,9 @@ app.post('/api/push/register', async (req, res) => {
     const { token, platform, app_version, device_id, project_id } = req.body || {};
     if (!token || typeof token !== 'string') return res.status(400).json({ error: 'token required' });
     if (!device_id || typeof device_id !== 'string') return res.status(400).json({ error: 'device_id required' });
+    if (!project_id || typeof project_id !== 'string') {
+      return res.status(400).json({ error: 'project_id required — install the current mobile build before registering push notifications.' });
+    }
 
     const svc = getServiceSupabaseClient();
     const now = new Date().toISOString();
@@ -4589,6 +4597,15 @@ app.post('/api/push/register', async (req, res) => {
       .update({ is_active: false })
       .eq('token', token)
       .neq('user_id', user.id);
+
+    // Rows from the pre-project-aware registration flow cannot be routed
+    // safely by Expo. Retire them for this user; the current mobile build will
+    // re-register each active device with its EAS project on the next launch.
+    await svc
+      .from('device_push_tokens')
+      .update({ is_active: false })
+      .eq('user_id', user.id)
+      .is('project_id', null);
 
     console.log(`[PushRegister] user=${user.id} device=${device_id.slice(0, 8)} platform=${platform}`);
     res.json({ success: true });

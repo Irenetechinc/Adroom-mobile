@@ -133,7 +133,7 @@ function ConnectedAccountsSkeleton({ insets }: { insets: { bottom: number } }) {
     <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 20, paddingBottom: Math.max(40, insets.bottom + 20) }} scrollEnabled={false}>
       <Skeleton width="100%" height={15} borderRadius={4} style={{ marginBottom: 20 }} />
       {[...Array(5)].map((_, i) => (
-        <View key={i} style={{ backgroundColor: '#151B2B', borderRadius: 18, borderWidth: 1, borderColor: '#1E293B', padding: 16, marginBottom: 12 }}>
+        <View key={i} style={{ backgroundColor: '#151B2B', borderRadius: 18, padding: 16, marginBottom: 12, shadowColor: '#00F0FF', shadowOpacity: 0.05, shadowRadius: 12, elevation: 2 }}>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
             <Skeleton width={48} height={48} borderRadius={14} />
             <View style={{ flex: 1, gap: 7 }}>
@@ -204,7 +204,7 @@ function PlatformIconBg({ platform, size = 46 }: { platform: Platform; size?: nu
       <View style={{
         width: size, height: size, borderRadius: radius,
         backgroundColor: '#FFFFFF', alignItems: 'center', justifyContent: 'center',
-        borderWidth: 1, borderColor: '#E2E8F0',
+        shadowColor: '#000000', shadowOpacity: 0.08, shadowRadius: 8, elevation: 2,
       }}>
         <GoogleIcon size={26} />
       </View>
@@ -490,8 +490,8 @@ export default function ConnectedAccountsScreen() {
                   </View>
                 ) : (
                   <View style={[styles.statusBadge, connected
-                    ? { backgroundColor: 'rgba(16,185,129,0.12)', borderColor: 'rgba(16,185,129,0.25)' }
-                    : { backgroundColor: 'rgba(100,116,139,0.1)', borderColor: 'rgba(100,116,139,0.2)' }
+                    ? { backgroundColor: 'rgba(16,185,129,0.12)' }
+                    : { backgroundColor: 'rgba(100,116,139,0.1)' }
                   ]}>
                     <View style={[styles.statusDot, { backgroundColor: connected ? '#10B981' : '#475569' }]} />
                     <Text style={[styles.statusText, { color: connected ? '#34D399' : '#64748B' }]}>
@@ -654,14 +654,13 @@ const styles = StyleSheet.create({
   header: {
     flexDirection: 'row', alignItems: 'center',
     paddingHorizontal: 20, paddingVertical: 14,
-    borderBottomWidth: 1, borderBottomColor: 'rgba(0,240,255,0.08)',
   },
   backBtn: { marginRight: 14, padding: 4 },
   headerLabel: { color: '#64748B', fontSize: 11, fontWeight: '600', letterSpacing: 1, textTransform: 'uppercase' },
   headerTitle: { color: '#FFFFFF', fontSize: 22, fontWeight: '800', marginTop: 1 },
   refreshBtn: {
     width: 36, height: 36, borderRadius: 10,
-    backgroundColor: '#151B2B', borderWidth: 1, borderColor: '#1E293B',
+    backgroundColor: '#151B2B', shadowColor: '#00F0FF', shadowOpacity: 0.08, shadowRadius: 8, elevation: 2,
     alignItems: 'center', justifyContent: 'center',
   },
   scroll: { padding: 16 },
@@ -669,8 +668,8 @@ const styles = StyleSheet.create({
 
   planBanner: {
     flexDirection: 'row', alignItems: 'center', gap: 8,
-    backgroundColor: 'rgba(245,158,11,0.08)', borderWidth: 1, borderColor: 'rgba(245,158,11,0.25)',
-    borderRadius: 14, padding: 12, marginBottom: 16,
+    backgroundColor: 'rgba(245,158,11,0.08)', borderRadius: 14, padding: 12, marginBottom: 16,
+    shadowColor: '#F59E0B', shadowOpacity: 0.06, shadowRadius: 10, elevation: 2,
   },
   planBannerText: { flex: 1, color: '#F59E0B', fontSize: 12, lineHeight: 17 },
   planBannerBtn: {
@@ -680,31 +679,29 @@ const styles = StyleSheet.create({
   planBannerBtnText: { color: '#000', fontWeight: '800', fontSize: 11 },
 
   platformCard: {
-    backgroundColor: '#151B2B', borderRadius: 18, borderWidth: 1, borderColor: '#1E293B',
-    overflow: 'hidden', marginBottom: 12,
+    backgroundColor: '#151B2B', borderRadius: 18,
+    overflow: 'hidden', marginBottom: 12, shadowColor: '#00F0FF', shadowOpacity: 0.05, shadowRadius: 12, elevation: 2,
   },
   platformCardDim: { opacity: 0.6 },
   platformHeader: {
     flexDirection: 'row', alignItems: 'center',
-    padding: 16, borderBottomWidth: 1, borderBottomColor: '#1E293B',
+    padding: 16, backgroundColor: 'rgba(255,255,255,0.018)',
   },
   platformName: { color: '#FFFFFF', fontWeight: '700', fontSize: 15 },
   platformSub: { color: '#475569', fontSize: 11, marginTop: 2 },
   statusBadge: {
     flexDirection: 'row', alignItems: 'center',
-    paddingHorizontal: 10, paddingVertical: 5, borderRadius: 20, borderWidth: 1,
+    paddingHorizontal: 10, paddingVertical: 5, borderRadius: 20,
   },
   statusDot: { width: 6, height: 6, borderRadius: 3, marginRight: 5 },
   statusText: { fontSize: 11, fontWeight: '700' },
   comingSoonBadge: {
-    backgroundColor: 'rgba(112,0,255,0.08)', borderColor: 'rgba(112,0,255,0.2)',
-    borderWidth: 1, paddingHorizontal: 10, paddingVertical: 5, borderRadius: 20,
+    backgroundColor: 'rgba(112,0,255,0.08)', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 20,
   },
   comingSoonText: { color: '#7000FF', fontSize: 10, fontWeight: '700' },
   lockedBadge: {
     flexDirection: 'row', alignItems: 'center', gap: 4,
-    backgroundColor: 'rgba(245,158,11,0.1)', borderColor: 'rgba(245,158,11,0.3)',
-    borderWidth: 1, paddingHorizontal: 10, paddingVertical: 5, borderRadius: 20,
+    backgroundColor: 'rgba(245,158,11,0.1)', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 20,
   },
   lockedBadgeText: { color: '#F59E0B', fontSize: 10, fontWeight: '700' },
 
@@ -712,11 +709,10 @@ const styles = StyleSheet.create({
   accountInfoRow: {
     flexDirection: 'row', alignItems: 'center', marginBottom: 14,
     backgroundColor: 'rgba(0,240,255,0.04)', borderRadius: 14, padding: 12,
-    borderWidth: 1, borderColor: 'rgba(0,240,255,0.1)',
   },
   accountAvatar: {
     width: 44, height: 44, borderRadius: 12,
-    backgroundColor: 'rgba(0,240,255,0.1)', borderWidth: 1, borderColor: 'rgba(0,240,255,0.2)',
+    backgroundColor: 'rgba(0,240,255,0.1)',
     alignItems: 'center', justifyContent: 'center', marginRight: 12,
   },
   accountAvatarText: { color: '#00F0FF', fontWeight: '800', fontSize: 18 },
@@ -724,20 +720,20 @@ const styles = StyleSheet.create({
   accountType: { color: '#64748B', fontSize: 11 },
   activeBanner: {
     flexDirection: 'row', alignItems: 'center', gap: 8,
-    backgroundColor: 'rgba(16,185,129,0.07)', borderWidth: 1, borderColor: 'rgba(16,185,129,0.2)',
+    backgroundColor: 'rgba(16,185,129,0.07)',
     borderRadius: 10, padding: 12, marginBottom: 14,
   },
   activeBannerText: { color: '#10B981', fontSize: 12, fontWeight: '600', flex: 1 },
   actionRow: { flexDirection: 'row', gap: 10 },
   reconfigureBtn: {
     flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
-    backgroundColor: 'rgba(0,240,255,0.08)', borderWidth: 1, borderColor: 'rgba(0,240,255,0.2)',
+    backgroundColor: 'rgba(0,240,255,0.08)',
     borderRadius: 12, paddingVertical: 12,
   },
   reconfigureBtnText: { color: '#00F0FF', fontWeight: '700', fontSize: 13 },
   disconnectBtn: {
     width: 46, height: 46, borderRadius: 12,
-    backgroundColor: 'rgba(239,68,68,0.08)', borderWidth: 1, borderColor: 'rgba(239,68,68,0.2)',
+    backgroundColor: 'rgba(239,68,68,0.08)',
     alignItems: 'center', justifyContent: 'center',
   },
 
@@ -765,12 +761,12 @@ const styles = StyleSheet.create({
   },
   connectBtnText: { color: '#0B0F19', fontWeight: '800', fontSize: 15 },
   modalBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.76)', justifyContent: 'flex-end' },
-  modalCard: { backgroundColor: '#151B2B', borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 22, paddingBottom: 34, borderWidth: 1, borderColor: '#263247' },
+  modalCard: { backgroundColor: '#151B2B', borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 22, paddingBottom: 34, shadowColor: '#00F0FF', shadowOpacity: 0.1, shadowRadius: 20, elevation: 8 },
   modalEyebrow: { color: '#00F0FF', fontSize: 10, fontWeight: '800', letterSpacing: 1.4, marginBottom: 8 },
   modalTitle: { color: '#FFFFFF', fontSize: 22, fontWeight: '800', marginBottom: 8 },
   modalDesc: { color: '#94A3B8', fontSize: 13, lineHeight: 19, marginBottom: 14 },
-  modalInput: { backgroundColor: '#0B0F19', color: '#FFFFFF', borderWidth: 1, borderColor: '#263247', borderRadius: 12, paddingHorizontal: 14, paddingVertical: 13, marginBottom: 10 },
-  pairingBox: { backgroundColor: 'rgba(0,240,255,0.06)', borderWidth: 1, borderColor: 'rgba(0,240,255,0.22)', borderRadius: 14, padding: 16, marginBottom: 12, alignItems: 'center' },
+  modalInput: { backgroundColor: '#0B0F19', color: '#FFFFFF', borderRadius: 12, paddingHorizontal: 14, paddingVertical: 13, marginBottom: 10 },
+  pairingBox: { backgroundColor: 'rgba(0,240,255,0.06)', borderRadius: 14, padding: 16, marginBottom: 12, alignItems: 'center' },
   pairingLabel: { color: '#64748B', fontSize: 10, fontWeight: '800', letterSpacing: 1.2 },
   pairingCode: { color: '#00F0FF', fontSize: 28, fontWeight: '900', letterSpacing: 4, marginVertical: 8 },
   modalActions: { flexDirection: 'row', gap: 10, marginTop: 8 },

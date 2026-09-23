@@ -83,7 +83,7 @@ function PerformanceChart({ strategies, userId }: PerformanceChartProps) {
 
   if (loading) {
     return (
-      <View style={{ backgroundColor: '#151B2B', borderRadius: 16, borderWidth: 1, borderColor: '#1E293B', padding: 14 }}>
+      <View style={{ backgroundColor: '#151B2B', borderRadius: 16, padding: 14, shadowColor: '#00F0FF', shadowOpacity: 0.06, shadowRadius: 12, elevation: 2 }}>
         <Skeleton width="100%" height={80} borderRadius={10} />
       </View>
     );
@@ -91,7 +91,7 @@ function PerformanceChart({ strategies, userId }: PerformanceChartProps) {
 
   if (platforms.length === 0) {
     return (
-      <View style={{ backgroundColor: '#151B2B', borderRadius: 16, borderWidth: 1, borderColor: '#1E293B', padding: 20, alignItems: 'center' }}>
+      <View style={{ backgroundColor: '#151B2B', borderRadius: 16, padding: 20, alignItems: 'center', shadowColor: '#00F0FF', shadowOpacity: 0.06, shadowRadius: 12, elevation: 2 }}>
         <Activity size={24} color="#1E293B" />
         <Text style={{ color: '#334155', fontSize: 13, marginTop: 8 }}>No performance data yet — agents are working</Text>
       </View>
@@ -99,15 +99,15 @@ function PerformanceChart({ strategies, userId }: PerformanceChartProps) {
   }
 
   return (
-    <View style={{ backgroundColor: '#151B2B', borderRadius: 16, borderWidth: 1, borderColor: 'rgba(167,139,250,0.2)', overflow: 'hidden' }}>
+    <View style={{ backgroundColor: '#151B2B', borderRadius: 16, overflow: 'hidden', shadowColor: '#A78BFA', shadowOpacity: 0.08, shadowRadius: 14, elevation: 2 }}>
       {/* Totals header */}
-      <View style={{ flexDirection: 'row', borderBottomWidth: 1, borderBottomColor: '#1E293B' }}>
+      <View style={{ flexDirection: 'row', gap: 6 }}>
         {[
           { label: 'Total Reach', value: totalReach.toLocaleString(), color: '#A78BFA' },
           { label: 'Engagement', value: totalEngagement.toLocaleString(), color: '#00F0FF' },
           { label: 'Platforms', value: String(platforms.length), color: '#10B981' },
         ].map((stat, i) => (
-          <View key={i} style={{ flex: 1, alignItems: 'center', paddingVertical: 12, borderRightWidth: i < 2 ? 1 : 0, borderRightColor: '#1E293B' }}>
+          <View key={i} style={{ flex: 1, alignItems: 'center', paddingVertical: 12, backgroundColor: 'rgba(255,255,255,0.025)', borderRadius: 10 }}>
             <Text style={{ color: stat.color, fontWeight: '800', fontSize: 16 }}>{stat.value}</Text>
             <Text style={{ color: '#64748B', fontSize: 10, marginTop: 2 }}>{stat.label}</Text>
           </View>
@@ -637,7 +637,7 @@ export default function DashboardScreen() {
               <TouchableOpacity
                 onPress={() => navigation.navigate('Subscription')}
                 activeOpacity={0.85}
-                style={[styles.energyCard, isLow && { borderColor: '#F59E0B40' }]}
+                style={styles.energyCard}
               >
                 <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
@@ -764,7 +764,7 @@ export default function DashboardScreen() {
               { label: 'High potential', value: conversationMilestones.highPotential, color: '#F59E0B' },
               { label: 'Engaged', value: conversationMilestones.engaged, color: '#10B981' },
             ].map((milestone) => (
-              <View key={milestone.label} style={{ flex: 1, backgroundColor: '#151B2B', borderRadius: 12, borderWidth: 1, borderColor: '#1E293B', padding: 12 }}>
+              <View key={milestone.label} style={{ flex: 1, backgroundColor: '#151B2B', borderRadius: 12, padding: 12, shadowColor: milestone.color, shadowOpacity: 0.08, shadowRadius: 10, elevation: 2 }}>
                 <Text style={{ color: milestone.color, fontSize: 22, fontWeight: '900' }}>{milestone.value}</Text>
                 <Text style={{ color: '#64748B', fontSize: 10, marginTop: 3 }}>{milestone.label}</Text>
               </View>
@@ -1171,7 +1171,6 @@ const styles = StyleSheet.create({
   header: {
     flexDirection: 'row', alignItems: 'center',
     paddingHorizontal: 20, paddingVertical: 14,
-    borderBottomWidth: 1, borderBottomColor: 'rgba(0,240,255,0.08)',
   },
   menuBtn: { marginRight: 14, padding: 2 },
   headerLabel: { color: '#64748B', fontSize: 11, fontWeight: '600', letterSpacing: 1, textTransform: 'uppercase' },
@@ -1179,13 +1178,12 @@ const styles = StyleSheet.create({
   refreshBtn: {
     width: 36, height: 36, borderRadius: 10,
     backgroundColor: '#151B2B', alignItems: 'center', justifyContent: 'center',
-    borderWidth: 1, borderColor: '#1E293B',
+    shadowColor: '#00F0FF', shadowOpacity: 0.08, shadowRadius: 8, elevation: 2,
   },
   scrollContent: { padding: 16, paddingBottom: 40 },
   statusBar: {
     flexDirection: 'row', alignItems: 'center',
     backgroundColor: '#151B2B', borderRadius: 12,
-    borderWidth: 1, borderColor: '#1E293B',
     paddingHorizontal: 14, paddingVertical: 10, marginBottom: 10,
   },
   statusDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: '#10B981', marginRight: 8 },
@@ -1193,12 +1191,12 @@ const styles = StyleSheet.create({
   statusCount: { color: '#00F0FF', fontSize: 13, fontWeight: '700' },
   agentPanel: {
     backgroundColor: 'rgba(0,240,255,0.04)', borderRadius: 14,
-    borderWidth: 1, borderColor: 'rgba(0,240,255,0.18)', marginBottom: 10, overflow: 'hidden',
+    marginBottom: 10, overflow: 'hidden', shadowColor: '#00F0FF', shadowOpacity: 0.08, shadowRadius: 12, elevation: 2,
   },
   agentPanelHeader: {
     flexDirection: 'row', alignItems: 'center', gap: 6,
     paddingHorizontal: 14, paddingTop: 12, paddingBottom: 8,
-    borderBottomWidth: 1, borderBottomColor: 'rgba(0,240,255,0.1)',
+    backgroundColor: 'rgba(0,240,255,0.025)',
   },
   agentPanelTitle: { flex: 1, color: '#00F0FF', fontWeight: '700', fontSize: 12, textTransform: 'uppercase', letterSpacing: 0.8 },
   agentLiveDot: { width: 7, height: 7, borderRadius: 4, backgroundColor: '#EF4444' },
@@ -1206,7 +1204,6 @@ const styles = StyleSheet.create({
   agentTaskRow: {
     flexDirection: 'row', alignItems: 'center', gap: 10,
     paddingHorizontal: 14, paddingVertical: 10,
-    borderBottomWidth: 1, borderBottomColor: 'rgba(0,240,255,0.06)',
   },
   agentAvatarSmall: {
     width: 28, height: 28, borderRadius: 8,
@@ -1223,22 +1220,21 @@ const styles = StyleSheet.create({
     flexDirection: 'row', alignItems: 'center', gap: 6,
     paddingHorizontal: 16, paddingVertical: 6,
     backgroundColor: 'rgba(0,240,255,0.04)',
-    borderTopWidth: 1, borderTopColor: 'rgba(0,240,255,0.08)',
   },
   strategyAgentText: { color: '#00F0FF', fontSize: 11, fontWeight: '600' },
   energyCard: {
-    backgroundColor: '#151B2B', borderRadius: 14, borderWidth: 1, borderColor: '#1E293B',
-    padding: 14, marginBottom: 12,
+    backgroundColor: '#151B2B', borderRadius: 14,
+    padding: 14, marginBottom: 12, shadowColor: '#00F0FF', shadowOpacity: 0.07, shadowRadius: 12, elevation: 2,
   },
   // ─── Metrics Grid ─────────────────────────────────────────────────────────
   metricsSection: {
     backgroundColor: '#151B2B', borderRadius: 16,
-    borderWidth: 1, borderColor: '#1E293B', marginBottom: 16, overflow: 'hidden',
+    marginBottom: 16, overflow: 'hidden', shadowColor: '#A78BFA', shadowOpacity: 0.07, shadowRadius: 14, elevation: 2,
   },
   metricsHeader: {
     flexDirection: 'row', alignItems: 'center', gap: 8,
     paddingHorizontal: 14, paddingTop: 12, paddingBottom: 10,
-    borderBottomWidth: 1, borderBottomColor: '#1E2130',
+    backgroundColor: 'rgba(167,139,250,0.035)',
   },
   metricsSectionTitle: { color: '#FFFFFF', fontWeight: '700', fontSize: 14 },
   metricsGrid: {
@@ -1246,7 +1242,7 @@ const styles = StyleSheet.create({
   },
   metricCell: {
     width: '33.33%', alignItems: 'center', paddingVertical: 14,
-    borderRightWidth: 1, borderBottomWidth: 1, borderColor: '#1E2130',
+    backgroundColor: 'rgba(255,255,255,0.018)', margin: 1,
   },
   metricIconWrap: { width: 28, height: 28, borderRadius: 7, alignItems: 'center', justifyContent: 'center', marginBottom: 6 },
   metricValue: { color: '#FFFFFF', fontSize: 15, fontWeight: '800', marginBottom: 2 },
@@ -1259,7 +1255,6 @@ const styles = StyleSheet.create({
   achCountText: { color: '#F59E0B', fontWeight: '700', fontSize: 13 },
   revenueBanner: {
     backgroundColor: 'rgba(251,191,36,0.07)', borderRadius: 14,
-    borderWidth: 1, borderColor: 'rgba(251,191,36,0.2)',
     flexDirection: 'row', alignItems: 'center', gap: 12,
     padding: 14, marginBottom: 10,
   },
@@ -1271,7 +1266,7 @@ const styles = StyleSheet.create({
   revenueLabel: { color: '#94A3B8', fontSize: 11, marginBottom: 2 },
   revenueValue: { color: '#FBBF24', fontSize: 20, fontWeight: '800' },
   dealRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 10, paddingHorizontal: 14, paddingVertical: 12 },
-  dealRowBorder: { borderBottomWidth: 1, borderBottomColor: '#1A2035' },
+  dealRowBorder: {},
   dealStatusBadge: { paddingHorizontal: 7, paddingVertical: 2, borderRadius: 20 },
   dealStatusText: { fontSize: 9, fontWeight: '800', letterSpacing: 0.5 },
   dealDelivery: { color: '#475569', fontSize: 10 },
@@ -1296,7 +1291,7 @@ const styles = StyleSheet.create({
   },
   strategyCard: {
     backgroundColor: '#151B2B', borderRadius: 16,
-    borderWidth: 1, borderColor: '#1E293B', marginBottom: 10, overflow: 'hidden',
+    marginBottom: 10, overflow: 'hidden', shadowColor: '#00F0FF', shadowOpacity: 0.06, shadowRadius: 12, elevation: 2,
   },
   strategyCardTop: { flexDirection: 'row', alignItems: 'flex-start', padding: 16, paddingBottom: 12 },
   strategyName: { color: '#FFFFFF', fontWeight: '700', fontSize: 15, marginBottom: 4 },
@@ -1306,29 +1301,29 @@ const styles = StyleSheet.create({
   strategyBadge: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 20 },
   strategyBadgeDot: { width: 5, height: 5, borderRadius: 2.5, marginRight: 5 },
   strategyBadgeText: { fontSize: 10, fontWeight: '700' },
-  strategyStats: { flexDirection: 'row', borderTopWidth: 1, borderTopColor: '#1E293B' },
+  strategyStats: { flexDirection: 'row', gap: 5, backgroundColor: 'rgba(255,255,255,0.018)' },
   strategyStatItem: { flex: 1, alignItems: 'center', paddingVertical: 12 },
-  strategyStatBorder: { borderRightWidth: 1, borderRightColor: '#1E293B' },
+  strategyStatBorder: { backgroundColor: 'rgba(255,255,255,0.018)', borderRadius: 8 },
   strategyStatValue: { color: '#FFFFFF', fontWeight: '700', fontSize: 15, marginBottom: 2 },
   strategyStatLabel: { color: '#64748B', fontSize: 10 },
   liveIndicator: {
     flexDirection: 'row', alignItems: 'center',
     paddingHorizontal: 16, paddingVertical: 8,
-    backgroundColor: 'rgba(0,240,255,0.04)', borderTopWidth: 1, borderTopColor: '#1E293B',
+    backgroundColor: 'rgba(0,240,255,0.04)',
   },
   liveDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: '#00F0FF', marginRight: 8 },
   liveText: { color: '#00F0FF', fontSize: 11, fontWeight: '600' },
   emptyCard: {
-    backgroundColor: '#151B2B', borderRadius: 16, borderWidth: 1, borderColor: '#1E293B',
+    backgroundColor: '#151B2B', borderRadius: 16, shadowColor: '#00F0FF', shadowOpacity: 0.05, shadowRadius: 12, elevation: 2,
     alignItems: 'center', paddingVertical: 40,
   },
   emptyTitle: { color: '#475569', fontWeight: '600', fontSize: 15, marginTop: 12 },
   emptySubtitle: { color: '#334155', fontSize: 12, marginTop: 4 },
   alertsCard: {
-    backgroundColor: '#151B2B', borderRadius: 16, borderWidth: 1, borderColor: '#1E293B', overflow: 'hidden',
+    backgroundColor: '#151B2B', borderRadius: 16, overflow: 'hidden', shadowColor: '#F59E0B', shadowOpacity: 0.05, shadowRadius: 12, elevation: 2,
   },
   alertItem: { flexDirection: 'row', alignItems: 'flex-start', padding: 14 },
-  alertBorder: { borderBottomWidth: 1, borderBottomColor: '#1E293B' },
+  alertBorder: {},
   alertIcon: {
     width: 30, height: 30, borderRadius: 8,
     backgroundColor: 'rgba(245,158,11,0.1)', alignItems: 'center', justifyContent: 'center', marginRight: 12,
@@ -1340,12 +1335,12 @@ const styles = StyleSheet.create({
 
   achievementCard: {
     backgroundColor: '#151B2B', borderRadius: 16,
-    borderWidth: 1, borderColor: '#1E293B', overflow: 'hidden',
+    overflow: 'hidden', shadowColor: '#10B981', shadowOpacity: 0.06, shadowRadius: 12, elevation: 2,
   },
   achievementHeader: {
     flexDirection: 'row', alignItems: 'center', gap: 6,
     paddingHorizontal: 14, paddingTop: 12, paddingBottom: 8,
-    borderBottomWidth: 1, borderBottomColor: 'rgba(16,185,129,0.1)',
+    backgroundColor: 'rgba(16,185,129,0.035)',
   },
   achievementLabel: {
     flex: 1, color: '#10B981', fontWeight: '700', fontSize: 11,
@@ -1356,7 +1351,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row', alignItems: 'center', gap: 10,
     paddingHorizontal: 14, paddingVertical: 12,
   },
-  achievementBorder: { borderBottomWidth: 1, borderBottomColor: '#1E293B' },
+  achievementBorder: {},
   dealIconWrap: {
     width: 30, height: 30, borderRadius: 8,
     backgroundColor: 'rgba(16,185,129,0.1)',
@@ -1375,12 +1370,12 @@ const styles = StyleSheet.create({
   gmapsBadgeText: { color: '#00D9A5', fontWeight: '700', fontSize: 13 },
   gmapsCard: {
     backgroundColor: '#151B2B', borderRadius: 16,
-    borderWidth: 1, borderColor: 'rgba(0,217,165,0.2)', overflow: 'hidden',
+    overflow: 'hidden', shadowColor: '#00D9A5', shadowOpacity: 0.06, shadowRadius: 12, elevation: 2,
   },
   gmapsHeader: {
     flexDirection: 'row', alignItems: 'center', gap: 6,
     paddingHorizontal: 14, paddingTop: 12, paddingBottom: 8,
-    borderBottomWidth: 1, borderBottomColor: 'rgba(0,217,165,0.1)',
+    backgroundColor: 'rgba(0,217,165,0.035)',
   },
   gmapsHeaderLabel: {
     flex: 1, color: '#00D9A5', fontWeight: '700', fontSize: 11,
@@ -1392,7 +1387,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row', alignItems: 'center', gap: 10,
     paddingHorizontal: 14, paddingVertical: 12,
   },
-  gmapsRowBorder: { borderBottomWidth: 1, borderBottomColor: '#1E293B' },
+  gmapsRowBorder: {},
   gmapsIconWrap: {
     width: 32, height: 32, borderRadius: 9,
     backgroundColor: 'rgba(0,217,165,0.1)',
