@@ -14,3 +14,9 @@ The backend lockfile currently relies on npm's `legacy-peer-deps` resolution bec
 **Why:** Plain `npm ci` rejects the lockfile before compilation with missing peer packages, even though the legacy-peer-deps install succeeds.
 
 **How to apply:** Keep Dockerfile and Railway install commands aligned with the backend workflow; do not add native media packages solely to satisfy plain peer resolution unless the backend actually needs them.
+
+When compiling the backend in a production environment, explicitly include development dependencies during the install step (`--include=dev`) so build tools such as TypeScript are available before pruning runtime dependencies.
+
+**Why:** `NODE_ENV=production` causes npm to omit development packages by default, which can make `npm run build` fail with `tsc: not found`.
+
+**How to apply:** Use the dev-inclusive install for the build stage, then prune only after compilation in a multi-stage or production image workflow.
