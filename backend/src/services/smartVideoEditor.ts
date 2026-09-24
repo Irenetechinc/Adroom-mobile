@@ -7,6 +7,7 @@ import * as path from 'path';
 import * as os from 'os';
 import * as https from 'https';
 import * as http from 'http';
+import { resolveIntelligenceFreshness } from './intelligenceFreshness';
 
 const execFileAsync = promisify(execFile);
 
@@ -64,7 +65,7 @@ export class SmartVideoEditor {
         .limit(2),
       this.supabase
         .from('social_conversations')
-        .select('topics, sentiment, reaction, intent')
+        .select('topics, sentiment, reaction, intent, collected_at')
         .order('collected_at', { ascending: false })
         .limit(12),
     ]);
@@ -75,18 +76,10 @@ export class SmartVideoEditor {
     if (!currentPlatformIntel) {
       throw new Error(`No current platform intelligence is available for ${request.platform}.`);
     }
-    const capturedAt = currentPlatformIntel.captured_at
-      ? new Date(currentPlatformIntel.captured_at).getTime()
-      : NaN;
-    const isFresh = Number.isFinite(capturedAt)
-      && Date.now() - capturedAt <= 24 * 60 * 60 * 1000;
-    const intelligenceFreshness = {
-      sourceTimestamp: Number.isFinite(capturedAt) ? new Date(capturedAt).toISOString() : null,
-      isFresh,
-      fallback: isFresh
-        ? null
-        : 'platform intelligence is missing or older than 24 hours; use conservative platform-native decisions',
-    };
+    const intelligenceFreshness = resolveIntelligenceFreshness([
+      currentPlatformIntel.captured_at,
+      socialSignals.data?.[0]?.collected_at,
+    ]);
 
     const directorNote = request.directionPrefix
       ? `\nDIRECTOR VISUAL DIRECTION: ${request.directionPrefix}\nVISUAL MOOD: ${request.visualMood || 'modern'}\nApply this direction to all text overlays, pacing, and caption style choices.`

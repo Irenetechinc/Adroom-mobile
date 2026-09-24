@@ -4,7 +4,7 @@ import TrialPromoModal from '../components/TrialPromoModal';
 import { Skeleton } from '../components/Skeleton';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
-import { createRealtimeEventGuard } from '../utils/realtimeEventGuard';
+import { createRealtimeEventGuard, type RealtimePayload } from '../utils/realtimeEventGuard';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../types';
 import { supabase } from '../services/supabase';
@@ -412,7 +412,7 @@ export default function DashboardScreen() {
           table: 'agent_tasks',
           filter: `user_id=eq.${session.user.id}`,
         },
-        (payload) => { eventGuard.schedule(payload, fetchData); },
+        (payload: RealtimePayload) => { eventGuard.schedule(payload, fetchData); },
       )
       .subscribe();
     agentSubRef.current = channel;
@@ -426,7 +426,7 @@ export default function DashboardScreen() {
       .channel('platform_intelligence_live')
       .on('postgres_changes', {
         event: '*', schema: 'public', table: 'platform_intelligence',
-      }, (payload) => { eventGuard.schedule(payload, fetchData); })
+      }, (payload: RealtimePayload) => { eventGuard.schedule(payload, fetchData); })
       .subscribe();
     intelligenceSubRef.current = intelligenceChannel;
     return () => { eventGuard.dispose(); supabase.removeChannel(intelligenceChannel); };
@@ -442,7 +442,7 @@ export default function DashboardScreen() {
         schema: 'public',
         table: 'strategies',
         filter: `user_id=eq.${session.user.id}`,
-      }, (payload) => { eventGuard.schedule(payload, fetchData); })
+      }, (payload: RealtimePayload) => { eventGuard.schedule(payload, fetchData); })
       .subscribe();
     return () => { eventGuard.dispose(); supabase.removeChannel(strategyChannel); };
   }, [session?.user?.id]);
@@ -460,13 +460,13 @@ export default function DashboardScreen() {
         schema: 'public',
         table: 'strategy_conversation_runs',
         filter: `user_id=eq.${session.user.id}`,
-       }, (payload) => { eventGuard.schedule(payload, fetchData); })
+      }, (payload: RealtimePayload) => { eventGuard.schedule(payload, fetchData); })
       .on('postgres_changes', {
         event: '*',
         schema: 'public',
         table: 'strategy_conversation_signals',
         filter: `user_id=eq.${session.user.id}`,
-       }, (payload) => { eventGuard.schedule(payload, fetchData); })
+      }, (payload: RealtimePayload) => { eventGuard.schedule(payload, fetchData); })
       .subscribe();
     return () => { eventGuard.dispose(); supabase.removeChannel(conversationChannel); };
   }, [session?.user?.id]);
@@ -485,7 +485,7 @@ export default function DashboardScreen() {
           table: 'agent_deals',
           filter: `user_id=eq.${session.user.id}`,
         },
-        (payload) => { eventGuard.schedule(payload, fetchData); },
+        (payload: RealtimePayload) => { eventGuard.schedule(payload, fetchData); },
       )
       .subscribe();
     dealsSubRef.current = dealsChannel;
@@ -506,7 +506,7 @@ export default function DashboardScreen() {
           table: 'agent_leads',
           filter: `user_id=eq.${session.user.id}`,
         },
-        (payload) => { eventGuard.schedule(payload, fetchData); },
+        (payload: RealtimePayload) => { eventGuard.schedule(payload, fetchData); },
       )
       .subscribe();
     gmapsSubRef.current = gmapsChannel;

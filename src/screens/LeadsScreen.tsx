@@ -5,7 +5,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
-import { createRealtimeEventGuard } from '../utils/realtimeEventGuard';
+import { createRealtimeEventGuard, type RealtimePayload } from '../utils/realtimeEventGuard';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import Animated, { FadeInDown, FadeInRight } from 'react-native-reanimated';
 import {
@@ -342,11 +342,11 @@ export default function LeadsScreen({ route }: Props) {
       .on('postgres_changes', {
         event: '*', schema: 'public', table: 'agent_leads',
         filter: `user_id=eq.${session.user.id}`,
-      }, (payload) => { eventGuard.schedule(payload, fetchLeads); })
+      }, (payload: RealtimePayload) => { eventGuard.schedule(payload, fetchLeads); })
       .on('postgres_changes', {
         event: 'INSERT', schema: 'public', table: 'lead_dm_messages',
         filter: `user_id=eq.${session.user.id}`,
-      }, (payload) => { eventGuard.schedule(payload, fetchLeads); })
+      }, (payload: RealtimePayload) => { eventGuard.schedule(payload, fetchLeads); })
       .subscribe();
     return () => { eventGuard.dispose(); supabase.removeChannel(channel); };
   }, [session?.user?.id, fetchLeads]);

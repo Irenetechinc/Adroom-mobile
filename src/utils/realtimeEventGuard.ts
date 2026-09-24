@@ -1,4 +1,4 @@
-type RealtimePayload = {
+export type RealtimePayload = {
   eventType?: string;
   new?: Record<string, any>;
   old?: Record<string, any>;

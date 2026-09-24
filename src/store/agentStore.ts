@@ -1013,7 +1013,31 @@ export const useAgentStore = create<AgentState>()(
   },
 
   loadActiveStrategy: async () => {
-    // Stub
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) {
+      set({ activeStrategy: null });
+      return;
+    }
+
+    const { data, error } = await supabase
+      .from('strategies')
+      .select('*')
+      .eq('user_id', user.id)
+      .eq('is_active', true)
+      .order('updated_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (error) throw error;
+    set({
+      activeStrategy: data
+        ? {
+            ...data,
+            strategyId: data.strategy_id || data.id,
+            platforms: data.selected_accounts || data.platforms || [],
+          }
+        : null,
+    });
   },
 
   setPendingSessionPrompt: async (v: boolean) => {

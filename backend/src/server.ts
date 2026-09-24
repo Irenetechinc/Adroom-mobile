@@ -115,6 +115,57 @@ const TWITTER_CLIENT_SECRET = process.env.TWITTER_CLIENT_SECRET;
 const TIKTOK_CLIENT_KEY = process.env.TIKTOK_CLIENT_KEY;
 const TIKTOK_CLIENT_SECRET = process.env.TIKTOK_CLIENT_SECRET;
 
+const REQUIRED_RUNTIME_CONFIG = [
+  { key: 'SUPABASE_URL', required: true },
+  { key: 'SUPABASE_SERVICE_ROLE_KEY', required: true },
+  { key: 'SESSION_SECRET', required: false, alt: ['ENCRYPTION_KEY'] },
+  { key: 'TELEGRAM_API_ID', required: false },
+  { key: 'TELEGRAM_API_HASH', required: false },
+  { key: 'DELTA_CHAT_BRIDGE_URL', required: false },
+  { key: 'DELTA_CHAT_BRIDGE_TOKEN', required: false },
+  { key: 'ADMIN_EMAIL', required: false },
+  { key: 'ADMIN_PASSWORD', required: false },
+  { key: 'PUBLIC_BASE_URL', required: false },
+  { key: 'EXPO_PUBLIC_API_URL', required: false },
+  { key: 'SUPABASE_DB_URL', required: false },
+  { key: 'SUPABASE_DB_PASSWORD', required: false },
+  { key: 'OPENAI_API_KEY', required: false },
+  { key: 'GEMINI_API_KEY', required: false },
+  { key: 'RESEND_API_KEY', required: false },
+  { key: 'FB_APP_ID', required: false },
+  { key: 'FB_APP_SECRET', required: false },
+  { key: 'LINKEDIN_CLIENT_ID', required: false },
+  { key: 'LINKEDIN_CLIENT_SECRET', required: false },
+  { key: 'TWITTER_CLIENT_ID', required: false },
+  { key: 'TWITTER_CLIENT_SECRET', required: false },
+  { key: 'TIKTOK_CLIENT_KEY', required: false },
+  { key: 'TIKTOK_CLIENT_SECRET', required: false },
+];
+
+function getRuntimeConfigStatus() {
+  const checks = REQUIRED_RUNTIME_CONFIG.map((entry) => {
+    const alternatives = entry.alt || [];
+    const present = Boolean(process.env[entry.key] || alternatives.some((key) => Boolean(process.env[key])));
+    return {
+      key: entry.key,
+      required: entry.required,
+      present,
+      alternatives: alternatives.length ? alternatives : undefined,
+    };
+  });
+
+  const missingRequired = checks.filter((entry) => entry.required && !entry.present).map((entry) => entry.key);
+  const missingOptional = checks.filter((entry) => !entry.required && !entry.present).map((entry) => entry.key);
+
+  return {
+    ok: missingRequired.length === 0,
+    missingRequired,
+    missingOptional,
+    checks,
+    timestamp: new Date().toISOString(),
+  };
+}
+
 const scraperService = new ScraperService();
 const creativeService = new CreativeService();
 const decisionEngine = new DecisionEngine();
@@ -127,6 +178,30 @@ if (!VERIFY_TOKEN) {
 // Middleware to parse JSON bodies
 app.use(bodyParser.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: false }));
+
+app.get('/api/health', (_req, res) => {
+  const runtime = getRuntimeConfigStatus();
+  const status = runtime.ok ? 'ok' : 'degraded';
+  return res.status(runtime.ok ? 200 : 503).json({
+    status,
+    ok: runtime.ok,
+    timestamp: runtime.timestamp,
+    service: 'adroom-backend',
+    runtime,
+  });
+});
+
+app.get('/api/health/config', (_req, res) => {
+  const runtime = getRuntimeConfigStatus();
+  return res.status(runtime.ok ? 200 : 503).json({
+    ok: runtime.ok,
+    timestamp: runtime.timestamp,
+    requiredKeys: REQUIRED_RUNTIME_CONFIG.map((entry) => entry.key),
+    missingRequired: runtime.missingRequired,
+    missingOptional: runtime.missingOptional,
+    checks: runtime.checks,
+  });
+});
 
 // ─── Personal social-account connections ─────────────────────────────────────
 // These routes intentionally return only display metadata. OAuth tokens,

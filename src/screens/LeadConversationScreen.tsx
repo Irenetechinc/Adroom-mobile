@@ -11,7 +11,7 @@ import {
   View, Text, ScrollView, TouchableOpacity, StyleSheet,
   ActivityIndicator, RefreshControl,
 } from 'react-native';
-import { createRealtimeEventGuard } from '../utils/realtimeEventGuard';
+import { createRealtimeEventGuard, type RealtimePayload } from '../utils/realtimeEventGuard';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { useFocusEffect } from '@react-navigation/native';
@@ -163,11 +163,11 @@ export default function LeadConversationScreen() {
       .on('postgres_changes', {
         event: '*', schema: 'public', table: 'lead_dm_messages',
         filter: `lead_id=eq.${lead.id}`,
-      }, (payload) => { eventGuard.schedule(payload, fetchData); })
+      }, (payload: RealtimePayload) => { eventGuard.schedule(payload, fetchData); })
       .on('postgres_changes', {
         event: '*', schema: 'public', table: 'agent_tasks',
         filter: `user_id=eq.${session.user.id}`,
-      }, (payload) => { eventGuard.schedule(payload, fetchData); })
+      }, (payload: RealtimePayload) => { eventGuard.schedule(payload, fetchData); })
       .subscribe();
     return () => { eventGuard.dispose(); supabase.removeChannel(channel); };
   }, [session?.user?.id, lead?.id, fetchData]);

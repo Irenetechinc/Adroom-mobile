@@ -20,6 +20,7 @@ import crypto from 'crypto';
 import { AIEngine } from '../config/ai-models';
 import { getServiceSupabaseClient } from '../config/supabase';
 import type { VisualDirection } from './directorAgent';
+import { resolveIntelligenceFreshness } from '../services/intelligenceFreshness';
 
 export interface DesignBrief {
   userId: string;
@@ -128,17 +129,12 @@ export class GraphicsDesignerAgent {
         .limit(5),
     ]);
 
-    const latestTimestamp = [ipe.data?.[0]?.captured_at, social.data?.[0]?.collected_at, emotional.data?.[0]?.captured_at, geo.data?.[0]?.captured_at]
-      .filter(Boolean)
-      .map((value) => new Date(value).getTime())
-      .filter((value) => Number.isFinite(value))
-      .sort((a, b) => b - a)[0];
-    const hasFreshIntelligence = Boolean(latestTimestamp && Date.now() - latestTimestamp <= 24 * 60 * 60 * 1000);
-    const freshness = {
-      sourceTimestamp: latestTimestamp ? new Date(latestTimestamp).toISOString() : null,
-      isFresh: hasFreshIntelligence,
-      fallback: hasFreshIntelligence ? null : 'current intelligence is missing or older than 24 hours',
-    };
+    const freshness = resolveIntelligenceFreshness([
+      ipe.data?.[0]?.captured_at,
+      social.data?.[0]?.collected_at,
+      emotional.data?.[0]?.captured_at,
+      geo.data?.[0]?.captured_at,
+    ]);
     return {
       ipe: ipe.data || [],
       social: social.data || [],

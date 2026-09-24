@@ -1,6 +1,7 @@
 import { AIEngine } from '../config/ai-models';
 import { getServiceSupabaseClient } from '../config/supabase';
 import { PsychologistEngine } from '../services/psychologistEngine';
+import { resolveIntelligenceFreshness } from '../services/intelligenceFreshness';
 import crypto from 'crypto';
 
 export interface VisualDirection {
@@ -111,23 +112,16 @@ export class DirectorAgent {
       .update(`${params.userId}-${productName}-${params.product?.category || ''}-${Date.now()}`)
       .digest('hex')
       .slice(0, 14);
-    const latestPlatformTimestamp = (platformIntel.data || [])
-      .map((entry: any) => new Date(entry.captured_at || 0).getTime())
-      .filter((timestamp: number) => Number.isFinite(timestamp) && timestamp > 0)
-      .sort((a: number, b: number) => b - a)[0];
-    const intelligenceFreshness = {
-      sourceTimestamp: latestPlatformTimestamp
-        ? new Date(latestPlatformTimestamp).toISOString()
-        : null,
-      isFresh: Boolean(
-        latestPlatformTimestamp
-        && Date.now() - latestPlatformTimestamp <= 24 * 60 * 60 * 1000,
-      ),
-      fallback: latestPlatformTimestamp
-        && Date.now() - latestPlatformTimestamp <= 24 * 60 * 60 * 1000
-        ? null
-        : 'platform intelligence is missing or older than 24 hours; use conservative platform-native direction',
-    };
+    const intelligenceFreshness = resolveIntelligenceFreshness(
+      (platformIntel.data || []).map((entry: any) => entry.captured_at),
+    );
+
+    const selectedPlatforms = Array.from(new Set([
+      params.platform,
+      ...(Array.isArray(params.strategyGoalData?.selected_accounts) ? params.strategyGoalData.selected_accounts : []),
+      ...(Array.isArray(params.strategyGoalData?.platforms) ? params.strategyGoalData.platforms : []),
+    ].map((platform) => String(platform || '').trim().toLowerCase()).filter(Boolean)));
+    if (!selectedPlatforms.length) selectedPlatforms.push('selected platform');
 
     const prompt = `
 You are the DIRECTOR — the world's greatest virtual creative director for marketing.
@@ -146,7 +140,7 @@ PRODUCT / BRAND:
 ${JSON.stringify(params.product)}
 
 CAMPAIGN GOAL: ${params.goal || 'brand awareness and engagement'}
-TARGET PLATFORM: ${params.platform || 'multi-platform'}
+SELECTED PLATFORMS: ${selectedPlatforms.join(', ')}
 USER HAS UPLOADED THEIR OWN VIDEO: ${params.hasUserVideo ? 'YES' : 'NO'}
 
 REAL-TIME PSYCHOLOGICAL PROFILE (Psychologist Engine):
@@ -204,11 +198,7 @@ OUTPUT JSON:
   "image_generation_prefix": "EXACT style prefix string to prepend to ALL image generation prompts for this user (make it specific and unique)",
   "video_style_guide": "EXACT directorial instructions for all video content (specific shots, pacing, text style, energy)",
   "platform_adaptations": {
-    "tiktok": "specific TikTok direction based on current algorithm intelligence",
-    "instagram": "specific Instagram direction",
-    "facebook": "specific Facebook direction",
-    "linkedin": "specific LinkedIn direction",
-    "twitter": "specific Twitter/X direction"
+    ${selectedPlatforms.map((platform) => `"${platform}": "specific direction for ${platform} based on supplied intelligence"`).join(',\n    ')}
   },
   "emotional_tone": "The single dominant emotional note that ALL content must evoke",
   "trust_elements": ["specific visual trust signal 1 based on audience psychology", "signal 2"],

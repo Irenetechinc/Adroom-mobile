@@ -7,6 +7,7 @@ import { promisify } from 'util';
 import { getServiceSupabaseClient } from '../config/supabase';
 import { normalizePlatform, normalizeSelectedPlatforms } from './platformIdentity';
 import { isEnabled as isFeatureEnabled } from './featureFlagService';
+import { normalizeInboundMessageTimestamp } from './inboundMessageTimestamp';
 
 export type PersonalProvider = 'telegram' | 'whatsapp_personal' | 'signal_personal' | 'bluesky' | 'delta_chat';
 
@@ -1355,7 +1356,7 @@ export class SocialAccountService {
         externalId: String(message.external_id),
         senderId: String(message.sender_id),
         text: String(message.message || ''),
-         timestamp: String(message.message_timestamp),
+        timestamp: normalizeInboundMessageTimestamp(message, message?.message_timestamp ?? message?.received_at ?? message?.created_at ?? new Date()),
       }));
       const messages = [...persistedMessages, ...(this.whatsappInbound.get(userId) || [])]
         .filter((message, index, all) => all.findIndex((candidate) => candidate.externalId === message.externalId) === index);

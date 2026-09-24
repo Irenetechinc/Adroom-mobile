@@ -6,6 +6,8 @@
   "scripts": {
     "build": "tsc",
     "test:contracts": "npm run build && node dist/agentFrameworkContract.test.js",
+    "smoke:production": "npm run build && node dist/productionSmoke.js",
+    "check:migrations": "npm run build && node dist/productionMigrationCheck.js",
     "start": "node dist/server.js",
     "dev": "ts-node src/server.ts",
     "worker": "ts-node src/worker.ts"
