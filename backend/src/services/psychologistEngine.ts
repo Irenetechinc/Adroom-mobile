@@ -27,6 +27,16 @@ export interface BehavioralProfile {
   data_freshness?: string;
 }
 
+export interface LeadPsychologyProfile {
+  communicationStyle: string;
+  conversationTopics: string[];
+  helpfulSignals: string[];
+  cautionSignals: string[];
+  recommendedTone: string;
+  confidence: number;
+  evidenceBasis: string[];
+}
+
 /**
  * PSYCHOLOGIST ENGINE
  * Predicts in real-time how humans behave toward any product, brand, or service.
@@ -233,6 +243,43 @@ OUTPUT JSON (be specific, data-driven, actionable):
       trust_signals: profile.trust_signals || [],
       rejection_signals: profile.rejection_signals || [],
       confidence: profile.confidence || 0.75,
+    };
+  }
+
+  /**
+   * Analyze one lead's public profile without inferring sensitive traits.
+   * This is intentionally separate from the product-audience cycle above.
+   */
+  async analyzeForLead(params: {
+    userId: string;
+    leadId: string;
+    publicProfile: Record<string, any>;
+  }): Promise<LeadPsychologyProfile | null> {
+    const publicProfile = params.publicProfile || {};
+    const response = await this.ai.generateJson(`Create a respectful conversation guide from this public, non-sensitive lead profile.
+Use only explicit evidence. Do not identify the person, infer health, race, religion, political views, sexuality,
+precise location, income, or any other sensitive trait. Do not make eligibility or personality claims.
+Return JSON exactly:
+{"communicationStyle":"","conversationTopics":[],"helpfulSignals":[],"cautionSignals":[],"recommendedTone":"","confidence":0,"evidenceBasis":[]}
+PUBLIC PROFILE: ${JSON.stringify(publicProfile).slice(0, 16000)}`);
+    if (!response || typeof response !== 'object') return null;
+
+    return {
+      communicationStyle: String(response.communicationStyle || 'unknown').slice(0, 240),
+      conversationTopics: Array.isArray(response.conversationTopics)
+        ? response.conversationTopics.map((item: any) => String(item).trim()).filter(Boolean).slice(0, 10)
+        : [],
+      helpfulSignals: Array.isArray(response.helpfulSignals)
+        ? response.helpfulSignals.map((item: any) => String(item).trim()).filter(Boolean).slice(0, 10)
+        : [],
+      cautionSignals: Array.isArray(response.cautionSignals)
+        ? response.cautionSignals.map((item: any) => String(item).trim()).filter(Boolean).slice(0, 10)
+        : [],
+      recommendedTone: String(response.recommendedTone || 'helpful and concise').slice(0, 240),
+      confidence: Math.max(0, Math.min(1, Number(response.confidence) || 0.35)),
+      evidenceBasis: Array.isArray(response.evidenceBasis)
+        ? response.evidenceBasis.map((item: any) => String(item).trim()).filter(Boolean).slice(0, 10)
+        : [],
     };
   }
 

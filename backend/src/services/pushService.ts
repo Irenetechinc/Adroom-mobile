@@ -321,6 +321,29 @@ export const pushService = {
     console.log(`[PushService] Conversation milestone for user ${userId}: ${params.identified} identified / ${Math.max(params.highPotential, params.engaged)} high-potential`);
   },
 
+  async notifyLeadProfileMilestone(
+    userId: string,
+    params: {
+      leadId: string;
+      platform: string;
+      status: string;
+      evidenceCount: number;
+    },
+  ): Promise<void> {
+    const tokens = await getUserTokens(userId);
+    const title = params.status === 'completed'
+      ? 'Lead profile ready'
+      : 'Lead profile update';
+    const body = params.status === 'completed'
+      ? `Public profile enrichment completed on ${params.platform}. ${params.evidenceCount} public evidence item(s) were reviewed.`
+      : `Profile Builder is ${params.status.replace(/_/g, ' ')} for a ${params.platform} lead.`;
+    const data = { type: 'lead_profile_milestone', ...params };
+    await Promise.all([
+      sendExpoPush(tokens, { title, body, data, channelId: 'alerts', sound: 'default' }),
+      insertNotification(userId, title, body, data),
+    ]);
+  },
+
   async notifySubscriptionCancelled(userId: string, accessUntil: string | null): Promise<void> {
     const tokens = await getUserTokens(userId);
     const dateText = accessUntil ? new Date(accessUntil).toLocaleDateString() : 'the end of your billing period';

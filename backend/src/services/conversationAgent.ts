@@ -217,7 +217,11 @@ export class ConversationAgent {
          // any user-owned conversation evidence. Sales, psychology, messaging,
          // and tool agents can all consume the same lead_sales_profiles record.
          const { leadProfileBuilder } = await import('./leadProfileBuilder');
-         await Promise.all((state.signals.filter((signal) => signal.status === 'high_potential')).map(async (signal) => {
+          // Every identified lead gets a public-profile enrichment pass. The
+          // builder itself is rate-limited and idempotent; limiting this to
+          // high-potential signals left ordinary identified leads without the
+          // profile/psychology milestones promised by the pipeline.
+          await Promise.all(state.signals.map(async (signal) => {
            const recipient = signalRecipient(signal);
            const platformUserId = recipient || `discovery:${signal.externalId}`;
            const lead = (leadRows || []).find((row: any) =>

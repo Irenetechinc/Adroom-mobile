@@ -32,6 +32,10 @@ interface Lead {
   dm_sequence_step: number;
   last_contacted_at?: string;
   next_followup_at?: string;
+  profile_status?: string;
+  profile_updated_at?: string;
+  profile_error?: string | null;
+  profile?: any;
   created_at: string;
 }
 
@@ -98,6 +102,18 @@ function platformInitial(platform: string): string {
   return platform.charAt(0).toUpperCase();
 }
 
+function profileStatusMeta(status?: string): { label: string; color: string } {
+  switch (status) {
+    case 'identified': return { label: 'Identified', color: '#00F0FF' };
+    case 'discovering': return { label: 'Profile Builder searching', color: '#F59E0B' };
+    case 'profile_ready': return { label: 'Public profile found', color: '#A78BFA' };
+    case 'psychology_complete': return { label: 'Psychology ready', color: '#10B981' };
+    case 'completed': return { label: 'Profile complete', color: '#10B981' };
+    case 'failed': return { label: 'Profile retry needed', color: '#EF4444' };
+    default: return { label: 'Profile queued', color: '#64748B' };
+  }
+}
+
 // ─── Lead Card ────────────────────────────────────────────────────────────────
 function LeadCard({ lead, index, onPress }: { lead: Lead; index: number; onPress: () => void }) {
   const [expanded, setExpanded] = useState(false);
@@ -108,6 +124,9 @@ function LeadCard({ lead, index, onPress }: { lead: Lead; index: number; onPress
   const scorePercent = Math.round(lead.intent_score * 100);
   const signals: IntentSignal[] = Array.isArray(lead.intent_signals) ? lead.intent_signals : [];
   const dmStep = lead.dm_sequence_step || 0;
+  const profileMeta = profileStatusMeta(lead.profile_status);
+  const publicIdentity = lead.profile?.publicIdentity;
+  const psychology = lead.profile?.psychology;
 
   const isFollowUpDue = lead.next_followup_at
     ? new Date(lead.next_followup_at).getTime() <= Date.now()
@@ -179,6 +198,14 @@ function LeadCard({ lead, index, onPress }: { lead: Lead; index: number; onPress
             "{lead.first_interaction}"
           </Text>
         ) : null}
+
+        <View style={styles.profileStatusRow}>
+          <View style={[styles.profileStatusDot, { backgroundColor: profileMeta.color }]} />
+          <Text style={[styles.profileStatusText, { color: profileMeta.color }]}>{profileMeta.label}</Text>
+          {lead.profile_updated_at && (
+            <Text style={styles.profileStatusTime}>{timeAgo(lead.profile_updated_at)}</Text>
+          )}
+        </View>
 
         {/* ── Expanded detail ── */}
         {expanded && (
@@ -253,6 +280,26 @@ function LeadCard({ lead, index, onPress }: { lead: Lead; index: number; onPress
                 ))}
               </View>
             )}
+
+            {publicIdentity && (
+              <View style={styles.profileSection}>
+                <Text style={styles.signalsTitle}>Public Profile</Text>
+                {!!publicIdentity.displayName && (
+                  <Text style={styles.profileValue}>{publicIdentity.displayName}</Text>
+                )}
+                {!!publicIdentity.bio && (
+                  <Text style={styles.profileBio}>{publicIdentity.bio}</Text>
+                )}
+                {Array.isArray(publicIdentity.socialHandles) && publicIdentity.socialHandles.length > 0 && (
+                  <Text style={styles.profileDetail}>
+                    {publicIdentity.socialHandles.map((handle: any) => `${handle.platform}: ${handle.handle}`).join(' · ')}
+                  </Text>
+                )}
+                {psychology?.recommendedTone && (
+                  <Text style={styles.profileDetail}>Suggested tone: {psychology.recommendedTone}</Text>
+                )}
+              </View>
+            )}
           </View>
         )}
       </TouchableOpacity>
@@ -305,7 +352,7 @@ export default function LeadsScreen({ route }: Props) {
     try {
       let query = supabase
         .from('agent_leads')
-        .select('id, platform, platform_user_id, platform_username, first_interaction, intent_score, intent_signals, stage, dm_sequence_step, last_contacted_at, next_followup_at, created_at')
+          .select('id, platform, platform_user_id, platform_username, first_interaction, intent_score, intent_signals, stage, dm_sequence_step, last_contacted_at, next_followup_at, profile_status, profile_updated_at, profile_error, created_at')
         .eq('user_id', session.user.id)
         .order('intent_score', { ascending: false })
         .order('created_at', { ascending: false })
@@ -315,7 +362,26 @@ export default function LeadsScreen({ route }: Props) {
       if (platformFilter) query = query.eq('platform', platformFilter);
 
       const { data, error } = await query;
-      if (!error && data) setLeads(data as Lead[]);
+      if (!error && data) {
+        const rows = data as Lead[];
+        const ids = rows.map((lead) => lead.id);
+        if (ids.length) {
+          const { data: profiles } = await supabase
+            .from('lead_sales_profiles')
+            .select('lead_id, profile, updated_at')
+            .in('lead_id', ids);
+          const profileByLead = new Map<string, { profile?: any; updated_at?: string }>(
+            (profiles || []).map((row: any) => [String(row.lead_id), row]),
+          );
+          setLeads(rows.map((lead) => ({
+            ...lead,
+            profile: profileByLead.get(lead.id)?.profile,
+            profile_updated_at: lead.profile_updated_at || profileByLead.get(lead.id)?.updated_at,
+          })));
+        } else {
+          setLeads(rows);
+        }
+      }
     } catch (e) {
       console.error('LeadsScreen error:', e);
     } finally {
@@ -345,6 +411,14 @@ export default function LeadsScreen({ route }: Props) {
       }, (payload: RealtimePayload) => { eventGuard.schedule(payload, fetchLeads); })
       .on('postgres_changes', {
         event: 'INSERT', schema: 'public', table: 'lead_dm_messages',
+        filter: `user_id=eq.${session.user.id}`,
+      }, (payload: RealtimePayload) => { eventGuard.schedule(payload, fetchLeads); })
+      .on('postgres_changes', {
+        event: '*', schema: 'public', table: 'lead_profile_builder_runs',
+        filter: `user_id=eq.${session.user.id}`,
+      }, (payload: RealtimePayload) => { eventGuard.schedule(payload, fetchLeads); })
+      .on('postgres_changes', {
+        event: '*', schema: 'public', table: 'lead_sales_profiles',
         filter: `user_id=eq.${session.user.id}`,
       }, (payload: RealtimePayload) => { eventGuard.schedule(payload, fetchLeads); })
       .subscribe();
@@ -640,6 +714,18 @@ const styles = StyleSheet.create({
   signalRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 4 },
   signalSource: { flex: 1, color: '#64748B', fontSize: 11, textTransform: 'capitalize' },
   signalScore: { fontSize: 11, fontWeight: '700' },
+
+  profileStatusRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    marginTop: 7,
+  },
+  profileStatusDot: { width: 7, height: 7, borderRadius: 4 },
+  profileStatusText: { fontSize: 10, fontWeight: '700' },
+  profileStatusTime: { color: '#475569', fontSize: 10, marginLeft: 'auto' },
+  profileSection: { marginTop: 10 },
+  profileValue: { color: '#CBD5E1', fontSize: 12, fontWeight: '700', marginBottom: 4 },
+  profileBio: { color: '#64748B', fontSize: 11, lineHeight: 16, marginBottom: 4 },
+  profileDetail: { color: '#94A3B8', fontSize: 11, lineHeight: 16 },
 
   // ── Empty ──
   emptyState: { alignItems: 'center', paddingVertical: 60, gap: 12 },

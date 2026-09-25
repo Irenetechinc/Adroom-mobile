@@ -41,6 +41,7 @@ import { socialAccountService, type PersonalProvider } from './services/socialAc
 import { getTelegramAppConfigStatus } from './services/telegramConfig';
 import { normalizePlatform, normalizeSelectedPlatforms, isPersonalProvider } from './services/platformIdentity';
 import { conversationAgent } from './services/conversationAgent';
+import { leadProfileBuilder } from './services/leadProfileBuilder';
 
 dotenv.config();
 
@@ -2526,6 +2527,60 @@ app.get('/api/agents/leads/:strategyId', async (req, res) => {
     } catch (error: any) {
         res.status(500).json({ error: error.message });
     }
+});
+
+/**
+ * Lead Profile Builder — safe public enrichment and psychology handoff.
+ * The automatic Conversation Agent path is the normal trigger; these routes
+ * support the lead screen's retry/detail actions without exposing credentials
+ * or backend-only diagnostics.
+ */
+app.get('/api/leads/:leadId/profile', async (req, res) => {
+  try {
+    const supabase = getSupabaseClient(req);
+    const { data: { user }, error: authErr } = await supabase.auth.getUser();
+    if (authErr || !user) return res.status(401).json({ error: 'Unauthorized' });
+
+    const { data: lead } = await supabase
+      .from('agent_leads')
+      .select('id, profile_status, profile_updated_at, profile_error')
+      .eq('id', req.params.leadId)
+      .eq('user_id', user.id)
+      .maybeSingle();
+    if (!lead) return res.status(404).json({ error: 'Lead not found' });
+
+    const profile = await leadProfileBuilder.getLatest(user.id, lead.id);
+    const { data: run } = await getServiceSupabaseClient()
+      .from('lead_profile_builder_runs')
+      .select('status, selected_platforms, tools_attempted, public_evidence_count, updated_at, completed_at')
+      .eq('user_id', user.id)
+      .eq('lead_id', lead.id)
+      .maybeSingle();
+    res.json({ lead, profile, run: run || null });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/leads/:leadId/profile', async (req, res) => {
+  try {
+    const supabase = getSupabaseClient(req);
+    const { data: { user }, error: authErr } = await supabase.auth.getUser();
+    if (authErr || !user) return res.status(401).json({ error: 'Unauthorized' });
+
+    const { data: lead } = await supabase
+      .from('agent_leads')
+      .select('id')
+      .eq('id', req.params.leadId)
+      .eq('user_id', user.id)
+      .maybeSingle();
+    if (!lead) return res.status(404).json({ error: 'Lead not found' });
+
+    const profile = await leadProfileBuilder.buildForLead(user.id, lead.id);
+    res.status(profile ? 200 : 202).json({ ok: true, profile });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 /**
