@@ -131,7 +131,14 @@ export class SocialAccountService {
   private readonly supabase = getServiceSupabaseClient();
   private readonly pendingTelegram = new Map<string, any>();
   private readonly pendingSignal = new Map<string, { userId: string; phone: string; createdAt: number; authDir: string }>();
-  private readonly pendingWhatsApp = new Map<string, { userId: string; phone: string; sock: any; authDir: string }>();
+  private readonly pendingWhatsApp = new Map<string, {
+    userId: string;
+    phone: string;
+    sock: any;
+    authDir: string;
+    finalizing?: Promise<void>;
+    waitForCredentials: () => Promise<void>;
+  }>();
   // Keep one live Baileys socket per connected user while the backend process
   // is running. WhatsApp does not expose reliable history from a freshly
   // materialized auth bundle, so inbound events must be buffered as they arrive
@@ -342,6 +349,38 @@ export class SocialAccountService {
     }).eq('id', row.id);
   }
 
+  private async saveWhatsAppPairingSession(
+    userId: string,
+    phoneNumber: string,
+    authDir: string,
+    waitForCredentials?: () => Promise<void>,
+  ): Promise<void> {
+    // Baileys 7 emits isNewLogin and then normally closes with 515 so it can
+    // restart with the credentials it just received. Wait for the actual
+    // creds.update write to settle before copying the bundle to Supabase.
+    await waitForCredentials?.();
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    const files = await fs.readdir(authDir);
+    const bundle: Record<string, string> = {};
+    for (const file of files) {
+      const fullPath = path.join(authDir, file);
+      if ((await fs.stat(fullPath)).isFile()) {
+        bundle[file] = (await fs.readFile(fullPath)).toString('base64');
+      }
+    }
+    if (!Object.keys(bundle).length) {
+      throw new Error('WhatsApp linked the device but did not produce session credentials.');
+    }
+    await this.save({
+      userId,
+      provider: 'whatsapp_personal',
+      accountId: phoneNumber,
+      displayName: phoneNumber,
+      handle: phoneNumber,
+      credential: { bundle },
+    });
+  }
+
   private async restoreWhatsAppSocket(userId: string, credential: any): Promise<any | null> {
     const current = this.whatsappSockets.get(userId);
     if (current) return current;
@@ -355,7 +394,12 @@ export class SocialAccountService {
       await fs.writeFile(path.join(authDir, file), Buffer.from(String(encoded), 'base64'));
     }
     const { state, saveCreds } = await baileys.useMultiFileAuthState(authDir);
-    const sock = baileys.default({ auth: state, printQRInTerminal: false, browser: ['Adirum AI', 'Chrome', '1.0.0'] });
+    const sock = baileys.default({
+      auth: state,
+      printQRInTerminal: false,
+      qrTimeout: 120000,
+      browser: ['Ubuntu', 'Chrome', '1.0.0'],
+    });
     sock.ev.on('creds.update', (update: any) => {
       void saveCreds(update);
       this.scheduleWhatsAppCredentialPersist(userId, authDir);
@@ -768,15 +812,44 @@ export class SocialAccountService {
     const requestId = crypto.randomUUID();
     const authDir = path.join(os.tmpdir(), 'adroom-whatsapp', requestId);
     const { state, saveCreds } = await baileys.useMultiFileAuthState(authDir);
-    const sock = baileys.default({ auth: state, printQRInTerminal: false, browser: ['Adirum AI', 'Chrome', '1.0.0'] });
+    // Use a canonical browser/OS tuple for pairing. Baileys rc14 sends the
+    // tuple's OS label to WhatsApp as "Chrome (<OS>)"; custom labels produce
+    // codes that look valid but are rejected by the phone.
+    const sock = baileys.default({
+      auth: state,
+      printQRInTerminal: false,
+      qrTimeout: 120000,
+      browser: ['Ubuntu', 'Chrome', '1.0.0'],
+    });
+    let credentialsSaved = Promise.resolve();
     sock.ev.on('creds.update', (update: any) => {
-      void saveCreds(update);
+      credentialsSaved = Promise.resolve(saveCreds(update));
+      void credentialsSaved.catch(() => {});
       this.scheduleWhatsAppCredentialPersist(userId, authDir);
     });
     this.attachWhatsAppInbound(userId, sock);
-    this.pendingWhatsApp.set(requestId, { userId, phone: phoneNumber, sock, authDir });
+    this.pendingWhatsApp.set(requestId, {
+      userId,
+      phone: phoneNumber,
+      sock,
+      authDir,
+      waitForCredentials: () => credentialsSaved,
+    });
     sock.ev.on('connection.update', async (update: any) => {
+      const pending = this.pendingWhatsApp.get(requestId);
+      if (update.isNewLogin && pending) {
+        pending.finalizing = this.saveWhatsAppPairingSession(userId, phoneNumber, authDir)
+          .catch(async (error: any) => {
+            await this.recordError(userId, 'whatsapp_personal', error.message);
+            throw error;
+          });
+        await pending.finalizing.catch(() => {});
+      }
       if (update.connection === 'close') {
+        // A successful first pair commonly closes with 515/restartRequired.
+        // Keep the newly saved session available for the reconnect instead of
+        // deleting the temporary auth state as if pairing had failed.
+        if (pending?.finalizing) await pending.finalizing.catch(() => {});
         this.pendingWhatsApp.delete(requestId);
         if (this.whatsappSockets.get(userId) === sock) this.whatsappSockets.delete(userId);
         if (this.whatsappAuthDirs.get(userId) === authDir) this.whatsappAuthDirs.delete(userId);
@@ -785,21 +858,12 @@ export class SocialAccountService {
       }
       if (update.connection === 'open') {
         try {
-          // Baileys writes credentials asynchronously in response to the open
-          // event. Give the final creds.update event time to finish before the
-          // encrypted bundle is copied to Supabase.
-          await new Promise((resolve) => setTimeout(resolve, 300));
-          const files = await fs.readdir(authDir);
-          const bundle: Record<string, string> = {};
-          for (const file of files) bundle[file] = (await fs.readFile(path.join(authDir, file))).toString('base64');
-          await this.save({
+          await this.saveWhatsAppPairingSession(
             userId,
-            provider: 'whatsapp_personal',
-            accountId: phoneNumber,
-            displayName: phoneNumber,
-            handle: phoneNumber,
-            credential: { bundle },
-          });
+            phoneNumber,
+            authDir,
+            pending?.waitForCredentials,
+          );
           this.whatsappSockets.set(userId, sock);
           this.whatsappAuthDirs.set(userId, authDir);
         } catch (error: any) {
