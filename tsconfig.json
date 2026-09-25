@@ -12,6 +12,7 @@
     "nativewind-env.d.ts"
   ],
   "exclude": [
+    
     "node_modules",
     "backend",
     "apma-desktop",
