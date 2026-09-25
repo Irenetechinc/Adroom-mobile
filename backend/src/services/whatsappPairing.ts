@@ -1,7 +1,43 @@
+import fs from 'fs/promises';
+import path from 'path';
+
 interface WhatsAppConnectionUpdate {
   connection?: string;
   qr?: string;
   lastDisconnect?: { error?: { message?: string } };
+}
+
+export interface WhatsAppPairingSessionPersistenceOptions {
+  authDir: string;
+  waitForCredentials?: () => Promise<void>;
+  settleDelayMs?: number;
+  persist: (bundle: Record<string, string>) => Promise<void>;
+}
+
+/**
+ * Waits for Baileys' final credential write and copies the complete auth
+ * directory before the first-pair socket is allowed to be cleaned up.
+ */
+export async function persistWhatsAppPairingSession({
+  authDir,
+  waitForCredentials,
+  settleDelayMs = 100,
+  persist,
+}: WhatsAppPairingSessionPersistenceOptions): Promise<void> {
+  await waitForCredentials?.();
+  await new Promise((resolve) => setTimeout(resolve, settleDelayMs));
+
+  const bundle: Record<string, string> = {};
+  for (const file of await fs.readdir(authDir)) {
+    const fullPath = path.join(authDir, file);
+    if ((await fs.stat(fullPath)).isFile()) {
+      bundle[file] = (await fs.readFile(fullPath)).toString('base64');
+    }
+  }
+  if (!Object.keys(bundle).length) {
+    throw new Error('WhatsApp linked the device but did not produce session credentials.');
+  }
+  await persist(bundle);
 }
 
 interface WhatsAppPairingSocket {

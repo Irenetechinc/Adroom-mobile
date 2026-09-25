@@ -8,7 +8,10 @@ import { getServiceSupabaseClient } from '../config/supabase';
 import { normalizePlatform, normalizeSelectedPlatforms } from './platformIdentity';
 import { isEnabled as isFeatureEnabled } from './featureFlagService';
 import { normalizeInboundMessageTimestamp } from './inboundMessageTimestamp';
-import { requestWhatsAppPairingCodeWhenReady } from './whatsappPairing';
+import {
+  persistWhatsAppPairingSession,
+  requestWhatsAppPairingCodeWhenReady,
+} from './whatsappPairing';
 
 export type PersonalProvider = 'telegram' | 'whatsapp_personal' | 'signal_personal' | 'bluesky' | 'delta_chat';
 
@@ -355,29 +358,19 @@ export class SocialAccountService {
     authDir: string,
     waitForCredentials?: () => Promise<void>,
   ): Promise<void> {
-    // Baileys 7 emits isNewLogin and then normally closes with 515 so it can
-    // restart with the credentials it just received. Wait for the actual
-    // creds.update write to settle before copying the bundle to Supabase.
-    await waitForCredentials?.();
-    await new Promise((resolve) => setTimeout(resolve, 100));
-    const files = await fs.readdir(authDir);
-    const bundle: Record<string, string> = {};
-    for (const file of files) {
-      const fullPath = path.join(authDir, file);
-      if ((await fs.stat(fullPath)).isFile()) {
-        bundle[file] = (await fs.readFile(fullPath)).toString('base64');
-      }
-    }
-    if (!Object.keys(bundle).length) {
-      throw new Error('WhatsApp linked the device but did not produce session credentials.');
-    }
-    await this.save({
-      userId,
-      provider: 'whatsapp_personal',
-      accountId: phoneNumber,
-      displayName: phoneNumber,
-      handle: phoneNumber,
-      credential: { bundle },
+    await persistWhatsAppPairingSession({
+      authDir,
+      waitForCredentials,
+      persist: async (bundle) => {
+        await this.save({
+          userId,
+          provider: 'whatsapp_personal',
+          accountId: phoneNumber,
+          displayName: phoneNumber,
+          handle: phoneNumber,
+          credential: { bundle },
+        });
+      },
     });
   }
 
