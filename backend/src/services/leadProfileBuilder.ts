@@ -28,15 +28,33 @@ export class LeadProfileBuilder {
   private supabase = getServiceSupabaseClient();
 
   async buildForLead(userId: string, leadId: string): Promise<LeadProfile | null> {
-    if (!(await featureFlags.isEnabled('lead_profile_builder', userId))) return null;
+    const enabled = await featureFlags.isEnabled('lead_profile_builder', userId);
+    if (!enabled) {
+      console.warn(`[LeadProfileBuilder] disabled by feature flag user=${userId} lead=${leadId}`);
+      return null;
+    }
 
     const [leadResult, messagesResult, mentionsResult] = await Promise.all([
-      this.supabase.from('agent_leads').select('id, platform, platform_username, first_interaction, intent_signals, conversation_history, created_at').eq('id', leadId).eq('user_id', userId).single(),
+      // Keep this projection limited to columns guaranteed by the core
+      // agent_leads migration. conversation_history is optional and is not
+      // needed to build a profile from public discovery evidence.
+      this.supabase.from('agent_leads').select('id, platform, platform_username, first_interaction, intent_signals, created_at').eq('id', leadId).eq('user_id', userId).maybeSingle(),
       this.supabase.from('lead_dm_messages').select('direction, message, created_at').eq('lead_id', leadId).order('created_at', { ascending: false }).limit(30),
       (await featureFlags.isEnabled('lead_profile_public_mentions', userId))
         ? this.supabase.from('public_prospect_mentions').select('source, content_excerpt, intent_score, buying_signals, collected_at').eq('user_id', userId).limit(20)
         : Promise.resolve({ data: [], error: null } as any),
     ]);
+
+    if (leadResult.error) {
+      throw new Error(`lead lookup failed: ${leadResult.error.message}`);
+    }
+    if (messagesResult.error) {
+      console.warn(`[LeadProfileBuilder] conversation evidence unavailable lead=${leadId}: ${messagesResult.error.message}`);
+    }
+    if (mentionsResult.error) {
+      console.warn(`[LeadProfileBuilder] public mention evidence unavailable lead=${leadId}: ${mentionsResult.error.message}`);
+    }
+
     const lead = leadResult.data;
     if (!lead) return null;
 
@@ -49,8 +67,11 @@ export class LeadProfileBuilder {
     ].filter(Boolean);
     if (!evidence.length) return null;
 
-    const profile = await this.generateProfile(lead, evidence);
-    if (!profile) return null;
+    // AI enrichment is best effort. Store a useful evidence-only profile when
+    // the configured provider is unavailable or returns malformed JSON, so
+    // profile generation never prevents the conversation workflow from using
+    // the lead.
+    const profile = (await this.generateProfile(lead, evidence)) || this.fallbackProfile(evidence);
     const result: LeadProfile = {
       leadId,
       communicationStyle: String(profile.communicationStyle || 'clear and professional').slice(0, 300),
@@ -70,7 +91,7 @@ export class LeadProfileBuilder {
       generatedAt: new Date().toISOString(),
     };
 
-    await this.supabase.from('lead_sales_profiles').upsert({
+    const { error: profileError } = await this.supabase.from('lead_sales_profiles').upsert({
       user_id: userId,
       lead_id: leadId,
       profile: result,
@@ -79,6 +100,9 @@ export class LeadProfileBuilder {
       privacy_scope: result.privacyScope,
       updated_at: result.generatedAt,
     }, { onConflict: 'user_id,lead_id' });
+    if (profileError) {
+      throw new Error(`profile save failed: ${profileError.message}`);
+    }
     return result;
   }
 
@@ -97,6 +121,20 @@ The profile is for respectful product-help conversations, not automated targetin
 LEAD PLATFORM: ${lead.platform || 'unknown'}
 EVIDENCE: ${JSON.stringify(evidence).slice(0, 18000)}`);
     return response && typeof response === 'object' ? response : null;
+  }
+
+  private fallbackProfile(evidence: any[]): any {
+    return {
+      communicationStyle: 'unknown; use a clear and respectful tone',
+      statedNeeds: [],
+      observedPainPoints: [],
+      buyingSignals: [],
+      decisionBlockers: [],
+      preferredTopics: [],
+      observedTiming: { activeHours: [], responsePattern: '' },
+      recommendedTone: 'helpful and concise',
+      confidence: Math.min(0.35, Math.max(0.1, evidence.length * 0.05)),
+    };
   }
 
   private cleanList(value: unknown): string[] {

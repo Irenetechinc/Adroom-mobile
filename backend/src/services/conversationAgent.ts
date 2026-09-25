@@ -130,10 +130,13 @@ export class ConversationAgent {
            stage: signal.status === 'high_potential' ? 'identified' : 'identified',
            };
          });
-         const { data: leadRows } = await this.supabase
+         const { data: leadRows, error: leadUpsertError } = await this.supabase
            .from('agent_leads')
            .upsert(leadPayloads, { onConflict: 'user_id,platform,platform_user_id' })
            .select('id, platform, platform_user_id');
+         if (leadUpsertError) {
+           throw new Error(`lead persistence failed: ${leadUpsertError.message}`);
+         }
 
          // Build a shared, privacy-scoped profile from the public signal and
          // any user-owned conversation evidence. Sales, psychology, messaging,
@@ -144,11 +147,24 @@ export class ConversationAgent {
            const platformUserId = recipient || `discovery:${signal.externalId}`;
            const lead = (leadRows || []).find((row: any) =>
              row.platform === signal.platform && row.platform_user_id === platformUserId);
-           if (lead?.id) {
-             await leadProfileBuilder.buildForLead(signal.userId, lead.id).catch((error: any) => {
-               console.warn(`[ConversationAgent] lead profile enrichment skipped: ${error.message}`);
-               return null;
-             });
+             if (lead?.id) {
+              try {
+                const profile = await leadProfileBuilder.buildForLead(signal.userId, lead.id);
+                if (profile) {
+                  console.log(`[ConversationAgent] lead profile enriched lead=${lead.id} evidence=${profile.evidenceCount}`);
+                } else {
+                  console.warn(`[ConversationAgent] lead profile enrichment skipped lead=${lead.id} reason=no_profile_result`);
+                }
+              } catch (error: any) {
+                const message = error instanceof Error
+                  ? error.message
+                  : typeof error === 'string'
+                    ? error
+                    : JSON.stringify(error) || 'unknown error';
+                console.warn(`[ConversationAgent] lead profile enrichment skipped lead=${lead.id}: ${message}`);
+              }
+            } else {
+              console.warn(`[ConversationAgent] lead profile enrichment skipped platform=${signal.platform} external=${signal.externalId}: lead row was not returned`);
            }
          }));
       }
