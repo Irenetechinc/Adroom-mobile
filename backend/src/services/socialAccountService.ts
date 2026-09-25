@@ -12,6 +12,7 @@ import {
   persistWhatsAppPairingSession,
   requestWhatsAppPairingCodeWhenReady,
 } from './whatsappPairing';
+import { getTelegramAppConfig } from './telegramConfig';
 
 export type PersonalProvider = 'telegram' | 'whatsapp_personal' | 'signal_personal' | 'bluesky' | 'delta_chat';
 
@@ -158,21 +159,6 @@ export class SocialAccountService {
   private readonly whatsappReconnectAttempts = new Map<string, number>();
   private readonly whatsappInbound = new Map<string, PersonalInboundMessage[]>();
 
-  /**
-   * Telegram's MTProto app credentials belong to Adirum's server, not to an
-   * end user. They are loaded only from server secrets and are never copied
-   * into a user's encrypted connection record or returned from an API route.
-   */
-  private telegramAppConfig(): { apiId: number; apiHash: string } {
-    const apiId = Number(process.env.TELEGRAM_API_ID || process.env.TELEGRAM_APP_API_ID || 0);
-    const apiHash = String(process.env.TELEGRAM_API_HASH || process.env.TELEGRAM_APP_API_HASH || '').trim();
-    if (!apiId || !apiHash) {
-      console.error('[SocialAccountService] Telegram server credentials are not configured.');
-      throw new Error('TELEGRAM_SERVER_NOT_READY');
-    }
-    return { apiId, apiHash };
-  }
-
   private telegramClient(session: string): any {
     let telegram: any;
     try {
@@ -180,7 +166,7 @@ export class SocialAccountService {
     } catch {
       throw new Error('TELEGRAM_SERVER_NOT_READY');
     }
-    const { apiId, apiHash } = this.telegramAppConfig();
+    const { apiId, apiHash } = getTelegramAppConfig();
     return new telegram.TelegramClient(
       new telegram.sessions.StringSession(session || ''),
       apiId,
@@ -776,7 +762,7 @@ export class SocialAccountService {
   }
 
   async startTelegram(userId: string, phone: string): Promise<{ requestId: string; status: string }> {
-    const { apiId, apiHash } = this.telegramAppConfig();
+    const { apiId, apiHash } = getTelegramAppConfig();
     let telegram: any;
     try { telegram = require('telegram'); } catch { throw new Error('Telegram connection service is not installed.'); }
     const client = new telegram.TelegramClient(new telegram.sessions.StringSession(''), apiId, apiHash, { connectionRetries: 5 });

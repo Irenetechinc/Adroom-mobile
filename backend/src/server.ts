@@ -38,6 +38,7 @@ import { apmaOAuthRouter } from './apma/apmaOAuthRouter';
 import { telephonyService } from './services/telephonyService';
 import { shipmentService } from './services/shipmentService';
 import { socialAccountService, type PersonalProvider } from './services/socialAccountService';
+import { getTelegramAppConfigStatus } from './services/telegramConfig';
 import { normalizePlatform, normalizeSelectedPlatforms, isPersonalProvider } from './services/platformIdentity';
 import { conversationAgent } from './services/conversationAgent';
 
@@ -143,9 +144,14 @@ const REQUIRED_RUNTIME_CONFIG = [
 ];
 
 function getRuntimeConfigStatus() {
+  const telegramConfig = getTelegramAppConfigStatus();
   const checks = REQUIRED_RUNTIME_CONFIG.map((entry) => {
     const alternatives = entry.alt || [];
-    const present = Boolean(process.env[entry.key] || alternatives.some((key) => Boolean(process.env[key])));
+    const present = entry.key === 'TELEGRAM_API_ID'
+      ? telegramConfig.apiIdValid
+      : entry.key === 'TELEGRAM_API_HASH'
+        ? telegramConfig.apiHashPresent
+        : Boolean(process.env[entry.key] || alternatives.some((key) => Boolean(process.env[key])));
     return {
       key: entry.key,
       required: entry.required,
@@ -249,7 +255,9 @@ app.get('/api/social-connections/availability', async (req, res) => {
       {
         enabled: await isSocialConnectionEnabled(user.id, provider),
         comingSoon: await isSocialComingSoon(user.id, provider),
-         serverConfigured: provider !== 'delta_chat' || Boolean(String(process.env.DELTA_CHAT_BRIDGE_URL || '').trim()),
+        serverConfigured: provider === 'telegram'
+          ? getTelegramAppConfigStatus().configured
+          : provider !== 'delta_chat' || Boolean(String(process.env.DELTA_CHAT_BRIDGE_URL || '').trim()),
       },
     ])));
     return res.json({ availability });
@@ -1148,7 +1156,7 @@ app.get('/api/platform-capabilities', async (req, res) => {
       ]);
       const configured =
         provider === 'telegram'
-          ? Boolean(process.env.TELEGRAM_API_ID && process.env.TELEGRAM_API_HASH)
+          ? getTelegramAppConfigStatus().configured
           : provider === 'delta_chat'
             ? Boolean(process.env.DELTA_CHAT_BRIDGE_URL)
             : provider === 'signal_personal'
