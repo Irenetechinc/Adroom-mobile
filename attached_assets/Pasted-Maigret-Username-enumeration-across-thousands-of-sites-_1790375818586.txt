@@ -1,0 +1,79 @@
+Maigret – Username enumeration across thousands of sites. No API keys required. Supports 3,000+ sites and extracts all available information from profile pages, including links to other accounts.
+
+text
+git clone https://github.com/soxoj/maigret.git
+Deepkrak3n – OSINT platform for scanning and analysing public profiles across 200+ platforms by username or email. Builds relationships between accounts, leverages AI for persona summaries and risk analysis, and provides interactive mindmaps for visualizing connections.
+
+text
+git clone https://github.com/guilhermelimait/deepkrak3n.git
+Helix – Asynchronous OSINT identity mapper. Maps actual connections between online identities using perceptual hash matching for profile pictures, timezone inference, and certificate transparency. Renders live interactive D3.js relational graphs.
+
+text
+git clone https://github.com/thalha-a9/helix.git
+Osintgraph – Collects Instagram data, followers, and followees, storing them in Neo4j. Maps and analyzes a target's social network to reveal interests, connections, and affiliations.
+
+text
+git clone https://github.com/XD-MHLOO/Osintgraph.git
+J.A.R.V.I.S – Real-time agentic intelligence-gathering platform powered by autonomous web scraping and OSINT. Modular full-stack OSINT and AI assistant platform with decoupled frontend-backend architecture.
+
+text
+git clone https://github.com/affaan-m/JARVIS.git
+Reddeye Profiler – Firefox extension that analyses a Reddit profile and generates a dossier with demographic and psychological analysis. Uses the Groq API for LLM inference.
+
+text
+git clone https://github.com/vicfic18/reddeye-profiler.git
+use the above repo clon links to clone the required repo into adirum ai but do not leave the repo connected to adirum ai just clone the file and all that is needed in to adirum ai 
+Profile Builder Agent Implementation
+You are implementing a Profile Builder Agent into the existing Adirum AI codebase. This agent is a new addition that works in sync with the already implemented Conversation Agent, Psychology Agent, and Communication Agent. Do not disrupt any existing features. Do not replace any existing agents. This is an additive implementation that enhances the existing lead engagement pipeline.
+
+Core Purpose
+The Profile Builder Agent receives a potential client identified by the Conversation Agent. Its job is to gather all publicly available information about that client so that the Psychology Agent can build a comprehensive psychological profile before the Communication Agent engages them in marketing conversations. The agent must find the client's social handles and contact information that correspond to the accounts the user selected during strategy creation flow. For example, if the user selected Telegram, WhatsApp, and Signal during strategy creation, the Profile Builder Agent must find the client's Telegram, WhatsApp, and Signal handles where available.
+
+How the Agent Fits Into the Existing Pipeline
+The existing flow is: Conversation Agent identifies high-potential clients, routes them, and notifies the system. The Conversation Agent then identifies engaged clients. The Profile Builder Agent sits between the Conversation Agent and the Psychology Agent. It receives the list of identified clients from the Conversation Agent. It enriches each client record with publicly available data. It passes the enriched data to the Psychology Agent. The Psychology Agent builds the psychological profile. The Communication Agent uses both the enriched data and the psychological profile to build high-conversion marketing conversations that close the client and achieve the user's selected goal.
+
+The Profile Builder Agent must not trigger a new conversation web search or social media search sweep. It only enriches data for clients already identified by the Conversation Agent. The Conversation Agent should not do another sweep until the currently running agent requires new ones. When the Conversation Agent identifies potential clients and routes them, the Profile Builder Agent should be triggered automatically.
+
+Tools the Agent Must Use
+The agent must use the following tools as needed, when required, and only for the specific purpose of enriching a client record. It must decide dynamically which tool to use based on the client and the available data. No hard-coded rules for tool selection.
+
+Maigret for broad discovery from a single username. Given a username, it enumerates accounts across thousands of platforms and extracts all available information from profile pages, including links to other accounts.
+
+Deepkrak3n for profile search and analysis across 200+ platforms by username or email. It builds relationships between accounts, provides AI-powered persona summaries and risk analysis, and generates interactive mindmaps for visualizing connections.
+
+Helix for relationship mapping. It takes discovered usernames and maps the actual connections between accounts using perceptual hash matching for profile pictures, timezone inference, and certificate transparency. It renders interactive D3.js relational graphs.
+
+Osintgraph for Instagram network mapping. It collects Instagram data, followers, and followees, stores them in Neo4j, and reveals interests, connections, and affiliations.
+
+J.A.R.V.I.S for real-time agentic intelligence gathering. It provides autonomous web scraping and OSINT capabilities for deeper analysis of publicly available information.
+
+Reddeye Profiler for psychological dossier generation from Reddit profiles. It generates demographic and psychological analysis from publicly available Reddit activity.
+
+Functional Requirements
+When the Profile Builder Agent receives a client from the Conversation Agent, it must do the following.
+
+First, extract the available identifiers for the client. These may include a username, email address, phone number, social media handle, or any other publicly available identifier found by the Conversation Agent.
+
+Second, use the appropriate tools to discover the client's accounts across platforms. Start with Maigret or Deepkrak3n for broad username and email enumeration. Use Helix or Osintgraph for relationship mapping if sufficient identifiers are available. Use J.A.R.V.I.S for deeper intelligence gathering when the initial tools provide limited results. Use Reddeye Profiler when the client has a Reddit presence and a psychological dossier is needed.
+
+Third, match the discovered accounts to the platforms the user selected during strategy creation flow. If the user selected Telegram, WhatsApp, and Signal, the agent must specifically identify the client's Telegram, WhatsApp, and Signal handles if they exist. The agent must not limit itself to those platforms for discovery. It should discover all available accounts but must prioritize and clearly present the accounts that match the user's selected platforms.
+
+Fourth, compile a structured profile of the client that includes publicly available information such as display name, bio, profile picture, social handles, publicly visible interests, publicly visible connections, and any other non-sensitive information found. This structured profile is what gets passed to the Psychology Agent.
+
+Data Separation and Privacy
+The agent must separate data into two categories. Publicly available non-sensitive data is passed to the Psychology Agent and may be shown to the user in the lead screen, including names, social handles, publicly visible interests, and publicly visible connections. Sensitive or personal data that the agent may encounter during discovery is used only in the backend by the required agent and is never shown to the user in the frontend. The agent must never expose API keys, session tokens, or any credentials.
+
+Integration With Existing Systems
+The Profile Builder Agent must work in sync with every other agent, tool, and engine in the app. It must use the same data persistence layer, the same notification system, and the same real-time update mechanisms already implemented. When the Profile Builder Agent completes its work for a client, the lead screen must update in real time without the user manually reloading the page. The user must see when a client has been identified, when the Profile Builder Agent has found data, and when the Psychology Agent has completed its profile. All milestones must be visible in real time as they are achieved.
+
+Dynamic Behavior
+The Profile Builder Agent must not use fixed rules or templates for its decisions. It must decide dynamically which tools to invoke, in what order, and with what parameters based on the specific client and the available data. It must work seamlessly with the required tools, agents, and engines, and with other tools and agents when and where required. If a tool fails or returns limited results, the agent must adapt and try alternative approaches without human intervention.
+
+Anti-Ban and Compliance
+All tool usage must respect rate limits. The agent must implement appropriate delays between tool invocations and must not overwhelm any platform. It must use the same anti-ban guardrails already implemented for other social account activities in the app. It must never attempt to access private data or bypass authentication.
+
+Success Criteria
+The implementation is successful when the Profile Builder Agent automatically triggers after the Conversation Agent identifies potential clients, enriches each client record with publicly available data using the specified tools, identifies the client's handles on the user's selected platforms, passes the structured profile to the Psychology Agent, and updates the lead screen in real time with the appropriate level of detail for the user. All existing features must continue working without disruption.
+also note that you cant use or install any replit dependacies or deployment url or change the npm url to replit any thing that has to do with replit at all becouse this app must work 100% without replit and ma using an external railway for server and superbase for data base and beckend.adroomai.com for backend url
+Proceed with implementation. Work in sync with what already exists. Enhance without disruption.
+

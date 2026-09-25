@@ -196,6 +196,26 @@ export class LeadProfileBuilder {
 
   async processQueued(limit = 8): Promise<number> {
     const now = new Date().toISOString();
+    // Recover work abandoned by a killed Railway process. Without this,
+    // identified/discovering runs remain permanently invisible to the queue.
+    const staleBefore = new Date(Date.now() - Math.max(
+      15 * 60 * 1000,
+      Number(process.env.PROFILE_BUILDER_STALE_RUN_MS || 30 * 60 * 1000),
+    )).toISOString();
+    const { error: recoveryError } = await this.supabase
+      .from('lead_profile_builder_runs')
+      .update({
+        status: 'queued',
+        claimed_at: null,
+        next_attempt_at: now,
+        updated_at: now,
+        error_message: 'Recovered after an interrupted profile-builder run.',
+      })
+      .in('status', ['identified', 'discovering'])
+      .lt('updated_at', staleBefore);
+    if (recoveryError) {
+      logBuilderActivity('stale_run_recovery_failed', { error: safeActivityError(recoveryError.message) });
+    }
     const { data: runs, error } = await this.supabase
       .from('lead_profile_builder_runs')
       .select('user_id, lead_id, status, attempt_count')
@@ -622,6 +642,8 @@ EVIDENCE: ${JSON.stringify(evidence).slice(0, 18000)}`);
       public_evidence_count: 0,
       public_profile: {},
       error_message: null,
+      next_attempt_at: new Date().toISOString(),
+      claimed_at: new Date().toISOString(),
       started_at: new Date().toISOString(),
       completed_at: null,
       updated_at: new Date().toISOString(),

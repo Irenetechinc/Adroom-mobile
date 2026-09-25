@@ -32,9 +32,12 @@ export interface PublicToolSearch {
   warning?: string;
 }
 
-const TOOLS_ROOT = path.resolve(__dirname, '../../tools/vendor');
+const TOOLS_ROOT = path.resolve(
+  process.env.PROFILE_BUILDER_TOOLS_ROOT?.trim() || path.join(__dirname, '../../tools/vendor'),
+);
 const COMMAND_TIMEOUT_MS = Math.max(5_000, Number(process.env.PROFILE_BUILDER_TOOL_TIMEOUT_MS || 45_000));
 const MAX_OUTPUT_BYTES = 1_500_000;
+const MIN_TOOL_INTERVAL_MS = Math.max(700, Number(process.env.PROFILE_BUILDER_TOOL_INTERVAL_MS || 1_200));
 const SENSITIVE_VALUE = /(?:[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}|\+?\d[\d\s().-]{7,}\d)/i;
 const PRIVATE_QUERY = /(?:^|\s)(?:email|e-mail|phone|telephone|mobile|password|token|secret|api[- ]?key)(?:\s|$)/i;
 
@@ -130,6 +133,7 @@ function mapRecords(tool: string, platform: string, username: string, records: a
   const hits: PublicToolHit[] = [];
   for (const [index, record] of records.entries()) {
     if (!record || typeof record !== 'object') continue;
+    if (record.found === false || record.status === 'not_found' || record.state === 'not_found') continue;
     const url = extractRecordUrl(record);
     if (!url) continue;
     const site = clean(record.site || record.platform || record.name || record.title || platform, 120);
@@ -156,12 +160,17 @@ function mapRecords(tool: string, platform: string, username: string, records: a
   return hits;
 }
 
-async function runProcess(command: string, args: string[], cwd: string): Promise<{ stdout: string; stderr: string }> {
+async function runProcess(
+  command: string,
+  args: string[],
+  cwd: string,
+  extraEnv: Record<string, string> = {},
+): Promise<{ stdout: string; stderr: string }> {
   return new Promise((resolve, reject) => {
     const child = spawn(command, args, {
       cwd,
       shell: false,
-      env: { ...process.env, PYTHONUNBUFFERED: '1' },
+      env: { ...process.env, PYTHONUNBUFFERED: '1', ...extraEnv },
       stdio: ['ignore', 'pipe', 'pipe'],
     });
     let stdout = '';
@@ -211,6 +220,7 @@ async function readJsonReports(directory: string): Promise<any[]> {
 
 export class PublicProfileToolAdapters {
   private readonly python: string;
+  private readonly lastInvocationAt = new Map<string, number>();
 
   constructor(python = process.env.PROFILE_BUILDER_PYTHON || 'python3') {
     this.python = python;
@@ -229,6 +239,7 @@ export class PublicProfileToolAdapters {
       return result;
     }
 
+    await this.waitForTool(tool);
     let result: PublicToolSearch;
     switch (tool) {
       case 'maigret_public_username':
@@ -247,12 +258,7 @@ export class PublicProfileToolAdapters {
         result = await this.runJarvis(platform, username);
         break;
       case 'reddeye_public_reddit':
-        result = {
-          attempted: false,
-          available: false,
-          hits: [],
-          warning: 'Reddeye Profiler is a Firefox extension with no server API; the Reddit public-page adapter is used instead.',
-        };
+        result = await this.runReddeye(platform, username);
         break;
       default:
         result = { attempted: false, available: false, hits: [] };
@@ -280,7 +286,7 @@ export class PublicProfileToolAdapters {
       // cannot read one another's results.
       const result = await runProcess(
         this.python,
-        ['-m', 'maigret', username, '--json', 'ndjson', '--folderoutput', path.relative(cwd, runDir), '--no-progressbar', '--no-color'],
+        ['-m', 'maigret', username, '--json', 'ndjson', '--folderoutput', path.relative(cwd, runDir), '--no-progressbar', '--no-color', '--no-autoupdate', '--no-recursion'],
         cwd,
       );
       const records = await readJsonReports(runDir);
@@ -344,7 +350,13 @@ export class PublicProfileToolAdapters {
       return { attempted: false, available: false, hits: [], warning: 'Osintgraph is disabled unless explicitly configured for public Instagram data.' };
     }
     try {
-      const result = await runProcess('osintgraph', ['discover', username, '--limit', 'follower=0', 'followee=0', 'post=1'], path.join(TOOLS_ROOT, 'osintgraph'));
+      const cwd = path.join(TOOLS_ROOT, 'osintgraph');
+      const result = await runProcess(
+        this.python,
+        ['-m', 'osintgraph.cli', 'discover', username, '--limit', 'follower=0', 'followee=0', 'post=1', '--skip', 'post-analysis', 'account-analysis'],
+        cwd,
+        { PYTHONPATH: path.join(cwd, 'src') },
+      );
       return { attempted: true, available: true, hits: mapRecords('osintgraph_public_instagram', platform || 'instagram', username, parseJsonLines(result.stdout)) };
     } catch (error: any) {
       return { attempted: true, available: false, hits: [], warning: `Osintgraph unavailable: ${clean(error?.message, 300)}` };
@@ -401,6 +413,65 @@ export class PublicProfileToolAdapters {
     } catch (error: any) {
       return { attempted: true, available: false, hits: [], warning: `J.A.R.V.I.S unavailable: ${clean(error?.message, 300)}` };
     }
+  }
+
+  /**
+   * Reddeye is a Firefox extension, not a backend service. Its own background
+   * script uses Reddit's public about/activity JSON endpoints, so the backend
+   * adapter keeps that public collection behavior but deliberately omits the
+   * extension's credentialed Groq psychological dossier generation.
+   */
+  private async runReddeye(platform: string, username: string): Promise<PublicToolSearch> {
+    if (platform !== 'reddit' && platform !== 'web') {
+      return { attempted: false, available: false, hits: [], warning: 'Reddeye only supports public Reddit profiles.' };
+    }
+    const profileUsername = username.replace(/^@/, '');
+    const profileBaseUrl = `https://www.reddit.com/user/${encodeURIComponent(profileUsername)}`;
+    const profileUrl = `${profileBaseUrl}/`;
+    try {
+      const headers = {
+        Accept: 'application/json',
+        'User-Agent': process.env.PROFILE_BUILDER_REDDIT_USER_AGENT || 'AdRoomAI-public-profile/1.0',
+      };
+      const [aboutResponse, activityResponse] = await Promise.all([
+        fetch(`${profileBaseUrl}/about.json`, { headers, signal: AbortSignal.timeout(COMMAND_TIMEOUT_MS) }),
+        fetch(`${profileBaseUrl}.json?limit=25`, { headers, signal: AbortSignal.timeout(COMMAND_TIMEOUT_MS) }),
+      ]);
+      if (!aboutResponse.ok) throw new Error(`Reddit about endpoint returned HTTP ${aboutResponse.status}`);
+      if (!activityResponse.ok) throw new Error(`Reddit activity endpoint returned HTTP ${activityResponse.status}`);
+      const about: any = await aboutResponse.json();
+      const activity: any = await activityResponse.json();
+      const account = about?.data || {};
+      const children = Array.isArray(activity?.data?.children) ? activity.data.children : [];
+      const publicBio = safeText(account.subreddit?.public_description || account.subreddit?.title);
+      const activityText = children.slice(0, 5).map((item: any) => {
+        const data = item?.data || {};
+        const subreddit = clean(data.subreddit, 80);
+        const body = clean(data.body || data.title || data.selftext, 600);
+        return subreddit && body ? `r/${subreddit}: ${body}` : body;
+      }).filter(Boolean).join(' | ');
+      const text = clean([publicBio, activityText].filter(Boolean).join(' — '), 1_200);
+      if (!text) return { attempted: true, available: true, hits: [] };
+      return {
+        attempted: true,
+        available: true,
+        hits: mapRecords('reddeye_public_reddit', 'reddit', profileUsername, [{
+          site: 'Reddit',
+          url: profileUrl,
+          username: profileUsername,
+          bio: text,
+        }]),
+      };
+    } catch (error: any) {
+      return { attempted: true, available: false, hits: [], warning: `Reddeye public Reddit adapter unavailable: ${clean(error?.message, 300)}` };
+    }
+  }
+
+  private async waitForTool(tool: PublicProfileTool): Promise<void> {
+    const previous = this.lastInvocationAt.get(tool) || 0;
+    const delay = Math.max(0, MIN_TOOL_INTERVAL_MS - (Date.now() - previous));
+    if (delay) await new Promise((resolve) => setTimeout(resolve, delay));
+    this.lastInvocationAt.set(tool, Date.now());
   }
 }
 

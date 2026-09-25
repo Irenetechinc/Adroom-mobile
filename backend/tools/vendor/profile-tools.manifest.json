@@ -1,0 +1,58 @@
+{
+  "purpose": "Backend-only public-profile discovery adapters",
+  "policy": {
+    "input": "public usernames only",
+    "execution": "backend queue only",
+    "authentication": "never supplied to vendored tools",
+    "output": "sanitized public URLs and excerpts only"
+  },
+  "tools": [
+    {
+      "name": "maigret",
+      "repository": "https://github.com/soxoj/maigret.git",
+      "revision": "b020cba00039378d1338e4df5234329f6c96ad33",
+      "entrypoint": "python -m maigret USERNAME --json ndjson --folderoutput RUN_DIR --no-autoupdate --no-recursion",
+      "adapter": "publicProfileToolAdapters.ts"
+    },
+    {
+      "name": "deepkrak3n",
+      "repository": "https://github.com/fchr80/deepkrak3n.git",
+      "requestedRepository": "https://github.com/guilhermelimait/deepkrak3n.git",
+      "revision": "b020cba00039378d1338e4df5234329f6c96ad33",
+      "entrypoint": "POST /api/search/username?username=USERNAME&limit=30",
+      "adapter": "publicProfileToolAdapters.ts",
+      "note": "The requested repository returned 404; the working replacement exposes the same documented FastAPI interface."
+    },
+    {
+      "name": "helix",
+      "repository": "https://github.com/thalha-a9/helix.git",
+      "revision": "b020cba00039378d1338e4df5234329f6c96ad33",
+      "entrypoint": "python helix.py -u USERNAME --format json --output RUN_DIR --no-browser",
+      "adapter": "publicProfileToolAdapters.ts"
+    },
+    {
+      "name": "osintgraph",
+      "repository": "https://github.com/XD-MHLOO/Osintgraph.git",
+      "revision": "b020cba00039378d1338e4df5234329f6c96ad33",
+      "entrypoint": "python -m osintgraph.cli discover USERNAME --limit follower=0 followee=0 post=1 --skip post-analysis account-analysis",
+      "adapter": "publicProfileToolAdapters.ts",
+      "note": "Disabled by default because the upstream tool requires configured Instagram/Neo4j credentials."
+    },
+    {
+      "name": "jarvis",
+      "repository": "https://github.com/affaan-m/JARVIS.git",
+      "revision": "b020cba00039378d1338e4df5234329f6c96ad33",
+      "entrypoint": "POST /api/agents/research followed by GET /api/agents/sessions/{id}",
+      "adapter": "publicProfileToolAdapters.ts",
+      "note": "Optional backend service; it is never started from a user-facing request."
+    },
+    {
+      "name": "reddeye",
+      "repository": "https://github.com/vicfic18/reddeye-profiler.git",
+      "revision": "b020cba00039378d1338e4df5234329f6c96ad33",
+      "entrypoint": "Firefox extension background.js Reddit public about/activity endpoints",
+      "adapter": "publicProfileToolAdapters.ts",
+      "note": "Only the extension's public Reddit collection behavior is adapted; credentialed Groq psychological dossier generation is excluded."
+    }
+  ]
+}

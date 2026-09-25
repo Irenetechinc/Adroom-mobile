@@ -45,6 +45,7 @@ async function listen(server: Server): Promise<number> {
 async function main(): Promise<void> {
   const fake = await createFakeTool();
   const adapters = new PublicProfileToolAdapters(fake.command);
+  const originalFetch = globalThis.fetch;
   let deepkrakMethod = '';
   let deepkrakPath = '';
   const deepkrakServer = createServer((request, response) => {
@@ -90,12 +91,26 @@ async function main(): Promise<void> {
     assert.strictEqual(unavailable.attempted, false);
     assert.ok(unavailable.warning?.includes('not configured'));
 
+    globalThis.fetch = (async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes('/about.json')) {
+        return new Response(JSON.stringify({
+          data: { subreddit: { public_description: 'Public Reddit bio' } },
+        }), { status: 200, headers: { 'content-type': 'application/json' } });
+      }
+      return new Response(JSON.stringify({
+        data: { children: [{ kind: 't1', data: { subreddit: 'public', body: 'A public comment' } }] },
+      }), { status: 200, headers: { 'content-type': 'application/json' } });
+    }) as typeof globalThis.fetch;
     const reddeye = await adapters.search('reddeye_public_reddit', 'reddit', 'public-user');
-    assert.strictEqual(reddeye.attempted, false);
-    assert.ok(reddeye.warning?.includes('Firefox extension'));
+    assert.strictEqual(reddeye.attempted, true);
+    assert.strictEqual(reddeye.available, true);
+    assert.strictEqual(reddeye.hits.length, 1);
+    assert.ok(reddeye.hits[0].text.includes('Public Reddit bio'));
 
     console.log('Public-profile adapter contract checks passed.');
   } finally {
+    globalThis.fetch = originalFetch;
     await new Promise<void>((resolve) => deepkrakServer.close(() => resolve()));
     await fs.rm(fake.directory, { recursive: true, force: true });
   }

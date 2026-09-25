@@ -21,6 +21,8 @@ const requiredTables = [
   'strategy_conversation_runs',
   'strategy_conversation_signals',
   'agent_deals',
+  'lead_profile_builder_runs',
+  'lead_sales_profiles',
 ];
 
 const requiredColumns: Record<string, string[]> = {
@@ -65,9 +67,9 @@ async function main(): Promise<void> {
        JOIN pg_namespace n ON n.oid = c.relnamespace
        WHERE p.pubname = 'supabase_realtime' AND n.nspname = 'public'
          AND c.relname = ANY($1)`,
-      [['agent_tasks', 'agent_leads', 'lead_dm_messages', 'strategies', 'strategy_conversation_runs', 'strategy_conversation_signals', 'agent_deals']],
+      [['agent_tasks', 'agent_leads', 'lead_dm_messages', 'strategies', 'strategy_conversation_runs', 'strategy_conversation_signals', 'agent_deals', 'lead_profile_builder_runs', 'lead_sales_profiles']],
     );
-    const realtimeRequired = ['agent_tasks', 'agent_leads', 'lead_dm_messages', 'strategies', 'strategy_conversation_runs', 'strategy_conversation_signals', 'agent_deals'];
+    const realtimeRequired = ['agent_tasks', 'agent_leads', 'lead_dm_messages', 'strategies', 'strategy_conversation_runs', 'strategy_conversation_signals', 'agent_deals', 'lead_profile_builder_runs', 'lead_sales_profiles'];
     const realtimeTables = new Set(publicationResult.rows.map((row: { table_name: string }) => row.table_name));
     const missingRealtimeTables = realtimeRequired.filter((table) => !realtimeTables.has(table));
 
