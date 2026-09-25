@@ -9,6 +9,7 @@ import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { KeyboardAvoidingView, Platform as RNPlatform, ScrollView as RNScrollView } from 'react-native';
 import { RootStackParamList } from '../types';
+import { runWhatsAppPairingAction } from '../services/whatsappPairingAction';
 import {
   ChevronLeft, Link2, Link2Off, CheckCircle2,
   ShieldCheck, RefreshCw, AlertCircle, ExternalLink, Lock, Zap,
@@ -344,19 +345,20 @@ export default function ConnectedAccountsScreen() {
       if (!session?.access_token) throw new Error('Please sign in again.');
       const base = `${process.env.EXPO_PUBLIC_API_URL || ''}/api/social-connections`;
       const headers = { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` };
-      if (personalProvider.id === 'whatsapp_personal' && personalStep === 'verify') {
-        let connected = false;
-        for (let attempt = 0; attempt < 5; attempt += 1) {
-          const response = await fetch(base, { headers });
-          const result = await response.json().catch(() => ({}));
-          if (!response.ok) throw new Error(result.error || 'Could not check WhatsApp connection status.');
-          connected = (result.connections || []).some(
-            (connection: any) => connection.provider === 'whatsapp_personal' && connection.status === 'connected',
-          );
-          if (connected || attempt === 4) break;
-          await new Promise(resolve => setTimeout(resolve, 1000));
+      if (personalProvider.id === 'whatsapp_personal') {
+        const result = await runWhatsAppPairingAction({
+          step: personalStep === 'start' ? 'start' : 'verify',
+          baseUrl: base,
+          phone: personalPhone,
+          accessToken: session.access_token,
+        });
+        if (result.kind === 'start') {
+          setPersonalRequestId(result.requestId);
+          setPairingCode(result.pairingCode);
+          setPersonalStep('verify');
+          return;
         }
-        if (!connected) {
+        if (!result.connected) {
           Alert.alert(
             'Still waiting for WhatsApp',
             'Finish entering the pairing code in WhatsApp, then tap “I Paired WhatsApp” again.',
@@ -382,9 +384,6 @@ export default function ConnectedAccountsScreen() {
             code: personalSecret,
             ...(telegramNeedsPassword && telegramPassword ? { password: telegramPassword } : {}),
           };
-      } else if (personalProvider.id === 'whatsapp_personal') {
-        endpoint = `${base}/whatsapp-personal/start`;
-        body = { phone: personalPhone };
       } else {
         if (personalProvider.id === 'delta_chat') {
           endpoint = `${base}/delta-chat/connect`;

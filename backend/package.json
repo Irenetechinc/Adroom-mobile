@@ -5,6 +5,7 @@
   "main": "dist/server.js",
   "scripts": {
     "build": "tsc",
+    "test:whatsapp-pairing": "npm run build && node dist/services/whatsappPairing.test.js",
     "test:contracts": "npm run build && node dist/agentFrameworkContract.test.js",
     "smoke:production": "npm run build && node dist/productionSmoke.js",
     "check:migrations": "npm run build && node dist/productionMigrationCheck.js",

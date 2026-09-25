@@ -8,6 +8,7 @@ import { getServiceSupabaseClient } from '../config/supabase';
 import { normalizePlatform, normalizeSelectedPlatforms } from './platformIdentity';
 import { isEnabled as isFeatureEnabled } from './featureFlagService';
 import { normalizeInboundMessageTimestamp } from './inboundMessageTimestamp';
+import { requestWhatsAppPairingCodeWhenReady } from './whatsappPairing';
 
 export type PersonalProvider = 'telegram' | 'whatsapp_personal' | 'signal_personal' | 'bluesky' | 'delta_chat';
 
@@ -768,30 +769,6 @@ export class SocialAccountService {
     const authDir = path.join(os.tmpdir(), 'adroom-whatsapp', requestId);
     const { state, saveCreds } = await baileys.useMultiFileAuthState(authDir);
     const sock = baileys.default({ auth: state, printQRInTerminal: false, browser: ['Adirum AI', 'Chrome', '1.0.0'] });
-    let resolvePairingCode!: (code: string) => void;
-    let rejectPairingCode!: (error: Error) => void;
-    let pairingCodeRequested = false;
-    let pairingCodeSettled = false;
-    let pairingCodeTimer: NodeJS.Timeout | undefined;
-    const pairingCodeReady = new Promise<string>((resolve, reject) => {
-      resolvePairingCode = resolve;
-      rejectPairingCode = reject;
-    });
-    const failPairingCode = (error: unknown) => {
-      if (pairingCodeSettled) return;
-      pairingCodeSettled = true;
-      if (pairingCodeTimer) clearTimeout(pairingCodeTimer);
-      rejectPairingCode(error instanceof Error ? error : new Error(String(error)));
-    };
-    const completePairingCode = (code: string) => {
-      if (pairingCodeSettled) return;
-      pairingCodeSettled = true;
-      if (pairingCodeTimer) clearTimeout(pairingCodeTimer);
-      resolvePairingCode(code);
-    };
-    pairingCodeTimer = setTimeout(() => {
-      failPairingCode(new Error('WhatsApp did not initialize before the pairing code request timed out.'));
-    }, 30000);
     sock.ev.on('creds.update', (update: any) => {
       void saveCreds(update);
       this.scheduleWhatsAppCredentialPersist(userId, authDir);
@@ -800,12 +777,6 @@ export class SocialAccountService {
     this.pendingWhatsApp.set(requestId, { userId, phone: phoneNumber, sock, authDir });
     sock.ev.on('connection.update', async (update: any) => {
       if (update.connection === 'close') {
-        const closeMessage = String(update?.lastDisconnect?.error?.message || '').trim();
-        failPairingCode(new Error(
-          closeMessage
-            ? `WhatsApp closed before pairing code generation: ${closeMessage}`
-            : 'WhatsApp closed before pairing code generation.',
-        ));
         this.pendingWhatsApp.delete(requestId);
         if (this.whatsappSockets.get(userId) === sock) this.whatsappSockets.delete(userId);
         if (this.whatsappAuthDirs.get(userId) === authDir) this.whatsappAuthDirs.delete(userId);
@@ -837,24 +808,11 @@ export class SocialAccountService {
         this.pendingWhatsApp.delete(requestId);
         return;
       }
-
-      // In Baileys 7, "connecting" is emitted before the WebSocket is open.
-      // The QR update arrives after the server handshake and is the safe point
-      // to send the phone-number pairing request.
-      if (!pairingCodeRequested && update.qr && !sock.authState.creds.registered) {
-        pairingCodeRequested = true;
-        try {
-          completePairingCode(await sock.requestPairingCode(phoneNumber));
-        } catch (error) {
-          failPairingCode(error);
-        }
-      }
     });
     try {
-      const pairingCode = await pairingCodeReady;
+      const pairingCode = await requestWhatsAppPairingCodeWhenReady(sock, phoneNumber);
       return { requestId, pairingCode };
     } catch (error) {
-      if (pairingCodeTimer) clearTimeout(pairingCodeTimer);
       this.pendingWhatsApp.delete(requestId);
       try { sock.end(error); } catch {}
       await fs.rm(authDir, { recursive: true, force: true });

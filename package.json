@@ -3,6 +3,7 @@
   "version": "1.0.0",
   "main": "index.ts",
   "scripts": {
+    "typecheck": "tsc --noEmit",
     "read-pdf": "node read_pdf.js",
     "start": "expo start",
     "android": "expo start --android",
