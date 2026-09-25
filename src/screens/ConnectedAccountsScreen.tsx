@@ -344,6 +344,30 @@ export default function ConnectedAccountsScreen() {
       if (!session?.access_token) throw new Error('Please sign in again.');
       const base = `${process.env.EXPO_PUBLIC_API_URL || ''}/api/social-connections`;
       const headers = { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` };
+      if (personalProvider.id === 'whatsapp_personal' && personalStep === 'verify') {
+        let connected = false;
+        for (let attempt = 0; attempt < 5; attempt += 1) {
+          const response = await fetch(base, { headers });
+          const result = await response.json().catch(() => ({}));
+          if (!response.ok) throw new Error(result.error || 'Could not check WhatsApp connection status.');
+          connected = (result.connections || []).some(
+            (connection: any) => connection.provider === 'whatsapp_personal' && connection.status === 'connected',
+          );
+          if (connected || attempt === 4) break;
+          await new Promise(resolve => setTimeout(resolve, 1000));
+        }
+        if (!connected) {
+          Alert.alert(
+            'Still waiting for WhatsApp',
+            'Finish entering the pairing code in WhatsApp, then tap “I Paired WhatsApp” again.',
+          );
+          return;
+        }
+        setPersonalProvider(null);
+        await refresh();
+        Alert.alert('Connected', 'WhatsApp is now connected.');
+        return;
+      }
       let endpoint = '';
       let body: Record<string, string> = {};
       if (personalProvider.id === 'bluesky') {

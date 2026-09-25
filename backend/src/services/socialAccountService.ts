@@ -760,52 +760,101 @@ export class SocialAccountService {
   async startWhatsAppPairing(userId: string, phone: string): Promise<{ requestId: string; pairingCode: string }> {
     let baileys: any;
     try { baileys = require('@whiskeysockets/baileys'); } catch { throw new Error('WhatsApp pairing service is not installed.'); }
+    const phoneNumber = phone.replace(/\D/g, '');
+    if (!/^[1-9]\d{7,14}$/.test(phoneNumber)) {
+      throw new Error('Enter a WhatsApp phone number with its country code.');
+    }
     const requestId = crypto.randomUUID();
     const authDir = path.join(os.tmpdir(), 'adroom-whatsapp', requestId);
     const { state, saveCreds } = await baileys.useMultiFileAuthState(authDir);
     const sock = baileys.default({ auth: state, printQRInTerminal: false, browser: ['Adirum AI', 'Chrome', '1.0.0'] });
+    let resolvePairingCode!: (code: string) => void;
+    let rejectPairingCode!: (error: Error) => void;
+    let pairingCodeRequested = false;
+    let pairingCodeSettled = false;
+    let pairingCodeTimer: NodeJS.Timeout | undefined;
+    const pairingCodeReady = new Promise<string>((resolve, reject) => {
+      resolvePairingCode = resolve;
+      rejectPairingCode = reject;
+    });
+    const failPairingCode = (error: unknown) => {
+      if (pairingCodeSettled) return;
+      pairingCodeSettled = true;
+      if (pairingCodeTimer) clearTimeout(pairingCodeTimer);
+      rejectPairingCode(error instanceof Error ? error : new Error(String(error)));
+    };
+    const completePairingCode = (code: string) => {
+      if (pairingCodeSettled) return;
+      pairingCodeSettled = true;
+      if (pairingCodeTimer) clearTimeout(pairingCodeTimer);
+      resolvePairingCode(code);
+    };
+    pairingCodeTimer = setTimeout(() => {
+      failPairingCode(new Error('WhatsApp did not initialize before the pairing code request timed out.'));
+    }, 30000);
     sock.ev.on('creds.update', (update: any) => {
       void saveCreds(update);
       this.scheduleWhatsAppCredentialPersist(userId, authDir);
     });
     this.attachWhatsAppInbound(userId, sock);
-    this.pendingWhatsApp.set(requestId, { userId, phone, sock, authDir });
+    this.pendingWhatsApp.set(requestId, { userId, phone: phoneNumber, sock, authDir });
     sock.ev.on('connection.update', async (update: any) => {
       if (update.connection === 'close') {
+        const closeMessage = String(update?.lastDisconnect?.error?.message || '').trim();
+        failPairingCode(new Error(
+          closeMessage
+            ? `WhatsApp closed before pairing code generation: ${closeMessage}`
+            : 'WhatsApp closed before pairing code generation.',
+        ));
         this.pendingWhatsApp.delete(requestId);
         if (this.whatsappSockets.get(userId) === sock) this.whatsappSockets.delete(userId);
-        this.whatsappAuthDirs.delete(userId);
+        if (this.whatsappAuthDirs.get(userId) === authDir) this.whatsappAuthDirs.delete(userId);
         await fs.rm(authDir, { recursive: true, force: true }).catch(() => {});
         return;
       }
-      if (update.connection !== 'open') return;
-      try {
-        // Baileys writes credentials asynchronously in response to the open
-        // event. Give the final creds.update event time to finish before the
-        // encrypted bundle is copied to Supabase.
-        await new Promise((resolve) => setTimeout(resolve, 300));
-        const files = await fs.readdir(authDir);
-        const bundle: Record<string, string> = {};
-        for (const file of files) bundle[file] = (await fs.readFile(path.join(authDir, file))).toString('base64');
-        await this.save({
-          userId,
-          provider: 'whatsapp_personal',
-          accountId: phone,
-          displayName: phone,
-          handle: phone,
-          credential: { bundle },
-        });
-        this.whatsappSockets.set(userId, sock);
-        this.whatsappAuthDirs.set(userId, authDir);
-      } catch (error: any) {
-        await this.recordError(userId, 'whatsapp_personal', error.message);
+      if (update.connection === 'open') {
+        try {
+          // Baileys writes credentials asynchronously in response to the open
+          // event. Give the final creds.update event time to finish before the
+          // encrypted bundle is copied to Supabase.
+          await new Promise((resolve) => setTimeout(resolve, 300));
+          const files = await fs.readdir(authDir);
+          const bundle: Record<string, string> = {};
+          for (const file of files) bundle[file] = (await fs.readFile(path.join(authDir, file))).toString('base64');
+          await this.save({
+            userId,
+            provider: 'whatsapp_personal',
+            accountId: phoneNumber,
+            displayName: phoneNumber,
+            handle: phoneNumber,
+            credential: { bundle },
+          });
+          this.whatsappSockets.set(userId, sock);
+          this.whatsappAuthDirs.set(userId, authDir);
+        } catch (error: any) {
+          await this.recordError(userId, 'whatsapp_personal', error.message);
+        }
+        this.pendingWhatsApp.delete(requestId);
+        return;
       }
-      this.pendingWhatsApp.delete(requestId);
+
+      // In Baileys 7, "connecting" is emitted before the WebSocket is open.
+      // The QR update arrives after the server handshake and is the safe point
+      // to send the phone-number pairing request.
+      if (!pairingCodeRequested && update.qr && !sock.authState.creds.registered) {
+        pairingCodeRequested = true;
+        try {
+          completePairingCode(await sock.requestPairingCode(phoneNumber));
+        } catch (error) {
+          failPairingCode(error);
+        }
+      }
     });
     try {
-      const pairingCode = await sock.requestPairingCode(phone.replace(/\D/g, ''));
+      const pairingCode = await pairingCodeReady;
       return { requestId, pairingCode };
     } catch (error) {
+      if (pairingCodeTimer) clearTimeout(pairingCodeTimer);
       this.pendingWhatsApp.delete(requestId);
       try { sock.end(error); } catch {}
       await fs.rm(authDir, { recursive: true, force: true });
