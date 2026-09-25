@@ -69,6 +69,20 @@ function safeText(value: unknown): string {
   return text && !SENSITIVE_VALUE.test(text) ? text : '';
 }
 
+function safeLogDetail(value: unknown, max = 400): string {
+  return clean(value, max)
+    .replace(/https?:\/\/[^/\s:@]+(?::[^/\s@]*)?@/gi, 'https://[redacted]@')
+    .replace(SENSITIVE_VALUE, '[redacted]');
+}
+
+function logAdapterActivity(event: string, fields: Record<string, unknown>): void {
+  console.log(`[PublicProfileToolAdapter] ${JSON.stringify({
+    event,
+    at: new Date().toISOString(),
+    ...fields,
+  })}`);
+}
+
 function extractRecordUrl(value: any): string | undefined {
   if (!value || typeof value !== 'object') return undefined;
   const direct = safeUrl(value.url_user || value.profile_url || value.url || value.link || value.href || value.permalink);
@@ -203,31 +217,57 @@ export class PublicProfileToolAdapters {
   }
 
   async search(tool: PublicProfileTool, platform: string, username: string): Promise<PublicToolSearch> {
+    const startedAt = Date.now();
     if (!isSafeUsername(username)) {
-      return { attempted: false, available: false, hits: [], warning: 'Only a public username is accepted by discovery tools.' };
+      const result = { attempted: false, available: false, hits: [], warning: 'Only a public username is accepted by discovery tools.' };
+      logAdapterActivity('search_rejected', {
+        tool,
+        platform,
+        reason: 'unsafe_public_username',
+        durationMs: Date.now() - startedAt,
+      });
+      return result;
     }
 
+    let result: PublicToolSearch;
     switch (tool) {
       case 'maigret_public_username':
-        return this.runMaigret(platform, username);
+        result = await this.runMaigret(platform, username);
+        break;
       case 'deepkrak3n_public_search':
-        return this.runDeepkrak3n(platform, username);
+        result = await this.runDeepkrak3n(platform, username);
+        break;
       case 'helix_public_username':
-        return this.runHelix(platform, username);
+        result = await this.runHelix(platform, username);
+        break;
       case 'osintgraph_public_instagram':
-        return this.runOsintgraph(platform, username);
+        result = await this.runOsintgraph(platform, username);
+        break;
       case 'jarvis_public_research':
-        return this.runJarvis(platform, username);
+        result = await this.runJarvis(platform, username);
+        break;
       case 'reddeye_public_reddit':
-        return {
+        result = {
           attempted: false,
           available: false,
           hits: [],
           warning: 'Reddeye Profiler is a Firefox extension with no server API; the Reddit public-page adapter is used instead.',
         };
+        break;
       default:
-        return { attempted: false, available: false, hits: [] };
+        result = { attempted: false, available: false, hits: [] };
+        break;
     }
+    logAdapterActivity('search_complete', {
+      tool,
+      platform,
+      attempted: result.attempted,
+      available: result.available,
+      hitCount: result.hits.length,
+      durationMs: Date.now() - startedAt,
+      ...(result.warning ? { warning: safeLogDetail(result.warning) } : {}),
+    });
+    return result;
   }
 
   private async runMaigret(platform: string, username: string): Promise<PublicToolSearch> {

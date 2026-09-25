@@ -103,6 +103,20 @@ function safePublicUrl(value: unknown): string {
   }
 }
 
+function logBuilderActivity(event: string, fields: Record<string, unknown> = {}): void {
+  console.log(`[LeadProfileBuilder] ${JSON.stringify({
+    event,
+    at: new Date().toISOString(),
+    ...fields,
+  })}`);
+}
+
+function safeActivityError(error: unknown): string {
+  return safeText(error instanceof Error ? error.message : error, 400)
+    .replace(/https?:\/\/[^/\s:@]+(?::[^/\s@]*)?@/gi, 'https://[redacted]@')
+    .replace(PERSONAL_DATA_PATTERN, '[redacted]');
+}
+
 function cleanList(value: unknown, maxItems = 12): string[] {
   return Array.isArray(value)
     ? value.map((item) => safeText(item, 180))
@@ -145,6 +159,11 @@ export class LeadProfileBuilder {
       .eq('lead_id', leadId)
       .maybeSingle();
     if (existing && ['queued', 'identified', 'discovering', 'profile_ready', 'psychology_complete'].includes(existing.status)) {
+      logBuilderActivity('queue_reused', {
+        userId,
+        leadId,
+        status: existing.status,
+      });
       return true;
     }
     const { error } = await this.supabase.from('lead_profile_builder_runs').upsert({
@@ -165,6 +184,12 @@ export class LeadProfileBuilder {
       updated_at: new Date().toISOString(),
     }, { onConflict: 'user_id,lead_id' });
     if (error) throw new Error(`profile builder queue failed: ${error.message}`);
+    logBuilderActivity('lead_queued', {
+      userId,
+      leadId,
+      strategyId: context.strategyId,
+      selectedPlatformCount: context.selectedPlatforms.length,
+    });
     await this.setLeadStatus(context, 'queued');
     return true;
   }
@@ -179,6 +204,10 @@ export class LeadProfileBuilder {
       .order('updated_at', { ascending: true })
       .limit(Math.max(1, Math.min(limit, 20)));
     if (error) throw new Error(`profile builder queue lookup failed: ${error.message}`);
+    logBuilderActivity('queue_polled', {
+      dueCount: runs?.length || 0,
+      requestedLimit: limit,
+    });
     let processed = 0;
     for (const run of runs || []) {
       if (this.running.has(run.lead_id)) continue;
@@ -191,9 +220,22 @@ export class LeadProfileBuilder {
       }).eq('user_id', run.user_id).eq('lead_id', run.lead_id).in('status', ['queued', 'failed']).select('lead_id');
       if (claimError) {
         console.warn(`[LeadProfileBuilder] unable to claim lead=${run.lead_id}: ${claimError.message}`);
+        logBuilderActivity('claim_failed', {
+          userId: run.user_id,
+          leadId: run.lead_id,
+          error: safeActivityError(claimError.message),
+        });
         continue;
       }
-      if (!claimed?.length) continue;
+      if (!claimed?.length) {
+        logBuilderActivity('claim_lost', { userId: run.user_id, leadId: run.lead_id });
+        continue;
+      }
+      logBuilderActivity('lead_claimed', {
+        userId: run.user_id,
+        leadId: run.lead_id,
+        attemptCount: Number(run.attempt_count || 0) + 1,
+      });
       await this.buildForLead(run.user_id, run.lead_id);
       processed++;
     }
@@ -204,16 +246,29 @@ export class LeadProfileBuilder {
     const enabled = await featureFlags.isEnabled('lead_profile_builder', userId);
     if (!enabled || this.running.has(leadId)) return null;
     this.running.add(leadId);
+    const startedAt = Date.now();
+    logBuilderActivity('build_started', { userId, leadId });
 
     try {
       const context = await this.loadContext(userId, leadId);
-      if (!context) return null;
+      if (!context) {
+        logBuilderActivity('build_skipped', { userId, leadId, reason: 'lead_not_found' });
+        return null;
+      }
 
       const run = await this.startRun(userId, context);
+      logBuilderActivity('run_started', { userId, leadId, runId: run.id });
       await this.setLeadStatus(context, 'identified');
       await this.updateRun(run.id, { status: 'identified' });
 
       const plan = await this.chooseDiscoveryPlan(context);
+      logBuilderActivity('discovery_plan_selected', {
+        userId,
+        leadId,
+        runId: run.id,
+        stepCount: plan.length,
+        tools: Array.from(new Set(plan.map((step) => step.tool))),
+      });
       await this.updateRun(run.id, {
         status: 'discovering',
         tools_attempted: Array.from(new Set(plan.map((step) => step.tool))),
@@ -222,6 +277,13 @@ export class LeadProfileBuilder {
 
       const results = await this.executePlan(plan);
       const publicEvidence = this.toPublicEvidence(results);
+      logBuilderActivity('discovery_complete', {
+        userId,
+        leadId,
+        runId: run.id,
+        resultCount: results.length,
+        evidenceCount: publicEvidence.length,
+      });
       const publicIdentity = await this.buildPublicIdentity(context, publicEvidence);
       const evidence = this.buildEvidence(context, publicEvidence);
       if (!evidence.length && !context.firstInteraction) {
@@ -258,6 +320,13 @@ export class LeadProfileBuilder {
       };
 
       await this.saveProfile(userId, context, result);
+      logBuilderActivity('profile_persisted', {
+        userId,
+        leadId,
+        runId: run.id,
+        evidenceCount: result.evidenceCount,
+        confidence: result.confidence,
+      });
       await this.updateRun(run.id, {
         status: 'profile_ready',
         public_evidence_count: result.evidenceCount,
@@ -277,6 +346,7 @@ export class LeadProfileBuilder {
       }
       if (psychology) {
         result.psychology = psychology;
+        logBuilderActivity('psychology_complete', { userId, leadId, runId: run.id });
         await this.saveProfile(userId, context, result);
         await this.updateRun(run.id, { status: 'psychology_complete', public_profile: result });
         await this.setLeadStatus(context, 'psychology_complete');
@@ -287,16 +357,23 @@ export class LeadProfileBuilder {
         public_profile: result,
       });
       await this.setLeadStatus(context, 'completed');
-      await pushService.notifyLeadProfileMilestone(userId, {
+      logBuilderActivity('build_completed', {
+        userId,
         leadId,
-        platform: context.platform,
-        status: 'completed',
+        runId: run.id,
         evidenceCount: result.evidenceCount,
+        durationMs: Date.now() - startedAt,
       });
       return result;
     } catch (error: any) {
       const message = error instanceof Error ? error.message : 'Profile builder failed';
       console.warn(`[LeadProfileBuilder] failed lead=${leadId}: ${message}`);
+      logBuilderActivity('build_failed', {
+        userId,
+        leadId,
+        error: safeActivityError(error),
+        durationMs: Date.now() - startedAt,
+      });
       await this.markFailed(userId, leadId, message);
       return null;
     } finally {
@@ -313,6 +390,22 @@ export class LeadProfileBuilder {
       .eq('lead_id', leadId)
       .maybeSingle();
     return (data?.profile as LeadProfile) || null;
+  }
+
+  async logMigrationReadiness(): Promise<void> {
+    const checks = await Promise.all([
+      this.supabase.from('agent_leads').select('profile_status').limit(1),
+      this.supabase.from('lead_profile_builder_runs').select('id').limit(1),
+      this.supabase.from('lead_sales_profiles').select('id').limit(1),
+    ]);
+    const names = ['agent_leads.profile_status', 'lead_profile_builder_runs', 'lead_sales_profiles'];
+    const missing = checks
+      .map((check, index) => check.error ? names[index] : null)
+      .filter((name): name is string => Boolean(name));
+    logBuilderActivity('migration_readiness', {
+      ready: missing.length === 0,
+      missing,
+    });
   }
 
   private async loadContext(userId: string, leadId: string): Promise<LeadContext | null> {
@@ -555,12 +648,27 @@ EVIDENCE: ${JSON.stringify(evidence).slice(0, 18000)}`);
       profile_error: error || null,
     }).eq('id', context.id);
     if (updateError) throw new Error(`lead profile status update failed: ${updateError.message}`);
-    await pushService.notifyLeadProfileMilestone(context.userId, {
+    logBuilderActivity('lead_status_updated', {
+      userId: context.userId,
       leadId: context.id,
-      platform: context.platform,
       status,
-      evidenceCount: 0,
-    }).catch(() => undefined);
+      ...(error ? { hasError: true } : {}),
+    });
+    if (['profile_ready', 'psychology_complete', 'completed'].includes(status)) {
+      await pushService.notifyLeadProfileMilestone(context.userId, {
+        leadId: context.id,
+        platform: context.platform,
+        status,
+        evidenceCount: 0,
+      }).catch((notificationError) => {
+        logBuilderActivity('milestone_notification_failed', {
+          userId: context.userId,
+          leadId: context.id,
+          status,
+          error: safeActivityError(notificationError),
+        });
+      });
+    }
   }
 
   private async saveProfile(userId: string, context: LeadContext, profile: LeadProfile) {
@@ -602,6 +710,12 @@ EVIDENCE: ${JSON.stringify(evidence).slice(0, 18000)}`);
       completed_at: new Date().toISOString(),
       next_attempt_at: retryAt,
     }).eq('lead_id', leadId).eq('user_id', userId);
+    logBuilderActivity('retry_scheduled', {
+      userId,
+      leadId,
+      attemptCount,
+      retryAt,
+    });
     const context = await this.loadContext(userId, leadId).catch(() => null);
     if (context) {
       await pushService.notifyLeadProfileMilestone(userId, {

@@ -5864,6 +5864,11 @@ app.listen(PORT, async () => {
     console.warn('[APMA Migration] Non-fatal startup error:', e.message)
   );
 
+  // Profile Builder migrations are applied through Supabase SQL. Log readiness
+  // on every Railway boot so a missing migration is visible before the queue
+  // starts processing leads.
+  await leadProfileBuilder.logMigrationReadiness();
+
   // Start all background intelligence + agent execution loops
   const scheduler = new SchedulerService();
   scheduler.start();

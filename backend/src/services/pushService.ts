@@ -338,10 +338,37 @@ export const pushService = {
       ? `Public profile enrichment completed on ${params.platform}. ${params.evidenceCount} public evidence item(s) were reviewed.`
       : `Profile Builder is ${params.status.replace(/_/g, ' ')} for a ${params.platform} lead.`;
     const data = { type: 'lead_profile_milestone', ...params };
-    await Promise.all([
-      sendExpoPush(tokens, { title, body, data, channelId: 'alerts', sound: 'default' }),
-      insertNotification(userId, title, body, data),
-    ]);
+    console.log(`[PushService] ${JSON.stringify({
+      event: 'lead_profile_milestone_started',
+      userId,
+      leadId: params.leadId,
+      status: params.status,
+      evidenceCount: params.evidenceCount,
+      tokenCount: tokens.length,
+    })}`);
+    try {
+      const [pushResult] = await Promise.all([
+        sendExpoPush(tokens, { title, body, data, channelId: 'alerts', sound: 'default' }),
+        insertNotification(userId, title, body, data),
+      ]);
+      console.log(`[PushService] ${JSON.stringify({
+        event: 'lead_profile_milestone_completed',
+        userId,
+        leadId: params.leadId,
+        status: params.status,
+        pushOk: pushResult.ok,
+        tokensSent: pushResult.tokensSent,
+      })}`);
+    } catch (error: any) {
+      console.error(`[PushService] ${JSON.stringify({
+        event: 'lead_profile_milestone_failed',
+        userId,
+        leadId: params.leadId,
+        status: params.status,
+        error: String(error?.message || 'notification failed').slice(0, 300),
+      })}`);
+      throw error;
+    }
   },
 
   async notifySubscriptionCancelled(userId: string, accessUntil: string | null): Promise<void> {
