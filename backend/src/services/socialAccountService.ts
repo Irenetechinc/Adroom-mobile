@@ -767,15 +767,20 @@ export class SocialAccountService {
     try { telegram = require('telegram'); } catch { throw new Error('Telegram connection service is not installed.'); }
     const client = new telegram.TelegramClient(new telegram.sessions.StringSession(''), apiId, apiHash, { connectionRetries: 5 });
     await client.connect();
-    const result = await client.invoke(new telegram.Api.auth.SendCode({
-      phoneNumber: phone,
-      apiId,
-      apiHash,
-      settings: new telegram.Api.auth.CodeSettings({}),
-    }));
-    const requestId = crypto.randomUUID();
-    this.pendingTelegram.set(requestId, { userId, client, phone, phoneCodeHash: result.phoneCodeHash });
-    return { requestId, status: 'verification_code_sent' };
+    try {
+      const result = await client.invoke(new telegram.Api.auth.SendCode({
+        phoneNumber: phone,
+        apiId,
+        apiHash,
+        settings: new telegram.Api.CodeSettings({}),
+      }));
+      const requestId = crypto.randomUUID();
+      this.pendingTelegram.set(requestId, { userId, client, phone, phoneCodeHash: result.phoneCodeHash });
+      return { requestId, status: 'verification_code_sent' };
+    } catch (error) {
+      await client.disconnect().catch(() => undefined);
+      throw error;
+    }
   }
 
   async verifyTelegram(requestId: string, code: string, password?: string): Promise<SocialConnectionPublic> {
