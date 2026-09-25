@@ -866,9 +866,10 @@ export class SocialAccountService {
       authDir,
       waitForCredentials: () => credentialsSaved,
     });
+    let closeHandled = false;
     sock.ev.on('connection.update', async (update: any) => {
       const pending = this.pendingWhatsApp.get(requestId);
-      if (update.isNewLogin && pending) {
+      if (update.isNewLogin && pending && !pending.finalizing) {
         pending.finalizing = this.saveWhatsAppPairingSession(
           userId,
           phoneNumber,
@@ -882,15 +883,37 @@ export class SocialAccountService {
         await pending.finalizing.catch(() => {});
       }
       if (update.connection === 'close') {
+        if (closeHandled) return;
+        closeHandled = true;
         // A successful first pair commonly closes with 515/restartRequired.
         // Keep the newly saved session available for the reconnect instead of
         // deleting the temporary auth state as if pairing had failed.
-        if (pending?.finalizing) await pending.finalizing.catch(() => {});
+        let sessionPersisted = false;
+        if (pending?.finalizing) {
+          try {
+            await pending.finalizing;
+            sessionPersisted = true;
+          } catch {}
+        }
+        const statusCode = Number(update?.lastDisconnect?.error?.output?.statusCode || 0);
+        const restartRequired = statusCode === Number(baileys.DisconnectReason?.restartRequired || 515);
         this.pendingWhatsApp.delete(requestId);
         if (this.whatsappSockets.get(userId) === sock) this.whatsappSockets.delete(userId);
         if (this.whatsappAuthDirs.get(userId) === authDir) this.whatsappAuthDirs.delete(userId);
         await this.cancelWhatsAppCredentialPersist(userId, authDir);
         await fs.rm(authDir, { recursive: true, force: true }).catch(() => {});
+        if (restartRequired && sessionPersisted) {
+          try {
+            const row = await this.get(userId, 'whatsapp_personal');
+            const credential = row ? decrypt(row) : null;
+            if (!credential) throw new Error('Saved WhatsApp credentials are unavailable after pairing.');
+            await this.restoreWhatsAppSocket(userId, credential);
+            console.log(`[SocialAccountService] WhatsApp first-link session restored for ${userId}`);
+          } catch (error: any) {
+            await this.recordError(userId, 'whatsapp_personal', error.message);
+            console.error(`[SocialAccountService] WhatsApp first-link reconnect failed: ${error.message}`);
+          }
+        }
         return;
       }
       if (update.connection === 'open') {
