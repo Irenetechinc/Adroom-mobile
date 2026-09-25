@@ -83,12 +83,20 @@ function extractRecordUrl(value: any): string | undefined {
 }
 
 function parseJsonLines(output: string): any[] {
+  const expand = (parsed: any): any[] => {
+    if (Array.isArray(parsed)) return parsed;
+    if (parsed && typeof parsed === 'object') {
+      for (const key of ['results', 'data', 'items', 'found', 'hits', 'profiles']) {
+        if (Array.isArray(parsed[key])) return parsed[key];
+      }
+    }
+    return parsed && typeof parsed === 'object' ? [parsed] : [];
+  };
+
   const records: any[] = [];
   for (const line of output.split(/\r?\n/).map((item) => item.trim()).filter(Boolean)) {
     try {
-      const parsed = JSON.parse(line);
-      if (Array.isArray(parsed)) records.push(...parsed);
-      else records.push(parsed);
+      records.push(...expand(JSON.parse(line)));
     } catch {
       // CLI status lines are expected. Structured lines are retained only.
     }
@@ -96,13 +104,7 @@ function parseJsonLines(output: string): any[] {
   if (records.length) return records;
   try {
     const parsed = JSON.parse(output);
-    if (Array.isArray(parsed)) return parsed;
-    if (parsed && typeof parsed === 'object') {
-      for (const key of ['results', 'data', 'items', 'found', 'hits', 'profiles']) {
-        if (Array.isArray(parsed[key])) return parsed[key];
-      }
-      return [parsed];
-    }
+    return expand(parsed);
   } catch {
     // no structured output
   }
@@ -194,7 +196,11 @@ async function readJsonReports(directory: string): Promise<any[]> {
 }
 
 export class PublicProfileToolAdapters {
-  private readonly python = process.env.PROFILE_BUILDER_PYTHON || 'python3';
+  private readonly python: string;
+
+  constructor(python = process.env.PROFILE_BUILDER_PYTHON || 'python3') {
+    this.python = python;
+  }
 
   async search(tool: PublicProfileTool, platform: string, username: string): Promise<PublicToolSearch> {
     if (!isSafeUsername(username)) {

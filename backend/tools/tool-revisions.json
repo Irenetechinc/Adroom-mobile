@@ -10,7 +10,7 @@
       "repository": "https://github.com/fchr80/deepkrak3n.git",
       "replacementFor": "https://github.com/guilhermelimait/deepkrak3n",
       "revision": "feaf2605e97d943b4370492b1fbe439fb0172208",
-      "interface": "GET /api/search/username?username=<username>&limit=30"
+      "interface": "POST /api/search/username?username=<username>&limit=30"
     },
     "helix": {
       "repository": "https://github.com/thalha-a9/helix.git",

@@ -7,6 +7,7 @@
     "build": "tsc",
     "test:whatsapp-pairing": "npm run build && node dist/services/whatsappPairing.test.js",
     "test:contracts": "npm run build && node dist/agentFrameworkContract.test.js",
+    "test:public-profile": "npm run build && node dist/services/publicProfileToolAdapters.test.js && node dist/leadProfileBuilderMigration.test.js",
     "smoke:production": "npm run build && node dist/productionSmoke.js",
     "check:migrations": "npm run build && node dist/productionMigrationCheck.js",
     "start": "node dist/server.js",

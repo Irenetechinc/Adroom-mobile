@@ -10,7 +10,7 @@ after cloning so deployments use the pinned source in this repository.
 | Adapter | Source | Revision | Interface used |
 | --- | --- | --- | --- |
 | Maigret | https://github.com/soxoj/maigret.git | `b6642744988e7e6c2d21f75db60ec3093019ba25` | `python -m maigret <username> --json ndjson --no-progressbar` |
-| Deepkrak3n | https://github.com/fchr80/deepkrak3n.git | `feaf2605e97d943b4370492b1fbe439fb0172208` | Replacement for unavailable `guilhermelimait/deepkrak3n`; local FastAPI/CLI source is vendored for its public username-search role |
+| Deepkrak3n | https://github.com/fchr80/deepkrak3n.git | `feaf2605e97d943b4370492b1fbe439fb0172208` | Replacement for unavailable `guilhermelimait/deepkrak3n`; `POST /api/search/username` on its local FastAPI runtime |
 | Helix | https://github.com/thalha-a9/helix.git | `6c99edd469ee55571b0facb9776f2cab4be17011` | `python helix.py -u <username> --format json --output <dir> --no-browser` |
 | Osintgraph | https://github.com/XD-MHLOO/Osintgraph.git | `c9bbcabb20604e2db1ae14f5ae7ba91d7938c33a` | `osintgraph discover <username>` only when explicitly enabled and configured |
 | J.A.R.V.I.S | https://github.com/affaan-m/JARVIS.git | `4369c34babd21d539c420866da51c7a8365f1c9e` | Optional HTTP adapter to a separately managed `/api/agents/research` endpoint |
