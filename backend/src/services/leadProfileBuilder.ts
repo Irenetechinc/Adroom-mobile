@@ -91,6 +91,18 @@ function safeText(value: unknown, max = 1200): string {
     .slice(0, max);
 }
 
+function safePublicUrl(value: unknown): string {
+  const candidate = safeText(value, 500);
+  if (!/^https?:\/\//i.test(candidate) || PERSONAL_DATA_PATTERN.test(candidate)) return '';
+  try {
+    const url = new URL(candidate);
+    if (url.username || url.password) return '';
+    return url.toString();
+  } catch {
+    return '';
+  }
+}
+
 function cleanList(value: unknown, maxItems = 12): string[] {
   return Array.isArray(value)
     ? value.map((item) => safeText(item, 180))
@@ -425,10 +437,15 @@ allowedTools=${JSON.stringify(TOOL_NAMES)}`);
   private toPublicEvidence(results: ReachResult[]) {
     return results.map((result) => ({
       source: normalizePlatform(result.platform),
-      url: safeText(result.url, 500),
+      url: safePublicUrl(result.url),
       excerpt: safeText(result.text, 1000),
       capturedAt: result.capturedAt,
-    })).filter((item) => item.url && item.excerpt && !PERSONAL_DATA_PATTERN.test(item.excerpt));
+    })).filter((item) =>
+      item.url &&
+      item.excerpt &&
+      !PERSONAL_DATA_PATTERN.test(item.excerpt) &&
+      !PERSONAL_DATA_PATTERN.test(item.source),
+    );
   }
 
   private buildEvidence(context: LeadContext, publicEvidence: Array<{ source: string; url: string; excerpt: string; capturedAt: string }>) {
@@ -455,14 +472,13 @@ EXCERPTS: ${JSON.stringify(evidence).slice(0, 14000)}`);
     const handles = Array.isArray(response?.socialHandles) ? response.socialHandles.map((handle: any) => ({
       platform: normalizePlatform(handle.platform),
       handle: safeText(handle.handle, 160),
-      url: safeText(handle.url, 500),
+      url: safePublicUrl(handle.url),
       source: safeText(handle.source || 'public_search', 120),
     })).filter((handle: PublicSocialHandle) =>
       handle.platform &&
       handle.handle &&
       !PERSONAL_DATA_PATTERN.test(handle.handle) &&
-      !PERSONAL_DATA_PATTERN.test(handle.url) &&
-      /^https?:\/\//i.test(handle.url),
+      Boolean(handle.url),
     ).slice(0, 20) : [];
     return {
       displayName: safeText(response?.displayName || context.platformUsername, 180).replace(PERSONAL_DATA_PATTERN, ''),

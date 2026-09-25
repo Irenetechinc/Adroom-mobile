@@ -179,6 +179,20 @@ async function runProcess(command: string, args: string[], cwd: string): Promise
   });
 }
 
+async function readJsonReports(directory: string): Promise<any[]> {
+  const files = await fs.readdir(directory).catch(() => []);
+  const records: any[] = [];
+  for (const file of files.filter((name) => name.endsWith('.json')).slice(0, 10)) {
+    try {
+      const content = await fs.readFile(path.join(directory, file), 'utf8');
+      records.push(...parseJsonLines(content));
+    } catch {
+      // A malformed optional report must not fail the whole enrichment pass.
+    }
+  }
+  return records;
+}
+
 export class PublicProfileToolAdapters {
   private readonly python = process.env.PROFILE_BUILDER_PYTHON || 'python3';
 
@@ -212,11 +226,27 @@ export class PublicProfileToolAdapters {
 
   private async runMaigret(platform: string, username: string): Promise<PublicToolSearch> {
     const cwd = path.join(TOOLS_ROOT, 'maigret');
+    const runDir = path.join(cwd, '.runtime', randomUUID());
     try {
-      const result = await runProcess(this.python, ['-m', 'maigret', username, '--json', 'ndjson', '--no-progressbar'], cwd);
-      return { attempted: true, available: true, hits: mapRecords('maigret_public_username', platform, username, parseJsonLines(result.stdout)) };
+      await fs.mkdir(runDir, { recursive: true });
+      // Maigret's --json option writes a report; it does not stream JSON to
+      // stdout. Keep the report in a per-run directory so concurrent leads
+      // cannot read one another's results.
+      const result = await runProcess(
+        this.python,
+        ['-m', 'maigret', username, '--json', 'ndjson', '--folderoutput', path.relative(cwd, runDir), '--no-progressbar', '--no-color'],
+        cwd,
+      );
+      const records = await readJsonReports(runDir);
+      return {
+        attempted: true,
+        available: true,
+        hits: mapRecords('maigret_public_username', platform, username, records.length ? records : parseJsonLines(result.stdout)),
+      };
     } catch (error: any) {
       return { attempted: true, available: false, hits: [], warning: `Maigret unavailable: ${clean(error?.message, 300)}` };
+    } finally {
+      await fs.rm(runDir, { recursive: true, force: true }).catch(() => undefined);
     }
   }
 
@@ -250,6 +280,7 @@ export class PublicProfileToolAdapters {
     }
     try {
       const response = await fetch(`${baseUrl}/api/search/username?username=${encodeURIComponent(username)}&limit=30`, {
+        method: 'POST',
         signal: AbortSignal.timeout(COMMAND_TIMEOUT_MS),
         headers: { Accept: 'application/json' },
       });

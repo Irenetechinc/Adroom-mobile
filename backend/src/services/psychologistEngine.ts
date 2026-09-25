@@ -1,6 +1,13 @@
 import { AIEngine } from '../config/ai-models';
 import { getServiceSupabaseClient } from '../config/supabase';
 
+const LEAD_SENSITIVE_DATA = /(?:\b(?:email|e-mail|phone|telephone|mobile|address|dob|date of birth|income|salary|religion|race|ethnicity|sexuality|political|health|diagnos|password|token|secret|api key)\b|[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}|\+?\d[\d\s().-]{7,}\d)/i;
+
+function cleanLeadText(value: unknown, max = 240): string {
+  const text = String(value ?? '').replace(/\s+/g, ' ').trim().slice(0, max);
+  return text && !LEAD_SENSITIVE_DATA.test(text) ? text : '';
+}
+
 export interface BehavioralProfile {
   category: string;
   likes: string[];
@@ -265,20 +272,20 @@ PUBLIC PROFILE: ${JSON.stringify(publicProfile).slice(0, 16000)}`);
     if (!response || typeof response !== 'object') return null;
 
     return {
-      communicationStyle: String(response.communicationStyle || 'unknown').slice(0, 240),
+      communicationStyle: cleanLeadText(response.communicationStyle) || 'unknown',
       conversationTopics: Array.isArray(response.conversationTopics)
-        ? response.conversationTopics.map((item: any) => String(item).trim()).filter(Boolean).slice(0, 10)
+        ? response.conversationTopics.map((item: any) => cleanLeadText(item, 180)).filter(Boolean).slice(0, 10)
         : [],
       helpfulSignals: Array.isArray(response.helpfulSignals)
-        ? response.helpfulSignals.map((item: any) => String(item).trim()).filter(Boolean).slice(0, 10)
+        ? response.helpfulSignals.map((item: any) => cleanLeadText(item, 180)).filter(Boolean).slice(0, 10)
         : [],
       cautionSignals: Array.isArray(response.cautionSignals)
-        ? response.cautionSignals.map((item: any) => String(item).trim()).filter(Boolean).slice(0, 10)
+        ? response.cautionSignals.map((item: any) => cleanLeadText(item, 180)).filter(Boolean).slice(0, 10)
         : [],
-      recommendedTone: String(response.recommendedTone || 'helpful and concise').slice(0, 240),
+      recommendedTone: cleanLeadText(response.recommendedTone || 'helpful and concise') || 'helpful and concise',
       confidence: Math.max(0, Math.min(1, Number(response.confidence) || 0.35)),
       evidenceBasis: Array.isArray(response.evidenceBasis)
-        ? response.evidenceBasis.map((item: any) => String(item).trim()).filter(Boolean).slice(0, 10)
+        ? response.evidenceBasis.map((item: any) => cleanLeadText(item, 180)).filter(Boolean).slice(0, 10)
         : [],
     };
   }

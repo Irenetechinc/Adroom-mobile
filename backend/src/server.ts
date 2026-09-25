@@ -2552,7 +2552,9 @@ app.get('/api/leads/:leadId/profile', async (req, res) => {
     const profile = await leadProfileBuilder.getLatest(user.id, lead.id);
     const { data: run } = await getServiceSupabaseClient()
       .from('lead_profile_builder_runs')
-      .select('status, selected_platforms, tools_attempted, public_evidence_count, updated_at, completed_at')
+      // Tool names and adapter diagnostics stay backend-only. The client only
+      // needs progress and the count of sanitized public evidence.
+      .select('status, selected_platforms, public_evidence_count, updated_at, completed_at')
       .eq('user_id', user.id)
       .eq('lead_id', lead.id)
       .maybeSingle();

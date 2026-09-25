@@ -7,7 +7,7 @@ Package installation helpers may rewrite declared semver ranges and lockfile reg
 
 **Why:** This can create unrelated dependency drift in a project whose backend and mobile installs are intentionally managed separately.
 
-**How to apply:** After using a root package helper, inspect `package.json` and `package-lock.json`; restore unrelated changes before delivery and prefer the backend-specific workflow for backend dependencies.
+**How to apply:** After using a root package helper, inspect `package.json` and `package-lock.json`; restore unrelated changes before delivery and prefer the backend-specific workflow for backend dependencies. A hoisted root module can make local TypeScript pass even when the nested backend install is incomplete, so verify the backend package root separately.
 
 The environment-level npm registry can differ from the `resolved` origins embedded in `package-lock.json`; a public-only lockfile does not prove which registry a workspace install contacts.
 

@@ -56,25 +56,6 @@ CREATE TABLE IF NOT EXISTS public.lead_sales_profiles (
   UNIQUE(user_id, lead_id)
 );
 
--- Older deployments created this table from feature_strategy_logistics_migration.sql
--- without the lead foreign key. Add the relationship when it is missing without
--- making this migration fail on already-initialized databases.
-DO $$
-BEGIN
-  IF to_regclass('public.agent_leads') IS NOT NULL
-     AND NOT EXISTS (
-       SELECT 1
-       FROM pg_constraint
-       WHERE conrelid = 'public.lead_sales_profiles'::regclass
-         AND contype = 'f'
-         AND conname = 'lead_sales_profiles_lead_id_fkey'
-     ) THEN
-    ALTER TABLE public.lead_sales_profiles
-      ADD CONSTRAINT lead_sales_profiles_lead_id_fkey
-      FOREIGN KEY (lead_id) REFERENCES public.agent_leads(id) ON DELETE CASCADE;
-  END IF;
-END $$;
-
 ALTER TABLE public.lead_profile_builder_runs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.lead_sales_profiles ENABLE ROW LEVEL SECURITY;
 
