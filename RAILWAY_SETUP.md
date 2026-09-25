@@ -9,10 +9,12 @@ Set these in the Railway service environment. Values are managed in Railway;
 never commit them or print them in logs.
 
 - `SUPABASE_URL`
+- `SUPABASE_ANON_KEY` (or the legacy `SUPABASE_KEY`, used for authenticated user requests)
 - `SUPABASE_SERVICE_ROLE_KEY`
 - `SUPABASE_DB_URL` and `SUPABASE_DB_PASSWORD` for the optional migration runner
 - `SESSION_SECRET` or `ENCRYPTION_KEY`
 - `TELEGRAM_API_ID` and `TELEGRAM_API_HASH`
+- `SIGNAL_CLI_PATH` if `signal-cli` is not available on `PATH` (defaults to `signal-cli`)
 - `DELTA_CHAT_BRIDGE_URL`; optionally `DELTA_CHAT_BRIDGE_TOKEN`
 - `ADMIN_EMAIL` and `ADMIN_PASSWORD` if admin controls are enabled
 - `PUBLIC_BASE_URL`

@@ -553,7 +553,7 @@ router.post('/api/notifications', auth, async (req, res) => {
     const { target, title, body, data: extraData } = req.body;
     if (!target || !title || !body) return res.status(400).json({ error: 'target, title, body required' });
 
-    let tokenQuery = sb.from('device_push_tokens').select('token, user_id, project_id');
+    let tokenQuery = sb.from('device_push_tokens').select('token, user_id, project_id').eq('is_active', true);
     if (target.startsWith('user:')) {
       tokenQuery = tokenQuery.eq('user_id', target.replace('user:', ''));
     } else if (target.startsWith('plan:')) {
@@ -565,31 +565,19 @@ router.post('/api/notifications', auth, async (req, res) => {
     }
 
     const { data: tokenRows } = await tokenQuery;
-    const tokens = (tokenRows || []).map(r => r.token).filter(Boolean);
+    const distinctRows = (tokenRows || []).filter((row, index, rows) =>
+      Boolean(row.token) && rows.findIndex((candidate) => candidate.token === row.token) === index,
+    );
 
-    if (tokens.length === 0) {
+    if (distinctRows.length === 0) {
       return res.json({ success: true, sent: 0, message: 'No push tokens found for target' });
     }
 
-    const messages = tokens.map(token => ({ to: token, title, body, data: extraData || {} }));
-    // Never mix tokens from separate EAS projects. Older rows may not have a
-    // project_id, so send those individually as the compatibility-safe path.
-    const chunks = messages.map((message) => [message]);
-
-    let successCount = 0;
-    const results: any[] = [];
-    for (const chunk of chunks) {
-      const response = await fetch('https://exp.host/--/api/v2/push/send', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-        body: JSON.stringify(chunk),
-      });
-      const result = await response.json();
-      if (Array.isArray(result.data)) {
-        result.data.forEach((r: any) => { if (r.status === 'ok') successCount++; });
-      }
-      results.push(result);
-    }
+    const recipientUserIds = Array.from(new Set(distinctRows.map((row) => row.user_id).filter(Boolean)));
+    const deliveryResults = await Promise.all(recipientUserIds.map((userId) =>
+      pushService.deliver(userId, { title, body, data: extraData || {} }),
+    ));
+    const successCount = deliveryResults.reduce((sum, result) => sum + result.tickets.filter((ticket) => ticket?.status === 'ok').length, 0);
 
     await sb.from('notification_logs').insert({
       sent_by: ADMIN_EMAIL,
@@ -597,11 +585,10 @@ router.post('/api/notifications', auth, async (req, res) => {
       title,
       body,
       recipients_count: successCount,
-      delivery_results: { results, total_tokens: tokens.length },
+      delivery_results: { results: deliveryResults, total_tokens: distinctRows.length },
     });
 
     // Also save to user_notifications inbox so users can see in-app
-    const recipientUserIds = (tokenRows || []).map(r => r.user_id).filter(Boolean);
     if (recipientUserIds.length > 0) {
       const inboxRows = recipientUserIds.map(uid => ({
         user_id: uid,
@@ -618,7 +605,7 @@ router.post('/api/notifications', auth, async (req, res) => {
 
     await logAction('send_notification', null, null, { target, title, body, sent: successCount });
     broadcast('notification_sent', { target, title, sent: successCount });
-    res.json({ success: true, sent: successCount, total_tokens: tokens.length });
+    res.json({ success: true, sent: successCount, total_tokens: distinctRows.length });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }

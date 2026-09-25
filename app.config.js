@@ -5,8 +5,13 @@ module.exports = ({ config }) => {
     ...config,
     name: config.name || 'Adirum AI',
     slug: config.slug || 'adroom-mobile',
+    owner: 'iamwavelord',
     extra: {
       ...config.extra,
+      eas: {
+        ...config.extra?.eas,
+        projectId: '3b1fdc27-8b2b-4661-9f92-072a73d5425e',
+      },
       supabaseUrl: process.env.EXPO_PUBLIC_SUPABASE_URL,
       supabaseAnonKey: process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY,
       apiUrl: process.env.EXPO_PUBLIC_API_URL,

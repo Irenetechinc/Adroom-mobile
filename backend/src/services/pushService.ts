@@ -161,7 +161,10 @@ async function getUserTokens(userId: string): Promise<DeviceTokenRow[]> {
     : withProject.data;
   return (data ?? [])
     .map((r: any) => ({ token: String(r.token || ''), project_id: r.project_id || null }))
-    .filter((r: DeviceTokenRow) => Boolean(r.token));
+    .filter((r: DeviceTokenRow) => Boolean(r.token))
+    .filter((row: DeviceTokenRow, index: number, rows: DeviceTokenRow[]) =>
+      rows.findIndex((candidate) => candidate.token === row.token) === index,
+    );
 }
 
 async function insertNotification(
@@ -182,6 +185,10 @@ async function insertNotification(
 }
 
 export const pushService = {
+  async deliver(userId: string, payload: PushPayload): Promise<ExpoSendResult> {
+    return sendExpoPush(await getUserTokens(userId), payload);
+  },
+
   async notifyLowCredits(userId: string, balance: number, required?: number): Promise<void> {
     const tokens = await getUserTokens(userId);
     const requiredNote = required ? ` You need at least ${required} more credits to continue.` : '';
