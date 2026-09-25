@@ -1246,10 +1246,14 @@ const styles = StyleSheet.create({
   metricsSectionTitle: { color: '#FFFFFF', fontWeight: '700', fontSize: 14 },
   metricsGrid: {
     flexDirection: 'row', flexWrap: 'wrap',
+    justifyContent: 'space-between',
+    paddingHorizontal: 8,
+    paddingBottom: 8,
   },
   metricCell: {
-    width: '33.33%', alignItems: 'center', paddingVertical: 14,
-    backgroundColor: 'rgba(255,255,255,0.018)', margin: 1,
+    width: '31%', alignItems: 'center', paddingVertical: 14,
+    backgroundColor: 'rgba(255,255,255,0.018)', marginVertical: 4,
+    borderRadius: 12,
   },
   metricIconWrap: { width: 28, height: 28, borderRadius: 7, alignItems: 'center', justifyContent: 'center', marginBottom: 6 },
   metricValue: { color: '#FFFFFF', fontSize: 15, fontWeight: '800', marginBottom: 2 },

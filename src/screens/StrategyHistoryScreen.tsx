@@ -142,9 +142,19 @@ function fmt(n: number): string {
   return String(n);
 }
 
-const PLATFORM_EMOJI: Record<string, string> = {
-  facebook: '📘', instagram: '📸', twitter: '🐦', linkedin: '💼',
-  tiktok: '🎵', youtube: '▶️', whatsapp: '💬', unknown: '🌐',
+const PLATFORM_ICONS: Record<string, any> = {
+  facebook: Globe,
+  instagram: ImageIcon,
+  twitter: MessageCircle,
+  linkedin: Users,
+  tiktok: TrendingUp,
+  youtube: Play,
+  whatsapp: MessageCircle,
+  telegram: MessageCircle,
+  signal_personal: Activity,
+  bluesky: Globe,
+  delta_chat: Zap,
+  unknown: Globe,
 };
 
 interface PerfTotals {
@@ -269,7 +279,10 @@ function PerformancePanel({ strategyId }: { strategyId: string }) {
             {Object.entries(byPlatform).map(([plat, m]: [string, any]) => (
               <View key={plat} style={styles.platformRow}>
                 <Text style={styles.platformName}>
-                  {PLATFORM_EMOJI[plat] ?? '🌐'} {plat}
+                  {(() => {
+                    const Icon = PLATFORM_ICONS[plat] ?? Globe;
+                    return <Icon size={12} color="#00F0FF" />;
+                  })()} {plat}
                 </Text>
                 <View style={styles.platformStats}>
                   <Text style={styles.platformStat}>{fmt(m.impressions)} imp</Text>
@@ -747,7 +760,7 @@ function ConversionTrackerPanel({
         {platforms.map((plat) => {
           const counts = byPlatform[plat];
           const platColor = PLATFORM_COLORS_CT[plat] ?? '#64748B';
-          const emoji = PLATFORM_EMOJI[plat] ?? '🌐';
+          const Icon = PLATFORM_ICONS[plat] ?? Globe;
           const total = counts.contacted + counts.replied + counts.converted;
           const convertedPct = total > 0
             ? Math.round((counts.converted / total) * 100)
@@ -762,7 +775,10 @@ function ConversionTrackerPanel({
               <View style={styles.convPlatHeader}>
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 7 }}>
                   <View style={[styles.convPlatDot, { backgroundColor: platColor }]} />
-                  <Text style={styles.convPlatName}>{emoji} {plat.charAt(0).toUpperCase() + plat.slice(1)}</Text>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                    <Icon size={12} color={platColor} />
+                    <Text style={styles.convPlatName}>{plat.charAt(0).toUpperCase() + plat.slice(1)}</Text>
+                  </View>
                 </View>
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
                   {convertedPct > 0 && (

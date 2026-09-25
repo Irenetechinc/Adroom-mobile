@@ -7,6 +7,7 @@ import {
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { KeyboardAvoidingView, Platform as RNPlatform, ScrollView as RNScrollView } from 'react-native';
 import { RootStackParamList } from '../types';
 import {
   ChevronLeft, Link2, Link2Off, CheckCircle2,
@@ -114,15 +115,52 @@ function GoogleIcon({ size = 26 }: { size?: number }) {
   );
 }
 
+function TelegramIcon({ size = 26 }: { size?: number }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24">
+      <Path d="M12 23.5c6.35 0 11.5-5.15 11.5-11.5S18.35 0.5 12 0.5 0.5 5.65 0.5 12 5.65 23.5 12 23.5zm5.1-16.52l-1.74 8.65c-.12.56-.46.7-.94.44l-2.6-1.9-1.25 1.2c-.14.13-.26.25-.53.25l.19-2.68 4.88-4.42c.21-.19-.05-.3-.33-.11L8.88 13.4l-2.56-.8c-.56-.17-.57-.56.12-.83l10.06-3.88c.49-.18.91.11.75.82z" fill="#FFFFFF" />
+    </Svg>
+  );
+}
+
+function SignalIcon({ size = 26 }: { size?: number }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24">
+      <Path d="M12 2c5.52 0 10 4.48 10 10s-4.48 10-10 10S2 17.52 2 12 6.48 2 12 2zm0 2.5A7.5 7.5 0 104.5 12 7.5 7.5 0 0012 4.5zm.8 2.62c-.48 0-.86.38-.86.86v5.24H9.2a.65.65 0 000 1.3h3.6a.65.65 0 00.65-.65V8.18c0-.48-.38-.86-.86-.86zm-5.1 6.68a.64.64 0 100 1.28h9.5a.64.64 0 100-1.28h-9.5z" fill="#FFFFFF" />
+    </Svg>
+  );
+}
+
+function BlueskyIcon({ size = 26 }: { size?: number }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24">
+      <Path d="M12 10.3c1.2-2.34 2.74-3.77 4.57-4.53 1.66-.68 3.4-.54 4.39.57 1.08 1.21.8 3.57-.92 5.98C18.5 15.38 16.4 17.44 13.5 20l-.5.42-.5-.42c-2.9-2.56-5-4.62-6.54-8.2-1.72-2.41-2-4.77-.92-5.98.99-1.11 2.73-1.25 4.39-.57 1.83.76 3.37 2.19 4.57 4.53z" fill="#FFFFFF" />
+    </Svg>
+  );
+}
+
+function DeltaChatIcon({ size = 26 }: { size?: number }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24">
+      <Path d="M4 6.5A2.5 2.5 0 016.5 4h11A2.5 2.5 0 0120 6.5v8A2.5 2.5 0 0117.5 17H10l-4.7 3.2A.8.8 0 014 19.6V6.5zm3.5 3.2a1.3 1.3 0 100 2.6h9a1.3 1.3 0 100-2.6h-9zm0 3.8a1.3 1.3 0 100 2.6h6.2a1.3 1.3 0 100-2.6H7.5z" fill="#FFFFFF" />
+    </Svg>
+  );
+}
+
 function SocialIcon({ platform, size = 26 }: { platform: string; size?: number }) {
   switch (platform) {
     case 'facebook':  return <FacebookIcon size={size} />;
     case 'instagram': return <InstagramIcon size={size} />;
     case 'tiktok':    return <TikTokIcon size={size} />;
     case 'twitter':   return <TwitterXIcon size={size} />;
-    case 'whatsapp':  return <WhatsAppIcon size={size} />;
+    case 'whatsapp':
+    case 'whatsapp_personal': return <WhatsAppIcon size={size} />;
     case 'linkedin':  return <LinkedInIcon size={size} />;
     case 'google':    return <GoogleIcon size={size} />;
+    case 'telegram':   return <TelegramIcon size={size} />;
+    case 'signal_personal': return <SignalIcon size={size} />;
+    case 'bluesky':   return <BlueskyIcon size={size} />;
+    case 'delta_chat': return <DeltaChatIcon size={size} />;
     default:          return null;
   }
 }
@@ -163,13 +201,13 @@ const PLATFORMS: Platform[] = [
   { id: 'tiktok',    name: 'TikTok',             sub: 'TikTok for Creators',         bg: '#010101' },
   { id: 'twitter',   name: 'X / Twitter',        sub: 'X Platform',                  bg: '#000000' },
   { id: 'whatsapp',  name: 'WhatsApp Business',  sub: 'WhatsApp Business API',       bg: '#25D366' },
-  { id: 'linkedin',  name: 'LinkedIn',           sub: 'LinkedIn Marketing',          bg: '#0A66C2', comingSoon: true },
-  { id: 'google',    name: 'Google Ads',         sub: 'Google Marketing Platform',   bg: '#FFFFFF',  comingSoon: true },
   { id: 'telegram',  name: 'Telegram',           sub: 'Personal account',            bg: '#229ED9' },
   { id: 'whatsapp_personal', name: 'WhatsApp',   sub: 'Personal account · pairing code', bg: '#25D366' },
   { id: 'signal_personal', name: 'Signal',       sub: 'Personal account · phone verification', bg: '#3A76F0' },
   { id: 'bluesky',   name: 'Bluesky',            sub: 'Personal account · app password', bg: '#1185FE' },
   { id: 'delta_chat', name: 'Delta Chat',        sub: 'Personal account · managed bridge', bg: '#5B5BEA' },
+  { id: 'google',    name: 'Google Ads',         sub: 'Google Marketing Platform',   bg: '#FFFFFF',  comingSoon: true },
+  { id: 'linkedin',  name: 'LinkedIn',           sub: 'LinkedIn Marketing',          bg: '#0A66C2', comingSoon: true },
 ];
 
 // Instagram uses a gradient background — approximated here
@@ -588,60 +626,70 @@ export default function ConnectedAccountsScreen() {
         })}
       </ScrollView>
       <Modal visible={!!personalProvider} transparent animationType="slide" onRequestClose={closePersonalModal}>
-        <View style={styles.modalBackdrop}>
-          <View style={styles.modalCard}>
-            <Text style={styles.modalEyebrow}>PERSONAL ACCOUNT</Text>
-            <Text style={styles.modalTitle}>Connect {personalProvider?.name}</Text>
-            <Text style={styles.modalDesc}>
-              {personalProvider?.id === 'bluesky'
-                ? 'Use your handle and a Bluesky app password. Your main password is never requested.'
-                : personalProvider?.id === 'whatsapp_personal'
-                  ? 'Pair WhatsApp from the app using the code below. No QR code is used.'
-                  : personalProvider?.id === 'telegram' && telegramNeedsPassword
-                    ? 'Enter the Telegram two-step verification password to finish signing in.'
-                  : 'Your verification details stay encrypted and are never shown to the agent.'}
-            </Text>
-             {personalProvider?.id === 'bluesky' ? (
-              <>
-                <TextInput value={personalHandle} onChangeText={setPersonalHandle} placeholder="Handle (name.bsky.social)" placeholderTextColor="#64748B" style={styles.modalInput} autoCapitalize="none" />
-                <TextInput value={personalSecret} onChangeText={setPersonalSecret} placeholder="App password" placeholderTextColor="#64748B" style={styles.modalInput} secureTextEntry autoCapitalize="none" />
-              </>
-             ) : personalProvider?.id === 'delta_chat' ? (
-               <>
-                 <TextInput value={personalAddress} onChangeText={setPersonalAddress} placeholder="Email address" placeholderTextColor="#64748B" style={styles.modalInput} autoCapitalize="none" keyboardType="email-address" />
-                 <TextInput value={personalSecret} onChangeText={setPersonalSecret} placeholder="Email password" placeholderTextColor="#64748B" style={styles.modalInput} secureTextEntry autoCapitalize="none" />
-               </>
-             ) : personalProvider?.id === 'whatsapp_personal' && personalStep === 'verify' ? (
-              <View style={styles.pairingBox}>
-                <Text style={styles.pairingLabel}>PAIRING CODE</Text>
-                <Text style={styles.pairingCode}>{pairingCode || 'Waiting…'}</Text>
-                <Text style={styles.modalDesc}>Open WhatsApp → Linked devices → Link a device → Link with phone number, then enter this code.</Text>
+        <KeyboardAvoidingView
+          behavior={RNPlatform.OS === 'ios' ? 'padding' : 'height'}
+          style={styles.modalKeyboardAvoider}
+          keyboardVerticalOffset={RNPlatform.OS === 'ios' ? 28 : 0}
+        >
+          <RNScrollView
+            keyboardShouldPersistTaps="handled"
+            contentContainerStyle={styles.modalScrollContent}
+            showsVerticalScrollIndicator={false}
+          >
+            <View style={styles.modalCard}>
+              <Text style={styles.modalEyebrow}>PERSONAL ACCOUNT</Text>
+              <Text style={styles.modalTitle}>Connect {personalProvider?.name}</Text>
+              <Text style={styles.modalDesc}>
+                {personalProvider?.id === 'bluesky'
+                  ? 'Use your handle and a Bluesky app password. Your main password is never requested.'
+                  : personalProvider?.id === 'whatsapp_personal'
+                    ? 'Pair WhatsApp from the app using the code below. No QR code is used.'
+                    : personalProvider?.id === 'telegram' && telegramNeedsPassword
+                      ? 'Enter the Telegram two-step verification password to finish signing in.'
+                    : 'Your verification details stay encrypted and are never shown to the agent.'}
+              </Text>
+               {personalProvider?.id === 'bluesky' ? (
+                <>
+                  <TextInput value={personalHandle} onChangeText={setPersonalHandle} placeholder="Handle (name.bsky.social)" placeholderTextColor="#64748B" style={styles.modalInput} autoCapitalize="none" />
+                  <TextInput value={personalSecret} onChangeText={setPersonalSecret} placeholder="App password" placeholderTextColor="#64748B" style={styles.modalInput} secureTextEntry autoCapitalize="none" />
+                </>
+               ) : personalProvider?.id === 'delta_chat' ? (
+                 <>
+                   <TextInput value={personalAddress} onChangeText={setPersonalAddress} placeholder="Email address" placeholderTextColor="#64748B" style={styles.modalInput} autoCapitalize="none" keyboardType="email-address" />
+                   <TextInput value={personalSecret} onChangeText={setPersonalSecret} placeholder="Email password" placeholderTextColor="#64748B" style={styles.modalInput} secureTextEntry autoCapitalize="none" />
+                 </>
+               ) : personalProvider?.id === 'whatsapp_personal' && personalStep === 'verify' ? (
+                <View style={styles.pairingBox}>
+                  <Text style={styles.pairingLabel}>PAIRING CODE</Text>
+                  <Text style={styles.pairingCode}>{pairingCode || 'Waiting…'}</Text>
+                  <Text style={styles.modalDesc}>Open WhatsApp → Linked devices → Link a device → Link with phone number, then enter this code.</Text>
+                </View>
+              ) : (
+                <>
+                  {personalStep === 'start' && (
+                    <TextInput value={personalPhone} onChangeText={setPersonalPhone} placeholder="Phone number with country code" placeholderTextColor="#64748B" style={styles.modalInput} keyboardType="phone-pad" />
+                  )}
+                  {personalStep === 'verify' && (
+                    <TextInput value={personalSecret} onChangeText={setPersonalSecret} placeholder="Verification code" placeholderTextColor="#64748B" style={styles.modalInput} keyboardType="number-pad" />
+                  )}
+                  {personalProvider?.id === 'telegram' && telegramNeedsPassword && (
+                    <TextInput value={telegramPassword} onChangeText={setTelegramPassword} placeholder="Telegram two-step verification password" placeholderTextColor="#64748B" style={styles.modalInput} secureTextEntry autoCapitalize="none" />
+                  )}
+                </>
+              )}
+              <View style={styles.modalActions}>
+                <TouchableOpacity onPress={closePersonalModal} style={styles.modalCancel} disabled={personalBusy}>
+                  <Text style={styles.modalCancelText}>Cancel</Text>
+                </TouchableOpacity>
+                <TouchableOpacity onPress={submitPersonalConnection} style={styles.modalSubmit} disabled={personalBusy}>
+                  {personalBusy
+                    ? <ActivityIndicator color="#0B0F19" size="small" />
+                    : <Text style={styles.modalSubmitText}>{personalProvider?.id === 'whatsapp_personal' && personalStep === 'verify' ? 'I Paired WhatsApp' : personalStep === 'verify' ? 'Verify' : 'Continue'}</Text>}
+                </TouchableOpacity>
               </View>
-            ) : (
-              <>
-                {personalStep === 'start' && (
-                  <TextInput value={personalPhone} onChangeText={setPersonalPhone} placeholder="Phone number with country code" placeholderTextColor="#64748B" style={styles.modalInput} keyboardType="phone-pad" />
-                )}
-                {personalStep === 'verify' && (
-                  <TextInput value={personalSecret} onChangeText={setPersonalSecret} placeholder="Verification code" placeholderTextColor="#64748B" style={styles.modalInput} keyboardType="number-pad" />
-                )}
-                {personalProvider?.id === 'telegram' && telegramNeedsPassword && (
-                  <TextInput value={telegramPassword} onChangeText={setTelegramPassword} placeholder="Telegram two-step verification password" placeholderTextColor="#64748B" style={styles.modalInput} secureTextEntry autoCapitalize="none" />
-                )}
-              </>
-            )}
-            <View style={styles.modalActions}>
-              <TouchableOpacity onPress={closePersonalModal} style={styles.modalCancel} disabled={personalBusy}>
-                <Text style={styles.modalCancelText}>Cancel</Text>
-              </TouchableOpacity>
-              <TouchableOpacity onPress={submitPersonalConnection} style={styles.modalSubmit} disabled={personalBusy}>
-                {personalBusy
-                  ? <ActivityIndicator color="#0B0F19" size="small" />
-                  : <Text style={styles.modalSubmitText}>{personalProvider?.id === 'whatsapp_personal' && personalStep === 'verify' ? 'I Paired WhatsApp' : personalStep === 'verify' ? 'Verify' : 'Continue'}</Text>}
-              </TouchableOpacity>
             </View>
-          </View>
-        </View>
+          </RNScrollView>
+        </KeyboardAvoidingView>
       </Modal>
     </SafeAreaView>
     </FeatureGate>
@@ -759,6 +807,14 @@ const styles = StyleSheet.create({
     paddingHorizontal: 24, paddingVertical: 14, gap: 10,
   },
   connectBtnText: { color: '#0B0F19', fontWeight: '800', fontSize: 15 },
+  modalKeyboardAvoider: {
+    flex: 1,
+    justifyContent: 'flex-end',
+  },
+  modalScrollContent: {
+    justifyContent: 'flex-end',
+    paddingBottom: 24,
+  },
   modalBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.76)', justifyContent: 'flex-end' },
   modalCard: { backgroundColor: '#151B2B', borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 22, paddingBottom: 34, shadowColor: '#00F0FF', shadowOpacity: 0.1, shadowRadius: 20, elevation: 8 },
   modalEyebrow: { color: '#00F0FF', fontSize: 10, fontWeight: '800', letterSpacing: 1.4, marginBottom: 8 },

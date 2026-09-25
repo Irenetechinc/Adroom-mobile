@@ -41,7 +41,12 @@ interface EncryptedValue {
 
 function encryptionKey(): Buffer {
   const secret = process.env.SESSION_SECRET || process.env.ENCRYPTION_KEY;
-  if (!secret) throw new Error('Server encryption is not configured.');
+  if (!secret) {
+    const generated = crypto.randomBytes(32).toString('hex');
+    console.warn('[SocialAccountService] SESSION_SECRET/ENCRYPTION_KEY is missing; using a process-local generated key for this runtime only. Configure a stable secret in Railway for persistent encrypted sessions.');
+    process.env.SESSION_SECRET = generated;
+    return crypto.createHash('sha256').update(generated).digest();
+  }
   return crypto.createHash('sha256').update(secret).digest();
 }
 

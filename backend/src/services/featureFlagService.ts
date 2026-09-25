@@ -82,7 +82,10 @@ export async function isEnabled(flagKey: string, userId?: string): Promise<boole
   const globalFlag = flags.find(f => f.flag_key === flagKey);
   if (globalFlag !== undefined) return globalFlag.enabled;
 
-  return true;
+  // For feature flags that are intentionally opt-in, a missing flag should not
+  // silently enable or disable them. This preserves old apps while making the
+  // coming-soon flag default to "not flagged" instead of "enabled".
+  return !flagKey.endsWith('_coming_soon');
 }
 
 /** Provider-specific controls used by both the API and mobile connection UI. */
