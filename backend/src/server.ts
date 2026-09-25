@@ -2576,8 +2576,8 @@ app.post('/api/leads/:leadId/profile', async (req, res) => {
       .maybeSingle();
     if (!lead) return res.status(404).json({ error: 'Lead not found' });
 
-    const profile = await leadProfileBuilder.buildForLead(user.id, lead.id);
-    res.status(profile ? 200 : 202).json({ ok: true, profile });
+    const queued = await leadProfileBuilder.enqueueForLead(user.id, lead.id);
+    res.status(queued ? 202 : 404).json({ ok: queued, queued });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }

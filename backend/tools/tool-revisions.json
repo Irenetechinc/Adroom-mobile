@@ -1,0 +1,36 @@
+{
+  "generatedFrom": "controlled backend-only vendor snapshots",
+  "tools": {
+    "maigret": {
+      "repository": "https://github.com/soxoj/maigret.git",
+      "revision": "b6642744988e7e6c2d21f75db60ec3093019ba25",
+      "interface": "python -m maigret <username> --json ndjson --no-progressbar"
+    },
+    "deepkrak3n": {
+      "repository": "https://github.com/fchr80/deepkrak3n.git",
+      "replacementFor": "https://github.com/guilhermelimait/deepkrak3n",
+      "revision": "feaf2605e97d943b4370492b1fbe439fb0172208",
+      "interface": "GET /api/search/username?username=<username>&limit=30"
+    },
+    "helix": {
+      "repository": "https://github.com/thalha-a9/helix.git",
+      "revision": "6c99edd469ee55571b0facb9776f2cab4be17011",
+      "interface": "python helix.py -u <username> --format json --output <dir> --no-browser"
+    },
+    "osintgraph": {
+      "repository": "https://github.com/XD-MHLOO/Osintgraph.git",
+      "revision": "c9bbcabb20604e2db1ae14f5ae7ba91d7938c33a",
+      "interface": "osintgraph discover <username> --limit follower=0 followee=0 post=1"
+    },
+    "jarvis": {
+      "repository": "https://github.com/affaan-m/JARVIS.git",
+      "revision": "4369c34babd21d539c420866da51c7a8365f1c9e",
+      "interface": "POST /api/agents/research, then GET /api/agents/sessions/<session_id>"
+    },
+    "reddeye": {
+      "repository": "https://github.com/vicfic18/reddeye-profiler.git",
+      "revision": "f8fa527d56de6ee4664377938467eb21dc137311",
+      "interface": "Firefox extension only; no backend command or HTTP interface"
+    }
+  }
+}

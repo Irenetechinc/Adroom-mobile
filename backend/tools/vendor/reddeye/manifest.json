@@ -1,0 +1,25 @@
+{
+  "manifest_version": 3,
+  "name": "Reddeye Profiler",
+  "author": "VicFic",
+  "version": "1.0",
+  "description": "Profiles reddit user accounts, providing insights on user activity and interest from publicly available data.",
+  "permissions": [
+    "storage",
+    "tabs"
+  ],
+  "icons": {
+      "48": "icons/reddeye-48.png"
+  },
+  "host_permissions": [
+    "https://www.reddit.com/*",
+    "https://api.groq.com/*"
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_icon": "icons/reddeye-32.png"
+  },
+  "background": {
+    "scripts": ["background.js"]
+  }
+}

@@ -54,6 +54,7 @@ const SCHED_RENEWAL_CRON      = process.env.SCHED_RENEWAL_CRON       || '15 * * 
 const SCHED_RENEWAL_RETRY_CRON= process.env.SCHED_RENEWAL_RETRY_CRON || '30 * * * *';   // Retry failed renewals every hour (offset 30m)
 const SCHED_TOKEN_REFRESH_CRON    = process.env.SCHED_TOKEN_REFRESH_CRON    || '0 */6 * * *';   // Proactive OAuth token refresh every 6 hours
 const SCHED_LEAD_DISCOVERY_CRON   = process.env.SCHED_LEAD_DISCOVERY_CRON   || '0 */3 * * *';   // Multi-source lead discovery every 3 hours
+const SCHED_PROFILE_BUILDER_CRON  = process.env.SCHED_PROFILE_BUILDER_CRON  || '*/5 * * * *';  // Public lead profile queue every 5 minutes
 const SCHED_PRODUCT_MANAGER_CRON  = process.env.SCHED_PRODUCT_MANAGER_CRON  || '0 */4 * * *';   // Product Manager Agent every 4 hours
 const SCHED_DEEP_ANALYSIS_CRON    = process.env.SCHED_DEEP_ANALYSIS_CRON    || '0 */6 * * *';   // Deep product + brand analysis every 6 hours
 const SCHED_DATA_COLLECTION_CRON   = process.env.SCHED_DATA_COLLECTION_CRON   || '*/20 * * * *'; // Shared live evidence collection every 20 minutes while active strategies exist
@@ -553,6 +554,17 @@ export class SchedulerService {
             await this.runLeadDiscovery();
         });
 
+        // Profile enrichment runs after Conversation Agent persistence. Keeping
+        // it in a bounded worker prevents a slow external tool from blocking
+        // the conversation discovery cycle or an HTTP request.
+        cron.schedule(SCHED_PROFILE_BUILDER_CRON, async () => {
+            try {
+                await this.withCycleLock('lead_profile_builder', () => this.runLeadProfileBuilder(), 12 * 60 * 1000);
+            } catch (e: any) {
+                console.error('[Scheduler] Lead profile builder error:', e.message);
+            }
+        });
+
         // ─── GOOGLE DORKS LEAD DISCOVERY — every 6 hours (staggered) ───────────
         cron.schedule('0 1,7,13,19 * * *', async () => {
             console.log('[Scheduler] Running Google Dorks lead discovery...');
@@ -601,6 +613,7 @@ export class SchedulerService {
         console.log('[Scheduler]   APMA Political Marketing — every 15 min');
         console.log('[Scheduler]   OAuth Token Refresh: All platforms — every 6 hours');
         console.log('[Scheduler]   Lead Discovery: Reddit + Twitter + NewsAPI + Forum — every 3 hours');
+        console.log('[Scheduler]   Lead Profile Builder: Public tool queue — every 5 min');
         console.log('[Scheduler]   Product Manager: Autonomous product improvement — every 4 hours');
         console.log('[Scheduler]   Deep Product + Brand Analysis: Live market signal synthesis — every 6 hours');
         console.log('[Scheduler]   Inbound DM Detection: Lead reply polling (FB/IG/Twitter) — every 10 min');
@@ -767,6 +780,19 @@ export class SchedulerService {
             );
         } catch (e: any) {
             console.error('[Scheduler] Lead discovery error:', e.message);
+        }
+    }
+
+    // ─── PUBLIC LEAD PROFILE BUILDER ─────────────────────────────────────────
+    private async runLeadProfileBuilder() {
+        try {
+            const { leadProfileBuilder } = await import('./leadProfileBuilder');
+            const processed = await leadProfileBuilder.processQueued(8);
+            if (processed > 0) {
+                console.log(`[Scheduler] Lead profile builder processed ${processed} queued lead(s)`);
+            }
+        } catch (e: any) {
+            console.error('[Scheduler] Lead profile builder queue error:', e.message);
         }
     }
 

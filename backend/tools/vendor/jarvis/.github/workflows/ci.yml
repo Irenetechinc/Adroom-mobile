@@ -1,0 +1,83 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  backend:
+    name: Backend
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - name: Setup Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.12"
+
+      - name: Setup uv
+        uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5
+
+      - name: Sync dependencies
+        run: uv sync --extra dev
+
+      - name: Audit dependencies
+        # browser-use 0.12.x pins authlib==1.6.6, pillow==12.1.0, and pypdf==6.6.2
+        # exactly — these CVEs cannot be fixed until browser-use releases updated deps.
+        run: |
+          uv tool run pip-audit --disable-pip --no-deps --requirement <(uv export --no-hashes) \
+            --ignore-vuln CVE-2026-28802 \
+            --ignore-vuln CVE-2026-27962 \
+            --ignore-vuln CVE-2026-28490 \
+            --ignore-vuln CVE-2026-25990 \
+            --ignore-vuln CVE-2026-27026 \
+            --ignore-vuln CVE-2026-27024 \
+            --ignore-vuln CVE-2026-27025 \
+            --ignore-vuln CVE-2026-27628 \
+            --ignore-vuln CVE-2026-27888 \
+            --ignore-vuln CVE-2026-28351 \
+            --ignore-vuln CVE-2026-28804 \
+            --ignore-vuln CVE-2026-31826 \
+            --ignore-vuln CVE-2026-33123
+
+      - name: Ruff
+        run: uv run ruff check .
+
+      - name: Pytest
+        run: uv run pytest --cov=. --cov-report=term-missing --cov-fail-under=46
+
+  frontend:
+    name: Frontend
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - name: Setup Node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Verify registry signatures
+        run: npm audit signatures
+
+      - name: Audit dependencies
+        run: npm audit --audit-level=high
+
+      - name: Test
+        run: npm test

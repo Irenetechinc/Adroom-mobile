@@ -1,0 +1,49 @@
+# macOS
+.DS_Store
+
+# Local env
+.env
+.env.*
+!.env.example
+
+# Node / Next.js
+node_modules/
+.next/
+out/
+.turbo/
+dist/
+coverage/
+
+# Matplotlib cache
+.mplcache/
+
+# Python
+.venv/
+venv/
+__pycache__/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.pyc
+*.egg-info/
+
+# Convex / build artifacts
+.convex/
+
+# Logs
+*.log
+
+# Model weights
+*.pt
+
+# PimEyes session cookies (secret)
+pimeyes_cookies.json
+agent_credentials.json
+
+# Playwright MCP
+.playwright-mcp/
+
+# Local research and transcript artifacts
+output/
+conversasion.md
+conversation.md

@@ -213,14 +213,11 @@ export class ConversationAgent {
            throw new Error(`lead persistence failed: ${leadUpsertError.message}`);
          }
 
-         // Build a shared, privacy-scoped profile from the public signal and
-         // any user-owned conversation evidence. Sales, psychology, messaging,
-         // and tool agents can all consume the same lead_sales_profiles record.
-         const { leadProfileBuilder } = await import('./leadProfileBuilder');
-          // Every identified lead gets a public-profile enrichment pass. The
-          // builder itself is rate-limited and idempotent; limiting this to
-          // high-potential signals left ordinary identified leads without the
-          // profile/psychology milestones promised by the pipeline.
+          // Queue a shared, privacy-scoped profile enrichment pass from the
+          // public signal and any user-owned conversation evidence. The queue
+          // write is deliberately fast: tool execution belongs to the
+          // backend worker and must never block conversation discovery.
+          const { leadProfileBuilder } = await import('./leadProfileBuilder');
           await Promise.all(state.signals.map(async (signal) => {
            const recipient = signalRecipient(signal);
            const platformUserId = recipient || `discovery:${signal.externalId}`;
@@ -228,22 +225,18 @@ export class ConversationAgent {
              row.platform === signal.platform && row.platform_user_id === platformUserId);
              if (lead?.id) {
               try {
-                const profile = await leadProfileBuilder.buildForLead(signal.userId, lead.id);
-                if (profile) {
-                  console.log(`[ConversationAgent] lead profile enriched lead=${lead.id} evidence=${profile.evidenceCount}`);
-                } else {
-                  console.warn(`[ConversationAgent] lead profile enrichment skipped lead=${lead.id} reason=no_profile_result`);
-                }
+                 await leadProfileBuilder.enqueueForLead(signal.userId, lead.id);
+                 console.log(`[ConversationAgent] lead profile queued lead=${lead.id}`);
               } catch (error: any) {
                 const message = error instanceof Error
                   ? error.message
                   : typeof error === 'string'
                     ? error
                     : JSON.stringify(error) || 'unknown error';
-                console.warn(`[ConversationAgent] lead profile enrichment skipped lead=${lead.id}: ${message}`);
+                 console.warn(`[ConversationAgent] lead profile queue skipped lead=${lead.id}: ${message}`);
               }
             } else {
-              console.warn(`[ConversationAgent] lead profile enrichment skipped platform=${signal.platform} external=${signal.externalId}: lead row was not returned`);
+               console.warn(`[ConversationAgent] lead profile queue skipped platform=${signal.platform} external=${signal.externalId}: lead row was not returned`);
            }
          }));
       }

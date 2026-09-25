@@ -5,6 +5,7 @@ import { normalizePlatform, normalizeSelectedPlatforms } from './platformIdentit
 import * as featureFlags from './featureFlagService';
 import { pushService } from './pushService';
 import { PsychologistEngine, type LeadPsychologyProfile } from './psychologistEngine';
+import { type PublicProfileTool } from './publicProfileToolAdapters';
 
 type BuilderStatus =
   | 'queued'
@@ -52,13 +53,14 @@ export interface LeadProfile {
 }
 
 interface DiscoveryPlan {
-  tool: 'maigret_public_username' | 'deepkrak3n_public_search' | 'platform_profile_search' | 'web_public_profile';
+  tool: PublicProfileTool;
   platform: string;
   query: string;
   reason: string;
 }
 
 interface LeadContext {
+  userId: string;
   id: string;
   strategyId: string | null;
   platform: string;
@@ -72,11 +74,15 @@ interface LeadContext {
 const TOOL_NAMES = [
   'maigret_public_username',
   'deepkrak3n_public_search',
+  'helix_public_username',
+  'osintgraph_public_instagram',
+  'jarvis_public_research',
+  'reddeye_public_reddit',
   'platform_profile_search',
   'web_public_profile',
 ] as const;
 
-const PERSONAL_DATA_PATTERN = /\b(?:email|e-mail|phone|telephone|mobile|address|dob|date of birth|income|salary|religion|race|ethnicity|sexuality|political|health|diagnos|password|token|secret|api key)\b/i;
+const PERSONAL_DATA_PATTERN = /(?:\b(?:email|e-mail|phone|telephone|mobile|address|dob|date of birth|income|salary|religion|race|ethnicity|sexuality|political|health|diagnos|password|token|secret|api key)\b|[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}|\+?\d[\d\s().-]{7,}\d)/i;
 
 function safeText(value: unknown, max = 1200): string {
   return String(value || '')
@@ -87,7 +93,9 @@ function safeText(value: unknown, max = 1200): string {
 
 function cleanList(value: unknown, maxItems = 12): string[] {
   return Array.isArray(value)
-    ? value.map((item) => safeText(item, 180)).filter(Boolean).slice(0, maxItems)
+    ? value.map((item) => safeText(item, 180))
+      .filter((item) => Boolean(item) && !PERSONAL_DATA_PATTERN.test(item))
+      .slice(0, maxItems)
     : [];
 }
 
@@ -115,6 +123,71 @@ export class LeadProfileBuilder {
   private running = new Set<string>();
   private lastDiscoveryAt = 0;
 
+  async enqueueForLead(userId: string, leadId: string): Promise<boolean> {
+    const context = await this.loadContext(userId, leadId);
+    if (!context) return false;
+    const { data: existing } = await this.supabase
+      .from('lead_profile_builder_runs')
+      .select('status, updated_at')
+      .eq('user_id', userId)
+      .eq('lead_id', leadId)
+      .maybeSingle();
+    if (existing && ['queued', 'identified', 'discovering', 'profile_ready', 'psychology_complete'].includes(existing.status)) {
+      return true;
+    }
+    const { error } = await this.supabase.from('lead_profile_builder_runs').upsert({
+      user_id: userId,
+      lead_id: leadId,
+      strategy_id: context.strategyId,
+      status: 'queued',
+      selected_platforms: context.selectedPlatforms,
+      tools_attempted: [],
+      public_evidence_count: 0,
+      public_profile: {},
+      error_message: null,
+      attempt_count: 0,
+      next_attempt_at: new Date().toISOString(),
+      claimed_at: null,
+      started_at: null,
+      completed_at: null,
+      updated_at: new Date().toISOString(),
+    }, { onConflict: 'user_id,lead_id' });
+    if (error) throw new Error(`profile builder queue failed: ${error.message}`);
+    await this.setLeadStatus(context, 'queued');
+    return true;
+  }
+
+  async processQueued(limit = 8): Promise<number> {
+    const now = new Date().toISOString();
+    const { data: runs, error } = await this.supabase
+      .from('lead_profile_builder_runs')
+      .select('user_id, lead_id, status, attempt_count')
+      .in('status', ['queued', 'failed'])
+      .lte('next_attempt_at', now)
+      .order('updated_at', { ascending: true })
+      .limit(Math.max(1, Math.min(limit, 20)));
+    if (error) throw new Error(`profile builder queue lookup failed: ${error.message}`);
+    let processed = 0;
+    for (const run of runs || []) {
+      if (this.running.has(run.lead_id)) continue;
+      if (!(await featureFlags.isEnabled('lead_profile_builder', run.user_id))) continue;
+      const { data: claimed, error: claimError } = await this.supabase.from('lead_profile_builder_runs').update({
+        status: 'identified',
+        claimed_at: new Date().toISOString(),
+        attempt_count: Number(run.attempt_count || 0) + 1,
+        updated_at: new Date().toISOString(),
+      }).eq('user_id', run.user_id).eq('lead_id', run.lead_id).in('status', ['queued', 'failed']).select('lead_id');
+      if (claimError) {
+        console.warn(`[LeadProfileBuilder] unable to claim lead=${run.lead_id}: ${claimError.message}`);
+        continue;
+      }
+      if (!claimed?.length) continue;
+      await this.buildForLead(run.user_id, run.lead_id);
+      processed++;
+    }
+    return processed;
+  }
+
   async buildForLead(userId: string, leadId: string): Promise<LeadProfile | null> {
     const enabled = await featureFlags.isEnabled('lead_profile_builder', userId);
     if (!enabled || this.running.has(leadId)) return null;
@@ -141,6 +214,7 @@ export class LeadProfileBuilder {
       const evidence = this.buildEvidence(context, publicEvidence);
       if (!evidence.length && !context.firstInteraction) {
         await this.finishRun(run.id, 'completed', { public_evidence_count: 0 });
+        await this.setLeadStatus(context, 'completed');
         return null;
       }
 
@@ -251,6 +325,7 @@ export class LeadProfileBuilder {
     }
     if (!selectedPlatforms.length && lead.platform) selectedPlatforms = [normalizePlatform(lead.platform)];
     return {
+      userId,
       id: lead.id,
       strategyId: lead.strategy_id || null,
       platform: normalizePlatform(lead.platform),
@@ -263,8 +338,8 @@ export class LeadProfileBuilder {
   }
 
   private async chooseDiscoveryPlan(context: LeadContext): Promise<DiscoveryPlan[]> {
-    const identifiers = [context.platformUsername, context.platformUserId]
-      .filter((value) => value && !value.startsWith('discovery:'));
+    const identifiers = [context.platformUsername]
+      .filter((value) => value && !PERSONAL_DATA_PATTERN.test(value) && !value.startsWith('discovery:'));
     if (!identifiers.length) return [];
 
     let aiPlan: any = null;
@@ -300,6 +375,18 @@ allowedTools=${JSON.stringify(TOOL_NAMES)}`);
     if (planned.length) return planned;
     const fallbackPlan: DiscoveryPlan[] = [
       {
+        tool: 'maigret_public_username',
+        platform: 'web',
+        query: context.platformUsername,
+        reason: 'Check public username references across the pinned Maigret site database',
+      },
+      {
+        tool: 'helix_public_username',
+        platform: 'web',
+        query: context.platformUsername,
+        reason: 'Use the pinned Helix username interface when its runtime is available',
+      },
+      {
         tool: 'platform_profile_search',
         platform: context.platform,
         query: `"${context.platformUsername || context.platformUserId}"`,
@@ -320,7 +407,7 @@ allowedTools=${JSON.stringify(TOOL_NAMES)}`);
     for (const step of plan) {
       await this.waitForRateLimit();
       try {
-        const found = await agentReachAdapter.search(step.platform, step.query);
+       const found = await agentReachAdapter.search(step.platform, step.query, step.tool);
         results.push(...found);
       } catch (error: any) {
         console.warn(`[LeadProfileBuilder] ${step.tool} skipped: ${error.message}`);
@@ -370,10 +457,16 @@ EXCERPTS: ${JSON.stringify(evidence).slice(0, 14000)}`);
       handle: safeText(handle.handle, 160),
       url: safeText(handle.url, 500),
       source: safeText(handle.source || 'public_search', 120),
-    })).filter((handle: PublicSocialHandle) => handle.platform && handle.handle && /^https?:\/\//i.test(handle.url)).slice(0, 20) : [];
+    })).filter((handle: PublicSocialHandle) =>
+      handle.platform &&
+      handle.handle &&
+      !PERSONAL_DATA_PATTERN.test(handle.handle) &&
+      !PERSONAL_DATA_PATTERN.test(handle.url) &&
+      /^https?:\/\//i.test(handle.url),
+    ).slice(0, 20) : [];
     return {
-      displayName: safeText(response?.displayName || context.platformUsername, 180),
-      bio: safeText(response?.bio, 600),
+      displayName: safeText(response?.displayName || context.platformUsername, 180).replace(PERSONAL_DATA_PATTERN, ''),
+      bio: PERSONAL_DATA_PATTERN.test(safeText(response?.bio, 600)) ? '' : safeText(response?.bio, 600),
       interests: cleanList(response?.interests, 12),
       publicConnections: [],
       socialHandles: handles,
@@ -440,11 +533,18 @@ EVIDENCE: ${JSON.stringify(evidence).slice(0, 18000)}`);
   }
 
   private async setLeadStatus(context: LeadContext, status: BuilderStatus, error?: string) {
-    await this.supabase.from('agent_leads').update({
+    const { error: updateError } = await this.supabase.from('agent_leads').update({
       profile_status: status,
       profile_updated_at: new Date().toISOString(),
       profile_error: error || null,
     }).eq('id', context.id);
+    if (updateError) throw new Error(`lead profile status update failed: ${updateError.message}`);
+    await pushService.notifyLeadProfileMilestone(context.userId, {
+      leadId: context.id,
+      platform: context.platform,
+      status,
+      evidenceCount: 0,
+    }).catch(() => undefined);
   }
 
   private async saveProfile(userId: string, context: LeadContext, profile: LeadProfile) {
@@ -462,6 +562,18 @@ EVIDENCE: ${JSON.stringify(evidence).slice(0, 18000)}`);
 
   private async markFailed(userId: string, leadId: string, message: string) {
     const safeMessage = safeText(message, 300);
+    const { data: currentRun } = await this.supabase
+      .from('lead_profile_builder_runs')
+      .select('attempt_count')
+      .eq('lead_id', leadId)
+      .eq('user_id', userId)
+      .maybeSingle();
+    const attemptCount = Number(currentRun?.attempt_count || 1);
+    const retryAt = new Date(
+      Date.now() + (attemptCount >= 3
+        ? 7 * 24 * 60 * 60 * 1000
+        : Math.min(60 * 60 * 1000, 2 ** Math.min(attemptCount, 6) * 60_000)),
+    ).toISOString();
     await this.supabase.from('agent_leads').update({
       profile_status: 'failed',
       profile_updated_at: new Date().toISOString(),
@@ -472,7 +584,17 @@ EVIDENCE: ${JSON.stringify(evidence).slice(0, 18000)}`);
       error_message: safeMessage,
       updated_at: new Date().toISOString(),
       completed_at: new Date().toISOString(),
+      next_attempt_at: retryAt,
     }).eq('lead_id', leadId).eq('user_id', userId);
+    const context = await this.loadContext(userId, leadId).catch(() => null);
+    if (context) {
+      await pushService.notifyLeadProfileMilestone(userId, {
+        leadId,
+        platform: context.platform,
+        status: 'failed',
+        evidenceCount: 0,
+      }).catch(() => undefined);
+    }
   }
 
   private async waitForRateLimit() {

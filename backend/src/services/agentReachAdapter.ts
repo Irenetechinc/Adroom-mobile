@@ -1,4 +1,8 @@
 import { agentReachWebRouter } from './agentReachWebRouter';
+import {
+  publicProfileToolAdapters,
+  type PublicProfileTool,
+} from './publicProfileToolAdapters';
 
 export interface ReachResult {
   platform: string;
@@ -100,8 +104,18 @@ export class AgentReachAdapter {
     };
   }
 
-  async search(platform: string, query: string): Promise<ReachResult[]> {
+  async search(platform: string, query: string, tool?: PublicProfileTool): Promise<ReachResult[]> {
     const normalized = normalizePlatform(platform);
+    if (tool && !['platform_profile_search', 'web_public_profile'].includes(tool)) {
+      const toolResult = await publicProfileToolAdapters.search(tool, normalized, query);
+      if (toolResult.warning) console.warn(`[AgentReachAdapter] ${toolResult.warning}`);
+      if (toolResult.hits.length) {
+        return toolResult.hits.map((hit) => ({
+          ...hit,
+          platform: normalizePlatform(hit.platform || normalized),
+        }));
+      }
+    }
     if (normalized === 'web') {
       const webResults = await agentReachWebRouter.search(query, 8);
       console.log(`[AgentReachAdapter] web search completed: ${webResults.length} result(s)`);
