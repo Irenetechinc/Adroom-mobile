@@ -847,7 +847,7 @@ export class SchedulerService {
             const supabase = getServiceSupabaseClient();
             const { data: activeStrategies } = await supabase
                 .from('strategies')
-                .select('id, user_id, title, goal, product_memory(name, brand, description)')
+                .select('id, user_id, title, goal, product_id, selected_accounts, platforms, is_active, status')
                 .eq('is_active', true)
                 .eq('status', 'active')
                 .limit(25);

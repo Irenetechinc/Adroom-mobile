@@ -23,6 +23,67 @@ function signalRecipient(signal: Signal): string | undefined {
   return String(recipient).trim() || undefined;
 }
 
+interface OfferContext {
+  name: string;
+  brand: string;
+  category: string;
+  description: string;
+  targetAudience: string;
+  searchableTerms: string[];
+}
+
+function firstText(...values: unknown[]): string {
+  return values.map((value) => String(value || '').trim()).find(Boolean) || '';
+}
+
+function normalizeOfferContext(raw: any): OfferContext {
+  const source = Array.isArray(raw) ? raw[0] || {} : raw || {};
+  const name = firstText(source.name, source.product_name, source.productName, source.service_name, source.serviceName);
+  const brand = firstText(source.brand, source.brand_name, source.brandName);
+  const category = firstText(source.category, source.product_type, source.service_type);
+  const description = firstText(source.description, source.enhanced_description, source.enhancedDescription);
+  const targetAudience = firstText(source.target_audience, source.targetAudience);
+  const searchableTerms = Array.from(new Set(
+    [name, brand, category, targetAudience, description]
+      .join(' ')
+      .split(/[\s,.;:!?/()[\]{}]+/)
+      .map((term) => term.replace(/^["'`]+|["'`]+$/g, '').trim())
+      .filter((term) => term.length >= 4
+        && !/^(this|that|with|from|your|their|about|product|service|brand)$/i.test(term)),
+  )).slice(0, 24);
+
+  return { name, brand, category, description, targetAudience, searchableTerms };
+}
+
+function quoteSearchTerm(value: string): string {
+  return `"${value.replace(/"/g, '').trim()}"`;
+}
+
+function demandQueries(context: OfferContext, goal: StrategyGoal): string[] {
+  const anchor = context.name || context.brand || context.category;
+  const identity = [context.brand, context.name].filter(Boolean).map(quoteSearchTerm).join(' ');
+  const category = context.category ? quoteSearchTerm(context.category) : '';
+  const audience = context.targetAudience ? quoteSearchTerm(context.targetAudience) : '';
+  const intent = goal === 'PROMOTION'
+    ? '(discount OR offer OR price OR available OR order OR buy)'
+    : goal === 'LAUNCH'
+      ? '(launch OR release OR "early access" OR available OR preorder)'
+      : '(need OR "looking for" OR recommend OR "where can I find" OR "where can I buy" OR "can anyone suggest")';
+
+  if (!anchor) return [];
+  return Array.from(new Set([
+    `${identity || quoteSearchTerm(anchor)} ${intent}`,
+    `${quoteSearchTerm(anchor)} ("I need" OR "looking for" OR "can anyone recommend")`,
+    `${quoteSearchTerm(anchor)} (price OR cost OR available OR order OR book OR hire)`,
+    `${category || quoteSearchTerm(anchor)} ${audience} ("does anyone know" OR recommend OR "where can I find")`,
+    `${quoteSearchTerm(anchor)} (question OR discussion OR forum OR comment OR review) ${intent}`,
+  ].map((query) => query.replace(/\s+/g, ' ').trim()))).slice(0, 5);
+}
+
+function hasDemandLanguage(text: string): boolean {
+  return /\b(i need|need a|need an|looking for|want to buy|where can i (buy|find|get)|can anyone (recommend|suggest)|does anyone know|recommend(ation)?|suggest(ion)?|how much|price|cost|available|order|book|hire|preorder|early access)\b/i.test(text);
+}
+
 const State = Annotation.Root({
   strategy: Annotation<any>,
   signals: Annotation<Signal[]>({ reducer: (_: Signal[], next: Signal[]) => next, default: () => [] }),
@@ -43,11 +104,22 @@ function normalizeGoal(goal: string): StrategyGoal {
 function scoreSignal(text: string, goal: StrategyGoal, terms: string[]): number {
   const value = text.toLowerCase();
   const termHits = terms.filter((term) => term && value.includes(term.toLowerCase())).length;
-  const intentTerms = goal === 'SALESMAN' || goal === 'PROMOTION'
-    ? ['price', 'cost', 'buy', 'available', 'order', 'discount', 'how much', 'where can']
-    : goal === 'LAUNCH' ? ['launch', 'release', 'when', 'early access', 'available'] : ['recommend', 'looking for', 'best', 'share', 'love'];
-  const intentHits = intentTerms.filter((term) => value.includes(term)).length;
-  return Math.min(1, 0.25 + termHits * 0.15 + intentHits * 0.2);
+  const demandTerms = [
+    'i need', 'need a', 'need an', 'looking for', 'want to buy',
+    'where can i', 'can anyone recommend', 'does anyone know',
+    'recommend', 'suggest', 'price', 'cost', 'available', 'order',
+    'book', 'hire', 'preorder', 'early access',
+  ];
+  const demandHits = demandTerms.filter((term) => value.includes(term)).length;
+  const goalTerms = goal === 'PROMOTION'
+    ? ['discount', 'offer', 'deal']
+    : goal === 'LAUNCH'
+      ? ['launch', 'release', 'early access', 'preorder']
+      : goal === 'SALESMAN'
+        ? ['buy', 'order', 'price', 'cost', 'available']
+        : ['best', 'recommend', 'share', 'love'];
+  const goalHits = goalTerms.filter((term) => value.includes(term)).length;
+  return Math.min(1, 0.1 + Math.min(termHits, 3) * 0.2 + Math.min(demandHits, 3) * 0.2 + Math.min(goalHits, 2) * 0.1);
 }
 
 export class ConversationAgent {
@@ -58,36 +130,39 @@ export class ConversationAgent {
       const strategy = state.strategy;
       console.log(`[ConversationAgent] discover start strategy=${strategy.id} goal=${strategy.goal}`);
       const goal = normalizeGoal(strategy.goal);
-      const product = strategy.product_memory || {};
-      const productName = product.name || strategy.title || 'product';
-      const brandName = product.brand || product.name || strategy.title || 'brand';
-      const serviceSummary = product.description || strategy.title || 'service';
-      const terms = [productName, brandName, serviceSummary]
-        .filter(Boolean).join(' ')
-        .split(/[\s,]+/)
-        .map((term: string) => term.trim())
-        .filter((term: string) => term.length > 3)
-        .slice(0, 16);
+      const product = await this.resolveOfferContext(strategy);
+      if (!product.name && !product.brand && !product.category) {
+        console.warn(`[ConversationAgent] discover skipped strategy=${strategy.id}: no product, brand, or service context was found; strategy title is not used for discovery`);
+        return { signals: [], identified: 0, highPotential: 0 };
+      }
 
-      const intentVariants = [
-        `${productName} ${brandName} ${goal.toLowerCase()} people asking for product`,
-        `${brandName} ${serviceSummary} reviews complaints needs`,
-        `${productName} ${brandName} social mentions buying intent`,
-        `${productName} ${brandName} people asking where to buy`,
-        `${brandName} ${productName} needs service recommendation`,
-      ];
-
-       const selectedPlatforms = normalizeSelectedPlatforms(strategy.selected_accounts || strategy.platforms || []);
-       const discovered = await Promise.all(
-         intentVariants.map((query) => agentReachAdapter.searchAcrossSources(query, selectedPlatforms))
-       );
+      const queries = demandQueries(product, goal);
+      const selectedPlatforms = normalizeSelectedPlatforms(strategy.selected_accounts || strategy.platforms || []);
+      console.log(`[ConversationAgent] demand discovery strategy=${strategy.id} offer=${product.name || product.brand || product.category} queries=${queries.length} platforms=${selectedPlatforms.join(',') || 'web'}`);
+      const discovered = await Promise.all(
+        queries.map((query) => agentReachAdapter.searchAcrossSources(query, selectedPlatforms)),
+      );
 
       const results = discovered.flat();
       console.log(`[ConversationAgent] discover complete strategy=${strategy.id} results=${results.length}`);
-      const signals = results.filter((item) => item.text.trim()).map((item) => {
-        const intentScore = scoreSignal(item.text, goal, terms);
-        return { ...item, strategyId: strategy.id, userId: strategy.user_id, goal, intentScore, status: intentScore >= 0.65 ? 'high_potential' : 'identified' } as Signal;
-      });
+      const signals = results
+        .filter((item) => item.text.trim())
+        .filter((item) => {
+          const text = item.text.toLowerCase();
+          const identityMatch = product.searchableTerms.some((term) => text.includes(term.toLowerCase()));
+          return identityMatch && hasDemandLanguage(item.text);
+        })
+        .map((item) => {
+          const intentScore = scoreSignal(item.text, goal, product.searchableTerms);
+          return {
+            ...item,
+            strategyId: strategy.id,
+            userId: strategy.user_id,
+            goal,
+            intentScore,
+            status: intentScore >= 0.65 ? 'high_potential' : 'identified',
+          } as Signal;
+        });
 
       return { signals, identified: signals.length, highPotential: signals.filter((signal) => signal.status === 'high_potential').length };
     })
@@ -254,6 +329,29 @@ export class ConversationAgent {
     .addEdge('route', 'notify')
     .addEdge('notify', END)
     .compile();
+
+  private async resolveOfferContext(strategy: any): Promise<OfferContext> {
+    const embedded = normalizeOfferContext(strategy.product_memory);
+    if ((embedded.name || embedded.brand || embedded.category) && !strategy.product_id) {
+      return embedded;
+    }
+
+    if (!strategy.product_id) return embedded;
+
+    const { data, error } = await this.supabase
+      .from('product_memory')
+      .select('product_id, product_name, brand, category, product_type, description, enhanced_description, target_audience')
+      .eq('product_id', strategy.product_id)
+      .eq('user_id', strategy.user_id)
+      .maybeSingle();
+    if (error) {
+      console.warn(`[ConversationAgent] product context lookup failed strategy=${strategy.id} product=${strategy.product_id}: ${error.message}`);
+      return embedded;
+    }
+
+    const resolved = normalizeOfferContext(data);
+    return resolved.name || resolved.brand || resolved.category ? resolved : embedded;
+  }
 
   async runForStrategy(strategy: any): Promise<{ identified: number; highPotential: number; engaged: number; routed: number }> {
     if (this.runningStrategies.has(strategy.id)) {

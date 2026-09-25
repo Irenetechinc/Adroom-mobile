@@ -278,7 +278,7 @@ app.post('/api/strategy/:id/conversation-sweep', async (req, res) => {
     const strategyId = String(req.params.id || '');
     const { data: strategy, error } = await getServiceSupabaseClient()
       .from('strategies')
-      .select('id, user_id, title, goal, product_memory, selected_accounts, platforms, is_active, status')
+      .select('id, user_id, title, goal, product_id, selected_accounts, platforms, is_active, status')
       .eq('id', strategyId)
       .eq('user_id', user.id)
       .maybeSingle();
