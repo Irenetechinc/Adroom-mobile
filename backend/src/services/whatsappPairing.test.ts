@@ -80,7 +80,13 @@ async function testBaileysFirstPairPersistsBeforeRestartReconnect(): Promise<voi
     const { state, saveCreds } = await baileys.useMultiFileAuthState(sourceDir);
     state.creds.registered = true;
     state.creds.me = { id: '2348012345678@s.whatsapp.net', name: '~' };
-    const credentialWrite = saveCreds();
+    // Seed the real auth directory, then hold the final credential-write
+    // promise open so the 515 close cannot clean it up early.
+    await saveCreds();
+    let releaseCredentialWrite!: () => void;
+    const credentialWrite = new Promise<void>((resolve) => {
+      releaseCredentialWrite = resolve;
+    });
     const events = new EventEmitter();
 
     events.on('connection.update', (update: any) => {
@@ -135,6 +141,9 @@ async function testBaileysFirstPairPersistsBeforeRestartReconnect(): Promise<voi
         error: { output: { statusCode: baileys.DisconnectReason.restartRequired } },
       },
     });
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    assert.equal(cleanupStarted, false, '515 cleanup must wait for the credential write');
+    releaseCredentialWrite();
     await closeHandled;
     assert.ok(persistedBundle, 'first-link credentials should be persisted');
     assert.equal(cleanupStarted, true);

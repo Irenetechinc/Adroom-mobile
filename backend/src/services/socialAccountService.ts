@@ -149,6 +149,11 @@ export class SocialAccountService {
   private readonly whatsappSockets = new Map<string, any>();
   private readonly whatsappAuthDirs = new Map<string, string>();
   private readonly whatsappPersistTimers = new Map<string, NodeJS.Timeout>();
+  private readonly whatsappPersistAuthDirs = new Map<string, string>();
+  private readonly whatsappPersistInFlight = new Map<string, {
+    authDir: string;
+    promise: Promise<void>;
+  }>();
   private readonly whatsappReconnectTimers = new Map<string, NodeJS.Timeout>();
   private readonly whatsappReconnectAttempts = new Map<string, number>();
   private readonly whatsappInbound = new Map<string, PersonalInboundMessage[]>();
@@ -324,13 +329,38 @@ export class SocialAccountService {
   private scheduleWhatsAppCredentialPersist(userId: string, authDir: string): void {
     const existing = this.whatsappPersistTimers.get(userId);
     if (existing) clearTimeout(existing);
+    this.whatsappPersistAuthDirs.set(userId, authDir);
     const timer = setTimeout(() => {
+      if (this.whatsappPersistTimers.get(userId) !== timer) return;
       this.whatsappPersistTimers.delete(userId);
-      this.persistWhatsAppCredentials(userId, authDir).catch((error: any) => {
+      this.whatsappPersistAuthDirs.delete(userId);
+      const persistence = this.persistWhatsAppCredentials(userId, authDir).catch((error: any) => {
         console.error(`[SocialAccountService] WhatsApp credential persistence failed: ${error.message}`);
       });
+      this.whatsappPersistInFlight.set(userId, { authDir, promise: persistence });
+      const clearInFlight = () => {
+        if (this.whatsappPersistInFlight.get(userId)?.promise === persistence) {
+          this.whatsappPersistInFlight.delete(userId);
+        }
+      };
+      void persistence.then(clearInFlight, clearInFlight);
     }, 1000);
     this.whatsappPersistTimers.set(userId, timer);
+  }
+
+  private async cancelWhatsAppCredentialPersist(userId: string, authDir: string): Promise<void> {
+    const scheduledAuthDir = this.whatsappPersistAuthDirs.get(userId);
+    if (scheduledAuthDir && scheduledAuthDir !== authDir) return;
+
+    const timer = this.whatsappPersistTimers.get(userId);
+    if (timer) clearTimeout(timer);
+    this.whatsappPersistTimers.delete(userId);
+    this.whatsappPersistAuthDirs.delete(userId);
+
+    const inFlight = this.whatsappPersistInFlight.get(userId);
+    if (inFlight?.authDir === authDir) {
+      await inFlight.promise;
+    }
   }
 
   private async persistWhatsAppCredentials(userId: string, authDir: string): Promise<void> {
@@ -405,6 +435,7 @@ export class SocialAccountService {
       const terminal = [401, 403, 405].includes(statusCode);
       if (this.whatsappSockets.get(userId) === sock) this.whatsappSockets.delete(userId);
       if (this.whatsappAuthDirs.get(userId) === authDir) this.whatsappAuthDirs.delete(userId);
+      await this.cancelWhatsAppCredentialPersist(userId, authDir);
       await fs.rm(authDir, { recursive: true, force: true }).catch(() => {});
       if (terminal) {
         const message = statusCode === 403
@@ -442,6 +473,7 @@ export class SocialAccountService {
     } catch (error) {
       try { sock.end(error); } catch {}
       this.whatsappAuthDirs.delete(userId);
+      await this.cancelWhatsAppCredentialPersist(userId, authDir);
       await fs.rm(authDir, { recursive: true, force: true });
       throw error;
     }
@@ -632,10 +664,11 @@ export class SocialAccountService {
       if (reconnectTimer) clearTimeout(reconnectTimer);
       this.whatsappReconnectTimers.delete(userId);
       this.whatsappReconnectAttempts.delete(userId);
+      const authDir = this.whatsappAuthDirs.get(userId);
+      if (authDir) await this.cancelWhatsAppCredentialPersist(userId, authDir);
       const socket = this.whatsappSockets.get(userId);
       try { socket?.end(undefined); } catch {}
       this.whatsappSockets.delete(userId);
-      const authDir = this.whatsappAuthDirs.get(userId);
       this.whatsappAuthDirs.delete(userId);
       if (authDir) await fs.rm(authDir, { recursive: true, force: true }).catch(() => {});
       this.whatsappInbound.delete(userId);
@@ -818,7 +851,12 @@ export class SocialAccountService {
     sock.ev.on('creds.update', (update: any) => {
       credentialsSaved = Promise.resolve(saveCreds(update));
       void credentialsSaved.catch(() => {});
-      this.scheduleWhatsAppCredentialPersist(userId, authDir);
+      // During first-link pairing, the credential bundle is persisted by the
+      // isNewLogin finalizer. Do not start the debounced live-session writer
+      // against the temporary directory that the expected 515 close removes.
+      if (!this.pendingWhatsApp.has(requestId)) {
+        this.scheduleWhatsAppCredentialPersist(userId, authDir);
+      }
     });
     this.attachWhatsAppInbound(userId, sock);
     this.pendingWhatsApp.set(requestId, {
@@ -831,7 +869,12 @@ export class SocialAccountService {
     sock.ev.on('connection.update', async (update: any) => {
       const pending = this.pendingWhatsApp.get(requestId);
       if (update.isNewLogin && pending) {
-        pending.finalizing = this.saveWhatsAppPairingSession(userId, phoneNumber, authDir)
+        pending.finalizing = this.saveWhatsAppPairingSession(
+          userId,
+          phoneNumber,
+          authDir,
+          pending.waitForCredentials,
+        )
           .catch(async (error: any) => {
             await this.recordError(userId, 'whatsapp_personal', error.message);
             throw error;
@@ -846,6 +889,7 @@ export class SocialAccountService {
         this.pendingWhatsApp.delete(requestId);
         if (this.whatsappSockets.get(userId) === sock) this.whatsappSockets.delete(userId);
         if (this.whatsappAuthDirs.get(userId) === authDir) this.whatsappAuthDirs.delete(userId);
+        await this.cancelWhatsAppCredentialPersist(userId, authDir);
         await fs.rm(authDir, { recursive: true, force: true }).catch(() => {});
         return;
       }
@@ -872,6 +916,7 @@ export class SocialAccountService {
     } catch (error) {
       this.pendingWhatsApp.delete(requestId);
       try { sock.end(error); } catch {}
+      await this.cancelWhatsAppCredentialPersist(userId, authDir);
       await fs.rm(authDir, { recursive: true, force: true });
       throw error;
     }
