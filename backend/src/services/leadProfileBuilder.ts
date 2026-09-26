@@ -229,7 +229,7 @@ export class LeadProfileBuilder {
         updated_at: now,
         error_message: 'Recovered after an interrupted profile-builder run.',
       })
-      .in('status', ['identified', 'discovering', 'psychology_pending'])
+      .in('status', ['identified', 'discovering', 'psychology_pending', 'profile_ready'])
       .lt('updated_at', staleBefore);
     if (recoveryError) {
       logBuilderActivity('stale_run_recovery_failed', { error: safeActivityError(recoveryError.message) });

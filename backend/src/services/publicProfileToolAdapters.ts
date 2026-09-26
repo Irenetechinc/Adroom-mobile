@@ -1,5 +1,5 @@
 import { spawn } from 'child_process';
-import { promises as fs } from 'fs';
+import { existsSync, promises as fs } from 'fs';
 import path from 'path';
 import { randomUUID } from 'crypto';
 
@@ -41,9 +41,26 @@ export interface PublicProfileToolDiagnostic {
   checkedAt: string;
 }
 
-const TOOLS_ROOT = path.resolve(
-  process.env.PROFILE_BUILDER_TOOLS_ROOT?.trim() || path.join(__dirname, '../../tools/vendor'),
-);
+function resolveToolsRoot(): string {
+  const configured = process.env.PROFILE_BUILDER_TOOLS_ROOT?.trim();
+  if (configured) return path.resolve(configured);
+
+  // Railway deployments may run the compiled server from either the backend
+  // directory or the repository root. Resolve the checked-in vendor bundle
+  // from both layouts instead of assuming /app/tools/vendor.
+  const candidates = [
+    path.resolve(__dirname, '../../tools/vendor'),
+    path.resolve(__dirname, '../../../backend/tools/vendor'),
+    path.resolve(process.cwd(), 'tools/vendor'),
+    path.resolve(process.cwd(), 'backend/tools/vendor'),
+  ];
+  return candidates.find((candidate) =>
+    existsSync(path.join(candidate, 'profile-tools.manifest.json'))
+    || existsSync(path.join(candidate, 'maigret', 'maigret', 'resources', 'settings.json')),
+  ) || candidates[0];
+}
+
+const TOOLS_ROOT = resolveToolsRoot();
 const COMMAND_TIMEOUT_MS = Math.min(
   60_000,
   Math.max(5_000, Number(process.env.PROFILE_BUILDER_TOOL_TIMEOUT_MS || 30_000)),
@@ -56,10 +73,15 @@ const MAX_OUTPUT_BYTES = 1_500_000;
 const MIN_TOOL_INTERVAL_MS = Math.max(700, Number(process.env.PROFILE_BUILDER_TOOL_INTERVAL_MS || 1_200));
 const SENSITIVE_VALUE = /(?:[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}|\+?\d[\d\s().-]{7,}\d)/i;
 const PRIVATE_QUERY = /(?:^|\s)(?:email|e-mail|phone|telephone|mobile|password|token|secret|api[- ]?key)(?:\s|$)/i;
-const PUBLIC_CONTACT_ENUMERATION_ENABLED = process.env.PROFILE_BUILDER_ENABLE_PUBLIC_CONTACT_ENUMERATION === 'true';
-const PUBLIC_USERNAME_ONLY_WARNING = PUBLIC_CONTACT_ENUMERATION_ENABLED
-  ? 'Public contact lookup is opt-in and restricted to explicit public records; private or authenticated data is never queried.'
-  : 'Public username discovery only; public email and phone lookup is disabled unless PROFILE_BUILDER_ENABLE_PUBLIC_CONTACT_ENUMERATION=true.';
+function publicContactEnumerationEnabled(): boolean {
+  return process.env.PROFILE_BUILDER_ENABLE_PUBLIC_CONTACT_ENUMERATION === 'true';
+}
+
+function publicUsernameOnlyWarning(): string {
+  return publicContactEnumerationEnabled()
+    ? 'Public contact lookup is opt-in and restricted to explicit public records; private or authenticated data is never queried.'
+    : 'Public username discovery only; public email and phone lookup is disabled unless PROFILE_BUILDER_ENABLE_PUBLIC_CONTACT_ENUMERATION=true.';
+}
 
 function clean(value: unknown, max = 900): string {
   return String(value ?? '').replace(/\s+/g, ' ').trim().slice(0, max);
@@ -72,9 +94,9 @@ function isSafeUsername(value: string): boolean {
   const isContactIdentifier = isPublicEmail || isPublicPhone;
   return Boolean(username)
     && username.length <= 120
-    && (!isContactIdentifier || PUBLIC_CONTACT_ENUMERATION_ENABLED)
+    && (!isContactIdentifier || publicContactEnumerationEnabled())
     && !PRIVATE_QUERY.test(username)
-    && (!SENSITIVE_VALUE.test(username) || (isContactIdentifier && PUBLIC_CONTACT_ENUMERATION_ENABLED))
+    && (!SENSITIVE_VALUE.test(username) || (isContactIdentifier && publicContactEnumerationEnabled()))
     && !/^(?:discovery:|user:|phone:|tel:)/i.test(username)
     && !/[/?#&=]/.test(username);
 }
@@ -286,7 +308,7 @@ export class PublicProfileToolAdapters {
       deepkrak3nConfigured: Boolean(configuredServiceUrl('DEEPKRAK3N_BASE_URL')),
       jarvisConfigured: Boolean(configuredServiceUrl('JARVIS_BASE_URL')),
       osintgraphExplicitlyEnabled: process.env.PROFILE_BUILDER_ENABLE_OSINTGRAPH === 'true',
-      publicContactEnumerationExplicitlyEnabled: PUBLIC_CONTACT_ENUMERATION_ENABLED,
+      publicContactEnumerationExplicitlyEnabled: publicContactEnumerationEnabled(),
       toolsRoot: TOOLS_ROOT,
       commandTimeoutMs: COMMAND_TIMEOUT_MS,
       healthTimeoutMs: HEALTH_TIMEOUT_MS,
@@ -550,7 +572,7 @@ export class PublicProfileToolAdapters {
         attempted: false,
         available: false,
         hits: [],
-        warning: `Deepkrak3n is not configured: base URL is required; ${PUBLIC_USERNAME_ONLY_WARNING} public web fallback remains enabled.`,
+        warning: `Deepkrak3n is not configured: base URL is required; ${publicUsernameOnlyWarning()} public web fallback remains enabled.`,
       };
     }
     try {
@@ -598,7 +620,7 @@ export class PublicProfileToolAdapters {
         attempted: false,
         available: false,
         hits: [],
-        warning: `J.A.R.V.I.S is not configured: base URL is required; ${PUBLIC_USERNAME_ONLY_WARNING} public web fallback remains enabled.`,
+        warning: `J.A.R.V.I.S is not configured: base URL is required; ${publicUsernameOnlyWarning()} public web fallback remains enabled.`,
       };
     }
     try {

@@ -18,6 +18,29 @@ ELEVENLABS_VOICE_IDS_BY_COUNTRY={"NG":"voice_id_for_nigeria","US":"voice_id_for_
 
 The app's canonical backend URL is `https://backend.adroomai.com`. The backend uses `PUBLIC_BASE_URL` if explicitly set, then `APP_URL`, then this canonical domain. `EXPO_PUBLIC_API_URL` is the mobile client's API URL and should also be set to `https://backend.adroomai.com`; it is not used as a provider webhook secret or credential.
 
+## Public profile discovery services
+
+The public-profile queue accepts usernames by default and uses the working public
+web-search adapter whenever an optional tool is unavailable. On Railway, provide
+the externally reachable base URLs for the separately managed services:
+
+```text
+DEEPKRAK3N_BASE_URL=https://<your-deepkrak3n-service>
+JARVIS_BASE_URL=https://<your-jarvis-service>
+```
+
+These must be service URLs, not the AdRoom backend URL. The backend checks
+`/health` for Deepkrak3n and `/api/health` for J.A.R.V.I.S with bounded timeouts.
+The URLs are never sent to the mobile app, and upstream response bodies are not
+included in status output.
+
+Osintgraph is disabled unless `PROFILE_BUILDER_ENABLE_OSINTGRAPH=true` is set
+after its public Instagram/Neo4j runtime is configured. Public email or phone
+lookup is separately disabled unless
+`PROFILE_BUILDER_ENABLE_PUBLIC_CONTACT_ENUMERATION=true` is explicitly set;
+that mode accepts only explicit public contact identifiers and does not access
+private or authenticated data.
+
 `TWILIO_FROM_COUNTRY` must be an ISO country code where Twilio can purchase a voice-enabled local number for the account. Number purchase is automatic the first time a Pro/Pro+ user has an eligible, consented call. One number is stored per user in `user_phone_numbers`.
 
 Configure these Twilio webhook URLs as a deployment fallback and for verification:

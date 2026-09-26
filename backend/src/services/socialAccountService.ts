@@ -257,7 +257,14 @@ export class SocialAccountService {
       .from('personal_inbound_messages')
       .upsert(rows, { onConflict: 'user_id,provider,external_id' });
     if (error && /column .*received_at.*does not exist|Could not find the .*received_at|column .*message_timestamp.*does not exist|Could not find the .*message_timestamp/i.test(String(error.message || error))) {
-      const legacyRows = rows.map(({ received_at: _receivedAt, ...row }) => row);
+      const message = String(error.message || error);
+      // If PostgREST has not refreshed its schema cache yet, retry with the
+      // column that the physical legacy table still requires. Removing
+      // received_at unconditionally caused NOT NULL failures on exactly that
+      // mixed-schema deployment.
+      const legacyRows = /message_timestamp.*does not exist|Could not find the .*message_timestamp/i.test(message)
+        ? rows.map(({ message_timestamp: _messageTimestamp, ...row }) => row)
+        : rows.map(({ received_at: _receivedAt, ...row }) => row);
       ({ error } = await this.supabase
         .from('personal_inbound_messages')
         .upsert(legacyRows, { onConflict: 'user_id,provider,external_id' }));
@@ -497,6 +504,13 @@ export class SocialAccountService {
         console.log(`[SocialAccountService] WhatsApp session restored for ${userId}`);
       } catch (error: any) {
         console.error(`[SocialAccountService] WhatsApp reconnect attempt failed for ${userId}: ${error.message}`);
+        if (/unsupported state|unable to authenticate data|bad decrypt|authentication tag/i.test(String(error?.message || ''))) {
+          await this.markWhatsAppNeedsReconnect(
+            userId,
+            'Stored WhatsApp credentials could not be decrypted. Configure the original stable SESSION_SECRET and reconnect the account.',
+          );
+          return;
+        }
         const row = await this.get(userId, 'whatsapp_personal').catch(() => null);
         if (row?.status === 'connected') this.scheduleWhatsAppReconnect(userId);
       }
@@ -528,8 +542,29 @@ export class SocialAccountService {
         console.log(`[SocialAccountService] Restored WhatsApp live session for ${row.user_id}`);
       } catch (restoreError: any) {
         console.error(`[SocialAccountService] WhatsApp startup restore failed for ${row.user_id}: ${restoreError.message}`);
-        this.scheduleWhatsAppReconnect(row.user_id);
+        if (/unsupported state|unable to authenticate data|bad decrypt|authentication tag/i.test(String(restoreError?.message || ''))) {
+          await this.markWhatsAppNeedsReconnect(
+            row.user_id,
+            'Stored WhatsApp credentials could not be decrypted. Configure the original stable SESSION_SECRET and reconnect the account.',
+          );
+        } else {
+          this.scheduleWhatsAppReconnect(row.user_id);
+        }
       }
+    }
+  }
+
+  private async markWhatsAppNeedsReconnect(userId: string, message: string): Promise<void> {
+    await this.supabase.from('social_account_connections').update({
+      status: 'needs_reconnect',
+      last_error: message.slice(0, 500),
+      updated_at: new Date().toISOString(),
+    }).eq('user_id', userId).eq('provider', 'whatsapp_personal');
+    try {
+      const { pushService } = await import('./pushService');
+      await pushService.notifyTokenRefreshFailed(userId, 'whatsapp_personal');
+    } catch (notificationError: any) {
+      console.warn(`[SocialAccountService] WhatsApp reconnect notification failed: ${notificationError.message}`);
     }
   }
 
