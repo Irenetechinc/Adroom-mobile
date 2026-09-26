@@ -6,7 +6,7 @@ stack = "BEST_EFFORT_FALLBACK"
 
 [nix]
 channel = "stable-25_05"
-packages = ["cacert", "eas-cli", "freetype", "glibcLocales", "xcodebuild", "yakut", "zlib"]
+packages = ["cacert", "eas-cli", "freetype", "glibcLocales", "xcodebuild", "yakut", "zlib", "signal-cli"]
 
 [workflows]
 runButton = "Project"
@@ -68,6 +68,8 @@ EXPO_PUBLIC_SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOi
 SUPABASE_URL = "https://mrrgjvrntenlkvslfvfh.supabase.co"
 SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1ycmdqdnJudGVubGt2c2xmdmZoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njk1NzIxMzgsImV4cCI6MjA4NTE0ODEzOH0.wIwrxgBTsYsx1jGSDDgNw3iPPHN0TZ8v7psen51Z9ks"
 EXPO_TOKEN = "otj8d9NQPSU-92Ijy-prVRR1mjDpmPQtH64dOGOf"
+DELTA_CHAT_BRIDGE_URL = "https://backend.adroomai.com"
+SIGNAL_CLI_PATH = "signal-cli"
 
 [[ports]]
 localPort = 5000
