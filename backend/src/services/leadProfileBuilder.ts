@@ -332,9 +332,14 @@ export class LeadProfileBuilder {
       const publicIdentity = await this.buildPublicIdentity(context, publicEvidence);
       const evidence = this.buildEvidence(context, publicEvidence);
       if (!evidence.length && !context.firstInteraction) {
-        await this.finishRun(run.id, 'completed', { public_evidence_count: 0 });
-        await this.setLeadStatus(context, 'completed');
-        return null;
+        // A missing public hit is not a reason to skip the psychology handoff.
+        // The psychologist must still produce a neutral, evidence-limited
+        // guide so the messaging agent has an explicit safe state.
+        logBuilderActivity('psychology_handoff_without_public_evidence', {
+          userId,
+          leadId,
+          runId: run.id,
+        });
       }
 
       const behavior = (await this.generateProfile(context, evidence)) || this.fallbackProfile(evidence);

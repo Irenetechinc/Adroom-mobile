@@ -250,15 +250,14 @@ export class SocialAccountService {
         };
       })(),
     }));
-    // Prefer the canonical schema. Some older projects still have a required
-    // received_at column, while others have already renamed it to
-    // message_timestamp. Retry with the matching legacy shape when PostgREST
-    // reports a schema mismatch; every attempt carries a normalized timestamp.
+    // Send both timestamp names on the first write. This makes a legacy
+    // installation with a NOT NULL received_at column safe, while the retry
+    // below handles installations that have already removed that column.
     let { error } = await this.supabase
       .from('personal_inbound_messages')
-      .upsert(rows.map(({ received_at: _receivedAt, ...row }) => row), { onConflict: 'user_id,provider,external_id' });
-    if (error && /received_at.*null|not-null constraint|column .*message_timestamp.*does not exist|Could not find the .*message_timestamp/i.test(error.message)) {
-      const legacyRows = rows.map(({ message_timestamp: _messageTimestamp, ...row }) => row);
+      .upsert(rows, { onConflict: 'user_id,provider,external_id' });
+    if (error && /column .*received_at.*does not exist|Could not find the .*received_at|column .*message_timestamp.*does not exist|Could not find the .*message_timestamp/i.test(String(error.message || error))) {
+      const legacyRows = rows.map(({ received_at: _receivedAt, ...row }) => row);
       ({ error } = await this.supabase
         .from('personal_inbound_messages')
         .upsert(legacyRows, { onConflict: 'user_id,provider,external_id' }));
@@ -1486,7 +1485,7 @@ export class SocialAccountService {
     // the connection listener; do not fabricate an empty successful poll.
     if (provider === 'whatsapp_personal') {
       await this.restoreWhatsAppSocket(userId, credential);
-      let persisted = await this.supabase
+       let persisted: any = await this.supabase
         .from('personal_inbound_messages')
          .select('external_id, sender_id, message, message_timestamp')
         .eq('user_id', userId)

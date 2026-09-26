@@ -39,6 +39,7 @@ htmlcov/
 
 # Maigret files
 settings.json
+!maigret/resources/settings.json
 web_settings.json
 
 # other

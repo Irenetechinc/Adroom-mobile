@@ -240,10 +240,11 @@ export class PlatformIntelligenceEngine {
           console.log(`URGENT INTELLIGENCE DETECTED: ${item.summary}`);
           
           try {
-             // Route communication through Railway. Supabase stores the record.
-             const railwayUrl = 'http://backend.adroomai.com';
+             // Route communication through the canonical backend. Supabase
+             // stores the record; no deployment-provider URL is embedded.
+             const backendUrl = 'https://backend.adroomai.com';
              const serviceKey = Deno.env.get('INTERNAL_SERVICE_KEY') || Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
-             await fetch(`${railwayUrl}/api/internal/communication/alert`, {
+             await fetch(`${backendUrl}/api/internal/communication/alert`, {
                  method: 'POST',
                  headers: {
                  'Authorization': `Bearer ${serviceKey}`,

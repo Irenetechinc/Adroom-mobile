@@ -224,6 +224,31 @@ app.get('/api/health/config', (_req, res) => {
   });
 });
 
+// Live, non-sensitive status for the public-profile adapters. A refresh is
+// bounded by the adapter's health timeout and never returns credentials or
+// upstream response bodies.
+app.get('/api/public-profile-tools/status', async (req, res) => {
+  try {
+    const refresh = String(req.query.refresh || '') === '1' || String(req.query.refresh || '').toLowerCase() === 'true';
+    const diagnostics = refresh
+      ? await publicProfileToolAdapters.runStartupDiagnostics()
+      : publicProfileToolAdapters.getStartupDiagnostics();
+    return res.json({
+      ok: diagnostics.filter((item) => item.enabled).every((item) => item.available || item.tool === 'web_public_profile'),
+      timestamp: new Date().toISOString(),
+      configuration: publicProfileToolAdapters.getConfigurationStatus(),
+      diagnostics,
+    });
+  } catch (error: any) {
+    return res.status(503).json({
+      ok: false,
+      timestamp: new Date().toISOString(),
+      error: 'Public profile tool status is temporarily unavailable.',
+      detail: String(error?.message || 'health check failed').slice(0, 240),
+    });
+  }
+});
+
 // ─── Personal social-account connections ─────────────────────────────────────
 // These routes intentionally return only display metadata. OAuth tokens,
 // pairing state, app passwords, MTProto sessions, and Signal credentials stay

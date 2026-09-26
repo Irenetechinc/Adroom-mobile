@@ -7,4 +7,4 @@ The conversation coordinator and mobile lead screens rely on Supabase-native run
 
 **Why:** The imported project had backend SQL that created `sent_at` while readers queried `created_at`, and conversation tables were referenced in code without a corresponding Supabase migration.
 
-**How to apply:** When changing conversation persistence, check both the Railway backend queries and mobile realtime subscriptions, then add a forward-compatible Supabase migration rather than replacing the Railway/Supabase architecture.
+**How to apply:** When changing conversation persistence, check backend queries and mobile realtime subscriptions, use forward-compatible Supabase migrations, and write both `message_timestamp` and `received_at` during the mixed-schema transition.

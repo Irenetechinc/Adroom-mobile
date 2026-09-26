@@ -380,7 +380,7 @@ export class PublicProfileToolAdapters {
         available: false,
         enabled: true,
         checkedAt,
-        warning: `${tool} base URL is required. Configure ${tool === 'deepkrak3n' ? 'DEEPKRAK3N_BASE_URL' : 'JARVIS_BASE_URL'}; the public web fallback remains available.`,
+        warning: `${tool} is not configured: base URL is required. Configure ${tool === 'deepkrak3n' ? 'DEEPKRAK3N_BASE_URL' : 'JARVIS_BASE_URL'}; the public web fallback remains available.`,
       };
     }
     try {
@@ -510,6 +510,7 @@ export class PublicProfileToolAdapters {
           String(Math.min(15, Math.max(5, Math.floor(COMMAND_TIMEOUT_MS / 1000 / 3)))),
         ],
         cwd,
+        { PYTHONPATH: cwd },
       );
       const records = await readJsonReports(runDir);
       return {
@@ -549,7 +550,7 @@ export class PublicProfileToolAdapters {
         attempted: false,
         available: false,
         hits: [],
-        warning: `Deepkrak3n base URL is required; ${PUBLIC_USERNAME_ONLY_WARNING} public web fallback remains enabled.`,
+        warning: `Deepkrak3n is not configured: base URL is required; ${PUBLIC_USERNAME_ONLY_WARNING} public web fallback remains enabled.`,
       };
     }
     try {
@@ -597,7 +598,7 @@ export class PublicProfileToolAdapters {
         attempted: false,
         available: false,
         hits: [],
-        warning: `J.A.R.V.I.S base URL is required; ${PUBLIC_USERNAME_ONLY_WARNING} public web fallback remains enabled.`,
+        warning: `J.A.R.V.I.S is not configured: base URL is required; ${PUBLIC_USERNAME_ONLY_WARNING} public web fallback remains enabled.`,
       };
     }
     try {

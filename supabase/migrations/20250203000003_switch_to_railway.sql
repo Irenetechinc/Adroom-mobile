@@ -5,7 +5,7 @@ CREATE EXTENSION IF NOT EXISTS pg_cron WITH SCHEMA extensions;
 CREATE OR REPLACE FUNCTION trigger_autonomous_worker()
 RETURNS TRIGGER AS $$
 DECLARE
-  project_url TEXT := 'https://adroom-mobile-production-35f8.up.railway.app/webhooks/database';
+  project_url TEXT := 'https://backend.adroomai.com/webhooks/database';
   payload JSONB;
 BEGIN
   -- Construct payload
@@ -48,7 +48,7 @@ SELECT cron.schedule(
   '0 * * * *',
   $$
   SELECT net.http_post(
-      url := 'https://adroom-mobile-production.up.railway.app/webhooks/database',
+      url := 'https://backend.adroomai.com/webhooks/database',
       headers := '{"Content-Type": "application/json"}'::jsonb,
       body := '{"type": "SCHEDULED_TASK"}'::jsonb
   );
