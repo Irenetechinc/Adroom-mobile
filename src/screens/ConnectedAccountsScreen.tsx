@@ -208,7 +208,7 @@ const PLATFORMS: Platform[] = [
   { id: 'bluesky',   name: 'Bluesky',            sub: 'Personal account · app password', bg: '#1185FE' },
   { id: 'delta_chat', name: 'Delta Chat',        sub: 'Personal account · managed bridge', bg: '#5B5BEA' },
   { id: 'google',    name: 'Google Ads',         sub: 'Google Marketing Platform',   bg: '#FFFFFF',  comingSoon: true },
-  { id: 'linkedin',  name: 'LinkedIn',           sub: 'LinkedIn Marketing',          bg: '#0A66C2', comingSoon: true },
+  { id: 'linkedin',  name: 'LinkedIn',           sub: 'LinkedIn Marketing',          bg: '#0A66C2' },
 ];
 
 // Instagram uses a gradient background — approximated here
@@ -527,7 +527,9 @@ export default function ConnectedAccountsScreen() {
         {PLATFORMS.map((platform, index) => {
           const connected = isConnected(platform.id);
           const enabled = isEnabled(`social_${platform.id}_connections`);
-          const comingSoonFlag = isEnabled(`social_${platform.id}_coming_soon`, false);
+          const comingSoonFlag = platform.id === 'linkedin'
+            ? false
+            : isEnabled(`social_${platform.id}_coming_soon`, false);
           const comingSoon = !!platform.comingSoon || comingSoonFlag;
           const disabled = !enabled;
           const capability = capabilities[platform.id];
