@@ -12,6 +12,7 @@ type BuilderStatus =
   | 'identified'
   | 'discovering'
   | 'profile_ready'
+  | 'psychology_pending'
   | 'psychology_complete'
   | 'completed'
   | 'failed';
@@ -175,7 +176,7 @@ export class LeadProfileBuilder {
       .eq('user_id', userId)
       .eq('lead_id', leadId)
       .maybeSingle();
-    if (existing && ['queued', 'identified', 'discovering', 'profile_ready', 'psychology_complete'].includes(existing.status)) {
+    if (existing && ['queued', 'identified', 'discovering', 'profile_ready', 'psychology_pending', 'psychology_complete'].includes(existing.status)) {
       logBuilderActivity('queue_reused', {
         userId,
         leadId,
@@ -228,7 +229,7 @@ export class LeadProfileBuilder {
         updated_at: now,
         error_message: 'Recovered after an interrupted profile-builder run.',
       })
-      .in('status', ['identified', 'discovering'])
+      .in('status', ['identified', 'discovering', 'psychology_pending'])
       .lt('updated_at', staleBefore);
     if (recoveryError) {
       logBuilderActivity('stale_run_recovery_failed', { error: safeActivityError(recoveryError.message) });
@@ -312,7 +313,7 @@ export class LeadProfileBuilder {
       });
       await this.setLeadStatus(context, 'discovering');
 
-      const results = await this.executePlan(plan);
+      const results = await this.executePlan(plan, run.id);
       const publicEvidence = this.toPublicEvidence(results);
       logBuilderActivity('discovery_complete', {
         userId,
@@ -371,21 +372,43 @@ export class LeadProfileBuilder {
       });
       await this.setLeadStatus(context, 'profile_ready');
 
-      let psychology: LeadPsychologyProfile | null = null;
+      await this.updateRun(run.id, {
+        status: 'psychology_pending',
+        active_tool: 'psychology',
+        active_tool_status: 'running',
+        active_tool_error: null,
+      });
+      await this.setLeadStatus(context, 'psychology_pending');
+      logBuilderActivity('psychology_handoff_started', { userId, leadId, runId: run.id });
+
+      let psychology: LeadPsychologyProfile | null;
       try {
         psychology = await this.psychologist.analyzeForLead({
           userId,
           leadId,
           publicProfile: result,
         });
+        if (!psychology) throw new Error('Psychology engine returned no structured profile.');
       } catch (error: any) {
-        console.warn(`[LeadProfileBuilder] psychology handoff skipped lead=${leadId}: ${error.message}`);
+        const message = safeActivityError(error);
+        await this.updateRun(run.id, {
+          active_tool: 'psychology',
+          active_tool_status: 'failed',
+          active_tool_error: message,
+        }).catch(() => undefined);
+        throw new Error(`Psychology handoff failed: ${message}`);
       }
       if (psychology) {
         result.psychology = psychology;
         logBuilderActivity('psychology_complete', { userId, leadId, runId: run.id });
         await this.saveProfile(userId, context, result);
-        await this.updateRun(run.id, { status: 'psychology_complete', public_profile: result });
+        await this.updateRun(run.id, {
+          status: 'psychology_complete',
+          active_tool: null,
+          active_tool_status: 'completed',
+          active_tool_error: null,
+          public_profile: result,
+        });
         await this.setLeadStatus(context, 'psychology_complete');
       }
 
@@ -545,15 +568,41 @@ allowedTools=${JSON.stringify(TOOL_NAMES)}`);
     return fallbackPlan.filter((step) => Boolean(step.query));
   }
 
-  private async executePlan(plan: DiscoveryPlan[]): Promise<ReachResult[]> {
+  private async executePlan(plan: DiscoveryPlan[], runId?: string): Promise<ReachResult[]> {
     const results: ReachResult[] = [];
     for (const step of plan) {
       await this.waitForRateLimit();
+      if (runId) {
+        await this.updateRun(runId, {
+          active_tool: step.tool,
+          active_platform: step.platform,
+          active_tool_status: 'running',
+          active_tool_error: null,
+        }).catch((error) => {
+          logBuilderActivity('tool_status_update_failed', { runId, tool: step.tool, error: safeActivityError(error) });
+        });
+      }
       try {
-       const found = await agentReachAdapter.search(step.platform, step.query, step.tool);
+        const found = await agentReachAdapter.search(step.platform, step.query, step.tool);
         results.push(...found);
+        if (runId) {
+          await this.updateRun(runId, {
+            active_tool: step.tool,
+            active_platform: step.platform,
+            active_tool_status: found.length ? 'completed' : 'completed_no_results',
+            active_tool_error: null,
+          }).catch(() => undefined);
+        }
       } catch (error: any) {
         console.warn(`[LeadProfileBuilder] ${step.tool} skipped: ${error.message}`);
+        if (runId) {
+          await this.updateRun(runId, {
+            active_tool: step.tool,
+            active_platform: step.platform,
+            active_tool_status: 'failed',
+            active_tool_error: safeActivityError(error),
+          }).catch(() => undefined);
+        }
       }
     }
     const seen = new Set<string>();

@@ -32,14 +32,31 @@ export interface PublicToolSearch {
   warning?: string;
 }
 
+export interface PublicProfileToolDiagnostic {
+  tool: PublicProfileTool | 'web_public_profile';
+  configured: boolean;
+  available: boolean;
+  enabled: boolean;
+  warning?: string;
+  checkedAt: string;
+}
+
 const TOOLS_ROOT = path.resolve(
   process.env.PROFILE_BUILDER_TOOLS_ROOT?.trim() || path.join(__dirname, '../../tools/vendor'),
 );
-const COMMAND_TIMEOUT_MS = Math.max(5_000, Number(process.env.PROFILE_BUILDER_TOOL_TIMEOUT_MS || 45_000));
+const COMMAND_TIMEOUT_MS = Math.min(
+  60_000,
+  Math.max(5_000, Number(process.env.PROFILE_BUILDER_TOOL_TIMEOUT_MS || 30_000)),
+);
+const HEALTH_TIMEOUT_MS = Math.min(
+  10_000,
+  Math.max(1_000, Number(process.env.PROFILE_BUILDER_HEALTH_TIMEOUT_MS || 5_000)),
+);
 const MAX_OUTPUT_BYTES = 1_500_000;
 const MIN_TOOL_INTERVAL_MS = Math.max(700, Number(process.env.PROFILE_BUILDER_TOOL_INTERVAL_MS || 1_200));
 const SENSITIVE_VALUE = /(?:[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}|\+?\d[\d\s().-]{7,}\d)/i;
 const PRIVATE_QUERY = /(?:^|\s)(?:email|e-mail|phone|telephone|mobile|password|token|secret|api[- ]?key)(?:\s|$)/i;
+const PUBLIC_USERNAME_ONLY_WARNING = 'Public username discovery only; email and phone enumeration is intentionally not attempted.';
 
 function clean(value: unknown, max = 900): string {
   return String(value ?? '').replace(/\s+/g, ' ').trim().slice(0, max);
@@ -76,6 +93,22 @@ function safeLogDetail(value: unknown, max = 400): string {
   return clean(value, max)
     .replace(/https?:\/\/[^/\s:@]+(?::[^/\s@]*)?@/gi, 'https://[redacted]@')
     .replace(SENSITIVE_VALUE, '[redacted]');
+}
+
+function serviceBaseUrl(value: unknown): string | undefined {
+  const candidate = clean(value, 700).replace(/\/+$/, '');
+  if (!candidate) return undefined;
+  try {
+    const parsed = new URL(candidate);
+    if (!['http:', 'https:'].includes(parsed.protocol) || parsed.username || parsed.password) return undefined;
+    return parsed.toString().replace(/\/+$/, '');
+  } catch {
+    return undefined;
+  }
+}
+
+function configuredServiceUrl(name: 'DEEPKRAK3N_BASE_URL' | 'JARVIS_BASE_URL'): string | undefined {
+  return serviceBaseUrl(process.env[name]);
 }
 
 function logAdapterActivity(event: string, fields: Record<string, unknown>): void {
@@ -221,9 +254,138 @@ async function readJsonReports(directory: string): Promise<any[]> {
 export class PublicProfileToolAdapters {
   private readonly python: string;
   private readonly lastInvocationAt = new Map<string, number>();
+  private startupDiagnostics: PublicProfileToolDiagnostic[] = [];
 
   constructor(python = process.env.PROFILE_BUILDER_PYTHON || 'python3') {
     this.python = python;
+  }
+
+  getConfigurationStatus(): {
+    deepkrak3nConfigured: boolean;
+    jarvisConfigured: boolean;
+    osintgraphExplicitlyEnabled: boolean;
+    toolsRoot: string;
+    commandTimeoutMs: number;
+    healthTimeoutMs: number;
+  } {
+    return {
+      deepkrak3nConfigured: Boolean(configuredServiceUrl('DEEPKRAK3N_BASE_URL')),
+      jarvisConfigured: Boolean(configuredServiceUrl('JARVIS_BASE_URL')),
+      osintgraphExplicitlyEnabled: process.env.PROFILE_BUILDER_ENABLE_OSINTGRAPH === 'true',
+      toolsRoot: TOOLS_ROOT,
+      commandTimeoutMs: COMMAND_TIMEOUT_MS,
+      healthTimeoutMs: HEALTH_TIMEOUT_MS,
+    };
+  }
+
+  getStartupDiagnostics(): PublicProfileToolDiagnostic[] {
+    return this.startupDiagnostics.map((diagnostic) => ({ ...diagnostic }));
+  }
+
+  async runStartupDiagnostics(): Promise<PublicProfileToolDiagnostic[]> {
+    const checkedAt = new Date().toISOString();
+    const diagnostics: PublicProfileToolDiagnostic[] = [
+      await this.diagnoseLocalTool(
+        'maigret',
+        path.join(TOOLS_ROOT, 'maigret', 'maigret', 'resources', 'settings.json'),
+        checkedAt,
+      ),
+      await this.diagnoseLocalTool('helix', path.join(TOOLS_ROOT, 'helix', 'helix.py'), checkedAt),
+      await this.diagnoseRemoteTool('deepkrak3n', configuredServiceUrl('DEEPKRAK3N_BASE_URL'), '/health', checkedAt),
+      await this.diagnoseLocalOrDisabledOsintgraph(checkedAt),
+      await this.diagnoseRemoteTool('jarvis', configuredServiceUrl('JARVIS_BASE_URL'), '/api/health', checkedAt),
+      {
+        tool: 'web_public_profile',
+        configured: true,
+        available: true,
+        enabled: true,
+        checkedAt,
+      },
+    ];
+    this.startupDiagnostics = diagnostics;
+    logAdapterActivity('startup_diagnostics', {
+      diagnostics: diagnostics.map(({ tool, configured, available, enabled, warning }) => ({
+        tool,
+        configured,
+        available,
+        enabled,
+        ...(warning ? { warning: safeLogDetail(warning) } : {}),
+      })),
+      commandTimeoutMs: COMMAND_TIMEOUT_MS,
+      healthTimeoutMs: HEALTH_TIMEOUT_MS,
+    });
+    return this.getStartupDiagnostics();
+  }
+
+  private async diagnoseLocalTool(
+    tool: 'maigret' | 'helix',
+    requiredPath: string,
+    checkedAt: string,
+  ): Promise<PublicProfileToolDiagnostic> {
+    const exists = await fs.access(requiredPath).then(() => true).catch(() => false);
+    return {
+      tool: tool === 'maigret' ? 'maigret_public_username' : 'helix_public_username',
+      configured: exists,
+      available: exists,
+      enabled: true,
+      checkedAt,
+      ...(exists ? {} : { warning: `${tool} runtime file is missing at the configured tools root.` }),
+    };
+  }
+
+  private async diagnoseLocalOrDisabledOsintgraph(checkedAt: string): Promise<PublicProfileToolDiagnostic> {
+    const enabled = process.env.PROFILE_BUILDER_ENABLE_OSINTGRAPH === 'true';
+    const packagePath = path.join(TOOLS_ROOT, 'osintgraph', 'src', 'osintgraph', 'cli.py');
+    const exists = await fs.access(packagePath).then(() => true).catch(() => false);
+    return {
+      tool: 'osintgraph_public_instagram',
+      configured: exists,
+      available: enabled && exists,
+      enabled,
+      checkedAt,
+      ...(!enabled
+        ? { warning: 'Osintgraph is disabled. Set PROFILE_BUILDER_ENABLE_OSINTGRAPH=true only after its public Instagram/Neo4j runtime is configured.' }
+        : !exists
+          ? { warning: 'Osintgraph was explicitly enabled but its vendored runtime is missing.' }
+          : {}),
+    };
+  }
+
+  private async diagnoseRemoteTool(
+    tool: 'deepkrak3n' | 'jarvis',
+    baseUrl: string | undefined,
+    healthPath: string,
+    checkedAt: string,
+  ): Promise<PublicProfileToolDiagnostic> {
+    const toolName = tool === 'deepkrak3n' ? 'deepkrak3n_public_search' : 'jarvis_public_research';
+    if (!baseUrl) {
+      return {
+        tool: toolName,
+        configured: false,
+        available: false,
+        enabled: true,
+        checkedAt,
+        warning: `${tool} base URL is required. Configure ${tool === 'deepkrak3n' ? 'DEEPKRAK3N_BASE_URL' : 'JARVIS_BASE_URL'}; the public web fallback remains available.`,
+      };
+    }
+    try {
+      const response = await fetch(`${baseUrl}${healthPath}`, {
+        method: 'GET',
+        headers: { Accept: 'application/json' },
+        signal: AbortSignal.timeout(HEALTH_TIMEOUT_MS),
+      });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      return { tool: toolName, configured: true, available: true, enabled: true, checkedAt };
+    } catch (error: any) {
+      return {
+        tool: toolName,
+        configured: true,
+        available: false,
+        enabled: true,
+        checkedAt,
+        warning: `${tool} health check failed: ${clean(error?.message, 240)}; the public web fallback remains available.`,
+      };
+    }
   }
 
   async search(tool: PublicProfileTool, platform: string, username: string): Promise<PublicToolSearch> {
@@ -286,7 +448,21 @@ export class PublicProfileToolAdapters {
       // cannot read one another's results.
       const result = await runProcess(
         this.python,
-        ['-m', 'maigret', username, '--json', 'ndjson', '--folderoutput', path.relative(cwd, runDir), '--no-progressbar', '--no-color', '--no-autoupdate', '--no-recursion'],
+        [
+          '-m',
+          'maigret',
+          username,
+          '--json',
+          'ndjson',
+          '--folderoutput',
+          path.relative(cwd, runDir),
+          '--no-progressbar',
+          '--no-color',
+          '--no-autoupdate',
+          '--no-recursion',
+          '--timeout',
+          String(Math.min(15, Math.max(5, Math.floor(COMMAND_TIMEOUT_MS / 1000 / 3)))),
+        ],
         cwd,
       );
       const records = await readJsonReports(runDir);
@@ -321,13 +497,13 @@ export class PublicProfileToolAdapters {
   }
 
   private async runDeepkrak3n(platform: string, username: string): Promise<PublicToolSearch> {
-    const baseUrl = process.env.DEEPKRAK3N_BASE_URL?.trim().replace(/\/+$/, '');
+    const baseUrl = configuredServiceUrl('DEEPKRAK3N_BASE_URL');
     if (!baseUrl) {
       return {
         attempted: false,
         available: false,
         hits: [],
-        warning: 'Deepkrak3n is vendored, but its separate FastAPI runtime is not configured; public web fallback remains enabled.',
+        warning: `Deepkrak3n base URL is required; ${PUBLIC_USERNAME_ONLY_WARNING} public web fallback remains enabled.`,
       };
     }
     try {
@@ -347,7 +523,12 @@ export class PublicProfileToolAdapters {
 
   private async runOsintgraph(platform: string, username: string): Promise<PublicToolSearch> {
     if (process.env.PROFILE_BUILDER_ENABLE_OSINTGRAPH !== 'true') {
-      return { attempted: false, available: false, hits: [], warning: 'Osintgraph is disabled unless explicitly configured for public Instagram data.' };
+      return {
+        attempted: false,
+        available: false,
+        hits: [],
+        warning: 'Osintgraph is disabled unless PROFILE_BUILDER_ENABLE_OSINTGRAPH=true is explicitly configured. Public username discovery only; email and phone enumeration is intentionally not attempted.',
+      };
     }
     try {
       const cwd = path.join(TOOLS_ROOT, 'osintgraph');
@@ -364,9 +545,14 @@ export class PublicProfileToolAdapters {
   }
 
   private async runJarvis(platform: string, username: string): Promise<PublicToolSearch> {
-    const baseUrl = process.env.JARVIS_BASE_URL?.trim().replace(/\/+$/, '');
+    const baseUrl = configuredServiceUrl('JARVIS_BASE_URL');
     if (!baseUrl) {
-      return { attempted: false, available: false, hits: [], warning: 'J.A.R.V.I.S is vendored but its optional public-research API is not configured.' };
+      return {
+        attempted: false,
+        available: false,
+        hits: [],
+        warning: `J.A.R.V.I.S base URL is required; ${PUBLIC_USERNAME_ONLY_WARNING} public web fallback remains enabled.`,
+      };
     }
     try {
       const sourceAliases: Record<string, string> = {

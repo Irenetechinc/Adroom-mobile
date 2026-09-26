@@ -243,10 +243,25 @@ export class SocialAccountService {
       sender_id: message.senderId,
       message: message.text,
       message_timestamp: message.timestamp,
+      // Older Supabase deployments still have a NOT NULL received_at column.
+      // Send both names when the compatibility migration left both columns;
+      // the fallback below handles deployments that have only one of them.
+      received_at: message.timestamp,
     }));
-    const { error } = await this.supabase
+    let { error } = await this.supabase
       .from('personal_inbound_messages')
       .upsert(rows, { onConflict: 'user_id,provider,external_id' });
+    if (error && /column .*received_at.*does not exist|Could not find the .*received_at/i.test(error.message)) {
+      const canonicalRows = rows.map(({ received_at: _receivedAt, ...row }) => row);
+      ({ error } = await this.supabase
+        .from('personal_inbound_messages')
+        .upsert(canonicalRows, { onConflict: 'user_id,provider,external_id' }));
+    } else if (error && /column .*message_timestamp.*does not exist|Could not find the .*message_timestamp/i.test(error.message)) {
+      const legacyRows = rows.map(({ message_timestamp: _messageTimestamp, ...row }) => row);
+      ({ error } = await this.supabase
+        .from('personal_inbound_messages')
+        .upsert(legacyRows, { onConflict: 'user_id,provider,external_id' }));
+    }
     if (error) {
       console.error(
         `[SocialAccountService] ${normalizePlatform(provider)} inbound persistence failed `
@@ -1470,13 +1485,22 @@ export class SocialAccountService {
     // the connection listener; do not fabricate an empty successful poll.
     if (provider === 'whatsapp_personal') {
       await this.restoreWhatsAppSocket(userId, credential);
-       const persisted = await this.supabase
+      let persisted = await this.supabase
         .from('personal_inbound_messages')
          .select('external_id, sender_id, message, message_timestamp')
         .eq('user_id', userId)
         .eq('provider', 'whatsapp_personal')
          .order('message_timestamp', { ascending: false })
         .limit(Math.min(100, Math.max(1, limit)));
+       if (persisted.error && /column .*message_timestamp.*does not exist|Could not find the .*message_timestamp/i.test(persisted.error.message)) {
+         persisted = await this.supabase
+           .from('personal_inbound_messages')
+           .select('external_id, sender_id, message, received_at')
+           .eq('user_id', userId)
+           .eq('provider', 'whatsapp_personal')
+           .order('received_at', { ascending: false })
+           .limit(Math.min(100, Math.max(1, limit)));
+       }
        if (persisted.error) {
          console.error(`[SocialAccountService] WhatsApp inbound history read failed: ${persisted.error.message}`);
          throw new Error(`WhatsApp inbound history is unavailable: ${persisted.error.message}`);

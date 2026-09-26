@@ -43,6 +43,7 @@ import { getTelegramAppConfigStatus } from './services/telegramConfig';
 import { normalizePlatform, normalizeSelectedPlatforms, isPersonalProvider } from './services/platformIdentity';
 import { conversationAgent } from './services/conversationAgent';
 import { leadProfileBuilder } from './services/leadProfileBuilder';
+import { publicProfileToolAdapters } from './services/publicProfileToolAdapters';
 
 dotenv.config();
 
@@ -130,6 +131,9 @@ const REQUIRED_RUNTIME_CONFIG = [
   { key: 'ADMIN_PASSWORD', required: false },
   { key: 'PUBLIC_BASE_URL', required: false },
   { key: 'EXPO_PUBLIC_API_URL', required: false },
+  { key: 'DEEPKRAK3N_BASE_URL', required: true },
+  { key: 'JARVIS_BASE_URL', required: true },
+  { key: 'PROFILE_BUILDER_ENABLE_OSINTGRAPH', required: false },
   { key: 'SUPABASE_DB_URL', required: false },
   { key: 'SUPABASE_DB_PASSWORD', required: false },
   { key: 'OPENAI_API_KEY', required: false },
@@ -153,6 +157,10 @@ function getRuntimeConfigStatus() {
       ? telegramConfig.apiIdValid
       : entry.key === 'TELEGRAM_API_HASH'
         ? telegramConfig.apiHashPresent
+        : entry.key === 'DEEPKRAK3N_BASE_URL'
+          ? publicProfileToolAdapters.getConfigurationStatus().deepkrak3nConfigured
+          : entry.key === 'JARVIS_BASE_URL'
+            ? publicProfileToolAdapters.getConfigurationStatus().jarvisConfigured
         : Boolean(process.env[entry.key] || alternatives.some((key) => Boolean(process.env[key])));
     return {
       key: entry.key,
@@ -170,6 +178,10 @@ function getRuntimeConfigStatus() {
     missingRequired,
     missingOptional,
     checks,
+    publicProfileTools: {
+      configuration: publicProfileToolAdapters.getConfigurationStatus(),
+      diagnostics: publicProfileToolAdapters.getStartupDiagnostics(),
+    },
     timestamp: new Date().toISOString(),
   };
 }
@@ -2695,7 +2707,7 @@ app.get('/api/leads/:leadId/profile', async (req, res) => {
       .from('lead_profile_builder_runs')
       // Tool names and adapter diagnostics stay backend-only. The client only
       // needs progress and the count of sanitized public evidence.
-      .select('status, selected_platforms, public_evidence_count, updated_at, completed_at')
+      .select('status, selected_platforms, public_evidence_count, active_tool, active_platform, active_tool_status, active_tool_error, updated_at, completed_at')
       .eq('user_id', user.id)
       .eq('lead_id', lead.id)
       .maybeSingle();
@@ -3468,7 +3480,7 @@ app.post('/api/billing/charge-card', async (req, res) => {
 
     const txRef = flutterwaveService.generateTxRef('ADROOM');
     const email = user.email || '';
-    const redirectUrl = `${process.env.EXPO_PUBLIC_API_URL || 'https://adroom.railway.app'}/api/billing/flw-callback?type=${type}&id=${id}&user_id=${user.id}&tx_ref=${txRef}`;
+    const redirectUrl = `${process.env.PUBLIC_BASE_URL || process.env.EXPO_PUBLIC_API_URL || 'https://backend.adroomai.com'}/api/billing/flw-callback?type=${type}&id=${id}&user_id=${user.id}&tx_ref=${txRef}`;
 
     const chargeResult = await flutterwaveService.chargeCard({
       cardNumber, cvv, expiryMonth, expiryYear,
@@ -5980,6 +5992,8 @@ app.listen(PORT, async () => {
   console.log(`[AdRoom Server] AI Engines: GPT-4o (strategy) | Gemini 2.0 Flash (text) | Imagen 3 (creative)`);
   console.log(`[AdRoom Server] Agents: SALESMAN | AWARENESS | PROMOTION | LAUNCH`);
   console.log(`[AdRoom Server] Features: Autonomous Execution | Lead Capture | Performance Monitoring | Self-Optimization`);
+  await publicProfileToolAdapters.runStartupDiagnostics();
+  console.log(`[AdRoom Server] Public profile runtime: ${JSON.stringify(getRuntimeConfigStatus().publicProfileTools)}`);
 
   // Ensure required Supabase Storage buckets exist (fixes "Bucket not found" on
   // fresh deployments where the bucket was never manually created).

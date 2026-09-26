@@ -27,6 +27,7 @@ const requiredTables = [
 
 const requiredColumns: Record<string, string[]> = {
   personal_inbound_messages: ['user_id', 'provider', 'external_id', 'sender_id', 'message', 'message_timestamp'],
+  lead_profile_builder_runs: ['active_tool', 'active_platform', 'active_tool_status', 'active_tool_error'],
   device_push_tokens: ['user_id', 'token', 'project_id', 'is_active'],
   agent_tasks: ['action_type', 'selected_account_id', 'recipient_id', 'conversation_id', 'media'],
 };

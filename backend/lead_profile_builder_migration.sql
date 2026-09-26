@@ -16,6 +16,10 @@ CREATE TABLE IF NOT EXISTS public.lead_profile_builder_runs (
   public_evidence_count integer NOT NULL DEFAULT 0,
   public_profile jsonb NOT NULL DEFAULT '{}'::jsonb,
   error_message text,
+  active_tool text,
+  active_platform text,
+  active_tool_status text,
+  active_tool_error text,
   attempt_count integer NOT NULL DEFAULT 0,
   next_attempt_at timestamptz NOT NULL DEFAULT now(),
   claimed_at timestamptz,
@@ -32,6 +36,10 @@ ALTER TABLE public.lead_profile_builder_runs ADD COLUMN IF NOT EXISTS tools_atte
 ALTER TABLE public.lead_profile_builder_runs ADD COLUMN IF NOT EXISTS public_evidence_count integer NOT NULL DEFAULT 0;
 ALTER TABLE public.lead_profile_builder_runs ADD COLUMN IF NOT EXISTS public_profile jsonb NOT NULL DEFAULT '{}'::jsonb;
 ALTER TABLE public.lead_profile_builder_runs ADD COLUMN IF NOT EXISTS error_message text;
+ALTER TABLE public.lead_profile_builder_runs ADD COLUMN IF NOT EXISTS active_tool text;
+ALTER TABLE public.lead_profile_builder_runs ADD COLUMN IF NOT EXISTS active_platform text;
+ALTER TABLE public.lead_profile_builder_runs ADD COLUMN IF NOT EXISTS active_tool_status text;
+ALTER TABLE public.lead_profile_builder_runs ADD COLUMN IF NOT EXISTS active_tool_error text;
 ALTER TABLE public.lead_profile_builder_runs ADD COLUMN IF NOT EXISTS attempt_count integer NOT NULL DEFAULT 0;
 ALTER TABLE public.lead_profile_builder_runs ADD COLUMN IF NOT EXISTS next_attempt_at timestamptz NOT NULL DEFAULT now();
 ALTER TABLE public.lead_profile_builder_runs ADD COLUMN IF NOT EXISTS claimed_at timestamptz;
