@@ -38,6 +38,7 @@ import { apmaOAuthRouter } from './apma/apmaOAuthRouter';
 import { telephonyService } from './services/telephonyService';
 import { shipmentService } from './services/shipmentService';
 import { socialAccountService, type PersonalProvider } from './services/socialAccountService';
+import { deltaChatBridgeToken, deltaChatCore, type DeltaChatCredential } from './services/deltaChatCore';
 import { getTelegramAppConfigStatus } from './services/telegramConfig';
 import { normalizePlatform, normalizeSelectedPlatforms, isPersonalProvider } from './services/platformIdentity';
 import { conversationAgent } from './services/conversationAgent';
@@ -235,6 +236,87 @@ function personalConnectionError(error: any, provider: string): string {
   }
   return message || 'Connection failed. Please try again.';
 }
+
+function deltaBridgeAuthorized(req: Request): boolean {
+  const expected = deltaChatBridgeToken();
+  const authorization = String(req.get('authorization') || '');
+  const provided = authorization.startsWith('Bearer ') ? authorization.slice(7).trim() : '';
+  return Boolean(expected && provided && provided === expected);
+}
+
+function rejectUnauthorizedDeltaBridge(req: Request, res: any): boolean {
+  if (deltaBridgeAuthorized(req)) return false;
+  res.status(401).json({ error: 'Delta Chat bridge authentication failed.' });
+  return true;
+}
+
+// The configured bridge URL points to this backend. These routes are
+// intentionally protected because the request body includes the user's email
+// password during connect; only the backend's internal adapter may call them.
+app.post('/connect', async (req, res) => {
+  if (rejectUnauthorizedDeltaBridge(req, res)) return;
+  const address = String(req.body?.address || '').trim();
+  const password = String(req.body?.password || '');
+  if (!address || !password) return res.status(400).json({ error: 'Email address and password are required.' });
+  try {
+    const userId = String(req.body?.userId || '').trim();
+    if (!userId) return res.status(400).json({ error: 'Delta Chat user identity is required.' });
+    return res.status(201).json(await deltaChatCore.connectAsUser(userId, address, password));
+  } catch (error: any) {
+    console.error('[DeltaChatBridge] connect failed:', error.message);
+    return res.status(503).json({ error: error.message || 'Delta Chat connection failed.' });
+  }
+});
+
+app.post('/send', async (req, res) => {
+  if (rejectUnauthorizedDeltaBridge(req, res)) return;
+  try {
+    const credential = req.body?.credential as DeltaChatCredential;
+    const recipient = String(req.body?.recipient || '').trim();
+    const text = String(req.body?.text || '').trim();
+    if (!recipient || !text) return res.status(400).json({ error: 'Recipient and message text are required.' });
+    return res.json(await deltaChatCore.send(credential, recipient, text, String(req.body?.userId || '')));
+  } catch (error: any) {
+    return res.status(400).json({ error: error.message || 'Delta Chat send failed.' });
+  }
+});
+
+app.post('/publish', async (req, res) => {
+  if (rejectUnauthorizedDeltaBridge(req, res)) return;
+  try {
+    const credential = req.body?.credential as DeltaChatCredential;
+    const recipient = String(req.body?.recipient || req.body?.destination || '').trim();
+    const text = String(req.body?.text || '').trim();
+    if (!recipient) return res.status(400).json({ error: 'Delta Chat publishing requires a recipient; personal accounts do not have a public feed.' });
+    if (!text) return res.status(400).json({ error: 'Message text is required.' });
+    return res.json(await deltaChatCore.send(credential, recipient, text, String(req.body?.userId || '')));
+  } catch (error: any) {
+    return res.status(400).json({ error: error.message || 'Delta Chat publish failed.' });
+  }
+});
+
+app.post('/receive', async (req, res) => {
+  if (rejectUnauthorizedDeltaBridge(req, res)) return;
+  try {
+    const credential = req.body?.credential as DeltaChatCredential;
+    const recipient = String(req.body?.recipient || '').trim();
+    const limit = Number(req.body?.limit || 25);
+    if (!recipient) return res.json({ messages: [] });
+    return res.json({ messages: await deltaChatCore.receive(credential, recipient, limit, String(req.body?.userId || '')) });
+  } catch (error: any) {
+    return res.status(400).json({ error: error.message || 'Delta Chat receive failed.' });
+  }
+});
+
+app.post('/disconnect', async (req, res) => {
+  if (rejectUnauthorizedDeltaBridge(req, res)) return;
+  try {
+    await deltaChatCore.disconnect(req.body?.credential as DeltaChatCredential, String(req.body?.userId || ''));
+    return res.json({ ok: true });
+  } catch (error: any) {
+    return res.status(400).json({ error: error.message || 'Delta Chat disconnect failed.' });
+  }
+});
 
 app.get('/api/social-connections', async (req, res) => {
   try {
@@ -1155,11 +1237,11 @@ app.get('/api/platform-capabilities', async (req, res) => {
         isSocialConnectionEnabled(user.id, provider),
         isSocialComingSoon(user.id, provider),
       ]);
-      const configured =
+        const configured =
         provider === 'telegram'
           ? getTelegramAppConfigStatus().configured
           : provider === 'delta_chat'
-            ? Boolean(process.env.DELTA_CHAT_BRIDGE_URL)
+            ? Boolean(process.env.DELTA_CHAT_BRIDGE_URL) && await deltaChatCore.isAvailable()
             : provider === 'signal_personal'
               ? Boolean(process.env.SIGNAL_CLI_PATH || process.env.SIGNAL_CLI_AVAILABLE === 'true')
               : true;

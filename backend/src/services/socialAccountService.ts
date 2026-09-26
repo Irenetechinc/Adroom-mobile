@@ -13,6 +13,7 @@ import {
   requestWhatsAppPairingCodeWhenReady,
 } from './whatsappPairing';
 import { getTelegramAppConfig } from './telegramConfig';
+import { deltaChatBridgeToken } from './deltaChatCore';
 
 export type PersonalProvider = 'telegram' | 'whatsapp_personal' | 'signal_personal' | 'bluesky' | 'delta_chat';
 
@@ -983,7 +984,7 @@ export class SocialAccountService {
       if (!(await this.reserveAction(userId, provider))) throw new Error(`${provider} daily safety limit reached or account is not ready.`);
       await this.safetyDelay(provider);
       try {
-        const result = await this.deltaChatRequest(userId, 'publish', { text, mediaUrl });
+        const result = await this.deltaChatRequest(userId, 'publish', { text, mediaUrl, recipient: destination });
         await this.recordSuccess(userId, provider);
         return { id: String(result?.id || `delta-chat:${Date.now()}`), url: result?.url };
       } catch (error: any) {
@@ -1541,7 +1542,7 @@ export class SocialAccountService {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          ...(process.env.DELTA_CHAT_BRIDGE_TOKEN ? { Authorization: `Bearer ${process.env.DELTA_CHAT_BRIDGE_TOKEN}` } : {}),
+          ...(deltaChatBridgeToken() ? { Authorization: `Bearer ${deltaChatBridgeToken()}` } : {}),
         },
         body: JSON.stringify({ userId, credential, ...body }),
         signal: AbortSignal.timeout(15_000),

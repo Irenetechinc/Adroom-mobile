@@ -50,3 +50,6 @@ build.log
 # Trae IDE
 .trae/
 
+# Delta Chat Core account databases
+backend/.data/delta-chat/
+
