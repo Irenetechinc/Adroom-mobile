@@ -9,7 +9,7 @@ export type PlatformCapability = {
   comingSoon: boolean;
   configured: boolean;
   available: boolean;
-  reason: 'disabled' | 'coming_soon' | 'missing_server_configuration' | 'available' | string;
+  reason: 'disabled' | 'coming_soon' | 'missing_server_configuration' | 'bridge_unavailable' | 'available' | string;
 };
 
 export function usePlatformCapabilities() {

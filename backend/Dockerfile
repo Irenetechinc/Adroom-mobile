@@ -18,6 +18,7 @@ RUN npm install --legacy-peer-deps
 
 # Copy source code
 COPY src ./src
+COPY bin ./bin
 COPY vendor ./vendor
 
 # Runtime dependencies for the backend-only public-profile discovery adapters.

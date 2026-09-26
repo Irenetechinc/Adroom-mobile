@@ -45,6 +45,7 @@ COPY backend/package*.json ./
 RUN npm ci --legacy-peer-deps --omit=dev --ignore-scripts
 
 COPY --from=builder /app/dist ./dist
+COPY --from=builder /app/bin ./bin
 COPY --from=builder /app/tools ./tools
 COPY --from=builder /app/public /public
 

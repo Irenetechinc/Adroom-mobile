@@ -215,7 +215,7 @@ export class DeltaChatCore {
     }
   }
 
-  private async call(method: string, params: any[] = []): Promise<any> {
+  private async call(method: string, params: any[] = [], timeoutOverrideMs?: number): Promise<any> {
     await this.start();
     const child = this.child;
     if (!child || child.killed || !child.stdin.writable) {
@@ -227,7 +227,7 @@ export class DeltaChatCore {
       const timer = setTimeout(() => {
         this.pending.delete(id);
         reject(new Error(`Delta Chat Core timed out during ${method}.`));
-      }, this.timeoutMs());
+      }, timeoutOverrideMs ?? this.timeoutMs());
       this.pending.set(id, { resolve, reject, timer });
       try {
         child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id, method, params })}\n`);
@@ -251,7 +251,9 @@ export class DeltaChatCore {
 
   async isAvailable(): Promise<boolean> {
     try {
-      await this.call('get_all_account_ids', []);
+      // Capability checks are requested by account screens and must fail
+      // quickly when the binary is missing or the RPC process is unhealthy.
+      await this.call('get_all_account_ids', [], Math.min(this.timeoutMs(), 5000));
       return true;
     } catch (error: any) {
       console.warn(`[DeltaChatCore] Health check failed: ${error.message}`);

@@ -534,7 +534,9 @@ export default function ConnectedAccountsScreen() {
           const disabled = !enabled;
           const capability = capabilities[platform.id];
           const missingServerConfig = capability?.reason === 'missing_server_configuration';
-          const blocked = comingSoon || disabled || missingServerConfig;
+          const bridgeUnavailable = capability?.reason === 'bridge_unavailable';
+          const deltaCapabilityUnknown = platform.id === 'delta_chat' && capability?.available !== true;
+          const blocked = comingSoon || disabled || missingServerConfig || bridgeUnavailable || deltaCapabilityUnknown;
           const needsReconnect = connectedPlatforms[platform.id]?.status === 'needs_reconnect';
           const disc = disconnecting === platform.id;
           const isProOnlyPlatform = platform.id === 'twitter';
@@ -588,7 +590,15 @@ export default function ConnectedAccountsScreen() {
                   <View style={styles.activeBanner}>
                     {needsReconnect ? <AlertCircle size={14} color="#F59E0B" /> : <ShieldCheck size={14} color="#10B981" />}
                     <Text style={[styles.activeBannerText, needsReconnect && { color: '#F59E0B' }]}>
-                      {needsReconnect ? 'Reconnect this account to resume the selected strategy.' : disabled ? 'Connected, but disabled by an administrator.' : comingSoon ? 'Connected, but this provider is in coming-soon mode.' : `Autonomous publishing is active on ${platform.name}`}
+                      {needsReconnect
+                        ? 'Reconnect this account to resume the selected strategy.'
+                        : bridgeUnavailable
+                          ? `${platform.name} is temporarily unavailable while its bridge is offline.`
+                          : disabled
+                            ? 'Connected, but disabled by an administrator.'
+                            : comingSoon
+                              ? 'Connected, but this provider is in coming-soon mode.'
+                              : `Autonomous publishing is active on ${platform.name}`}
                     </Text>
                   </View>
                   <View style={styles.actionRow}>
@@ -602,9 +612,13 @@ export default function ConnectedAccountsScreen() {
                 </View>
               ) : blocked ? (
                 <View style={styles.lockedBody}>
-                  <Text style={styles.lockedTitle}>{disabled ? 'Disabled' : 'Coming soon'}</Text>
+                  <Text style={styles.lockedTitle}>
+                    {disabled ? 'Disabled' : bridgeUnavailable ? 'Unavailable' : missingServerConfig ? 'Not configured' : 'Coming soon'}
+                  </Text>
                   <Text style={styles.lockedDesc}>
-                    {missingServerConfig
+                    {bridgeUnavailable
+                      ? `${platform.name} bridge is offline or not responding.`
+                      : missingServerConfig
                       ? `${platform.name} is not configured on the server yet.`
                       : disabled
                       ? `${platform.name} connections are disabled by an administrator.`

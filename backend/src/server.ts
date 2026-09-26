@@ -226,6 +226,39 @@ async function personalConnectionAllowed(userId: string, provider: string): Prom
     && !(await isSocialComingSoon(userId, provider));
 }
 
+async function getDeltaChatCapability(userId: string): Promise<{
+  enabled: boolean;
+  comingSoon: boolean;
+  serverConfigured: boolean;
+  configured: boolean;
+  available: boolean;
+  reason: 'disabled' | 'coming_soon' | 'missing_server_configuration' | 'bridge_unavailable' | 'available';
+}> {
+  const [enabled, comingSoon] = await Promise.all([
+    isSocialConnectionEnabled(userId, 'delta_chat'),
+    isSocialComingSoon(userId, 'delta_chat'),
+  ]);
+  const serverConfigured = Boolean(String(process.env.DELTA_CHAT_BRIDGE_URL || '').trim());
+  const bridgeAvailable = serverConfigured && await deltaChatCore.isAvailable();
+  const reason = !enabled
+    ? 'disabled'
+    : comingSoon
+      ? 'coming_soon'
+      : !serverConfigured
+        ? 'missing_server_configuration'
+        : !bridgeAvailable
+          ? 'bridge_unavailable'
+          : 'available';
+  return {
+    enabled,
+    comingSoon,
+    serverConfigured,
+    configured: bridgeAvailable,
+    available: enabled && !comingSoon && bridgeAvailable,
+    reason,
+  };
+}
+
 function personalConnectionError(error: any, provider: string): string {
   const message = String(error?.message || '');
   if (
@@ -249,6 +282,29 @@ function rejectUnauthorizedDeltaBridge(req: Request, res: any): boolean {
   res.status(401).json({ error: 'Delta Chat bridge authentication failed.' });
   return true;
 }
+
+/**
+ * Public, non-sensitive Delta Chat bridge health contract.
+ *
+ * This endpoint intentionally does not expose account IDs, credentials, or
+ * runtime details. It only reports whether the configured RPC runtime can
+ * answer a harmless capability probe.
+ */
+app.get('/health', async (_req, res) => {
+  const available = await deltaChatCore.isAvailable();
+  return res.status(available ? 200 : 503).json({
+    status: available ? 'ok' : 'unavailable',
+    provider: 'delta_chat',
+    available,
+    operations: {
+      connect: available,
+      send: available,
+      publish: available,
+      receive: available,
+      disconnect: available,
+    },
+  });
+});
 
 // The configured bridge URL points to this backend. These routes are
 // intentionally protected because the request body includes the user's email
@@ -333,16 +389,18 @@ app.get('/api/social-connections/availability', async (req, res) => {
     const user = await authenticatedUser(req);
     if (!user) return res.status(401).json({ error: 'Unauthorized.' });
     const providers = ['telegram', 'whatsapp_personal', 'signal_personal', 'bluesky', 'delta_chat'];
-    const availability = Object.fromEntries(await Promise.all(providers.map(async (provider) => [
-      provider,
-      {
+    const availability = Object.fromEntries(await Promise.all(providers.map(async (provider) => {
+      if (provider === 'delta_chat') {
+        return [provider, await getDeltaChatCapability(user.id)];
+      }
+      return [provider, {
         enabled: await isSocialConnectionEnabled(user.id, provider),
         comingSoon: await isSocialComingSoon(user.id, provider),
         serverConfigured: provider === 'telegram'
           ? getTelegramAppConfigStatus().configured
-          : provider !== 'delta_chat' || Boolean(String(process.env.DELTA_CHAT_BRIDGE_URL || '').trim()),
-      },
-    ])));
+          : true,
+      }];
+    })));
     return res.json({ availability });
   } catch (error: any) {
     return res.status(500).json({ error: error.message });
@@ -1233,6 +1291,9 @@ app.get('/api/platform-capabilities', async (req, res) => {
 
     const providers = ['facebook', 'instagram', 'tiktok', 'twitter', 'whatsapp', 'linkedin', 'google', 'telegram', 'whatsapp_personal', 'signal_personal', 'bluesky', 'delta_chat'];
     const configs = await Promise.all(providers.map(async (provider) => {
+      if (provider === 'delta_chat') {
+        return { provider, ...(await getDeltaChatCapability(user.id)) };
+      }
       const [enabled, comingSoon] = await Promise.all([
         isSocialConnectionEnabled(user.id, provider),
         isSocialComingSoon(user.id, provider),
@@ -1240,9 +1301,7 @@ app.get('/api/platform-capabilities', async (req, res) => {
         const configured =
         provider === 'telegram'
           ? getTelegramAppConfigStatus().configured
-          : provider === 'delta_chat'
-            ? Boolean(process.env.DELTA_CHAT_BRIDGE_URL) && await deltaChatCore.isAvailable()
-            : provider === 'signal_personal'
+          : provider === 'signal_personal'
               ? Boolean(process.env.SIGNAL_CLI_PATH || process.env.SIGNAL_CLI_AVAILABLE === 'true')
               : true;
       const available = enabled && !comingSoon && configured;

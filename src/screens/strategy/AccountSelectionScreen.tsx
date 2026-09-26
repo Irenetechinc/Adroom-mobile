@@ -27,10 +27,13 @@ export default function AccountSelectionScreen() {
     .filter((account) => {
       const platform = String(account.platform || account.provider || '').toLowerCase();
       const capability = capabilities[platform];
+      const capabilityAllowsSelection = platform === 'delta_chat'
+        ? capability?.available === true
+        : capability?.available !== false;
       return account.connected !== false
         && account.status !== 'needs_reconnect'
         && isEnabled(`social_${platform}_connections`)
-        && capability?.available !== false;
+        && capabilityAllowsSelection;
     });
   const selected = productData.selectedAccounts || [];
   const toggle = (platform: string) => {
