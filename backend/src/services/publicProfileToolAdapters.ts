@@ -277,6 +277,7 @@ export class PublicProfileToolAdapters {
     deepkrak3nConfigured: boolean;
     jarvisConfigured: boolean;
     osintgraphExplicitlyEnabled: boolean;
+    publicContactEnumerationExplicitlyEnabled: boolean;
     toolsRoot: string;
     commandTimeoutMs: number;
     healthTimeoutMs: number;
@@ -285,6 +286,7 @@ export class PublicProfileToolAdapters {
       deepkrak3nConfigured: Boolean(configuredServiceUrl('DEEPKRAK3N_BASE_URL')),
       jarvisConfigured: Boolean(configuredServiceUrl('JARVIS_BASE_URL')),
       osintgraphExplicitlyEnabled: process.env.PROFILE_BUILDER_ENABLE_OSINTGRAPH === 'true',
+      publicContactEnumerationExplicitlyEnabled: PUBLIC_CONTACT_ENUMERATION_ENABLED,
       toolsRoot: TOOLS_ROOT,
       commandTimeoutMs: COMMAND_TIMEOUT_MS,
       healthTimeoutMs: HEALTH_TIMEOUT_MS,

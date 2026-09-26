@@ -134,6 +134,7 @@ const REQUIRED_RUNTIME_CONFIG = [
   { key: 'DEEPKRAK3N_BASE_URL', required: true },
   { key: 'JARVIS_BASE_URL', required: true },
   { key: 'PROFILE_BUILDER_ENABLE_OSINTGRAPH', required: false },
+  { key: 'PROFILE_BUILDER_ENABLE_PUBLIC_CONTACT_ENUMERATION', required: false },
   { key: 'SUPABASE_DB_URL', required: false },
   { key: 'SUPABASE_DB_PASSWORD', required: false },
   { key: 'OPENAI_API_KEY', required: false },
