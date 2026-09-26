@@ -142,6 +142,23 @@ function extractPublicHandle(platform: string, result: ReachResult): string | un
   return undefined;
 }
 
+function platformFromPublicUrl(value: string): string {
+  try {
+    const hostname = new URL(value).hostname.toLowerCase();
+    if (hostname.endsWith('t.me')) return 'telegram';
+    if (hostname.endsWith('wa.me')) return 'whatsapp_personal';
+    if (hostname.endsWith('signal.me')) return 'signal_personal';
+    if (hostname.endsWith('bsky.app')) return 'bluesky';
+    if (hostname === 'x.com' || hostname.endsWith('.x.com') || hostname.endsWith('twitter.com')) return 'twitter';
+    if (hostname.endsWith('instagram.com')) return 'instagram';
+    if (hostname.endsWith('reddit.com')) return 'reddit';
+    if (hostname.endsWith('linkedin.com')) return 'linkedin';
+  } catch {
+    // The URL has already been sanitized; an invalid URL has no inferable platform.
+  }
+  return '';
+}
+
 export class LeadProfileBuilder {
   private ai = AIEngine.getInstance();
   private supabase = getServiceSupabaseClient();
@@ -470,7 +487,9 @@ export class LeadProfileBuilder {
     let aiPlan: any = null;
     try {
       aiPlan = await this.ai.generateJson(`Choose a minimal public-profile discovery plan for this lead.
-Use only the listed tools. Select at most 6 steps and only platforms in selectedPlatforms plus web.
+Use only the listed tools. Select at most 6 steps. Prioritize selectedPlatforms, but do not
+limit discovery to them: public accounts on any platform may reveal matching handles or useful
+context. Use web as a fallback when a platform-specific step is not appropriate.
 The tools are public web-search adapters; they do not log in, bypass access controls, enumerate private data,
 or collect email addresses, phone numbers, precise locations, health, religion, race, politics, sexuality, income,
 or other sensitive traits. Prefer the user's selected platforms. Return JSON array only:
@@ -484,7 +503,6 @@ allowedTools=${JSON.stringify(TOOL_NAMES)}`);
     }
 
     const raw = Array.isArray(aiPlan) ? aiPlan : [];
-    const allowedPlatforms = new Set(['web', ...context.selectedPlatforms]);
     const planned = raw.map((step: any) => ({
       tool: step.tool,
       platform: normalizePlatform(step.platform),
@@ -492,7 +510,7 @@ allowedTools=${JSON.stringify(TOOL_NAMES)}`);
       reason: safeText(step.reason, 180),
     })).filter((step: any): step is DiscoveryPlan =>
       TOOL_NAMES.includes(step.tool) &&
-      allowedPlatforms.has(step.platform) &&
+      /^[a-z0-9][a-z0-9_-]{0,59}$/.test(step.platform) &&
       Boolean(step.query) &&
       !PERSONAL_DATA_PATTERN.test(step.query),
     ).slice(0, 6);
@@ -572,9 +590,10 @@ allowedTools=${JSON.stringify(TOOL_NAMES)}`);
   private async buildPublicIdentity(context: LeadContext, evidence: Array<{ source: string; url: string; excerpt: string; capturedAt: string }>): Promise<PublicLeadIdentity> {
     let response: any = null;
     try {
-      response = await this.ai.generateJson(`Extract only non-sensitive facts explicitly visible in these public search excerpts.
+        response = await this.ai.generateJson(`Extract only non-sensitive facts explicitly visible in these public search excerpts.
 Do not identify a person beyond the display name shown, do not infer sensitive traits, and do not return emails,
-phone numbers, addresses, profile pictures, private connections, or hidden account links. Public connections must be [].
+phone numbers, addresses, profile pictures, private connections, or hidden account links. Public connections may
+contain only explicitly named public accounts, organizations, or communities visible in the excerpts; otherwise [].
 Return exactly {"displayName":"","bio":"","interests":[],"publicConnections":[],"socialHandles":[{"platform":"","handle":"","url":"","source":""}]}.
 Known lead platform: ${context.platform}
 Known public username: ${context.platformUsername}
@@ -582,7 +601,26 @@ EXCERPTS: ${JSON.stringify(evidence).slice(0, 14000)}`);
     } catch (error: any) {
       console.warn(`[LeadProfileBuilder] public identity extraction unavailable: ${error.message}`);
     }
-    const handles = Array.isArray(response?.socialHandles) ? response.socialHandles.map((handle: any) => ({
+    const aiHandles = Array.isArray(response?.socialHandles) ? response.socialHandles : [];
+    const inferredHandles = evidence.map((item) => {
+      const platform = platformFromPublicUrl(item.url);
+      const handle = platform ? extractPublicHandle(platform, {
+        externalId: item.url,
+        authorName: '',
+        text: item.excerpt,
+        platform,
+        url: item.url,
+        kind: 'post',
+        capturedAt: item.capturedAt,
+      }) : undefined;
+      return handle ? {
+        platform,
+        handle,
+        url: item.url,
+        source: item.source || 'public_search',
+      } : null;
+    }).filter(Boolean);
+    const handles = [...aiHandles, ...inferredHandles].map((handle: any) => ({
       platform: normalizePlatform(handle.platform),
       handle: safeText(handle.handle, 160),
       url: safePublicUrl(handle.url),
@@ -592,12 +630,17 @@ EXCERPTS: ${JSON.stringify(evidence).slice(0, 14000)}`);
       handle.handle &&
       !PERSONAL_DATA_PATTERN.test(handle.handle) &&
       Boolean(handle.url),
-    ).slice(0, 20) : [];
+    ).filter((handle: PublicSocialHandle, index: number, all: PublicSocialHandle[]) =>
+      all.findIndex((candidate) =>
+        candidate.platform === handle.platform
+        && candidate.handle.toLowerCase() === handle.handle.toLowerCase()
+        && candidate.url === handle.url) === index,
+    ).slice(0, 20);
     return {
       displayName: safeText(response?.displayName || context.platformUsername, 180).replace(PERSONAL_DATA_PATTERN, ''),
       bio: PERSONAL_DATA_PATTERN.test(safeText(response?.bio, 600)) ? '' : safeText(response?.bio, 600),
       interests: cleanList(response?.interests, 12),
-      publicConnections: [],
+      publicConnections: cleanList(response?.publicConnections, 12),
       socialHandles: handles,
     };
   }

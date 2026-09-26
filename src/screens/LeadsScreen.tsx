@@ -126,6 +126,9 @@ function LeadCard({ lead, index, onPress }: { lead: Lead; index: number; onPress
   const dmStep = lead.dm_sequence_step || 0;
   const profileMeta = profileStatusMeta(lead.profile_status);
   const publicIdentity = lead.profile?.publicIdentity;
+  const selectedPlatformMatches = Array.isArray(lead.profile?.selectedPlatformMatches)
+    ? lead.profile.selectedPlatformMatches
+    : [];
   const psychology = lead.profile?.psychology;
 
   const isFollowUpDue = lead.next_followup_at
@@ -289,6 +292,11 @@ function LeadCard({ lead, index, onPress }: { lead: Lead; index: number; onPress
                 )}
                 {!!publicIdentity.bio && (
                   <Text style={styles.profileBio}>{publicIdentity.bio}</Text>
+                )}
+                {selectedPlatformMatches.length > 0 && (
+                  <Text style={[styles.profileDetail, styles.selectedProfileDetail]}>
+                    Selected platforms: {selectedPlatformMatches.map((handle: any) => `${handle.platform}: ${handle.handle}`).join(' · ')}
+                  </Text>
                 )}
                 {Array.isArray(publicIdentity.socialHandles) && publicIdentity.socialHandles.length > 0 && (
                   <Text style={styles.profileDetail}>
@@ -726,6 +734,7 @@ const styles = StyleSheet.create({
   profileValue: { color: '#CBD5E1', fontSize: 12, fontWeight: '700', marginBottom: 4 },
   profileBio: { color: '#64748B', fontSize: 11, lineHeight: 16, marginBottom: 4 },
   profileDetail: { color: '#94A3B8', fontSize: 11, lineHeight: 16 },
+  selectedProfileDetail: { color: '#A78BFA', fontWeight: '700', marginBottom: 4 },
 
   // ── Empty ──
   emptyState: { alignItems: 'center', paddingVertical: 60, gap: 12 },
