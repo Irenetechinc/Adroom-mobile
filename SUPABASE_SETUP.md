@@ -12,7 +12,7 @@ Run the existing project migrations first, then run these additive migrations:
 3. `supabase/migrations/20260924011000_creative_freshness_metadata.sql`
 4. The existing inbound-message, social-account safety, push-project, token-refresh,
    feature-strategy-logistics, lead-message, and conversation migrations listed in
-   `replit.md`.
+   `PROJECT.md` and the migration files in `backend/`.
 
 Run each file as a complete statement batch. The files use `IF NOT EXISTS` or
 `ON CONFLICT` where practical and do not delete existing rows. The outbound

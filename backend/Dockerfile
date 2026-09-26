@@ -14,7 +14,7 @@ COPY package*.json ./
 COPY tsconfig.json ./
 
 # Install all dependencies (including devDeps needed for tsc)
-RUN npm install --legacy-peer-deps
+RUN npm install --registry=https://registry.npmjs.org/ --legacy-peer-deps
 
 # Copy source code
 COPY src ./src

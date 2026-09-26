@@ -103,7 +103,7 @@ function getPublicBaseUrl(req: Request): string {
   return `${proto}://${host}`;
 }
 
-// Behind Railway's load balancer / Replit proxy, trust the X-Forwarded-* hop
+// Behind Railway's load balancer, trust the X-Forwarded-* hop
 // so req.protocol returns the public scheme (https) instead of the internal
 // http used between the proxy and our process.
 app.set('trust proxy', true);

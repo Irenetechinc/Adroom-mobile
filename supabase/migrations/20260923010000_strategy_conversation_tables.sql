@@ -1,6 +1,6 @@
 -- Conversation discovery/run state used by the strategy coordinator and
 -- dashboard. This migration is intentionally Supabase-native; no hosted
--- database or Replit service is required.
+-- external hosting service is required.
 
 CREATE TABLE IF NOT EXISTS public.strategy_conversation_runs (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

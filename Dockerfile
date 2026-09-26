@@ -14,7 +14,7 @@ RUN apt-get update \
 
 # Install the exact backend dependency graph, including build-only packages.
 COPY backend/package*.json ./
-RUN npm ci --legacy-peer-deps --include=dev --ignore-scripts
+RUN npm ci --registry=https://registry.npmjs.org/ --legacy-peer-deps --include=dev --ignore-scripts
 
 COPY backend/ ./
 
@@ -42,7 +42,7 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 
 COPY backend/package*.json ./
-RUN npm ci --legacy-peer-deps --omit=dev --ignore-scripts
+RUN npm ci --registry=https://registry.npmjs.org/ --legacy-peer-deps --omit=dev --ignore-scripts
 
 COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/bin ./bin

@@ -1,7 +1,8 @@
 # Railway production checklist
 
-This project keeps the backend on Railway and the database on Supabase. Do not
-add Replit deployment, database, or integration dependencies to production.
+This project keeps the backend on Railway and the database on Supabase. The
+production image is self-contained and must not depend on editor-hosted
+services.
 
 ## Required Railway variables
 

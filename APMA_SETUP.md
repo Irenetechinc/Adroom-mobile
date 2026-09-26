@@ -21,7 +21,7 @@ This creates 12 tables:
 
 ## 2. Required Environment Variables
 
-Add these to your Replit (dev) and Railway (prod) environment:
+Add these to the Railway service environment:
 
 ### Social Listening (Perception Layer)
 | Variable | Description |

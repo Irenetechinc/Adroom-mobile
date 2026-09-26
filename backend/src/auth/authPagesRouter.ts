@@ -3,8 +3,8 @@
  * -----------------
  * Email links from Resend (signup verification, password reset) are opened in
  * whatever browser the user's mail client uses. On desktop, deep links like
- * `adroom://verified` either open nothing or fall back to Supabase's default
- * Site URL (often `localhost:3000`) which 404s.
+ * `adroom://verified` either open nothing or fall back to an unconfigured
+ * Supabase Site URL, which can 404.
  *
  * To fix this from the root, every email-action `redirectTo` now points at
  * one of the two HTML pages served here:

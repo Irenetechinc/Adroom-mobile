@@ -7,7 +7,7 @@ import { Zap, X, Star, Check, Crown } from 'lucide-react-native';
 import Constants from 'expo-constants';
 import { supabase } from '../services/supabase';
 
-const API_URL = process.env.EXPO_PUBLIC_API_URL || Constants.expoConfig?.extra?.apiUrl || 'http://localhost:8000';
+const API_URL = process.env.EXPO_PUBLIC_API_URL || Constants.expoConfig?.extra?.apiUrl || 'https://backend.adroomai.com';
 const SEEN_KEY = 'adroom-trial-modal-seen';
 
 const TRIAL_PLANS = [

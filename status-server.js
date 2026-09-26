@@ -3,6 +3,11 @@ const fs = require('fs');
 const path = require('path');
 const querystring = require('querystring');
 const PORT = 5000;
+const BACKEND_URL = String(
+  process.env.EXPO_PUBLIC_API_URL ||
+  process.env.PUBLIC_BASE_URL ||
+  'https://backend.adroomai.com'
+).replace(/\/+$/, '');
 
 const LANDING_DIR = path.join(__dirname, 'landing');
 const MIME = {
@@ -225,7 +230,7 @@ const server = http.createServer((req, res) => {
   if (tryServeLanding(req, res)) return;
   if (req.url === '/health' || req.url === '/api-status') {
     res.writeHead(200, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ status: 'ok', backend: 'http://localhost:8000', type: 'mobile-app', agents: ['SALESMAN','AWARENESS','PROMOTION','LAUNCH'] }));
+    res.end(JSON.stringify({ status: 'ok', backend: BACKEND_URL, type: 'mobile-app', agents: ['SALESMAN','AWARENESS','PROMOTION','LAUNCH'] }));
   } else {
     res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
     res.end(html);

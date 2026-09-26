@@ -1,6 +1,6 @@
 -- Social account safety, feature control, and delivery state.
 -- Run this in the Supabase SQL editor after feature_flags_migration.sql.
--- No Replit-managed service is required.
+-- No editor-managed service is required.
 
 ALTER TABLE public.social_account_connections
   ADD COLUMN IF NOT EXISTS warmup_started_at TIMESTAMPTZ,

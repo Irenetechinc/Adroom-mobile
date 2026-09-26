@@ -1,5 +1,5 @@
 -- Durable inbound messages for personal providers.
--- Apply this in the user's Supabase project. No Replit services are required.
+-- Apply this in the user's Supabase project. No editor-hosted services are required.
 
 CREATE TABLE IF NOT EXISTS public.personal_inbound_messages (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

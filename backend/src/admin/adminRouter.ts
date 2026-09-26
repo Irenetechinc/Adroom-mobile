@@ -1194,7 +1194,7 @@ router.get('/api/stream', auth, (req, res) => {
 
   // Send a real named event immediately so the browser fires onopen and
   // EventSource transitions from CONNECTING → OPEN right away.
-  // flush() is called after every write to bypass proxy buffering (Replit mTLS proxy).
+  // flush() is called after every write to bypass proxy buffering.
   const flush = () => { try { (res as any).flush?.(); } catch {} };
   try { res.write('event: connected\ndata: {}\n\n'); flush(); } catch {}
 

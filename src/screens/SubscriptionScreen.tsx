@@ -16,7 +16,7 @@ import Constants from 'expo-constants';
 import { Skeleton } from '../components/Skeleton';
 import TrialPromoModal from '../components/TrialPromoModal';
 
-const API_URL = process.env.EXPO_PUBLIC_API_URL || Constants.expoConfig?.extra?.apiUrl || 'http://localhost:8000';
+const API_URL = process.env.EXPO_PUBLIC_API_URL || Constants.expoConfig?.extra?.apiUrl || 'https://backend.adroomai.com';
 
 const COLORS = {
   bg: '#0B0F19', card: '#151B2B', border: '#1E293B',
