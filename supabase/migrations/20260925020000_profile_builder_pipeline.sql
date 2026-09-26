@@ -7,7 +7,7 @@ CREATE TABLE IF NOT EXISTS public.lead_profile_builder_runs (
   lead_id UUID NOT NULL REFERENCES public.agent_leads(id) ON DELETE CASCADE,
   strategy_id UUID REFERENCES public.strategies(id) ON DELETE CASCADE,
   status TEXT NOT NULL DEFAULT 'queued'
-    CHECK (status IN ('queued','identified','discovering','profile_ready','psychology_complete','completed','failed')),
+    CHECK (status IN ('queued','identified','discovering','profile_ready','psychology_pending','psychology_complete','completed','failed')),
   selected_platforms JSONB NOT NULL DEFAULT '[]'::jsonb,
   tools_attempted JSONB NOT NULL DEFAULT '[]'::jsonb,
   public_evidence_count INTEGER NOT NULL DEFAULT 0,
@@ -28,6 +28,38 @@ ALTER TABLE public.lead_profile_builder_runs
   ADD COLUMN IF NOT EXISTS next_attempt_at TIMESTAMPTZ NOT NULL DEFAULT now();
 ALTER TABLE public.lead_profile_builder_runs
   ADD COLUMN IF NOT EXISTS claimed_at TIMESTAMPTZ;
+ALTER TABLE public.lead_profile_builder_runs
+  ADD COLUMN IF NOT EXISTS active_tool TEXT;
+ALTER TABLE public.lead_profile_builder_runs
+  ADD COLUMN IF NOT EXISTS active_platform TEXT;
+ALTER TABLE public.lead_profile_builder_runs
+  ADD COLUMN IF NOT EXISTS active_tool_status TEXT;
+ALTER TABLE public.lead_profile_builder_runs
+  ADD COLUMN IF NOT EXISTS active_tool_error TEXT;
+
+-- Keep the worker's progress states and the database constraint in sync for
+-- installations that applied an earlier version of this migration.
+DO $$
+DECLARE
+  status_constraint TEXT;
+BEGIN
+  SELECT conname INTO status_constraint
+  FROM pg_constraint
+  WHERE conrelid = 'public.lead_profile_builder_runs'::regclass
+    AND contype = 'c'
+    AND pg_get_constraintdef(oid) ILIKE '%status%';
+
+  IF status_constraint IS NOT NULL THEN
+    EXECUTE format(
+      'ALTER TABLE public.lead_profile_builder_runs DROP CONSTRAINT %I',
+      status_constraint
+    );
+  END IF;
+
+  ALTER TABLE public.lead_profile_builder_runs
+    ADD CONSTRAINT lead_profile_builder_runs_status_check
+    CHECK (status IN ('queued','identified','discovering','profile_ready','psychology_pending','psychology_complete','completed','failed'));
+END $$;
 
 CREATE INDEX IF NOT EXISTS lead_profile_builder_runs_user_idx
   ON public.lead_profile_builder_runs (user_id, updated_at DESC);

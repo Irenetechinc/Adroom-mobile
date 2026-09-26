@@ -237,26 +237,27 @@ export class SocialAccountService {
   ): Promise<void> {
     if (!messages.length) return;
     const rows = messages.map((message) => ({
-      user_id: userId,
-      provider: normalizePlatform(provider),
-      external_id: message.externalId,
-      sender_id: message.senderId,
-      message: message.text,
-      message_timestamp: message.timestamp,
-      // Older Supabase deployments still have a NOT NULL received_at column.
-      // Send both names when the compatibility migration left both columns;
-      // the fallback below handles deployments that have only one of them.
-      received_at: message.timestamp,
+      ...(() => {
+        const timestamp = normalizeInboundMessageTimestamp(message.timestamp);
+        return {
+          user_id: userId,
+          provider: normalizePlatform(provider),
+          external_id: message.externalId,
+          sender_id: message.senderId,
+          message: message.text,
+          message_timestamp: timestamp,
+          received_at: timestamp,
+        };
+      })(),
     }));
+    // Prefer the canonical schema. Some older projects still have a required
+    // received_at column, while others have already renamed it to
+    // message_timestamp. Retry with the matching legacy shape when PostgREST
+    // reports a schema mismatch; every attempt carries a normalized timestamp.
     let { error } = await this.supabase
       .from('personal_inbound_messages')
-      .upsert(rows, { onConflict: 'user_id,provider,external_id' });
-    if (error && /column .*received_at.*does not exist|Could not find the .*received_at/i.test(error.message)) {
-      const canonicalRows = rows.map(({ received_at: _receivedAt, ...row }) => row);
-      ({ error } = await this.supabase
-        .from('personal_inbound_messages')
-        .upsert(canonicalRows, { onConflict: 'user_id,provider,external_id' }));
-    } else if (error && /column .*message_timestamp.*does not exist|Could not find the .*message_timestamp/i.test(error.message)) {
+      .upsert(rows.map(({ received_at: _receivedAt, ...row }) => row), { onConflict: 'user_id,provider,external_id' });
+    if (error && /received_at.*null|not-null constraint|column .*message_timestamp.*does not exist|Could not find the .*message_timestamp/i.test(error.message)) {
       const legacyRows = rows.map(({ message_timestamp: _messageTimestamp, ...row }) => row);
       ({ error } = await this.supabase
         .from('personal_inbound_messages')

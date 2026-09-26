@@ -282,7 +282,14 @@ export class LeadProfileBuilder {
 
   async buildForLead(userId: string, leadId: string): Promise<LeadProfile | null> {
     const enabled = await featureFlags.isEnabled('lead_profile_builder', userId);
-    if (!enabled || this.running.has(leadId)) return null;
+    if (!enabled) {
+      logBuilderActivity('build_skipped', { userId, leadId, reason: 'feature_disabled' });
+      return null;
+    }
+    if (this.running.has(leadId)) {
+      logBuilderActivity('build_skipped', { userId, leadId, reason: 'already_running' });
+      return null;
+    }
     this.running.add(leadId);
     const startedAt = Date.now();
     logBuilderActivity('build_started', { userId, leadId });
@@ -382,6 +389,7 @@ export class LeadProfileBuilder {
       logBuilderActivity('psychology_handoff_started', { userId, leadId, runId: run.id });
 
       let psychology: LeadPsychologyProfile | null;
+      let psychologyFallback = false;
       try {
         psychology = await this.psychologist.analyzeForLead({
           userId,
@@ -391,22 +399,34 @@ export class LeadProfileBuilder {
         if (!psychology) throw new Error('Psychology engine returned no structured profile.');
       } catch (error: any) {
         const message = safeActivityError(error);
+        psychology = this.fallbackPsychology(result, message);
+        psychologyFallback = true;
         await this.updateRun(run.id, {
           active_tool: 'psychology',
-          active_tool_status: 'failed',
+          active_tool_status: 'completed_fallback',
           active_tool_error: message,
         }).catch(() => undefined);
-        throw new Error(`Psychology handoff failed: ${message}`);
+        logBuilderActivity('psychology_handoff_fallback', {
+          userId,
+          leadId,
+          runId: run.id,
+          error: message,
+        });
       }
       if (psychology) {
         result.psychology = psychology;
-        logBuilderActivity('psychology_complete', { userId, leadId, runId: run.id });
+        logBuilderActivity('psychology_complete', {
+          userId,
+          leadId,
+          runId: run.id,
+          fallback: psychologyFallback,
+        });
         await this.saveProfile(userId, context, result);
         await this.updateRun(run.id, {
           status: 'psychology_complete',
           active_tool: null,
-          active_tool_status: 'completed',
-          active_tool_error: null,
+          active_tool_status: psychologyFallback ? 'completed_fallback' : 'completed',
+          active_tool_error: psychologyFallback ? 'Psychology engine unavailable; safe neutral guide stored.' : null,
           public_profile: result,
         });
         await this.setLeadStatus(context, 'psychology_complete');
@@ -720,6 +740,24 @@ EVIDENCE: ${JSON.stringify(evidence).slice(0, 18000)}`);
       observedTiming: { activeHours: [], responsePattern: '' },
       recommendedTone: 'helpful and concise',
       confidence: Math.min(0.35, Math.max(0.1, evidence.length * 0.05)),
+    };
+  }
+
+  private fallbackPsychology(profile: LeadProfile, error: string): LeadPsychologyProfile {
+    // Preserve the handoff contract when the AI provider is temporarily
+    // unavailable. This guide makes no claims about the person and contains
+    // only neutral instructions derived from the profile's evidence boundary.
+    return {
+      communicationStyle: 'unknown',
+      conversationTopics: profile.publicIdentity.interests.slice(0, 5),
+      helpfulSignals: ['Respond to the lead’s explicit message and public signal.'],
+      cautionSignals: ['Avoid assumptions; ask before using information not stated by the lead.'],
+      recommendedTone: 'helpful and concise',
+      confidence: 0.1,
+      evidenceBasis: [
+        profile.evidenceCount > 0 ? `${profile.evidenceCount} sanitized evidence item(s)` : 'No sanitized public evidence',
+        error ? 'Psychology provider unavailable; neutral fallback used' : 'Neutral fallback used',
+      ],
     };
   }
 

@@ -56,7 +56,10 @@ const MAX_OUTPUT_BYTES = 1_500_000;
 const MIN_TOOL_INTERVAL_MS = Math.max(700, Number(process.env.PROFILE_BUILDER_TOOL_INTERVAL_MS || 1_200));
 const SENSITIVE_VALUE = /(?:[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}|\+?\d[\d\s().-]{7,}\d)/i;
 const PRIVATE_QUERY = /(?:^|\s)(?:email|e-mail|phone|telephone|mobile|password|token|secret|api[- ]?key)(?:\s|$)/i;
-const PUBLIC_USERNAME_ONLY_WARNING = 'Public username discovery only; email and phone enumeration is intentionally not attempted.';
+const PUBLIC_CONTACT_ENUMERATION_ENABLED = process.env.PROFILE_BUILDER_ENABLE_PUBLIC_CONTACT_ENUMERATION === 'true';
+const PUBLIC_USERNAME_ONLY_WARNING = PUBLIC_CONTACT_ENUMERATION_ENABLED
+  ? 'Public contact lookup is opt-in and restricted to explicit public records; private or authenticated data is never queried.'
+  : 'Public username discovery only; public email and phone lookup is disabled unless PROFILE_BUILDER_ENABLE_PUBLIC_CONTACT_ENUMERATION=true.';
 
 function clean(value: unknown, max = 900): string {
   return String(value ?? '').replace(/\s+/g, ' ').trim().slice(0, max);
@@ -64,12 +67,22 @@ function clean(value: unknown, max = 900): string {
 
 function isSafeUsername(value: string): boolean {
   const username = value.trim();
+  const isPublicEmail = /^[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}$/i.test(username);
+  const isPublicPhone = /^\+?[1-9]\d[\d\s().-]{6,18}\d$/.test(username);
+  const isContactIdentifier = isPublicEmail || isPublicPhone;
   return Boolean(username)
     && username.length <= 120
+    && (!isContactIdentifier || PUBLIC_CONTACT_ENUMERATION_ENABLED)
     && !PRIVATE_QUERY.test(username)
-    && !SENSITIVE_VALUE.test(username)
+    && (!SENSITIVE_VALUE.test(username) || (isContactIdentifier && PUBLIC_CONTACT_ENUMERATION_ENABLED))
     && !/^(?:discovery:|user:|phone:|tel:)/i.test(username)
     && !/[/?#&=]/.test(username);
+}
+
+function identifierKind(value: string): 'username' | 'email' | 'phone' {
+  if (/^[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}$/i.test(value)) return 'email';
+  if (/^\+?[1-9]\d[\d\s().-]{6,18}\d$/.test(value)) return 'phone';
+  return 'username';
 }
 
 function safeUrl(value: unknown): string | undefined {
@@ -405,21 +418,42 @@ export class PublicProfileToolAdapters {
     let result: PublicToolSearch;
     switch (tool) {
       case 'maigret_public_username':
+        if (identifierKind(username) !== 'username') {
+          result = {
+            attempted: false,
+            available: false,
+            hits: [],
+            warning: 'Maigret accepts public usernames only; use the explicitly enabled remote contact adapter for public contact lookup.',
+          };
+          break;
+        }
         result = await this.runMaigret(platform, username);
         break;
       case 'deepkrak3n_public_search':
         result = await this.runDeepkrak3n(platform, username);
         break;
       case 'helix_public_username':
+        if (identifierKind(username) !== 'username') {
+          result = { attempted: false, available: false, hits: [], warning: 'Helix accepts public usernames only.' };
+          break;
+        }
         result = await this.runHelix(platform, username);
         break;
       case 'osintgraph_public_instagram':
+        if (identifierKind(username) !== 'username') {
+          result = { attempted: false, available: false, hits: [], warning: 'Osintgraph accepts public Instagram usernames only.' };
+          break;
+        }
         result = await this.runOsintgraph(platform, username);
         break;
       case 'jarvis_public_research':
         result = await this.runJarvis(platform, username);
         break;
       case 'reddeye_public_reddit':
+        if (identifierKind(username) !== 'username') {
+          result = { attempted: false, available: false, hits: [], warning: 'Reddeye accepts public Reddit usernames only.' };
+          break;
+        }
         result = await this.runReddeye(platform, username);
         break;
       default:
@@ -442,6 +476,16 @@ export class PublicProfileToolAdapters {
     const cwd = path.join(TOOLS_ROOT, 'maigret');
     const runDir = path.join(cwd, '.runtime', randomUUID());
     try {
+      const settingsPath = path.join(cwd, 'maigret', 'resources', 'settings.json');
+      const settingsAvailable = await fs.access(settingsPath).then(() => true).catch(() => false);
+      if (!settingsAvailable) {
+        return {
+          attempted: false,
+          available: false,
+          hits: [],
+          warning: 'Maigret settings.json is missing from the configured runtime; public web fallback remains available.',
+        };
+      }
       await fs.mkdir(runDir, { recursive: true });
       // Maigret's --json option writes a report; it does not stream JSON to
       // stdout. Keep the report in a per-run directory so concurrent leads
