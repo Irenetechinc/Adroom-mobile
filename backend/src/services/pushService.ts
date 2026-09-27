@@ -11,6 +11,7 @@ export interface PushPayload {
   sound?: 'default' | null;
   badge?: number;
   channelId?: string;
+  priority?: 'default' | 'normal' | 'high';
 }
 
 async function deactivateInvalidTokens(invalidTokens: string[]): Promise<void> {
@@ -100,7 +101,7 @@ async function sendExpoPush(tokens: DeviceTokenRow[], payload: PushPayload): Pro
     data: payload.data ?? {},
     badge: payload.badge,
     channelId: payload.channelId,
-    priority: 'high',
+    priority: payload.priority ?? 'high',
     _displayInForeground: true,
   }));
 
@@ -168,16 +169,11 @@ async function getUserTokens(userId: string): Promise<DeviceTokenRow[]> {
     .select('token,project_id')
     .eq('user_id', userId)
     .eq('is_active', true);
-  // project_id was added after the original token table. Keep delivery
-  // working during a rolling Supabase migration.
-  const data = withProject.error
-    ? (await supabase
-      .from('device_push_tokens')
-      .select('token')
-      .eq('user_id', userId)
-      .eq('is_active', true)).data
-    : withProject.data;
-  return (data ?? [])
+  if (withProject.error) {
+    console.error(`[PushService] Token lookup failed for ${userId}: ${withProject.error.message}`);
+    return [];
+  }
+  return (withProject.data ?? [])
     .map((r: any) => ({ token: String(r.token || ''), project_id: r.project_id || null }))
     .filter((r: DeviceTokenRow) => Boolean(r.token))
     .filter((row: DeviceTokenRow, index: number, rows: DeviceTokenRow[]) =>
@@ -677,11 +673,31 @@ export const pushService = {
     devices: Array<{ device_id: string; platform: string; app_version: string | null; last_seen_at: string }>;
   }> {
     const supabase = getServiceSupabaseClient();
-    const { data: rows } = await supabase
+    const { data: rows, error: tokenLookupError } = await supabase
       .from('device_push_tokens')
       .select('token, project_id, device_id, platform, app_version, last_seen_at')
       .eq('user_id', userId)
       .eq('is_active', true);
+
+    if (tokenLookupError) {
+      const migrationMissing = /project_id|column .* does not exist/i.test(tokenLookupError.message || '');
+      const errorSummary = migrationMissing
+        ? 'PUSH_PROJECT_MIGRATION_REQUIRED: apply backend/push_project_migration.sql in Supabase.'
+        : `Push token lookup failed: ${tokenLookupError.message}`;
+      return {
+        tokensFound: 0,
+        projectIds: [],
+        devices: [],
+        result: {
+          ok: false,
+          httpStatus: migrationMissing ? 503 : 500,
+          tokensSent: 0,
+          tickets: [],
+          invalidTokens: [],
+          errorSummary,
+        },
+      };
+    }
 
     const tokens = (rows ?? [])
       .map((r: any) => ({ token: String(r.token || ''), project_id: r.project_id || null }))

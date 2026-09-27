@@ -1,11 +1,11 @@
 
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect, useRef } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity,
   ActivityIndicator, Alert, StyleSheet, Modal, TextInput,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useNavigation, useFocusEffect } from '@react-navigation/native';
+import { RouteProp, useNavigation, useFocusEffect, useRoute } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { KeyboardAvoidingView, Platform as RNPlatform, ScrollView as RNScrollView } from 'react-native';
 import { RootStackParamList } from '../types';
@@ -265,6 +265,7 @@ function PlatformIconBg({ platform, size = 46 }: { platform: Platform; size?: nu
 
 export default function ConnectedAccountsScreen() {
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
+  const route = useRoute<RouteProp<RootStackParamList, 'ConnectedAccounts'>>();
   const insets = useSafeAreaInsets();
   const [loading, setLoading] = useState(false);
   const [initialLoad, setInitialLoad] = useState(true);
@@ -280,6 +281,7 @@ export default function ConnectedAccountsScreen() {
   const [personalRequestId, setPersonalRequestId] = useState('');
   const [pairingCode, setPairingCode] = useState('');
   const [personalBusy, setPersonalBusy] = useState(false);
+  const reconnectOpenedRef = useRef<string | null>(null);
 
   const { tokens, connectedPlatforms, loadConnectedPlatforms, disconnectPlatform } = useAgentStore();
   const { subscription } = useEnergyStore();
@@ -331,6 +333,19 @@ export default function ConnectedAccountsScreen() {
     else if (platform.id === 'whatsapp')  params.connectWhatsApp = true;
     navigation.navigate('AgentChat', params);
   };
+
+  // Reconnect pushes include the provider so tapping one opens the actual
+  // reconnect flow instead of leaving the user on an unselected account list.
+  useEffect(() => {
+    const platformId = route.params?.platform;
+    if (!platformId || initialLoad || loading || reconnectOpenedRef.current === platformId) return;
+
+    const target = PLATFORMS.find((platform) => platform.id === platformId);
+    if (!target || connectedPlatforms[platformId]?.status !== 'needs_reconnect') return;
+
+    reconnectOpenedRef.current = platformId;
+    handleConnect(target);
+  }, [route.params?.platform, initialLoad, loading, connectedPlatforms]);
 
   const closePersonalModal = () => {
     if (!personalBusy) setPersonalProvider(null);

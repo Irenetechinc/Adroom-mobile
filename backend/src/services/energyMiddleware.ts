@@ -1,22 +1,13 @@
 import { Request, Response, NextFunction } from 'express';
 import { energyService, OPERATION_COST } from './energyService';
 import { creditManagementAgent } from './creditManagementAgent';
-import { getSupabaseClient, getServiceSupabaseClient } from '../config/supabase';
+import { getSupabaseClient } from '../config/supabase';
+import { pushService } from './pushService';
 
 const CREDIT_ALERT_THRESHOLDS = [10, 5, 0];
 
 async function sendCreditPushAlert(userId: string, balance: number): Promise<void> {
   try {
-    const svc = getServiceSupabaseClient();
-    const { data: tokens } = await svc
-      .from('device_push_tokens')
-      .select('token')
-      .eq('user_id', userId)
-      .eq('is_active', true)
-      .limit(3);
-
-    if (!tokens || tokens.length === 0) return;
-
     let title: string;
     let body: string;
 
@@ -31,20 +22,16 @@ async function sendCreditPushAlert(userId: string, balance: number): Promise<voi
       body = 'Your AdRoom Energy is running low. Top up to ensure uninterrupted campaign execution.';
     }
 
-    const messages = tokens.map((t: any) => ({
-      to: t.token,
+    const result = await pushService.deliver(userId, {
       title,
       body,
       data: { type: 'credit_alert', balance },
       sound: 'default',
       priority: balance <= 0 ? 'high' : 'normal',
-    }));
-
-    await fetch('https://exp.host/--/api/v2/push/send', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
-      body: JSON.stringify(messages),
     });
+    if (!result.ok && result.tokensSent > 0) {
+      console.warn(`[EnergyMiddleware] Credit alert push was not fully delivered for ${userId}: ${result.errorSummary || 'Expo rejected the push'}`);
+    }
   } catch (err: any) {
     console.error('[EnergyMiddleware] Credit alert push failed:', err.message);
   }

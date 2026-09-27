@@ -121,6 +121,10 @@ export default function App() {
             type === 'discount_approval'
           ) {
             navigate('Notifications');
+          } else if (type === 'token_refresh_failed' || data.action === 'reconnect') {
+            navigate('ConnectedAccounts', { platform: data.platform as string | undefined });
+          } else if (type === 'conversation_milestone') {
+            navigate('Main', { screen: 'Dashboard' });
           } else if (screen === 'AgentChat') {
             navigate('AgentChat', { shipmentId: data.shipment_id as string | undefined });
           }

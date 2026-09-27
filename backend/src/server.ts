@@ -4911,7 +4911,8 @@ app.post('/api/push/register', async (req, res) => {
     const { token, platform, app_version, device_id, project_id } = req.body || {};
     if (!token || typeof token !== 'string') return res.status(400).json({ error: 'token required' });
     if (!device_id || typeof device_id !== 'string') return res.status(400).json({ error: 'device_id required' });
-    if (!project_id || typeof project_id !== 'string') {
+    const normalizedProjectId = typeof project_id === 'string' ? project_id.trim() : '';
+    if (!normalizedProjectId) {
       return res.status(400).json({ error: 'project_id required — install the current mobile build before registering push notifications.' });
     }
 
@@ -4940,7 +4941,7 @@ app.post('/api/push/register', async (req, res) => {
           token,
           platform: platform || 'unknown',
           app_version: app_version || null,
-          project_id: project_id || null,
+          project_id: normalizedProjectId,
           is_active: true,
           last_seen_at: now,
           updated_at: now,
@@ -4957,7 +4958,7 @@ app.post('/api/push/register', async (req, res) => {
           token,
           platform: platform || 'unknown',
           app_version: app_version || null,
-          project_id: project_id || null,
+          project_id: normalizedProjectId,
           is_active: true,
           last_seen_at: now,
           updated_at: now,
@@ -5020,7 +5021,10 @@ app.post('/api/push/test', async (req, res) => {
     let diagnosis = 'OK — push delivered to Expo successfully.';
     let actionable: string | null = null;
 
-    if (out.tokensFound === 0) {
+    if (/PUSH_PROJECT_MIGRATION_REQUIRED/i.test(out.result.errorSummary || '')) {
+      diagnosis = 'Push project migration is not applied in Supabase.';
+      actionable = 'Run backend/push_project_migration.sql against the authoritative Supabase database, then reopen the app to register the current EAS project.';
+    } else if (out.tokensFound === 0) {
       diagnosis = 'No active push tokens registered for this account.';
       actionable = 'Open the app, allow notifications when prompted, and try again. Push tokens are only registered after sign-in on a real device build (not Expo Go).';
     } else if (!out.result.ok) {

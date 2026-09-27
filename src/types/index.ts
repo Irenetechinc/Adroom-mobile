@@ -18,7 +18,7 @@ export type RootStackParamList = {
     connectTwitter?: boolean;
     connectWhatsApp?: boolean;
   };
-  ConnectedAccounts: undefined;
+  ConnectedAccounts: { platform?: string } | undefined;
   Subscription: { scrollToPlan?: string; tab?: string; autoStartTrial?: string } | undefined;
   Referral: undefined;
   PrivacySecurity: undefined;
