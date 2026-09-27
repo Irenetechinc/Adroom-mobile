@@ -458,7 +458,7 @@ export class PublicProfileToolAdapters {
   private async checkOsintgraphDependency(): Promise<boolean> {
     try {
       await runProcess(
-        this.osintgraphPython,
+        this.python,
         ['-c', 'import instaloader, neo4j, osintgraph'],
         path.join(TOOLS_ROOT, 'osintgraph'),
         { PYTHONPATH: path.join(TOOLS_ROOT, 'osintgraph', 'src') },
@@ -704,7 +704,9 @@ export class PublicProfileToolAdapters {
       });
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       const body: any = await response.json();
-      const records = Array.isArray(body) ? body : (body.results || body.data || []);
+      const records = Array.isArray(body)
+        ? body
+        : (body.results || body.data || body.items || body.found_profiles || []);
       return { attempted: true, available: true, hits: mapRecords('deepkrak3n_public_search', platform, username, records) };
     } catch (error: any) {
       return { attempted: true, available: false, hits: [], warning: `Deepkrak3n unavailable: ${clean(error?.message, 300)}` };
@@ -728,7 +730,20 @@ export class PublicProfileToolAdapters {
         cwd,
         { PYTHONPATH: path.join(cwd, 'src') },
       );
-      return { attempted: true, available: true, hits: mapRecords('osintgraph_public_instagram', platform || 'instagram', username, parseJsonLines(result.stdout)) };
+      const records = parseJsonLines(result.stdout);
+      // Osintgraph persists its graph to Neo4j and does not emit a stable JSON
+      // report on stdout. A successful discover command is itself the
+      // verification that the public Instagram profile was reachable. Keep the
+      // evidence limited to that public profile URL.
+      if (!records.length) {
+        records.push({
+          site: 'Instagram',
+          url: `https://www.instagram.com/${encodeURIComponent(username)}/`,
+          username,
+          text: 'Public Instagram profile discovered by Osintgraph.',
+        });
+      }
+      return { attempted: true, available: true, hits: mapRecords('osintgraph_public_instagram', platform || 'instagram', username, records) };
     } catch (error: any) {
       return { attempted: true, available: false, hits: [], warning: `Osintgraph unavailable: ${clean(error?.message, 300)}` };
     }

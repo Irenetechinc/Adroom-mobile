@@ -589,6 +589,10 @@ allowedTools=${JSON.stringify(TOOL_NAMES)}`);
   }
 
   private defaultAdapterSteps(context: LeadContext, query: string): DiscoveryPlan[] {
+    const selectedPlatforms = new Set([
+      context.platform,
+      ...context.selectedPlatforms.map((platform) => normalizePlatform(platform)),
+    ]);
     const steps: DiscoveryPlan[] = [
       {
         tool: 'platform_profile_search',
@@ -627,7 +631,7 @@ allowedTools=${JSON.stringify(TOOL_NAMES)}`);
         reason: 'Use the configured J.A.R.V.I.S. public research service when available',
       },
     ];
-    if (context.platform === 'reddit') {
+    if (selectedPlatforms.has('reddit')) {
       steps.push({
         tool: 'reddeye_public_reddit',
         platform: 'reddit',
@@ -635,7 +639,7 @@ allowedTools=${JSON.stringify(TOOL_NAMES)}`);
         reason: 'Read only the public Reddit profile and activity endpoints',
       });
     }
-    if (context.platform === 'instagram') {
+    if (selectedPlatforms.has('instagram')) {
       steps.push({
         tool: 'osintgraph_public_instagram',
         platform: 'instagram',
@@ -651,8 +655,18 @@ allowedTools=${JSON.stringify(TOOL_NAMES)}`);
     context: LeadContext,
     query: string,
   ): DiscoveryPlan[] {
+    const selectedPlatforms = new Set([
+      context.platform,
+      ...context.selectedPlatforms.map((platform) => normalizePlatform(platform)),
+    ]);
+    const isApplicable = (step: DiscoveryPlan): boolean => {
+      if (step.tool === 'reddeye_public_reddit') return selectedPlatforms.has('reddit');
+      if (step.tool === 'osintgraph_public_instagram') return selectedPlatforms.has('instagram');
+      return true;
+    };
     const seen = new Set<string>();
     const merged = [...planned, ...this.defaultAdapterSteps(context, query)].filter((step) => {
+      if (!isApplicable(step)) return false;
       if (seen.has(step.tool)) return false;
       seen.add(step.tool);
       return Boolean(step.query);
