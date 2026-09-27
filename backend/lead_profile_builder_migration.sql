@@ -111,3 +111,7 @@ BEGIN
   EXCEPTION WHEN duplicate_object THEN NULL;
   END;
 END $$;
+
+-- Supabase PostgREST can retain the old table definition after an ALTER TABLE.
+-- Reload it so the API sees the progress columns immediately after migration.
+NOTIFY pgrst, 'reload schema';

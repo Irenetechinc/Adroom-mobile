@@ -220,6 +220,7 @@ export class LeadProfileBuilder {
   private psychologist = new PsychologistEngine();
   private running = new Set<string>();
   private lastDiscoveryAt = 0;
+  private migrationReady = true;
 
   async enqueueForLead(userId: string, leadId: string): Promise<boolean> {
     const context = await this.loadContext(userId, leadId);
@@ -267,6 +268,12 @@ export class LeadProfileBuilder {
   }
 
   async processQueued(limit = 8): Promise<number> {
+    if (!this.migrationReady && !(await this.logMigrationReadiness())) {
+      logBuilderActivity('queue_skipped_migration', {
+        reason: 'lead_profile_builder_runs schema is not ready',
+      });
+      return 0;
+    }
     const now = new Date().toISOString();
     // Recover work abandoned by a killed Railway process. Without this,
     // identified/discovering runs remain permanently invisible to the queue.
@@ -531,20 +538,34 @@ export class LeadProfileBuilder {
     return (data?.profile as LeadProfile) || null;
   }
 
-  async logMigrationReadiness(): Promise<void> {
+  async logMigrationReadiness(): Promise<boolean> {
     const checks = await Promise.all([
       this.supabase.from('agent_leads').select('profile_status').limit(1),
-      this.supabase.from('lead_profile_builder_runs').select('id').limit(1),
+      this.supabase
+        .from('lead_profile_builder_runs')
+        .select('id, active_tool, active_platform, active_tool_status, active_tool_error')
+        .limit(1),
       this.supabase.from('lead_sales_profiles').select('id').limit(1),
     ]);
-    const names = ['agent_leads.profile_status', 'lead_profile_builder_runs', 'lead_sales_profiles'];
+    const names = [
+      'agent_leads.profile_status',
+      'lead_profile_builder_runs.active_tool_progress_columns',
+      'lead_sales_profiles',
+    ];
     const missing = checks
       .map((check, index) => check.error ? names[index] : null)
       .filter((name): name is string => Boolean(name));
+    this.migrationReady = missing.length === 0;
     logBuilderActivity('migration_readiness', {
-      ready: missing.length === 0,
+      ready: this.migrationReady,
       missing,
     });
+    if (!this.migrationReady) {
+      console.warn(
+        '[LeadProfileBuilder] Migration incomplete — run backend/lead_profile_builder_schema_patch.sql in Supabase, then restart the backend.',
+      );
+    }
+    return this.migrationReady;
   }
 
   private async loadContext(userId: string, leadId: string): Promise<LeadContext | null> {
