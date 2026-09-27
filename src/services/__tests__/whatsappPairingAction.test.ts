@@ -79,4 +79,21 @@ describe('WhatsApp pairing action', () => {
       authorization: 'Bearer test-session-token',
     }]);
   });
+
+  it('finishes immediately when the backend already restored the session', async () => {
+    const fetcher = (async () => ({
+      ok: true,
+      json: async () => ({ alreadyConnected: true }),
+    }) as Response) as typeof fetch;
+
+    const result = await runWhatsAppPairingAction({
+      step: 'start',
+      baseUrl,
+      phone: '+234 801 234 5678',
+      accessToken: 'test-session-token',
+      fetcher,
+    });
+
+    expect(result).toEqual({ kind: 'verify', connected: true });
+  });
 });

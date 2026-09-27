@@ -149,6 +149,7 @@ export class SocialAccountService {
     phone: string;
     sock: any;
     authDir: string;
+    pairingCode?: string;
     finalizing?: Promise<void>;
     waitForCredentials: () => Promise<void>;
   }>();
@@ -901,13 +902,63 @@ export class SocialAccountService {
     });
   }
 
-  async startWhatsAppPairing(userId: string, phone: string): Promise<{ requestId: string; pairingCode: string }> {
+  async startWhatsAppPairing(userId: string, phone: string): Promise<{
+    requestId: string;
+    pairingCode?: string;
+    alreadyConnected?: boolean;
+  }> {
     let baileys: any;
     try { baileys = require('@whiskeysockets/baileys'); } catch { throw new Error('WhatsApp pairing service is not installed.'); }
     const phoneNumber = phone.replace(/\D/g, '');
     if (!/^[1-9]\d{7,14}$/.test(phoneNumber)) {
       throw new Error('Enter a WhatsApp phone number with its country code.');
     }
+
+    // Pairing is user-initiated, but it must still be idempotent. A delayed
+    // button press or a retried mobile request must not create a second
+    // Baileys socket or invalidate the code that is already on the phone.
+    for (const [requestId, pending] of this.pendingWhatsApp.entries()) {
+      if (pending.userId !== userId) continue;
+      if (!pending.pairingCode) {
+        throw new Error('WhatsApp pairing is already starting. Please wait for the current code.');
+      }
+      return { requestId, pairingCode: pending.pairingCode };
+    }
+
+    // Prefer an existing live socket or the encrypted session already saved
+    // for this user. This is the normal path after a Railway restart and
+    // avoids asking the user to pair again.
+    if (this.whatsappSockets.has(userId)) {
+      return { requestId: '', alreadyConnected: true };
+    }
+    const existing = await this.get(userId, 'whatsapp_personal');
+    if (existing && ['connected', 'needs_reconnect'].includes(existing.status)) {
+      try {
+        const credential = decrypt(existing);
+        if (!credential) throw new Error('Stored WhatsApp credentials are unavailable.');
+        const liveSocket = await this.restoreWhatsAppSocket(userId, credential);
+        if (!liveSocket) throw new Error('WhatsApp live session is not available.');
+        if (existing.status !== 'connected') {
+          await this.supabase.from('social_account_connections').update({
+            status: 'connected',
+            last_error: null,
+            updated_at: new Date().toISOString(),
+          }).eq('user_id', userId).eq('provider', 'whatsapp_personal');
+        }
+        return { requestId: '', alreadyConnected: true };
+      } catch (error: any) {
+        if (isWhatsAppCredentialFailure(error)) {
+          await this.markWhatsAppNeedsReconnect(
+            userId,
+            'Stored WhatsApp credentials could not be decrypted. Restore the original stable SESSION_SECRET or intentionally reconnect this account.',
+          );
+          throw new Error('Stored WhatsApp credentials could not be decrypted. Restore the original stable SESSION_SECRET or intentionally reconnect this account.');
+        }
+        // WhatsApp may have rejected the old session. The explicit Connect
+        // action can then start a fresh pairing flow below.
+      }
+    }
+
     const requestId = crypto.randomUUID();
     const authDir = path.join(os.tmpdir(), 'adroom-whatsapp', requestId);
     const { state, saveCreds } = await baileys.useMultiFileAuthState(authDir);
@@ -1008,6 +1059,8 @@ export class SocialAccountService {
     });
     try {
       const pairingCode = await requestWhatsAppPairingCodeWhenReady(sock, phoneNumber);
+      const pending = this.pendingWhatsApp.get(requestId);
+      if (pending) pending.pairingCode = pairingCode;
       return { requestId, pairingCode };
     } catch (error) {
       this.pendingWhatsApp.delete(requestId);

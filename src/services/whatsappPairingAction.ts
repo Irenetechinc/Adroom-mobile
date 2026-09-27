@@ -2,6 +2,7 @@ interface ApiResponse {
   error?: string;
   requestId?: string;
   pairingCode?: string;
+  alreadyConnected?: boolean;
   connections?: Array<{ provider?: string; status?: string }>;
 }
 
@@ -43,6 +44,9 @@ export async function runWhatsAppPairingAction({
     });
     const result = await response.json().catch(() => ({})) as ApiResponse;
     if (!response.ok) throw new Error(result.error || 'Connection failed.');
+    if (result.alreadyConnected) {
+      return { kind: 'verify', connected: true };
+    }
     if (!result.requestId || !result.pairingCode) {
       throw new Error('WhatsApp did not return a pairing code.');
     }

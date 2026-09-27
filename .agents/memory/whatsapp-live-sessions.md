@@ -33,3 +33,13 @@ background reconnect attempts.
 **How to apply:** Keep transient Baileys disconnects on exponential automatic
 reconnect, but classify decryption/auth-tag failures as terminal until the
 stable secret is corrected or the user intentionally pairs again.
+
+WhatsApp pairing start is idempotent: reuse a live/restored session and return
+the existing pending pairing code for duplicate starts; mobile confirmation
+must remain a status check rather than starting another socket.
+
+**Why:** A delayed “I paired” tap or a retry can otherwise create a second
+pairing code while the first phone link is already completing.
+
+**How to apply:** Guard the backend start path by user, and keep the mobile
+verify action GET-only. Treat an already-restored session as connected.
