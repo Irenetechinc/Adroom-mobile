@@ -13,6 +13,17 @@ export type PublicProfileTool =
   | 'platform_profile_search'
   | 'web_public_profile';
 
+export const PUBLIC_PROFILE_TOOLS: readonly PublicProfileTool[] = [
+  'maigret_public_username',
+  'deepkrak3n_public_search',
+  'helix_public_username',
+  'osintgraph_public_instagram',
+  'jarvis_public_research',
+  'reddeye_public_reddit',
+  'platform_profile_search',
+  'web_public_profile',
+];
+
 export interface PublicToolHit {
   platform: string;
   externalId: string;
@@ -288,17 +299,19 @@ async function readJsonReports(directory: string): Promise<any[]> {
 
 export class PublicProfileToolAdapters {
   private readonly python: string;
+  private readonly osintgraphPython: string;
   private readonly lastInvocationAt = new Map<string, number>();
   private startupDiagnostics: PublicProfileToolDiagnostic[] = [];
 
   constructor(python = process.env.PROFILE_BUILDER_PYTHON || 'python3') {
     this.python = python;
+    this.osintgraphPython = process.env.PROFILE_BUILDER_OSINTGRAPH_PYTHON || python;
   }
 
   getConfigurationStatus(): {
     deepkrak3nConfigured: boolean;
     jarvisConfigured: boolean;
-    osintgraphExplicitlyEnabled: boolean;
+    osintgraphEnabled: boolean;
     publicContactEnumerationExplicitlyEnabled: boolean;
     toolsRoot: string;
     commandTimeoutMs: number;
@@ -307,7 +320,7 @@ export class PublicProfileToolAdapters {
     return {
       deepkrak3nConfigured: Boolean(configuredServiceUrl('DEEPKRAK3N_BASE_URL')),
       jarvisConfigured: Boolean(configuredServiceUrl('JARVIS_BASE_URL')),
-      osintgraphExplicitlyEnabled: process.env.PROFILE_BUILDER_ENABLE_OSINTGRAPH === 'true',
+      osintgraphEnabled: process.env.PROFILE_BUILDER_ENABLE_OSINTGRAPH !== 'false',
       publicContactEnumerationExplicitlyEnabled: publicContactEnumerationEnabled(),
       toolsRoot: TOOLS_ROOT,
       commandTimeoutMs: COMMAND_TIMEOUT_MS,
@@ -326,17 +339,40 @@ export class PublicProfileToolAdapters {
         'maigret',
         path.join(TOOLS_ROOT, 'maigret', 'maigret', 'resources', 'settings.json'),
         checkedAt,
+        ['-c', 'import maigret'],
       ),
-      await this.diagnoseLocalTool('helix', path.join(TOOLS_ROOT, 'helix', 'helix.py'), checkedAt),
+      await this.diagnoseLocalTool(
+        'helix',
+        path.join(TOOLS_ROOT, 'helix', 'helix.py'),
+        checkedAt,
+        ['helix.py', '--help'],
+      ),
       await this.diagnoseRemoteTool('deepkrak3n', configuredServiceUrl('DEEPKRAK3N_BASE_URL'), '/health', checkedAt),
       await this.diagnoseLocalOrDisabledOsintgraph(checkedAt),
       await this.diagnoseRemoteTool('jarvis', configuredServiceUrl('JARVIS_BASE_URL'), '/api/health', checkedAt),
+      {
+        tool: 'reddeye_public_reddit',
+        configured: true,
+        available: true,
+        enabled: true,
+        checkedAt,
+        warning: 'Reddeye is adapted to Reddit public about/activity endpoints; live reachability is verified during each request.',
+      },
+      {
+        tool: 'platform_profile_search',
+        configured: true,
+        available: true,
+        enabled: true,
+        checkedAt,
+        warning: 'Platform profile search uses the backend web router and verifies live results during each request.',
+      },
       {
         tool: 'web_public_profile',
         configured: true,
         available: true,
         enabled: true,
         checkedAt,
+        warning: 'Web profile search uses the backend web router and verifies live results during each request.',
       },
     ];
     this.startupDiagnostics = diagnostics;
@@ -358,34 +394,119 @@ export class PublicProfileToolAdapters {
     tool: 'maigret' | 'helix',
     requiredPath: string,
     checkedAt: string,
+    probeArgs: string[],
   ): Promise<PublicProfileToolDiagnostic> {
     const exists = await fs.access(requiredPath).then(() => true).catch(() => false);
+    const runtimeReady = exists && await runProcess(
+      this.python,
+      probeArgs,
+      path.dirname(requiredPath),
+      tool === 'maigret' ? { PYTHONPATH: path.join(TOOLS_ROOT, 'maigret') } : {},
+    ).then(() => true).catch(() => false);
     return {
       tool: tool === 'maigret' ? 'maigret_public_username' : 'helix_public_username',
       configured: exists,
-      available: exists,
+      available: runtimeReady,
       enabled: true,
       checkedAt,
-      ...(exists ? {} : { warning: `${tool} runtime file is missing at the configured tools root.` }),
+      ...(!exists
+        ? { warning: `${tool} runtime file is missing at the configured tools root.` }
+        : !runtimeReady
+          ? { warning: `${tool} runtime is present but its Python dependencies or command probe failed.` }
+          : {}),
     };
   }
 
   private async diagnoseLocalOrDisabledOsintgraph(checkedAt: string): Promise<PublicProfileToolDiagnostic> {
-    const enabled = process.env.PROFILE_BUILDER_ENABLE_OSINTGRAPH === 'true';
+    // Keep the adapter enabled by default so an Instagram lead does not
+    // silently omit it. Availability still requires both the vendored package
+    // and the explicit upstream runtime configuration.
+    const enabled = process.env.PROFILE_BUILDER_ENABLE_OSINTGRAPH !== 'false';
     const packagePath = path.join(TOOLS_ROOT, 'osintgraph', 'src', 'osintgraph', 'cli.py');
     const exists = await fs.access(packagePath).then(() => true).catch(() => false);
+    const credentialsPath = path.join(TOOLS_ROOT, 'osintgraph', 'src', 'osintgraph', 'credentials.json');
+    await this.writeOsintgraphCredentialsFromEnvironment(credentialsPath);
+    const credentials: Record<string, unknown> = await fs.readFile(credentialsPath, 'utf8').then((value) => {
+      try {
+        return JSON.parse(value) as Record<string, unknown>;
+      } catch {
+        return {} as Record<string, unknown>;
+      }
+    }).catch(() => ({} as Record<string, unknown>));
+    const requiredCredentialsPresent = ['NEO4J_URI', 'NEO4J_USERNAME', 'NEO4J_PASSWORD', 'INSTAGRAM_USERNAME']
+      .every((key) => Boolean(String(credentials[key] || '').trim()));
+    const dependencyReady = exists && await this.checkOsintgraphDependency();
+    const configured = exists && requiredCredentialsPresent;
     return {
       tool: 'osintgraph_public_instagram',
-      configured: exists,
-      available: enabled && exists,
+      configured,
+      available: enabled && configured && dependencyReady,
       enabled,
       checkedAt,
       ...(!enabled
-        ? { warning: 'Osintgraph is disabled. Set PROFILE_BUILDER_ENABLE_OSINTGRAPH=true only after its public Instagram/Neo4j runtime is configured.' }
+        ? { warning: 'Osintgraph is disabled by PROFILE_BUILDER_ENABLE_OSINTGRAPH=false.' }
         : !exists
-          ? { warning: 'Osintgraph was explicitly enabled but its vendored runtime is missing.' }
-          : {}),
+          ? { warning: 'Osintgraph is enabled but its vendored runtime is missing.' }
+          : !configured
+            ? { warning: 'Osintgraph is enabled but its credentials.json is not configured with Instagram and Neo4j public-research credentials.' }
+            : !dependencyReady
+              ? { warning: 'Osintgraph is configured but its Python dependencies are not importable in the selected runtime.' }
+              : {}),
     };
+  }
+
+  private async checkOsintgraphDependency(): Promise<boolean> {
+    try {
+      await runProcess(
+        this.osintgraphPython,
+        ['-c', 'import instaloader, neo4j, osintgraph'],
+        path.join(TOOLS_ROOT, 'osintgraph'),
+        { PYTHONPATH: path.join(TOOLS_ROOT, 'osintgraph', 'src') },
+      );
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  private async writeOsintgraphCredentialsFromEnvironment(credentialsPath: string): Promise<void> {
+    const raw = process.env.PROFILE_BUILDER_OSINTGRAPH_CREDENTIALS_JSON?.trim();
+    const existing = await fs.readFile(credentialsPath, 'utf8').then((value) => {
+      try {
+        return JSON.parse(value) as Record<string, string>;
+      } catch {
+        return {};
+      }
+    }).catch(() => ({}));
+    const credentials: Record<string, string> = { ...existing };
+    if (raw) {
+      try {
+        const parsed = JSON.parse(raw);
+        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+          for (const [key, value] of Object.entries(parsed)) {
+            if (typeof value === 'string') credentials[key] = value;
+          }
+        }
+      } catch {
+        // The diagnostic below reports the missing/invalid configuration
+        // without echoing the environment value.
+      }
+    }
+    const environmentKeys = [
+      'NEO4J_URI',
+      'NEO4J_USERNAME',
+      'NEO4J_PASSWORD',
+      'INSTAGRAM_USERNAME',
+      'INSTAGRAM_USER_AGENT',
+      'GEMINI_API_KEY',
+    ];
+    for (const key of environmentKeys) {
+      const value = process.env[`PROFILE_BUILDER_OSINTGRAPH_${key}`]?.trim();
+      if (value) credentials[key] = value;
+    }
+    if (!Object.keys(credentials).length) return;
+    await fs.mkdir(path.dirname(credentialsPath), { recursive: true });
+    await fs.writeFile(credentialsPath, JSON.stringify(credentials), { encoding: 'utf8', mode: 0o600 });
   }
 
   private async diagnoseRemoteTool(
@@ -515,7 +636,7 @@ export class PublicProfileToolAdapters {
       // stdout. Keep the report in a per-run directory so concurrent leads
       // cannot read one another's results.
       const result = await runProcess(
-        this.python,
+        this.osintgraphPython,
         [
           '-m',
           'maigret',
@@ -591,18 +712,18 @@ export class PublicProfileToolAdapters {
   }
 
   private async runOsintgraph(platform: string, username: string): Promise<PublicToolSearch> {
-    if (process.env.PROFILE_BUILDER_ENABLE_OSINTGRAPH !== 'true') {
+    if (process.env.PROFILE_BUILDER_ENABLE_OSINTGRAPH === 'false') {
       return {
         attempted: false,
         available: false,
         hits: [],
-        warning: 'Osintgraph is disabled unless PROFILE_BUILDER_ENABLE_OSINTGRAPH=true is explicitly configured. Public username discovery only; email and phone enumeration is intentionally not attempted.',
+        warning: 'Osintgraph is disabled by PROFILE_BUILDER_ENABLE_OSINTGRAPH=false. Public username discovery only; email and phone enumeration is intentionally not attempted.',
       };
     }
     try {
       const cwd = path.join(TOOLS_ROOT, 'osintgraph');
       const result = await runProcess(
-        this.python,
+        this.osintgraphPython,
         ['-m', 'osintgraph.cli', 'discover', username, '--limit', 'follower=0', 'followee=0', 'post=1', '--skip', 'post-analysis', 'account-analysis'],
         cwd,
         { PYTHONPATH: path.join(cwd, 'src') },

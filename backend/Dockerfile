@@ -20,13 +20,19 @@ RUN npm install --registry=https://registry.npmjs.org/ --legacy-peer-deps
 COPY src ./src
 COPY bin ./bin
 COPY vendor ./vendor
+COPY tools/vendor ./tools/vendor
 
 # Runtime dependencies for the backend-only public-profile discovery adapters.
-# Osintgraph is intentionally excluded because it requires configured
-# Instagram/Neo4j credentials and remains disabled unless explicitly enabled.
 RUN python3 -m pip install --no-cache-dir --break-system-packages \
-    -e ./vendor/maigret \
-    -e ./vendor/helix
+    -e ./tools/vendor/maigret \
+    -e ./tools/vendor/helix
+
+# Osintgraph has a larger, pinned dependency set. Keep it isolated from the
+# Maigret/Helix runtime and point PROFILE_BUILDER_OSINTGRAPH_PYTHON at it only
+# when its own Instagram/Neo4j credentials have been configured.
+RUN python3 -m venv /opt/osintgraph-venv \
+    && /opt/osintgraph-venv/bin/pip install --no-cache-dir -e ./tools/vendor/osintgraph
+ENV PROFILE_BUILDER_OSINTGRAPH_PYTHON=/opt/osintgraph-venv/bin/python
 
 # Runtime dependencies for the vendored deterministic beat-sync pipeline.
 RUN python3 -m pip install --no-cache-dir --break-system-packages -r vendor/video-tools/beat-synced-edit/requirements.txt

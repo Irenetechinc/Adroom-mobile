@@ -31,3 +31,7 @@ waitForPort = 8000
 
 [workflows.workflow.metadata]
 outputType = "console"
+
+[nix]
+channel = "stable-25_05"
+packages = ["cacert", "freetype", "glibcLocales", "xcodebuild", "zlib"]

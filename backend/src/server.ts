@@ -131,8 +131,11 @@ const REQUIRED_RUNTIME_CONFIG = [
   { key: 'ADMIN_PASSWORD', required: false },
   { key: 'PUBLIC_BASE_URL', required: false },
   { key: 'EXPO_PUBLIC_API_URL', required: false },
-  { key: 'DEEPKRAK3N_BASE_URL', required: true },
-  { key: 'JARVIS_BASE_URL', required: true },
+  // Optional external public-profile services. Their absence must not make
+  // the core Railway API unhealthy; the status endpoint reports them
+  // individually and the web adapter remains available.
+  { key: 'DEEPKRAK3N_BASE_URL', required: false },
+  { key: 'JARVIS_BASE_URL', required: false },
   { key: 'PROFILE_BUILDER_ENABLE_OSINTGRAPH', required: false },
   { key: 'PROFILE_BUILDER_ENABLE_PUBLIC_CONTACT_ENUMERATION', required: false },
   { key: 'SUPABASE_DB_URL', required: false },

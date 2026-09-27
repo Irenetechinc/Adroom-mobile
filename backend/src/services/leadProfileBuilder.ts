@@ -534,10 +534,12 @@ export class LeadProfileBuilder {
 
     let aiPlan: any = null;
     try {
-      aiPlan = await this.ai.generateJson(`Choose a minimal public-profile discovery plan for this lead.
-Use only the listed tools. Select at most 6 steps. Prioritize selectedPlatforms, but do not
-limit discovery to them: public accounts on any platform may reveal matching handles or useful
-context. Use web as a fallback when a platform-specific step is not appropriate.
+      aiPlan = await this.ai.generateJson(`Choose a public-profile discovery plan for this lead.
+Use only the listed tools. Select the relevant tools, up to 8 steps. Include every configured
+adapter that applies to the lead platform, plus platform profile search and web as fallbacks.
+Do not omit a usable adapter merely because another adapter was selected. Prioritize
+selectedPlatforms, but do not limit discovery to them: public accounts on any platform may
+reveal matching handles or useful context.
 The tools are public web-search adapters; they do not log in, bypass access controls, enumerate private data,
 or collect email addresses, phone numbers, precise locations, health, religion, race, politics, sexuality, income,
 or other sensitive traits. Prefer the user's selected platforms. Return JSON array only:
@@ -561,9 +563,9 @@ allowedTools=${JSON.stringify(TOOL_NAMES)}`);
       /^[a-z0-9][a-z0-9_-]{0,59}$/.test(step.platform) &&
       Boolean(step.query) &&
       !PERSONAL_DATA_PATTERN.test(step.query),
-    ).slice(0, 6);
+    ).slice(0, TOOL_NAMES.length);
 
-    if (planned.length) return planned;
+    if (planned.length) return this.completeDiscoveryPlan(planned, context, identifiers[0]);
     const fallbackPlan: DiscoveryPlan[] = [
       {
         tool: 'maigret_public_username',
@@ -577,20 +579,85 @@ allowedTools=${JSON.stringify(TOOL_NAMES)}`);
         query: context.platformUsername,
         reason: 'Use the pinned Helix username interface when its runtime is available',
       },
+      ...this.defaultAdapterSteps(context, context.platformUsername),
+    ];
+    return this.completeDiscoveryPlan(
+      fallbackPlan.filter((step) => Boolean(step.query)),
+      context,
+      context.platformUsername,
+    );
+  }
+
+  private defaultAdapterSteps(context: LeadContext, query: string): DiscoveryPlan[] {
+    const steps: DiscoveryPlan[] = [
       {
         tool: 'platform_profile_search',
         platform: context.platform,
-        query: `"${context.platformUsername || context.platformUserId}"`,
-        reason: 'Search the lead platform for a public profile reference',
+        query: `"${query}"`,
+        reason: 'Search the selected platform for a public profile reference',
       },
       {
         tool: 'web_public_profile',
         platform: 'web',
-        query: `"${context.platformUsername || context.platformUserId}"`,
+        query: `"${query}"`,
         reason: 'Check public web references without opening a private account',
       },
+      {
+        tool: 'maigret_public_username',
+        platform: 'web',
+        query,
+        reason: 'Check public username references across the pinned Maigret site database',
+      },
+      {
+        tool: 'helix_public_username',
+        platform: 'web',
+        query,
+        reason: 'Check public username references with the pinned Helix runtime',
+      },
+      {
+        tool: 'deepkrak3n_public_search',
+        platform: 'web',
+        query,
+        reason: 'Use the configured Deepkrak3n public username service when available',
+      },
+      {
+        tool: 'jarvis_public_research',
+        platform: context.platform || 'web',
+        query,
+        reason: 'Use the configured J.A.R.V.I.S. public research service when available',
+      },
     ];
-    return fallbackPlan.filter((step) => Boolean(step.query));
+    if (context.platform === 'reddit') {
+      steps.push({
+        tool: 'reddeye_public_reddit',
+        platform: 'reddit',
+        query,
+        reason: 'Read only the public Reddit profile and activity endpoints',
+      });
+    }
+    if (context.platform === 'instagram') {
+      steps.push({
+        tool: 'osintgraph_public_instagram',
+        platform: 'instagram',
+        query,
+        reason: 'Use Osintgraph only for the selected public Instagram username',
+      });
+    }
+    return steps;
+  }
+
+  private completeDiscoveryPlan(
+    planned: DiscoveryPlan[],
+    context: LeadContext,
+    query: string,
+  ): DiscoveryPlan[] {
+    const seen = new Set<string>();
+    const merged = [...planned, ...this.defaultAdapterSteps(context, query)].filter((step) => {
+      if (seen.has(step.tool)) return false;
+      seen.add(step.tool);
+      return Boolean(step.query);
+    });
+    return merged.slice(0, TOOL_NAMES.length);
   }
 
   private async executePlan(plan: DiscoveryPlan[], runId?: string): Promise<ReachResult[]> {
