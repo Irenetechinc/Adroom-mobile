@@ -1,5 +1,6 @@
 import { AIEngine } from '../config/ai-models';
 import { getServiceSupabaseClient } from '../config/supabase';
+import { agentReachAdapter } from './agentReachAdapter';
 
 export interface CollectionRequest {
   strategyId?: string;
@@ -33,6 +34,20 @@ export interface VerificationResult {
   rejected: Array<{ item: CollectedEvidenceItem; reason: string }>;
   summary: string;
   confidence: number;
+}
+
+export interface SharedResearchContext {
+  summary: string;
+  confidence: number;
+  verified: Array<{
+    title: string;
+    source: string;
+    snippet: string;
+    url?: string;
+    kind?: string;
+    rank: number;
+    freshnessHours: number;
+  }>;
 }
 
 function clamp(num: number, min: number, max: number): number {
@@ -176,14 +191,59 @@ export class DataCollectionAgent {
 
   async collectForStrategy(request: CollectionRequest): Promise<{ evidence: VerificationResult; raw?: any; generatedPrompt?: string }> {
     const prompt = buildDynamicCollectionPrompt(request);
-    const response = await this.ai.generateStrategyEconomy({}, prompt);
-    const data = response.parsedJson || response.text || {};
+    let data: any = {};
+    let aiCollectionError: string | undefined;
+    try {
+      const response = await this.ai.generateStrategyEconomy({}, prompt);
+      data = response.parsedJson || response.text || {};
+    } catch (error: any) {
+      aiCollectionError = error?.message || 'AI collection unavailable';
+      console.warn(`[DataCollectionAgent] AI collection unavailable; using AgentReach web fallback: ${aiCollectionError}`);
+    }
 
-    const rawResults = Array.isArray(data?.results)
+    let rawResults = Array.isArray(data?.results)
       ? data.results
       : Array.isArray(data?.evidence)
         ? data.evidence
         : [];
+    let collectionSource = 'ai';
+
+    // AgentReach is the credential-free public research path. It keeps
+    // collection useful when the free AI provider is busy or returns a plan
+    // without evidence, and gives downstream agents real URLs/snippets.
+    if (!rawResults.length) {
+      const product = request.productName || request.marketContext || 'current market';
+      const audience = request.audience || 'target audience';
+      const need = request.dataNeed || 'recent demand and market signals';
+      const queries = Array.from(new Set([
+        `${product} ${need} ${audience}`,
+        `${product} customer demand reviews recommendations`,
+        `${product} current competitors pricing audience discussion`,
+      ])).slice(0, 3);
+      const sources = Array.isArray(request.platformHints) ? request.platformHints : [];
+      const reachResults = (await Promise.all(
+        queries.map((query) => agentReachAdapter.searchAcrossSources(query, sources).catch((error: any) => {
+          console.warn(`[DataCollectionAgent] AgentReach fallback query failed: ${error?.message || error}`);
+          return [];
+        })),
+      )).flat();
+      rawResults = reachResults.map((result) => ({
+        title: result.authorName || `${result.platform} public signal`,
+        source: result.platform || 'web',
+        snippet: result.text,
+        url: result.url,
+        capturedAt: result.capturedAt,
+        trustScore: result.platform === 'web' ? 0.72 : 0.68,
+        kind: result.kind || 'search',
+        metadata: {
+          ...(result.metadata || {}),
+          externalId: result.externalId,
+          authorId: result.authorId,
+          collectionQuery: queries.find((query) => result.text.toLowerCase().includes(product.toLowerCase())) || queries[0],
+        },
+      }));
+      collectionSource = 'agent-reach';
+    }
     const evidenceCandidates: CollectedEvidenceItem[] = rawResults.map((result: any) => ({
           title: String(result.title || 'Evidence item'),
           source: String(result.source || 'web'),
@@ -202,6 +262,20 @@ export class DataCollectionAgent {
 
     if (this.supabase && request.strategyId) {
       try {
+        const sharedResearch: SharedResearchContext = {
+          summary: evidence.summary,
+          confidence: evidence.confidence,
+          verified: evidence.verified.slice(0, 20).map((item) => ({
+            title: item.title,
+            source: item.source,
+            snippet: item.snippet.slice(0, 1200),
+            url: item.url,
+            kind: item.kind,
+            rank: item.rank,
+            freshnessHours: item.freshnessHours,
+          })),
+        };
+
         await this.supabase.from('agent_tasks').insert({
           user_id: request.userId || null,
           agent_type: 'DATA_COLLECTION',
@@ -211,11 +285,12 @@ export class DataCollectionAgent {
           scheduled_at: new Date().toISOString(),
           executed_at: new Date().toISOString(),
           content: { strategy_id: request.strategyId, request },
-          result: { evidence, prompt },
+          result: { evidence, sharedResearch, prompt, collectionSource, aiCollectionError },
         });
 
-        await this.supabase.from('agent_data_collection_evidence').insert(
-          evidence.verified.map((item, index) => ({
+        if (evidence.verified.length > 0) {
+          await this.supabase.from('agent_data_collection_evidence').insert(
+            evidence.verified.map((item, index) => ({
             strategy_id: request.strategyId,
             user_id: request.userId || null,
             source: item.source,
@@ -230,8 +305,30 @@ export class DataCollectionAgent {
             freshness_hours: item.freshnessHours,
             metadata: { rank: item.rank, index, verification: item.verification },
             created_at: new Date().toISOString(),
-          }))
-        );
+            }))
+          );
+        }
+
+        // Keep fresh, sanitized research beside the active execution plan so
+        // psychology, messaging, creative, and publishing agents can consume
+        // the same evidence without re-running an independent search.
+        const { data: strategyRow } = await this.supabase
+          .from('strategies')
+          .select('current_execution_plan')
+          .eq('id', request.strategyId)
+          .eq('user_id', request.userId || '')
+          .maybeSingle();
+        const currentPlan = strategyRow?.current_execution_plan || {};
+        await this.supabase.from('strategies').update({
+          current_execution_plan: {
+            ...currentPlan,
+            shared_research: {
+              ...sharedResearch,
+              updated_at: new Date().toISOString(),
+            },
+          },
+          updated_at: new Date().toISOString(),
+        }).eq('id', request.strategyId);
       } catch {
         // Non-blocking: collection must never break agent execution.
       }

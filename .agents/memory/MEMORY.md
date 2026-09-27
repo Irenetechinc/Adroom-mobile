@@ -14,3 +14,4 @@
 - [Root package install drift](root-package-install-drift.md) — package installation helpers can rewrite root ranges and registry URLs; verify and restore package manifests before finishing.
 - [Public profile tool boundaries](public-profile-tool-boundaries.md) — run incompatible OSINT tools through the backend queue with bounded fallbacks; persist only sanitized public evidence.
 - [Public data Railway runtime](public-data-railway-runtime.md) — resolve vendored tools across Railway layouts; keep Deepkrak3n/J.A.R.V.I.S as separate real services and repair legacy inbound timestamps.
+- [Conversation discovery and shared research](conversation-research-fallback.md) — retain bounded AgentReach evidence when strict matching or AI collection would otherwise produce zero downstream context.

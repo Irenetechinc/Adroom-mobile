@@ -84,6 +84,52 @@ function hasDemandLanguage(text: string): boolean {
   return /\b(i need|need a|need an|looking for|want to buy|where can i (buy|find|get)|can anyone (recommend|suggest)|does anyone know|recommend(ation)?|suggest(ion)?|how much|price|cost|available|order|book|hire|preorder|early access)\b/i.test(text);
 }
 
+function resultKey(item: ReachResult): string {
+  return [
+    item.platform,
+    item.externalId,
+    item.url,
+    item.text.slice(0, 240),
+  ].map((value) => String(value || '').trim().toLowerCase()).join('|');
+}
+
+/**
+ * Search providers often return a useful title/snippet that omits the exact
+ * product term or the demand phrase used in the query. Do not turn that
+ * provider formatting difference into a zero-result campaign.
+ *
+ * We prefer results passing both checks, then results passing either check.
+ * If the provider omitted both from every snippet, the query itself is still
+ * offer-anchored, so retain the bounded result set for later scoring and
+ * enrichment rather than silently discarding it.
+ */
+export function selectConversationResults(results: ReachResult[], product: OfferContext): {
+  results: ReachResult[];
+  strict: number;
+  relaxed: number;
+  fallback: boolean;
+} {
+  const unique = Array.from(new Map(
+    results
+      .filter((item) => String(item.text || '').trim().length > 12)
+      .map((item) => [resultKey(item), item]),
+  ).values());
+  const strict: ReachResult[] = [];
+  const relaxed: ReachResult[] = [];
+
+  for (const item of unique) {
+    const text = item.text.toLowerCase();
+    const identityMatch = product.searchableTerms.some((term) => text.includes(term.toLowerCase()));
+    const demandMatch = hasDemandLanguage(item.text);
+    if (identityMatch && demandMatch) strict.push(item);
+    else if (identityMatch || demandMatch) relaxed.push(item);
+  }
+
+  if (strict.length) return { results: strict, strict: strict.length, relaxed: relaxed.length, fallback: false };
+  if (relaxed.length) return { results: relaxed, strict: 0, relaxed: relaxed.length, fallback: true };
+  return { results: unique.slice(0, 24), strict: 0, relaxed: 0, fallback: unique.length > 0 };
+}
+
 const State = Annotation.Root({
   strategy: Annotation<any>,
   signals: Annotation<Signal[]>({ reducer: (_: Signal[], next: Signal[]) => next, default: () => [] }),
@@ -145,13 +191,16 @@ export class ConversationAgent {
 
       const results = discovered.flat();
       console.log(`[ConversationAgent] discover complete strategy=${strategy.id} results=${results.length}`);
-      const signals = results
-        .filter((item) => item.text.trim())
-        .filter((item) => {
-          const text = item.text.toLowerCase();
-          const identityMatch = product.searchableTerms.some((term) => text.includes(term.toLowerCase()));
-          return identityMatch && hasDemandLanguage(item.text);
-        })
+      const selected = selectConversationResults(results, product);
+      if (selected.fallback) {
+        console.warn(
+          `[ConversationAgent] relaxed result matching strategy=${strategy.id} strict=${selected.strict} ` +
+          `relaxed=${selected.relaxed} retained=${selected.results.length}`,
+        );
+      } else {
+        console.log(`[ConversationAgent] strict result matching strategy=${strategy.id} retained=${selected.results.length}`);
+      }
+      const signals = selected.results
         .map((item) => {
           const intentScore = scoreSignal(item.text, goal, product.searchableTerms);
           return {

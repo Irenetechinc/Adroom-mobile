@@ -141,15 +141,79 @@ export class AgentOrchestrator {
             console.warn(`[Orchestrator] Removed ${invalidTaskIds.length} task(s) outside the user's selected platforms.`);
         }
 
-        // Count scheduled tasks
-        const { count } = await this.supabase
+        // A model can return a non-empty plan containing placeholder platforms
+        // or generic POST tasks for personal accounts. Those rows are not
+        // executable, even though they used to make activation look successful.
+        // Keep only real selected-platform work and recover with one dynamic
+        // content task per selected public platform when the plan produced none.
+        const { data: executableTasks } = await this.supabase
             .from('agent_tasks')
-            .select('id', { count: 'exact', head: true })
-            .eq('strategy_id', params.strategyId);
+            .select('id, platform, task_type, recipient_id, conversation_id, content')
+            .eq('strategy_id', params.strategyId)
+            .in('status', ['pending', 'scheduled']);
+        const validPublicTasks = (executableTasks || []).filter((task: any) =>
+            allowedPlatforms.has(normalizePlatform(task.platform))
+            && !isPersonalProvider(task.platform)
+            && !['CONVERSATION_ENGAGE', 'SEND_PERSONAL_MESSAGE', 'INBOUND_REPLY'].includes(String(task.task_type || '')),
+        );
+        const selectedPublicPlatforms = Array.from(allowedPlatforms).filter((platform) => !isPersonalProvider(platform));
+        if (validPublicTasks.length === 0 && selectedPublicPlatforms.length > 0) {
+            const productName = String(
+                params.strategy?.product_name
+                || params.strategy?.productName
+                || params.strategy?.title
+                || 'this offer',
+            ).trim();
+            const durationDays = Math.max(1, Number(params.strategy?.duration || params.strategy?.duration_days || 1));
+            const now = new Date();
+            const recoveryTasks = selectedPublicPlatforms.map((platform, index) => {
+                const scheduledAt = new Date(now.getTime() + (15 + index * 10) * 60 * 1000);
+                return {
+                    strategy_id: params.strategyId,
+                    user_id: params.userId,
+                    agent_type: agentType,
+                    task_type: 'POST',
+                    platform,
+                    scheduled_at: scheduledAt.toISOString(),
+                    status: 'pending',
+                    content: {
+                        headline: `${productName} — ${String(params.goal || 'campaign')}`,
+                        body: `Create a platform-native post for ${productName} using the active strategy, current audience signals, and the selected platform's requirements.`,
+                        image_prompt: `Create an original ${platform}-native creative for ${productName} from current strategy and audience intelligence.`,
+                        hashtags: [platform, 'adiramai'],
+                        cta: 'Learn more',
+                        recovery_schedule: true,
+                        recovery_duration_days: durationDays,
+                    },
+                };
+            });
+            const { error: recoveryError } = await this.supabase.from('agent_tasks').insert(recoveryTasks);
+            if (recoveryError) {
+                throw new Error(`No executable content tasks were generated and recovery scheduling failed: ${recoveryError.message}`);
+            }
+            console.warn(`[Orchestrator] Recovered ${recoveryTasks.length} selected-platform content task(s) for strategy ${params.strategyId}.`);
+        }
 
-        const tasksScheduled = count || 0;
-        if (tasksScheduled === 0) {
-            throw new Error(`${agentType} did not schedule any executable tasks for strategy ${params.strategyId}`);
+        const executableCount = (executableTasks || []).filter((task: any) => {
+            const platform = normalizePlatform(task.platform);
+            if (!allowedPlatforms.has(platform)) return false;
+            if (!isPersonalProvider(platform)) return true;
+            const type = String(task.task_type || '');
+            const content = task.content && typeof task.content === 'object' ? task.content : {};
+            return ['SEND_PERSONAL_MESSAGE', 'CONVERSATION_ENGAGE', 'INBOUND_REPLY'].includes(type)
+                && Boolean(task.recipient_id || task.conversation_id || content.recipient_id || content.conversation_id);
+        }).length;
+        const tasksScheduled = executableCount || 0;
+        if (tasksScheduled === 0 && selectedPublicPlatforms.length === 0) {
+            // Personal providers do not expose a public feed through the
+            // unified POST path. Their conversation discovery/engagement work
+            // is scheduled from identified leads by ConversationAgent.
+            const hasPersonalSelection = Array.from(allowedPlatforms).some((platform) => isPersonalProvider(platform));
+            if (hasPersonalSelection) {
+                console.warn(`[Orchestrator] No public post task for personal-only strategy ${params.strategyId}; continuing with conversation discovery.`);
+            } else {
+                throw new Error(`${agentType} did not schedule any executable tasks for strategy ${params.strategyId}`);
+            }
         }
 
         // All engines and the scheduler use this canonical active state.
