@@ -4967,6 +4967,13 @@ app.post('/api/push/register', async (req, res) => {
 
     if (upsertErr) {
       console.error('[PushRegister] Token save failed:', upsertErr.message);
+      if (/project_id|column .* does not exist/i.test(upsertErr.message || '')) {
+        return res.status(503).json({
+          error: 'Push project migration is not applied.',
+          code: 'PUSH_PROJECT_MIGRATION_REQUIRED',
+          migration: 'backend/push_project_migration.sql',
+        });
+      }
       return res.status(500).json({ error: upsertErr.message });
     }
 

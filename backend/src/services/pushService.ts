@@ -74,6 +74,24 @@ async function sendExpoPush(tokens: DeviceTokenRow[], payload: PushPayload): Pro
       errorSummary: results.map((result) => result.errorSummary).filter(Boolean).join(' | ') || undefined,
     };
   }
+  // Expo accepts at most 100 messages in one request. Keep each request
+  // project-scoped and split large device sets without losing partial results.
+  if (routableTokens.length > 100) {
+    const results = await Promise.all(
+      Array.from({ length: Math.ceil(routableTokens.length / 100) }, (_, index) =>
+        sendExpoPush(routableTokens.slice(index * 100, (index + 1) * 100), payload),
+      ),
+    );
+    return {
+      ok: results.every((result) => result.ok),
+      httpStatus: results.find((result) => result.httpStatus)?.httpStatus || 200,
+      tokensSent: results.reduce((sum, result) => sum + result.tokensSent, 0),
+      tickets: results.flatMap((result) => result.tickets),
+      invalidTokens: results.flatMap((result) => result.invalidTokens),
+      errorSummary: results.map((result) => result.errorSummary).filter(Boolean).join(' | ') || undefined,
+      rawResponse: results.map((result) => result.rawResponse).filter(Boolean).join(' | ') || undefined,
+    };
+  }
   const messages = routableTokens.map((token) => ({
     to: token.token,
     sound: payload.sound ?? 'default',
@@ -110,11 +128,11 @@ async function sendExpoPush(tokens: DeviceTokenRow[], payload: PushPayload): Pro
         const errCode = ticket?.details?.error;
         const msg = ticket?.message || 'unknown error';
         errorMessages.push(`${errCode || 'error'}: ${msg}`);
-        if (
-          errCode === 'DeviceNotRegistered' ||
-          errCode === 'InvalidCredentials' ||
-          errCode === 'MismatchSenderId'
-        ) {
+        // InvalidCredentials and MismatchSenderId are Expo/FCM
+        // configuration failures, not evidence that this device token is
+        // stale. Retiring all tokens in those cases would make recovery
+        // impossible after the project credentials are repaired.
+        if (errCode === 'DeviceNotRegistered') {
           const token = routableTokens[idx]?.token;
           if (token) invalid.push(token);
         }

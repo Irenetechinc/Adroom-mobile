@@ -268,10 +268,21 @@ Return valid JSON only with this schema:
 
             let result;
             if (task.platform === 'facebook' && tokens.facebook) {
-                result = await this.publishToplatform(task.platform, tokens, body, postImageUrl);
+                result = await this.publishToplatform(task.platform, tokens, body, task.content?.video_url || postImageUrl);
             } else if (task.platform === 'instagram' && tokens.instagram) {
-                if (!postImageUrl) throw new Error('Instagram requires an image — GraphicsDesignerAgent must provide one');
-                result = await this.publishToplatform(task.platform, tokens, body, postImageUrl);
+                const instagramMediaUrl = task.content?.video_url || postImageUrl;
+                if (!instagramMediaUrl) throw new Error('Instagram requires an image or video — media generation did not return an asset');
+                result = await this.publishToplatform(task.platform, tokens, body, instagramMediaUrl);
+            } else if (task.platform === 'tiktok' && tokens.tiktok) {
+                const videoUrl = await this.getVideoForPost({
+                    task,
+                    product,
+                    goal: 'PROMOTION — publish a conversion-focused short video',
+                });
+                await this.supabase.from('agent_tasks').update({
+                    content: { ...task.content, video_url: videoUrl },
+                }).eq('id', taskId);
+                result = await this.publishToplatform(task.platform, tokens, body, videoUrl);
             } else if (task.platform === 'twitter' && tokens.twitter) {
                 result = await this.publishToplatform(task.platform, tokens, body.slice(0, 280));
             } else if (task.platform === 'linkedin' && tokens.linkedin) {

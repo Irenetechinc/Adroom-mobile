@@ -48,6 +48,33 @@ const TWITTER_API = 'https://api.twitter.com/2';
 const LINKEDIN_API = 'https://api.linkedin.com/v2';
 const TIKTOK_API = 'https://open.tiktokapis.com/v2';
 
+function mediaKind(mediaUrl: string): 'image' | 'video' | 'unknown' {
+    try {
+        const pathname = new URL(mediaUrl).pathname.toLowerCase();
+        if (/\.(png|jpe?g|webp|gif|avif)$/.test(pathname)) return 'image';
+        if (/\.(mp4|mov|m4v|webm|avi|mkv)$/.test(pathname)) return 'video';
+    } catch {
+        return 'unknown';
+    }
+    return 'unknown';
+}
+
+function requirePublicMediaUrl(mediaUrl: string, expected: 'image' | 'video'): void {
+    let parsed: URL;
+    try {
+        parsed = new URL(mediaUrl);
+    } catch {
+        throw new Error(`${expected} media URL is invalid`);
+    }
+    if (!['http:', 'https:'].includes(parsed.protocol)) {
+        throw new Error(`${expected} media URL must be publicly reachable over HTTP(S)`);
+    }
+    const kind = mediaKind(mediaUrl);
+    if (kind !== 'unknown' && kind !== expected) {
+        throw new Error(`Expected ${expected} media but received ${kind}`);
+    }
+}
+
 export class AgentBase {
     protected ai: AIEngine;
     protected supabase: SupabaseClient;
@@ -169,6 +196,72 @@ export class AgentBase {
         return tokens;
     }
 
+    /**
+     * Resolve a real public video for providers that cannot publish text or
+     * image-only content. Existing task/strategy media wins; otherwise the
+     * same Director + Psychologist + Creative pipeline used by Awareness and
+     * Salesman generates one. Never return a placeholder URL.
+     */
+    protected async getVideoForPost(params: {
+        task: any;
+        product: any;
+        goal: string;
+    }): Promise<string> {
+        const task = params.task;
+        const existing = String(
+            task.content?.video_url ||
+            task.content?.media_url ||
+            task.content?.mediaUrl ||
+            '',
+        ).trim();
+        if (existing) return existing;
+
+        const { data: strategyData } = await this.supabase
+            .from('strategies')
+            .select('current_execution_plan, product_id')
+            .eq('id', task.strategy_id)
+            .single();
+        const userVideoUrl = String(strategyData?.current_execution_plan?.user_video_url || '').trim();
+        const taskProduct = params.product || await this.getProductDetails(strategyData?.product_id || task.content?.product_id);
+
+        const { DirectorAgent } = await import('./directorAgent');
+        const director = new DirectorAgent();
+        const direction = await director.getDirection({
+            userId: task.user_id,
+            productId: strategyData?.product_id,
+            strategyId: task.strategy_id,
+            product: taskProduct,
+            platform: task.platform,
+            goal: params.goal,
+            hasUserVideo: Boolean(userVideoUrl),
+        });
+
+        if (direction.should_use_user_video && userVideoUrl) return userVideoUrl;
+
+        const { checkFeatureAccess } = await import('../services/subscriptionGuard');
+        const access = await checkFeatureAccess(task.user_id, 'video_asset', this.supabase as any);
+        if (!access.allowed) {
+            if (userVideoUrl) return userVideoUrl;
+            throw new Error(`Video asset generation is unavailable: ${access.reason}`);
+        }
+
+        const { PsychologistEngine } = await import('../services/psychologistEngine');
+        const psychologist = new PsychologistEngine();
+        const psychProfile = await psychologist.getProfileForProduct(
+            strategyData?.product_id || '',
+            taskProduct?.category,
+        );
+        const creative = new (await import('../services/creativeService')).CreativeService();
+        const generated = await creative.generateTikTokVideo(
+            taskProduct || { name: 'Product', description: '' },
+            direction,
+            psychProfile,
+        );
+        if (generated) return generated;
+        if (userVideoUrl) return userVideoUrl;
+        throw new Error('No video asset was generated for this publication');
+    }
+
     // ─── CONTENT GENERATION ──────────────────────────────────────────────────────
 
     async generatePlatformContent(params: {
@@ -282,18 +375,36 @@ Return STRICT JSON only (no markdown, no explanation):
         let postId: string;
 
         if (imageUrl) {
-            const params = new URLSearchParams({ url: imageUrl, caption: body, access_token });
-            const resp = await fetch(`${FB_GRAPH}/${page_id}/photos`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-                body: params.toString(),
-            });
-            if (!resp.ok) {
-                const err: any = await resp.json();
-                throw new Error(`Facebook Photo Post: ${err?.error?.message || resp.statusText}`);
+            const kind = mediaKind(imageUrl);
+            if (kind === 'video') {
+                requirePublicMediaUrl(imageUrl, 'video');
+                const params = new URLSearchParams({ file_url: imageUrl, description: body, access_token });
+                const resp = await fetch(`${FB_GRAPH}/${page_id}/videos`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                    body: params.toString(),
+                });
+                if (!resp.ok) {
+                    const err: any = await resp.json().catch(() => ({}));
+                    throw new Error(`Facebook Video Post: ${err?.error?.message || resp.statusText}`);
+                }
+                const data: any = await resp.json();
+                postId = data.id;
+            } else {
+                requirePublicMediaUrl(imageUrl, 'image');
+                const params = new URLSearchParams({ url: imageUrl, caption: body, access_token });
+                const resp = await fetch(`${FB_GRAPH}/${page_id}/photos`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                    body: params.toString(),
+                });
+                if (!resp.ok) {
+                    const err: any = await resp.json().catch(() => ({}));
+                    throw new Error(`Facebook Photo Post: ${err?.error?.message || resp.statusText}`);
+                }
+                const data: any = await resp.json();
+                postId = data.post_id || data.id;
             }
-            const data: any = await resp.json();
-            postId = data.post_id || data.id;
         } else {
             const resp = await fetch(`${FB_GRAPH}/${page_id}/feed`, {
                 method: 'POST',
@@ -301,7 +412,7 @@ Return STRICT JSON only (no markdown, no explanation):
                 body: JSON.stringify({ message: body, access_token }),
             });
             if (!resp.ok) {
-                const err: any = await resp.json();
+                const err: any = await resp.json().catch(() => ({}));
                 throw new Error(`Facebook Feed Post: ${err?.error?.message || resp.statusText}`);
             }
             const data: any = await resp.json();
@@ -386,16 +497,37 @@ Return STRICT JSON only (no markdown, no explanation):
             throw new Error('Instagram requires an image or video URL');
         }
 
+        const kind = mediaKind(imageUrl);
+        requirePublicMediaUrl(imageUrl, kind === 'video' ? 'video' : 'image');
+        const containerBody = kind === 'video'
+            ? { media_type: 'REELS', video_url: imageUrl, caption: body, access_token }
+            : { image_url: imageUrl, caption: body, access_token };
         const containerResp = await fetch(`${FB_GRAPH}/${instagram_account_id}/media`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ image_url: imageUrl, caption: body, access_token }),
+            body: JSON.stringify(containerBody),
         });
         if (!containerResp.ok) {
             const err: any = await containerResp.json();
             throw new Error(`Instagram Media Create: ${err?.error?.message || containerResp.statusText}`);
         }
         const { id: creation_id }: any = await containerResp.json();
+
+        if (kind === 'video') {
+            // Instagram may accept the container before the video is ready.
+            // Poll briefly so a successful task means the reel was actually
+            // published, rather than merely queued for processing.
+            for (let attempt = 0; attempt < 10; attempt += 1) {
+                await new Promise((resolve) => setTimeout(resolve, 1500));
+                const statusResp = await fetch(`${FB_GRAPH}/${creation_id}?fields=status_code,status&access_token=${encodeURIComponent(access_token)}`);
+                const status: any = await statusResp.json().catch(() => ({}));
+                if (status?.status_code === 'ERROR') {
+                    throw new Error(`Instagram video processing failed: ${status?.status || 'unknown error'}`);
+                }
+                if (status?.status_code === 'FINISHED') break;
+                if (attempt === 9) throw new Error('Instagram video processing timed out before publication');
+            }
+        }
 
         const publishResp = await fetch(`${FB_GRAPH}/${instagram_account_id}/media_publish`, {
             method: 'POST',
@@ -597,43 +729,13 @@ Return STRICT JSON only (no markdown, no explanation):
         if (!tokens) throw new Error('TikTok tokens not configured');
         this.log(`Publishing to TikTok (open_id: ${tokens.open_id})`);
 
-        // TikTok requires video content — fall back to photo post API when no video URL
+        // TikTok's photo API requires actual photo URLs. This publishing path
+        // is intentionally video-only; sending an empty photo_images array
+        // reports a fake/pending success and never reaches the account.
         if (!videoUrl) {
-            this.log('No video URL provided — falling back to TikTok photo post');
-            const photoResp = await fetch(`${TIKTOK_API}/post/publish/content/init/`, {
-                method: 'POST',
-                headers: {
-                    'Authorization': `Bearer ${tokens.access_token}`,
-                    'Content-Type': 'application/json; charset=UTF-8',
-                },
-                body: JSON.stringify({
-                    post_info: {
-                        title: body.substring(0, 150),
-                        description: body.substring(0, 2200),
-                        privacy_level: 'PUBLIC_TO_EVERYONE',
-                        disable_duet: false,
-                        disable_comment: false,
-                        disable_stitch: false,
-                        auto_add_music: true,
-                    },
-                    source_info: {
-                        source: 'POST_API',
-                        photo_cover_index: 0,
-                        photo_images: [],
-                    },
-                    post_mode: 'DIRECT_POST',
-                    media_type: 'PHOTO',
-                }),
-            });
-            if (!photoResp.ok) {
-                const err: any = await photoResp.json().catch(() => ({}));
-                throw new Error(`TikTok Photo Post: ${err?.error?.message || JSON.stringify(err) || photoResp.statusText}`);
-            }
-            const photoData: any = await photoResp.json();
-            const postId = photoData?.data?.publish_id || photoData?.data?.post_id || 'pending';
-            this.log(`TikTok photo post submitted — publish_id: ${postId}`);
-            return { platform: 'tiktok', platform_post_id: postId, published_at: new Date().toISOString() };
+            throw new Error('TikTok requires a generated or uploaded video before scheduling');
         }
+        requirePublicMediaUrl(videoUrl, 'video');
 
         const resp = await fetch(`${TIKTOK_API}/post/publish/video/init/`, {
             method: 'POST',
@@ -661,7 +763,8 @@ Return STRICT JSON only (no markdown, no explanation):
             throw new Error(`TikTok Post: ${err?.error?.message || JSON.stringify(err) || resp.statusText}`);
         }
         const data: any = await resp.json();
-        const postId = data?.data?.publish_id || data?.data?.post_id || 'pending';
+        const postId = data?.data?.publish_id || data?.data?.post_id;
+        if (!postId) throw new Error('TikTok accepted no publish ID; the post was not confirmed');
         this.log(`TikTok post submitted — publish_id: ${postId}`);
         return { platform: 'tiktok', platform_post_id: postId, published_at: new Date().toISOString() };
     }
@@ -937,6 +1040,9 @@ Return STRICT JSON only (no markdown, no explanation):
     }
 
     async completeTask(taskId: string, result: PublishResult & Record<string, any>): Promise<void> {
+        if (!result?.platform_post_id || String(result.platform_post_id).trim() === '') {
+            throw new Error('Provider returned no platform post ID; publication is not confirmed');
+        }
         const { data: task } = await this.supabase
             .from('agent_tasks')
             .select('strategy_id, user_id')
@@ -973,12 +1079,19 @@ Return STRICT JSON only (no markdown, no explanation):
             .single();
         const retryCount = (task?.retry_count || 0) + 1;
         const shouldRetry = retry && retryCount < 3;
-        await this.supabase.from('agent_tasks').update({
+        const { error: updateError } = await this.supabase.from('agent_tasks').update({
             status: shouldRetry ? 'pending' : 'failed',
             error_message: error,
             retry_count: retryCount,
+            result: {
+                publication_status: 'failed',
+                retryable: shouldRetry,
+                error: String(error).slice(0, 2000),
+                failed_at: new Date().toISOString(),
+            },
             ...(shouldRetry ? { scheduled_at: new Date(Date.now() + 10 * 60 * 1000).toISOString() } : {}),
         }).eq('id', taskId);
+        if (updateError) throw new Error(`Failed to record task failure: ${updateError.message}`);
     }
 
     // ─── SKILL BUILDER ───────────────────────────────────────────────────────────

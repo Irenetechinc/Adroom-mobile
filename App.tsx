@@ -9,7 +9,6 @@ import { navigate } from './src/navigation/navigationRef';
 import {
   registerPushToken,
   setupNotificationListeners,
-  isRegistrationPending,
 } from './src/services/notificationService';
 import { supabase } from './src/services/supabase';
 import { useProfileStore } from './src/store/profileStore';
@@ -92,10 +91,10 @@ export default function App() {
 
     // Single-flight push registration so concurrent triggers (initial session
     // + onAuthStateChange + foreground) don't fire multiple parallel POSTs.
-    const triggerRegister = (reason: string) => {
+    const triggerRegister = (reason: string, force = false) => {
       if (inFlightRef.current) return;
       console.log(`[App] Push registration trigger: ${reason}`);
-      inFlightRef.current = registerPushToken()
+      inFlightRef.current = registerPushToken({ force })
         .catch((e) => console.warn('[App] registerPushToken threw:', e?.message))
         .finally(() => {
           inFlightRef.current = null;
@@ -142,14 +141,13 @@ export default function App() {
       }
     });
 
-    // On foreground, retry if the last attempt left a pending flag.
+    // On foreground, force a server registration check. This repairs rows
+    // retired by Expo as DeviceNotRegistered even when SecureStore still has
+    // the same token tuple cached locally.
     const onAppStateChange = async (state: AppStateStatus) => {
       if (state !== 'active') return;
-      const pending = await isRegistrationPending();
-      if (pending) {
-        const { data } = await supabase.auth.getSession();
-        if (data.session) triggerRegister('foreground-retry');
-      }
+      const { data } = await supabase.auth.getSession();
+      if (data.session) triggerRegister('foreground', true);
     };
     const appStateSub = AppState.addEventListener('change', onAppStateChange);
 

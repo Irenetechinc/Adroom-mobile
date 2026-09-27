@@ -62,3 +62,16 @@ CREATE TABLE IF NOT EXISTS user_notifications (
 
 CREATE INDEX IF NOT EXISTS idx_user_notifications_user_id ON user_notifications(user_id);
 CREATE INDEX IF NOT EXISTS idx_user_notifications_is_read ON user_notifications(user_id, is_read);
+
+-- ─── Project-aware Expo push registration ─────────────────────────────────────
+-- Expo push requests must never mix EAS projects. Existing devices are
+-- intentionally left unscoped so the current mobile build can re-register
+-- them with its project_id; the backend will not deliver unscoped rows.
+ALTER TABLE public.device_push_tokens
+  ADD COLUMN IF NOT EXISTS project_id TEXT;
+
+CREATE INDEX IF NOT EXISTS device_push_tokens_active_project_idx
+  ON public.device_push_tokens (user_id, project_id)
+  WHERE is_active = true;
+
+NOTIFY pgrst, 'reload schema';

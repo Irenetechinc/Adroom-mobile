@@ -564,7 +564,14 @@ router.post('/api/notifications', auth, async (req, res) => {
       tokenQuery = tokenQuery.in('user_id', ids);
     }
 
-    const { data: tokenRows } = await tokenQuery;
+    const { data: tokenRows, error: tokenQueryError } = await tokenQuery;
+    if (tokenQueryError && /project_id|column .* does not exist/i.test(tokenQueryError.message || '')) {
+      return res.status(503).json({
+        error: 'Push project migration is not applied.',
+        code: 'PUSH_PROJECT_MIGRATION_REQUIRED',
+        migration: 'backend/push_project_migration.sql',
+      });
+    }
     const distinctRows = (tokenRows || []).filter((row, index, rows) =>
       Boolean(row.token) && rows.findIndex((candidate) => candidate.token === row.token) === index,
     );
@@ -605,7 +612,8 @@ router.post('/api/notifications', auth, async (req, res) => {
 
     await logAction('send_notification', null, null, { target, title, body, sent: successCount });
     broadcast('notification_sent', { target, title, sent: successCount });
-    res.json({ success: true, sent: successCount, total_tokens: distinctRows.length });
+    const attemptedCount = deliveryResults.reduce((sum, result) => sum + result.tokensSent, 0);
+    res.json({ success: successCount > 0, sent: successCount, total_tokens: attemptedCount });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
