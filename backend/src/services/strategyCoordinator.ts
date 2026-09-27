@@ -65,8 +65,8 @@ export class StrategyCoordinator {
       this.supabase.from('agent_tasks').select('created_at').eq('strategy_id', strategy.id).eq('agent_type', 'DATA_COLLECTION').eq('task_type', 'WEB_RESEARCH').order('created_at', { ascending: false }).limit(1).maybeSingle(),
       this.supabase.from('agent_tasks').select('status, task_type, created_at, executed_at, error_message').eq('strategy_id', strategy.id).order('created_at', { ascending: false }).limit(30),
       this.supabase.from('agent_performance').select('reach, likes, comments, shares, fetched_at').eq('strategy_id', strategy.id).order('fetched_at', { ascending: false }).limit(10),
-      strategy.product_id
-        ? this.supabase.from('product_memory').select('name, product_name, category, description').eq('product_id', strategy.product_id).maybeSingle()
+       strategy.product_id
+         ? this.supabase.from('product_memory').select('name, product_name, brand, category, description, enhanced_description, target_audience, images, image_url').eq('product_id', strategy.product_id).eq('user_id', strategy.user_id).maybeSingle()
         : Promise.resolve({ data: null }),
     ]);
 
@@ -76,8 +76,13 @@ export class StrategyCoordinator {
     const product: {
       name?: string;
       product_name?: string;
+      brand?: string;
       category?: string;
       description?: string;
+      enhanced_description?: string;
+      target_audience?: string;
+      images?: string[];
+      image_url?: string;
     } = productResult.data || {};
     const platforms = normalizePlatforms(strategy.selected_accounts || strategy.platforms);
     const actions: string[] = [];
@@ -92,11 +97,11 @@ export class StrategyCoordinator {
         strategyId: strategy.id,
         userId: strategy.user_id,
         strategyGoal: strategy.goal || 'active strategy improvement',
-        productName: product.name || product.product_name || strategy.title || 'active product',
+         productName: product.name || product.product_name || 'active product',
         category: product.category || 'general',
-        dataNeed: failures > 0 ? 'fresh evidence to diagnose failed agent work and improve the active strategy' : 'fresh market and audience evidence for the active strategy',
-        audience: 'current target audience',
-        marketContext: product.description || strategy.title || 'active strategy',
+         dataNeed: failures > 0 ? 'fresh evidence to diagnose failed agent work and improve the active strategy' : 'fresh market and audience evidence for the promoted product or service',
+         audience: product.target_audience || 'current target audience',
+         marketContext: [product.brand, product.description || product.enhanced_description].filter(Boolean).join(' — ') || 'active product or service',
         sourceHints: platforms.length ? platforms : ['search', 'social', 'news'],
         timeWindowHours: 24,
       });

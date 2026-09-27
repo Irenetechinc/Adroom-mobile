@@ -1,7 +1,8 @@
 import { Annotation, END, StateGraph } from '@langchain/langgraph';
+import { AIEngine } from '../config/ai-models';
 import { getServiceSupabaseClient } from '../config/supabase';
 import { pushService } from './pushService';
-import { agentReachAdapter, ReachResult } from './agentReachAdapter';
+import { agentReachAdapter, normalizePublicAuthorName, ReachResult } from './agentReachAdapter';
 import { normalizeSelectedPlatforms } from './platformIdentity';
 
 export type StrategyGoal = 'SALESMAN' | 'AWARENESS' | 'PROMOTION' | 'LAUNCH';
@@ -14,7 +15,7 @@ export const GOAL_OUTCOMES: Record<StrategyGoal, { target: string; signal: strin
 };
 
 type Signal = ReachResult & { strategyId: string; userId: string; goal: StrategyGoal; intentScore: number; status: 'identified' | 'high_potential' | 'engaged' };
-type WorkflowState = { strategy: any; signals: Signal[]; identified: number; highPotential: number; engaged: number; routed: number };
+type WorkflowState = { strategy: any; product: OfferContext; signals: Signal[]; identified: number; highPotential: number; engaged: number; routed: number };
 const PERSONAL_PLATFORMS = new Set(['telegram', 'whatsapp_personal', 'signal_personal', 'bluesky', 'delta_chat']);
 
 function signalRecipient(signal: Signal): string | undefined {
@@ -23,12 +24,13 @@ function signalRecipient(signal: Signal): string | undefined {
   return String(recipient).trim() || undefined;
 }
 
-interface OfferContext {
+export interface OfferContext {
   name: string;
   brand: string;
   category: string;
   description: string;
   targetAudience: string;
+  imageUrls: string[];
   searchableTerms: string[];
 }
 
@@ -36,7 +38,19 @@ function firstText(...values: unknown[]): string {
   return values.map((value) => String(value || '').trim()).find(Boolean) || '';
 }
 
-function normalizeOfferContext(raw: any): OfferContext {
+function normalizeImageUrls(source: any): string[] {
+  const values = [
+    ...(Array.isArray(source?.images) ? source.images : []),
+    source?.image_url,
+    source?.imageUrl,
+  ];
+  return Array.from(new Set(values
+    .map((value) => typeof value === 'object' ? value?.url || value?.uri : value)
+    .map((value) => String(value || '').trim())
+    .filter((value) => /^https?:\/\//i.test(value)))).slice(0, 5);
+}
+
+export function normalizeOfferContext(raw: any): OfferContext {
   const source = Array.isArray(raw) ? raw[0] || {} : raw || {};
   const name = firstText(source.name, source.product_name, source.productName, source.service_name, source.serviceName);
   const brand = firstText(source.brand, source.brand_name, source.brandName);
@@ -52,36 +66,68 @@ function normalizeOfferContext(raw: any): OfferContext {
         && !/^(this|that|with|from|your|their|about|product|service|brand)$/i.test(term)),
   )).slice(0, 24);
 
-  return { name, brand, category, description, targetAudience, searchableTerms };
+  return { name, brand, category, description, targetAudience, imageUrls: normalizeImageUrls(source), searchableTerms };
 }
 
 function quoteSearchTerm(value: string): string {
   return `"${value.replace(/"/g, '').trim()}"`;
 }
 
-function demandQueries(context: OfferContext, goal: StrategyGoal): string[] {
-  const anchor = context.name || context.brand || context.category;
-  const identity = [context.brand, context.name].filter(Boolean).map(quoteSearchTerm).join(' ');
-  const category = context.category ? quoteSearchTerm(context.category) : '';
-  const audience = context.targetAudience ? quoteSearchTerm(context.targetAudience) : '';
-  const intent = goal === 'PROMOTION'
-    ? '(discount OR offer OR price OR available OR order OR buy)'
-    : goal === 'LAUNCH'
-      ? '(launch OR release OR "early access" OR available OR preorder)'
-      : '(need OR "looking for" OR recommend OR "where can I find" OR "where can I buy" OR "can anyone suggest")';
-
-  if (!anchor) return [];
-  return Array.from(new Set([
-    `${identity || quoteSearchTerm(anchor)} ${intent}`,
-    `${quoteSearchTerm(anchor)} ("I need" OR "looking for" OR "can anyone recommend")`,
-    `${quoteSearchTerm(anchor)} (price OR cost OR available OR order OR book OR hire)`,
-    `${category || quoteSearchTerm(anchor)} ${audience} ("does anyone know" OR recommend OR "where can I find")`,
-    `${quoteSearchTerm(anchor)} (question OR discussion OR forum OR comment OR review) ${intent}`,
-  ].map((query) => query.replace(/\s+/g, ' ').trim()))).slice(0, 5);
+export interface DiscoveryQueryPlan {
+  queries: string[];
+  demandTerms: string[];
+  exclusions: string[];
 }
 
-function hasDemandLanguage(text: string): boolean {
-  return /\b(i need|need a|need an|looking for|want to buy|where can i (buy|find|get)|can anyone (recommend|suggest)|does anyone know|recommend(ation)?|suggest(ion)?|how much|price|cost|available|order|book|hire|preorder|early access)\b/i.test(text);
+const GENERIC_DEMAND_TERMS = [
+  'need', 'looking for', 'want to buy', 'where can i find', 'where can i buy',
+  'recommend', 'suggest', 'how much', 'price', 'cost', 'available', 'order',
+  'book', 'hire', 'preorder', 'early access',
+];
+
+function safeSearchValue(value: unknown, maxLength: number): string {
+  const text = String(value || '').replace(/\s+/g, ' ').trim();
+  if (!text || /https?:\/\/|[\w.+-]+@[\w.-]+\.[a-z]{2,}|\+?\d[\d\s().-]{7,}\d/i.test(text)) return '';
+  return text.slice(0, maxLength);
+}
+
+export function normalizeDiscoveryQueryPlan(raw: any, context: OfferContext): DiscoveryQueryPlan {
+  const rawQueries = Array.isArray(raw?.queries)
+    ? raw.queries.map((value: unknown) => safeSearchValue(value, 280)).filter(Boolean)
+    : [];
+  const identityAnchors = [context.name, context.brand, context.category]
+    .map((value) => value.toLowerCase())
+    .filter(Boolean);
+  const primaryAnchor = context.name || context.brand || context.category;
+  const queries = rawQueries
+    .map((query: string) => {
+      if (!primaryAnchor || identityAnchors.some((anchor) => query.toLowerCase().includes(anchor))) {
+        return query;
+      }
+      return safeSearchValue(`${quoteSearchTerm(primaryAnchor)} ${query}`, 280);
+    })
+    .filter(Boolean);
+  const demandTerms = Array.isArray(raw?.demandTerms)
+    ? raw.demandTerms.map((value: unknown) => safeSearchValue(value, 100).toLowerCase()).filter((value: string) => value.length >= 3)
+    : [];
+  const exclusions = Array.isArray(raw?.exclusions)
+    ? raw.exclusions.map((value: unknown) => safeSearchValue(value, 100).toLowerCase()).filter((value: string) => value.length >= 3)
+    : [];
+  const anchor = context.name || context.brand || context.category;
+  const fallbackQueries = anchor ? [quoteSearchTerm(anchor)] : [];
+  return {
+    queries: Array.from(new Set<string>(queries)).slice(0, 5).concat(
+      queries.length ? [] : fallbackQueries,
+    ),
+    demandTerms: Array.from(new Set<string>(demandTerms)).slice(0, 24),
+    exclusions: Array.from(new Set<string>(exclusions)).slice(0, 16),
+  };
+}
+
+function hasDemandLanguage(text: string, demandTerms: string[] = []): boolean {
+  const value = text.toLowerCase();
+  const terms = demandTerms.length ? demandTerms : GENERIC_DEMAND_TERMS;
+  return terms.some((term) => value.includes(term.toLowerCase()));
 }
 
 function resultKey(item: ReachResult): string {
@@ -103,7 +149,7 @@ function resultKey(item: ReachResult): string {
  * offer-anchored, so retain the bounded result set for later scoring and
  * enrichment rather than silently discarding it.
  */
-export function selectConversationResults(results: ReachResult[], product: OfferContext): {
+export function selectConversationResults(results: ReachResult[], product: OfferContext, demandTerms: string[] = []): {
   results: ReachResult[];
   strict: number;
   relaxed: number;
@@ -120,7 +166,7 @@ export function selectConversationResults(results: ReachResult[], product: Offer
   for (const item of unique) {
     const text = item.text.toLowerCase();
     const identityMatch = product.searchableTerms.some((term) => text.includes(term.toLowerCase()));
-    const demandMatch = hasDemandLanguage(item.text);
+    const demandMatch = hasDemandLanguage(item.text, demandTerms);
     if (identityMatch && demandMatch) strict.push(item);
     else if (identityMatch || demandMatch) relaxed.push(item);
   }
@@ -132,6 +178,10 @@ export function selectConversationResults(results: ReachResult[], product: Offer
 
 const State = Annotation.Root({
   strategy: Annotation<any>,
+  product: Annotation<OfferContext>({
+    reducer: (_: OfferContext, next: OfferContext) => next,
+    default: () => normalizeOfferContext({}),
+  }),
   signals: Annotation<Signal[]>({ reducer: (_: Signal[], next: Signal[]) => next, default: () => [] }),
   identified: Annotation<number>({ reducer: (_: number, next: number) => next, default: () => 0 }),
   highPotential: Annotation<number>({ reducer: (_: number, next: number) => next, default: () => 0 }),
@@ -147,16 +197,11 @@ function normalizeGoal(goal: string): StrategyGoal {
   return 'AWARENESS';
 }
 
-function scoreSignal(text: string, goal: StrategyGoal, terms: string[]): number {
+function scoreSignal(text: string, goal: StrategyGoal, terms: string[], demandTerms: string[] = []): number {
   const value = text.toLowerCase();
   const termHits = terms.filter((term) => term && value.includes(term.toLowerCase())).length;
-  const demandTerms = [
-    'i need', 'need a', 'need an', 'looking for', 'want to buy',
-    'where can i', 'can anyone recommend', 'does anyone know',
-    'recommend', 'suggest', 'price', 'cost', 'available', 'order',
-    'book', 'hire', 'preorder', 'early access',
-  ];
-  const demandHits = demandTerms.filter((term) => value.includes(term)).length;
+  const activeDemandTerms = demandTerms.length ? demandTerms : GENERIC_DEMAND_TERMS;
+  const demandHits = activeDemandTerms.filter((term) => value.includes(term.toLowerCase())).length;
   const goalTerms = goal === 'PROMOTION'
     ? ['discount', 'offer', 'deal']
     : goal === 'LAUNCH'
@@ -170,6 +215,7 @@ function scoreSignal(text: string, goal: StrategyGoal, terms: string[]): number 
 
 export class ConversationAgent {
   private readonly supabase = getServiceSupabaseClient();
+  private readonly ai = AIEngine.getInstance();
   private readonly runningStrategies = new Set<string>();
   private readonly graph = new StateGraph(State)
     .addNode('discover', async (state: WorkflowState) => {
@@ -179,19 +225,19 @@ export class ConversationAgent {
       const product = await this.resolveOfferContext(strategy);
       if (!product.name && !product.brand && !product.category) {
         console.warn(`[ConversationAgent] discover skipped strategy=${strategy.id}: no product, brand, or service context was found; strategy title is not used for discovery`);
-        return { signals: [], identified: 0, highPotential: 0 };
+        return { product, signals: [], identified: 0, highPotential: 0 };
       }
 
-      const queries = demandQueries(product, goal);
+      const plan = await this.buildDiscoveryQueryPlan(product, goal);
       const selectedPlatforms = normalizeSelectedPlatforms(strategy.selected_accounts || strategy.platforms || []);
-      console.log(`[ConversationAgent] demand discovery strategy=${strategy.id} offer=${product.name || product.brand || product.category} queries=${queries.length} platforms=${selectedPlatforms.join(',') || 'web'}`);
+      console.log(`[ConversationAgent] demand discovery strategy=${strategy.id} offer=${product.name || product.brand || product.category} queries=${plan.queries.length} platforms=${selectedPlatforms.join(',') || 'web'}`);
       const discovered = await Promise.all(
-        queries.map((query) => agentReachAdapter.searchAcrossSources(query, selectedPlatforms)),
+        plan.queries.map((query) => agentReachAdapter.searchAcrossSources(query, selectedPlatforms)),
       );
 
       const results = discovered.flat();
       console.log(`[ConversationAgent] discover complete strategy=${strategy.id} results=${results.length}`);
-      const selected = selectConversationResults(results, product);
+      const selected = selectConversationResults(results, product, plan.demandTerms);
       if (selected.fallback) {
         console.warn(
           `[ConversationAgent] relaxed result matching strategy=${strategy.id} strict=${selected.strict} ` +
@@ -202,7 +248,7 @@ export class ConversationAgent {
       }
       const signals = selected.results
         .map((item) => {
-          const intentScore = scoreSignal(item.text, goal, product.searchableTerms);
+          const intentScore = scoreSignal(item.text, goal, product.searchableTerms, plan.demandTerms);
           return {
             ...item,
             strategyId: strategy.id,
@@ -213,7 +259,7 @@ export class ConversationAgent {
           } as Signal;
         });
 
-      return { signals, identified: signals.length, highPotential: signals.filter((signal) => signal.status === 'high_potential').length };
+      return { product, signals, identified: signals.length, highPotential: signals.filter((signal) => signal.status === 'high_potential').length };
     })
     .addNode('persist', async (state: WorkflowState) => {
       console.log(`[ConversationAgent] persist strategy=${state.strategy.id} signals=${state.signals.length}`);
@@ -224,7 +270,7 @@ export class ConversationAgent {
           goal: signal.goal,
           platform: signal.platform,
           external_id: signal.externalId,
-          author_name: signal.authorName,
+          author_name: normalizePublicAuthorName(signal.authorName) || null,
           author_id: signal.authorId || null,
           text: signal.text.slice(0, 4000),
           url: signal.url || null,
@@ -247,7 +293,7 @@ export class ConversationAgent {
            user_id: signal.userId,
            platform: signal.platform,
            platform_user_id: recipient || `discovery:${signal.externalId}`,
-           platform_username: signal.authorName,
+            platform_username: normalizePublicAuthorName(signal.authorName) || null,
            first_interaction: signal.text.slice(0, 1000),
            intent_score: signal.intentScore,
            intent_signals: [{ source: signal.kind, url: signal.url || null, recipient: recipient || null, contact_ready: !PERSONAL_PLATFORMS.has(signal.platform) || Boolean(recipient) }],
@@ -332,9 +378,17 @@ export class ConversationAgent {
            content: {
              signal_id: signal.externalId,
              lead_id: lead?.id || null,
-             author_name: signal.authorName,
+              author_name: normalizePublicAuthorName(signal.authorName) || null,
              recipient,
-             public_context: { platform: signal.platform, text: signal.text.slice(0, 2000), url: signal.url || null, kind: signal.kind },
+              public_context: { platform: signal.platform, text: signal.text.slice(0, 2000), url: signal.url || null, kind: signal.kind },
+              product_context: {
+                name: state.product.name || null,
+                brand: state.product.brand || null,
+                category: state.product.category || null,
+                description: state.product.description || null,
+                target_audience: state.product.targetAudience || null,
+                image_urls: state.product.imageUrls,
+              },
              lead_profile: sharedProfile?.profile || null,
              share_with: ['psychology', 'messaging', 'tools', 'salesman'],
              text: signal.text,
@@ -376,6 +430,49 @@ export class ConversationAgent {
     .addEdge('notify', END)
     .compile();
 
+  private async buildDiscoveryQueryPlan(context: OfferContext, goal: StrategyGoal): Promise<DiscoveryQueryPlan> {
+    const prompt = `Build a public conversation discovery plan for the actual offer below.
+
+Search for public discussions where people express a need, ask for recommendations,
+compare options, ask about price or availability, or show another natural buying
+signal related to this offer. The wording can vary by audience, platform, language,
+and category; do not rely on a fixed phrase or query template.
+
+Return JSON only:
+{
+  "queries": ["up to five concise web/social search queries"],
+  "demandTerms": ["phrases or short terms that indicate a relevant need or buying discussion"],
+  "exclusions": ["terms that clearly describe unrelated intent"]
+}
+
+Rules:
+- Anchor every query to the actual offer identity. Never use a campaign or strategy title.
+- Use the full product/service name, brand, category, audience, and description when useful.
+- The image URLs are context for identifying the offer; never put an image URL in a search query.
+- Do not output personal data, credentials, contact details, or recipient identifiers.
+- Prefer varied natural-language demand expressions over generic marketing terms.
+
+OFFER CONTEXT:
+${JSON.stringify({
+  name: context.name,
+  brand: context.brand,
+  category: context.category,
+  description: context.description,
+  targetAudience: context.targetAudience,
+  imageUrls: context.imageUrls,
+})}
+GOAL: ${goal}`;
+
+    try {
+      const response = await this.ai.generateJson(prompt);
+      const plan = normalizeDiscoveryQueryPlan(response, context);
+      if (plan.queries.length) return plan;
+    } catch (error: any) {
+      console.warn(`[ConversationAgent] dynamic discovery query generation failed: ${error.message}`);
+    }
+    return normalizeDiscoveryQueryPlan(null, context);
+  }
+
   private async resolveOfferContext(strategy: any): Promise<OfferContext> {
     const embedded = normalizeOfferContext(strategy.product_memory);
     if ((embedded.name || embedded.brand || embedded.category) && !strategy.product_id) {
@@ -386,7 +483,7 @@ export class ConversationAgent {
 
     const { data, error } = await this.supabase
       .from('product_memory')
-      .select('product_id, product_name, brand, category, product_type, description, enhanced_description, target_audience')
+      .select('product_id, product_name, brand, category, product_type, description, enhanced_description, target_audience, images, image_url')
       .eq('product_id', strategy.product_id)
       .eq('user_id', strategy.user_id)
       .maybeSingle();
@@ -417,7 +514,7 @@ export class ConversationAgent {
     }
     this.runningStrategies.add(strategy.id);
     try {
-      return await this.graph.invoke({ strategy, signals: [], identified: 0, highPotential: 0, engaged: 0, routed: 0 }) as any;
+      return await this.graph.invoke({ strategy, product: normalizeOfferContext({}), signals: [], identified: 0, highPotential: 0, engaged: 0, routed: 0 }) as any;
     } finally {
       this.runningStrategies.delete(strategy.id);
     }
@@ -429,7 +526,7 @@ export class ConversationAgent {
     }
     this.runningStrategies.add(strategy.id);
     try {
-      return await this.graph.invoke({ strategy, signals: [], identified: 0, highPotential: 0, engaged: 0, routed: 0 }) as any;
+      return await this.graph.invoke({ strategy, product: normalizeOfferContext({}), signals: [], identified: 0, highPotential: 0, engaged: 0, routed: 0 }) as any;
     } finally {
       this.runningStrategies.delete(strategy.id);
     }

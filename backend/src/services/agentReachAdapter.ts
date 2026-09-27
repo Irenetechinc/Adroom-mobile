@@ -16,6 +16,14 @@ export interface ReachResult {
   metadata?: Record<string, any>;
 }
 
+export function normalizePublicAuthorName(value: unknown): string {
+  const name = String(value || '').replace(/\s+/g, ' ').trim();
+  if (!name || /^(?:unknown(?:\s+person|\s+user)?|anonymous|n\/?a|null|undefined)$/i.test(name)) {
+    return '';
+  }
+  return name.slice(0, 180);
+}
+
 function parseOutput(output: string): any[] {
   const text = output.trim();
   if (!text) return [];
@@ -39,7 +47,7 @@ function parseOutput(output: string): any[] {
   return lines.map((line, index) => ({
     id: `${index}-${line.slice(0, 32)}`,
     text: line,
-    author_name: 'Unknown person',
+    author_name: '',
     created_at: new Date().toISOString(),
   }));
 }
@@ -94,7 +102,14 @@ export class AgentReachAdapter {
     return {
       platform,
       externalId: String(item.id || item.post_id || item.review_id || item.url || `${platform}:${query}:${index}`),
-      authorName: String(item.author_name || item.author || item.username || item.user?.name || item.person || 'Unknown person'),
+      authorName: normalizePublicAuthorName(
+        item.author_name
+        || item.author
+        || item.username
+        || item.user?.display_name
+        || item.user?.name
+        || item.person,
+      ),
       authorId,
       text,
       url,

@@ -48,6 +48,11 @@ interface Lead {
   last_contacted_at?: string;
   next_followup_at?: string;
   created_at: string;
+  profile?: {
+    publicIdentity?: {
+      displayName?: string;
+    };
+  };
 }
 
 interface DmMessage {
@@ -128,6 +133,24 @@ function stepLabel(step: number): string {
   if (step === 1) return 'Follow-up 1';
   if (step === 2) return 'Follow-up 2';
   return `Follow-up ${step}`;
+}
+
+function normalizeLeadName(value: unknown): string {
+  const name = String(value || '').replace(/\s+/g, ' ').trim();
+  if (!name || /^(?:unknown(?:\s+person|\s+user)?|anonymous|n\/?a|null|undefined)$/i.test(name)) {
+    return '';
+  }
+  return name;
+}
+
+function leadDisplayName(lead: Lead): string {
+  const profileName = normalizeLeadName(lead.profile?.publicIdentity?.displayName);
+  if (profileName) return profileName;
+
+  const storedName = normalizeLeadName(lead.platform_username);
+  if (!storedName) return 'Public lead';
+  const handle = storedName.replace(/^@+/, '');
+  return /^[a-z0-9._-]+$/i.test(handle) ? `@${handle}` : storedName;
 }
 
 // ─── Skeleton ─────────────────────────────────────────────────────────────────
@@ -250,7 +273,7 @@ const LeadCard = ({ lead, index, onPress }: { lead: Lead; index: number; onPress
           </View>
           <View style={{ flex: 1 }}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-              <Text style={styles.leadUsername} numberOfLines={1}>@{lead.platform_username}</Text>
+              <Text style={styles.leadUsername} numberOfLines={1}>{leadDisplayName(lead)}</Text>
               {isOverdue && (
                 <View style={styles.overdueBadge}>
                   <Clock size={9} color="#F59E0B" />
@@ -342,7 +365,7 @@ const ConversationThread = ({
           </Text>
         </View>
         <View style={{ flex: 1 }}>
-          <Text style={styles.threadLeadName} numberOfLines={1}>@{lead.platform_username}</Text>
+          <Text style={styles.threadLeadName} numberOfLines={1}>{leadDisplayName(lead)}</Text>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
             <Text style={[styles.threadPlatformTag, { color: pColor }]}>
               {lead.platform.charAt(0).toUpperCase() + lead.platform.slice(1)}
@@ -408,7 +431,7 @@ const ConversationThread = ({
                 ) : (
                   <>
                     <User size={10} color={pColor} />
-                    <Text style={[styles.bubbleSender, { color: pColor }]}>@{lead.platform_username}</Text>
+                    <Text style={[styles.bubbleSender, { color: pColor }]}>{leadDisplayName(lead)}</Text>
                   </>
                 )}
                 <Text style={styles.bubbleTime}>{timeAgo(msg.sent_at)}</Text>
@@ -577,7 +600,24 @@ export default function InteractionsScreen() {
         .not('stage', 'eq', 'lost')
         .order('last_contacted_at', { ascending: false })
         .limit(80);
-      setLeads(data as Lead[] || []);
+      const rows = (data || []) as Lead[];
+      if (!rows.length) {
+        setLeads([]);
+        return;
+      }
+
+      const { data: profiles } = await supabase
+        .from('lead_sales_profiles')
+        .select('lead_id, profile')
+        .eq('user_id', user.id)
+        .in('lead_id', rows.map((lead) => lead.id));
+      const profileByLead = new Map<string, any>(
+        (profiles || []).map((row: any) => [String(row.lead_id), row.profile]),
+      );
+      setLeads(rows.map((lead) => ({
+        ...lead,
+        profile: profileByLead.get(lead.id),
+      })));
     } catch (e) {
       console.error('[Interactions] Load leads error:', e);
     } finally {
@@ -649,6 +689,10 @@ export default function InteractionsScreen() {
             setSelectedLead((prev) => prev ? { ...prev, ...payload.new } : prev);
           }
         }
+      )
+      .on('postgres_changes',
+        { event: '*', schema: 'public', table: 'lead_sales_profiles', filter: `user_id=eq.${user.id}` },
+        () => loadLeads()
       )
 
       // ── Lead DMs tab: lead_dm_messages (new outbound/inbound DMs) ──────────
@@ -742,7 +786,7 @@ export default function InteractionsScreen() {
         <View style={{ flex: 1 }}>
           <Text style={styles.headerLabel}>Adirum AI</Text>
           <Text style={styles.headerTitle}>
-            {selectedLead ? `@${selectedLead.platform_username}` : 'Interactions'}
+            {selectedLead ? leadDisplayName(selectedLead) : 'Interactions'}
           </Text>
         </View>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
