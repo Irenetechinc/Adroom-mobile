@@ -115,7 +115,14 @@ export class AgentReachAdapter {
       url,
       kind: kind.includes('comment') ? 'comment' : kind.includes('review') ? 'review' : kind.includes('message') ? 'message' : kind.includes('blog') ? 'blog' : 'post',
       capturedAt: item.captured_at || item.created_at || item.reviewed_at || new Date().toISOString(),
-      metadata: { adapter: 'agent-reach', raw: item, ...(recipient ? { recipient } : {}) },
+      metadata: {
+        adapter: 'agent-reach',
+        discovery_mode: 'live_web_search',
+        provider: item.source,
+        captured_live: true,
+        raw: item,
+        ...(recipient ? { recipient } : {}),
+      },
     };
   }
 
@@ -133,7 +140,7 @@ export class AgentReachAdapter {
     }
     if (normalized === 'web') {
       const webResults = await agentReachWebRouter.search(query, 8);
-      console.log(`[AgentReachAdapter] web search completed: ${webResults.length} result(s)`);
+      console.log(`[AgentReachAdapter] live web search completed: ${webResults.length} result(s)`);
       return webResults.map((item, index) => this.mapItem('web', {
         id: item.url || `web:${index}`,
         title: item.title,
@@ -163,7 +170,7 @@ export class AgentReachAdapter {
     const routedQuery = domains[normalized] ? `${query} ${domains[normalized]}` : query;
     try {
       const results = await agentReachWebRouter.search(routedQuery, 8);
-      console.log(`[AgentReachAdapter] ${normalized} web-routed search completed: ${results.length} result(s)`);
+      console.log(`[AgentReachAdapter] live web-routed search completed platform=${normalized} results=${results.length}`);
       return results.map((item, index) => this.mapItem(normalized, {
         id: item.url || `${normalized}:${index}`,
         title: item.title,
