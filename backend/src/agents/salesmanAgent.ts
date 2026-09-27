@@ -1300,11 +1300,21 @@ Return JSON: { "intent_score": 0.0 }
         if (!leads?.length) return;
 
         const tokens = await this.getTokens(userId);
+        const { data: profileRows } = await this.supabase
+            .from('lead_sales_profiles')
+            .select('lead_id, profile')
+            .eq('user_id', userId)
+            .in('lead_id', leads.map((lead: any) => lead.id));
+        const profileByLead = new Map<string, any>(
+            (profileRows || []).map((row: any) => [String(row.lead_id), row.profile]),
+        );
 
         for (const lead of leads) {
             try {
+                const leadProfile = profileByLead.get(String(lead.id)) || null;
                 // High-intent leads (>= 0.85): attempt deal closing
                 if (lead.intent_score >= 0.85 && lead.stage !== 'closed') {
+                    lead.leadProfile = leadProfile;
                     await this.closeDeal(lead, userId, tokens);
                     continue;
                 }
@@ -1339,6 +1349,8 @@ Your tone is ${persona.tone}. You're reaching out to a potential customer.
 Context about them: "${lead.first_interaction}"
 Platform: ${lead.platform}
 Intent score: ${lead.intent_score} (higher = more interested)
+Public profile and psychology (use only explicit, non-sensitive evidence; ignore when absent):
+${JSON.stringify(leadProfile)}
 
 ${stepCtx}
 

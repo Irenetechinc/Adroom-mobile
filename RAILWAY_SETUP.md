@@ -35,8 +35,9 @@ never commit them or print them in logs.
   `PROFILE_BUILDER_OSINTGRAPH_NEO4J_PASSWORD`,
   `PROFILE_BUILDER_OSINTGRAPH_INSTAGRAM_USERNAME`, and optional
   `PROFILE_BUILDER_OSINTGRAPH_INSTAGRAM_USER_AGENT`. These are used only to
-  create the upstream tool's local runtime configuration; they are never sent
-  to the profile-builder adapters or target accounts.
+  create a short-lived mode-0600 runtime file for the upstream process; the
+  file is removed immediately after each invocation and the values are never
+  sent to the profile-builder adapters or target accounts.
 - All existing AI, media, storage, OAuth, and payment variables used by the
   selected application features
 

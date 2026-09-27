@@ -301,6 +301,7 @@ export class PublicProfileToolAdapters {
   private readonly python: string;
   private readonly osintgraphPython: string;
   private readonly lastInvocationAt = new Map<string, number>();
+  private osintgraphCredentialLock: Promise<void> = Promise.resolve();
   private startupDiagnostics: PublicProfileToolDiagnostic[] = [];
 
   constructor(python = process.env.PROFILE_BUILDER_PYTHON || 'python3') {
@@ -424,15 +425,7 @@ export class PublicProfileToolAdapters {
     const enabled = process.env.PROFILE_BUILDER_ENABLE_OSINTGRAPH !== 'false';
     const packagePath = path.join(TOOLS_ROOT, 'osintgraph', 'src', 'osintgraph', 'cli.py');
     const exists = await fs.access(packagePath).then(() => true).catch(() => false);
-    const credentialsPath = path.join(TOOLS_ROOT, 'osintgraph', 'src', 'osintgraph', 'credentials.json');
-    await this.writeOsintgraphCredentialsFromEnvironment(credentialsPath);
-    const credentials: Record<string, unknown> = await fs.readFile(credentialsPath, 'utf8').then((value) => {
-      try {
-        return JSON.parse(value) as Record<string, unknown>;
-      } catch {
-        return {} as Record<string, unknown>;
-      }
-    }).catch(() => ({} as Record<string, unknown>));
+    const credentials = this.getOsintgraphCredentials();
     const requiredCredentialsPresent = ['NEO4J_URI', 'NEO4J_USERNAME', 'NEO4J_PASSWORD', 'INSTAGRAM_USERNAME']
       .every((key) => Boolean(String(credentials[key] || '').trim()));
     const dependencyReady = exists && await this.checkOsintgraphDependency();
@@ -448,7 +441,7 @@ export class PublicProfileToolAdapters {
         : !exists
           ? { warning: 'Osintgraph is enabled but its vendored runtime is missing.' }
           : !configured
-            ? { warning: 'Osintgraph is enabled but its credentials.json is not configured with Instagram and Neo4j public-research credentials.' }
+            ? { warning: 'Osintgraph is enabled but its Railway credentials are not configured with Instagram and Neo4j public-research credentials.' }
             : !dependencyReady
               ? { warning: 'Osintgraph is configured but its Python dependencies are not importable in the selected runtime.' }
               : {}),
@@ -469,16 +462,9 @@ export class PublicProfileToolAdapters {
     }
   }
 
-  private async writeOsintgraphCredentialsFromEnvironment(credentialsPath: string): Promise<void> {
+  private getOsintgraphCredentials(): Record<string, string> {
     const raw = process.env.PROFILE_BUILDER_OSINTGRAPH_CREDENTIALS_JSON?.trim();
-    const existing = await fs.readFile(credentialsPath, 'utf8').then((value) => {
-      try {
-        return JSON.parse(value) as Record<string, string>;
-      } catch {
-        return {};
-      }
-    }).catch(() => ({}));
-    const credentials: Record<string, string> = { ...existing };
+    const credentials: Record<string, string> = {};
     if (raw) {
       try {
         const parsed = JSON.parse(raw);
@@ -504,9 +490,17 @@ export class PublicProfileToolAdapters {
       const value = process.env[`PROFILE_BUILDER_OSINTGRAPH_${key}`]?.trim();
       if (value) credentials[key] = value;
     }
-    if (!Object.keys(credentials).length) return;
-    await fs.mkdir(path.dirname(credentialsPath), { recursive: true });
-    await fs.writeFile(credentialsPath, JSON.stringify(credentials), { encoding: 'utf8', mode: 0o600 });
+    return credentials;
+  }
+
+  private async acquireOsintgraphCredentialLock(): Promise<() => void> {
+    let release!: () => void;
+    const previous = this.osintgraphCredentialLock;
+    this.osintgraphCredentialLock = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    await previous;
+    return release;
   }
 
   private async diagnoseRemoteTool(
@@ -636,7 +630,7 @@ export class PublicProfileToolAdapters {
       // stdout. Keep the report in a per-run directory so concurrent leads
       // cannot read one another's results.
       const result = await runProcess(
-        this.osintgraphPython,
+        this.python,
         [
           '-m',
           'maigret',
@@ -722,8 +716,23 @@ export class PublicProfileToolAdapters {
         warning: 'Osintgraph is disabled by PROFILE_BUILDER_ENABLE_OSINTGRAPH=false. Public username discovery only; email and phone enumeration is intentionally not attempted.',
       };
     }
+    const credentials = this.getOsintgraphCredentials();
+    const requiredCredentialsPresent = ['NEO4J_URI', 'NEO4J_USERNAME', 'NEO4J_PASSWORD', 'INSTAGRAM_USERNAME']
+      .every((key) => Boolean(String(credentials[key] || '').trim()));
+    if (!requiredCredentialsPresent) {
+      return {
+        attempted: false,
+        available: false,
+        hits: [],
+        warning: 'Osintgraph credentials are not configured in Railway environment variables.',
+      };
+    }
+    const credentialPath = path.join(TOOLS_ROOT, 'osintgraph', 'src', 'osintgraph', 'credentials.json');
+    const release = await this.acquireOsintgraphCredentialLock();
     try {
       const cwd = path.join(TOOLS_ROOT, 'osintgraph');
+      await fs.mkdir(path.dirname(credentialPath), { recursive: true });
+      await fs.writeFile(credentialPath, JSON.stringify(credentials), { encoding: 'utf8', mode: 0o600 });
       const result = await runProcess(
         this.osintgraphPython,
         ['-m', 'osintgraph.cli', 'discover', username, '--limit', 'follower=0', 'followee=0', 'post=1', '--skip', 'post-analysis', 'account-analysis'],
@@ -746,6 +755,10 @@ export class PublicProfileToolAdapters {
       return { attempted: true, available: true, hits: mapRecords('osintgraph_public_instagram', platform || 'instagram', username, records) };
     } catch (error: any) {
       return { attempted: true, available: false, hits: [], warning: `Osintgraph unavailable: ${clean(error?.message, 300)}` };
+    }
+    finally {
+      await fs.rm(credentialPath, { force: true }).catch(() => undefined);
+      release();
     }
   }
 

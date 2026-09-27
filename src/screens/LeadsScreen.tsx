@@ -1,6 +1,6 @@
 import React, { useState, useCallback, useRef, useEffect } from 'react';
 import {
-  View, Text, ScrollView, TouchableOpacity, TextInput,
+  View, Text, ScrollView, TouchableOpacity, TextInput, Image,
   RefreshControl, StyleSheet, Animated as RNAnimated,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -107,6 +107,7 @@ function profileStatusMeta(status?: string): { label: string; color: string } {
     case 'identified': return { label: 'Identified', color: '#00F0FF' };
     case 'discovering': return { label: 'Profile Builder searching', color: '#F59E0B' };
     case 'profile_ready': return { label: 'Public profile found', color: '#A78BFA' };
+    case 'psychology_pending': return { label: 'Psychology analyzing', color: '#A78BFA' };
     case 'psychology_complete': return { label: 'Psychology ready', color: '#10B981' };
     case 'completed': return { label: 'Profile complete', color: '#10B981' };
     case 'failed': return { label: 'Profile retry needed', color: '#EF4444' };
@@ -293,6 +294,13 @@ function LeadCard({ lead, index, onPress }: { lead: Lead; index: number; onPress
                 {!!publicIdentity.bio && (
                   <Text style={styles.profileBio}>{publicIdentity.bio}</Text>
                 )}
+                {!!publicIdentity.profilePictureUrl && (
+                  <Image
+                    source={{ uri: publicIdentity.profilePictureUrl }}
+                    style={{ width: 56, height: 56, borderRadius: 28, marginTop: 8, backgroundColor: '#1E293B' }}
+                    accessibilityLabel="Public profile picture"
+                  />
+                )}
                 {selectedPlatformMatches.length > 0 && (
                   <Text style={[styles.profileDetail, styles.selectedProfileDetail]}>
                     Selected platforms: {selectedPlatformMatches.map((handle: any) => `${handle.platform}: ${handle.handle}`).join(' · ')}
@@ -305,6 +313,11 @@ function LeadCard({ lead, index, onPress }: { lead: Lead; index: number; onPress
                 )}
                 {psychology?.recommendedTone && (
                   <Text style={styles.profileDetail}>Suggested tone: {psychology.recommendedTone}</Text>
+                )}
+                {!!lead.profile_error && (
+                  <Text style={[styles.profileDetail, { color: '#EF4444' }]}>
+                    Profile update: {lead.profile_error}
+                  </Text>
                 )}
               </View>
             )}

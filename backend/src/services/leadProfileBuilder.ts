@@ -27,6 +27,7 @@ export interface PublicSocialHandle {
 export interface PublicLeadIdentity {
   displayName: string;
   bio: string;
+  profilePictureUrl?: string;
   socialHandles: PublicSocialHandle[];
   interests: string[];
   publicConnections: string[];
@@ -69,6 +70,7 @@ interface LeadContext {
   platformUsername: string;
   firstInteraction: string;
   intentSignals: any;
+  identifiers: string[];
   selectedPlatforms: string[];
 }
 
@@ -124,6 +126,58 @@ function cleanList(value: unknown, maxItems = 12): string[] {
       .filter((item) => Boolean(item) && !PERSONAL_DATA_PATTERN.test(item))
       .slice(0, maxItems)
     : [];
+}
+
+function normalizeIdentifier(value: unknown): string {
+  const identifier = safeText(value, 180).replace(/^@/, '').trim();
+  return identifier;
+}
+
+function isStandaloneContactIdentifier(value: string): boolean {
+  return /^[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}$/i.test(value)
+    || /^\+?[1-9]\d[\d\s().-]{6,18}\d$/.test(value);
+}
+
+function isAllowedIdentifier(value: string): boolean {
+  if (!value || value.startsWith('discovery:') || /[/?#&=]/.test(value)) return false;
+  if (isStandaloneContactIdentifier(value)) {
+    return process.env.PROFILE_BUILDER_ENABLE_PUBLIC_CONTACT_ENUMERATION === 'true';
+  }
+  return !PERSONAL_DATA_PATTERN.test(value) && value.length <= 120;
+}
+
+function extractIdentifiers(context: {
+  platformUsername: unknown;
+  platformUserId: unknown;
+  intentSignals: unknown;
+}): string[] {
+  const candidates: unknown[] = [context.platformUsername, context.platformUserId];
+  const allowedKeys = new Set([
+    'username',
+    'handle',
+    'email',
+    'phone',
+    'telephone',
+    'mobile',
+    'identifier',
+    'platform_user_id',
+  ]);
+  const visit = (value: unknown, depth: number): void => {
+    if (depth > 3 || !value || typeof value !== 'object') return;
+    if (Array.isArray(value)) {
+      value.slice(0, 12).forEach((item) => visit(item, depth + 1));
+      return;
+    }
+    for (const [key, item] of Object.entries(value as Record<string, unknown>)) {
+      if (allowedKeys.has(key.toLowerCase())) candidates.push(item);
+      if (item && typeof item === 'object') visit(item, depth + 1);
+    }
+  };
+  visit(context.intentSignals, 0);
+
+  return Array.from(new Set(candidates
+    .map(normalizeIdentifier)
+    .filter(isAllowedIdentifier)));
 }
 
 function extractPublicHandle(platform: string, result: ReachResult): string | undefined {
@@ -320,7 +374,7 @@ export class LeadProfileBuilder {
       });
       await this.setLeadStatus(context, 'discovering');
 
-      const results = await this.executePlan(plan, run.id);
+      const results = await this.executePlan(plan, run.id, context);
       const publicEvidence = this.toPublicEvidence(results);
       logBuilderActivity('discovery_complete', {
         userId,
@@ -382,7 +436,7 @@ export class LeadProfileBuilder {
         public_evidence_count: result.evidenceCount,
         public_profile: result,
       });
-      await this.setLeadStatus(context, 'profile_ready');
+      await this.setLeadStatus(context, 'profile_ready', undefined, result.evidenceCount);
 
       await this.updateRun(run.id, {
         status: 'psychology_pending',
@@ -434,14 +488,14 @@ export class LeadProfileBuilder {
           active_tool_error: psychologyFallback ? 'Psychology engine unavailable; safe neutral guide stored.' : null,
           public_profile: result,
         });
-        await this.setLeadStatus(context, 'psychology_complete');
+        await this.setLeadStatus(context, 'psychology_complete', undefined, result.evidenceCount);
       }
 
       await this.finishRun(run.id, 'completed', {
         public_evidence_count: result.evidenceCount,
         public_profile: result,
       });
-      await this.setLeadStatus(context, 'completed');
+      await this.setLeadStatus(context, 'completed', undefined, result.evidenceCount);
       logBuilderActivity('build_completed', {
         userId,
         leadId,
@@ -523,13 +577,17 @@ export class LeadProfileBuilder {
       platformUsername: safeText(lead.platform_username, 180),
       firstInteraction: safeText(lead.first_interaction, 1400),
       intentSignals: lead.intent_signals || [],
+      identifiers: extractIdentifiers({
+        platformUsername: lead.platform_username,
+        platformUserId: lead.platform_user_id,
+        intentSignals: lead.intent_signals || [],
+      }),
       selectedPlatforms,
     };
   }
 
   private async chooseDiscoveryPlan(context: LeadContext): Promise<DiscoveryPlan[]> {
-    const identifiers = [context.platformUsername]
-      .filter((value) => value && !PERSONAL_DATA_PATTERN.test(value) && !value.startsWith('discovery:'));
+    const identifiers = context.identifiers;
     if (!identifiers.length) return [];
 
     let aiPlan: any = null;
@@ -562,21 +620,23 @@ allowedTools=${JSON.stringify(TOOL_NAMES)}`);
       TOOL_NAMES.includes(step.tool) &&
       /^[a-z0-9][a-z0-9_-]{0,59}$/.test(step.platform) &&
       Boolean(step.query) &&
-      !PERSONAL_DATA_PATTERN.test(step.query),
+      (!PERSONAL_DATA_PATTERN.test(step.query)
+        || (isStandaloneContactIdentifier(step.query.replace(/^["']|["']$/g, '').trim())
+          && process.env.PROFILE_BUILDER_ENABLE_PUBLIC_CONTACT_ENUMERATION === 'true')),
     ).slice(0, TOOL_NAMES.length);
 
-    if (planned.length) return this.completeDiscoveryPlan(planned, context, identifiers[0]);
+    if (planned.length) return this.completeDiscoveryPlan(planned, context);
     const fallbackPlan: DiscoveryPlan[] = [
       {
         tool: 'maigret_public_username',
         platform: 'web',
-        query: context.platformUsername,
+        query: identifiers[0],
         reason: 'Check public username references across the pinned Maigret site database',
       },
       {
         tool: 'helix_public_username',
         platform: 'web',
-        query: context.platformUsername,
+        query: identifiers[0],
         reason: 'Use the pinned Helix username interface when its runtime is available',
       },
       ...this.defaultAdapterSteps(context, context.platformUsername),
@@ -584,7 +644,6 @@ allowedTools=${JSON.stringify(TOOL_NAMES)}`);
     return this.completeDiscoveryPlan(
       fallbackPlan.filter((step) => Boolean(step.query)),
       context,
-      context.platformUsername,
     );
   }
 
@@ -653,7 +712,6 @@ allowedTools=${JSON.stringify(TOOL_NAMES)}`);
   private completeDiscoveryPlan(
     planned: DiscoveryPlan[],
     context: LeadContext,
-    query: string,
   ): DiscoveryPlan[] {
     const selectedPlatforms = new Set([
       context.platform,
@@ -665,16 +723,21 @@ allowedTools=${JSON.stringify(TOOL_NAMES)}`);
       return true;
     };
     const seen = new Set<string>();
-    const merged = [...planned, ...this.defaultAdapterSteps(context, query)].filter((step) => {
+    const filtered = planned.filter((step) => {
       if (!isApplicable(step)) return false;
       if (seen.has(step.tool)) return false;
       seen.add(step.tool);
       return Boolean(step.query);
     });
-    return merged.slice(0, TOOL_NAMES.length);
+    return filtered.slice(0, TOOL_NAMES.length);
   }
 
-  private async executePlan(plan: DiscoveryPlan[], runId?: string): Promise<ReachResult[]> {
+  private async executePlan(
+    plan: DiscoveryPlan[],
+    runId?: string,
+    context?: LeadContext,
+    allowRecovery = true,
+  ): Promise<ReachResult[]> {
     const results: ReachResult[] = [];
     for (const step of plan) {
       await this.waitForRateLimit();
@@ -711,6 +774,30 @@ allowedTools=${JSON.stringify(TOOL_NAMES)}`);
         }
       }
     }
+    if (allowRecovery && context && results.length < 2) {
+      const attemptedTools = Array.from(new Set(plan.map((step) => step.tool)));
+      const recoveryPlan = await this.chooseRecoveryPlan(context, attemptedTools);
+      if (recoveryPlan.length) {
+        plan.push(...recoveryPlan);
+        if (runId) {
+          await this.updateRun(runId, {
+            tools_attempted: Array.from(new Set(plan.map((step) => step.tool))),
+          }).catch((error) => {
+            logBuilderActivity('recovery_tool_status_update_failed', {
+              runId,
+              error: safeActivityError(error),
+            });
+          });
+        }
+        results.push(...await this.executePlan(recoveryPlan, runId, context, false));
+        logBuilderActivity('adaptive_recovery_complete', {
+          userId: context.userId,
+          leadId: context.id,
+          recoveryToolCount: recoveryPlan.length,
+          totalResultCount: results.length,
+        });
+      }
+    }
     const seen = new Set<string>();
     return results.filter((result) => {
       const key = result.url || result.externalId;
@@ -718,6 +805,40 @@ allowedTools=${JSON.stringify(TOOL_NAMES)}`);
       seen.add(key);
       return Boolean(result.url && result.text);
     }).slice(0, 30);
+  }
+
+  private async chooseRecoveryPlan(context: LeadContext, attemptedTools: string[]): Promise<DiscoveryPlan[]> {
+    const remainingTools = TOOL_NAMES.filter((tool) => !attemptedTools.includes(tool));
+    if (!remainingTools.length || !context.identifiers.length) return [];
+    try {
+      const response = await this.ai.generateJson(`The first public-profile discovery pass returned no or very limited evidence.
+Choose a recovery plan using only unused tools that are relevant to this lead. Prefer a different approach or source,
+and keep discovery public-only. Do not use credentials, bypass access controls, or search for sensitive traits.
+Return JSON array only:
+[{"tool":"one allowed tool","platform":"platform","query":"short query","reason":"brief recovery reason"}]
+identifiers=${JSON.stringify(context.identifiers)}
+leadPlatform=${context.platform}
+selectedPlatforms=${JSON.stringify(context.selectedPlatforms)}
+attemptedTools=${JSON.stringify(attemptedTools)}
+allowedTools=${JSON.stringify(remainingTools)}`);
+      const planned = Array.isArray(response) ? response.map((step: any) => ({
+        tool: step.tool,
+        platform: normalizePlatform(step.platform),
+        query: safeText(step.query, 300),
+        reason: safeText(step.reason, 180),
+      })).filter((step: any): step is DiscoveryPlan =>
+        remainingTools.includes(step.tool)
+        && /^[a-z0-9][a-z0-9_-]{0,59}$/.test(step.platform)
+        && Boolean(step.query)
+        && (!PERSONAL_DATA_PATTERN.test(step.query)
+          || (isStandaloneContactIdentifier(step.query.replace(/^["']|["']$/g, '').trim())
+            && process.env.PROFILE_BUILDER_ENABLE_PUBLIC_CONTACT_ENUMERATION === 'true')),
+      ) : [];
+      return this.completeDiscoveryPlan(planned, context);
+    } catch (error: any) {
+      console.warn(`[LeadProfileBuilder] adaptive recovery planner unavailable: ${error.message}`);
+      return [];
+    }
   }
 
   private toPublicEvidence(results: ReachResult[]) {
@@ -745,11 +866,12 @@ allowedTools=${JSON.stringify(TOOL_NAMES)}`);
   private async buildPublicIdentity(context: LeadContext, evidence: Array<{ source: string; url: string; excerpt: string; capturedAt: string }>): Promise<PublicLeadIdentity> {
     let response: any = null;
     try {
-        response = await this.ai.generateJson(`Extract only non-sensitive facts explicitly visible in these public search excerpts.
-Do not identify a person beyond the display name shown, do not infer sensitive traits, and do not return emails,
-phone numbers, addresses, profile pictures, private connections, or hidden account links. Public connections may
+         response = await this.ai.generateJson(`Extract only non-sensitive facts explicitly visible in these public search excerpts.
+ Do not identify a person beyond the display name shown, do not infer sensitive traits, and do not return emails,
+ phone numbers, addresses, private connections, or hidden account links. A profile picture URL may be returned only
+ when it is an explicit public image URL in the excerpts. Public connections may
 contain only explicitly named public accounts, organizations, or communities visible in the excerpts; otherwise [].
-Return exactly {"displayName":"","bio":"","interests":[],"publicConnections":[],"socialHandles":[{"platform":"","handle":"","url":"","source":""}]}.
+ Return exactly {"displayName":"","bio":"","profilePictureUrl":"","interests":[],"publicConnections":[],"socialHandles":[{"platform":"","handle":"","url":"","source":""}]}.
 Known lead platform: ${context.platform}
 Known public username: ${context.platformUsername}
 EXCERPTS: ${JSON.stringify(evidence).slice(0, 14000)}`);
@@ -794,6 +916,7 @@ EXCERPTS: ${JSON.stringify(evidence).slice(0, 14000)}`);
     return {
       displayName: safeText(response?.displayName || context.platformUsername, 180).replace(PERSONAL_DATA_PATTERN, ''),
       bio: PERSONAL_DATA_PATTERN.test(safeText(response?.bio, 600)) ? '' : safeText(response?.bio, 600),
+      profilePictureUrl: safePublicUrl(response?.profilePictureUrl || response?.profile_picture_url || response?.avatarUrl),
       interests: cleanList(response?.interests, 12),
       publicConnections: cleanList(response?.publicConnections, 12),
       socialHandles: handles,
@@ -879,7 +1002,12 @@ EVIDENCE: ${JSON.stringify(evidence).slice(0, 18000)}`);
     await this.updateRun(id, { ...patch, status, completed_at: new Date().toISOString() });
   }
 
-  private async setLeadStatus(context: LeadContext, status: BuilderStatus, error?: string) {
+  private async setLeadStatus(
+    context: LeadContext,
+    status: BuilderStatus,
+    error?: string,
+    evidenceCount = 0,
+  ) {
     const { error: updateError } = await this.supabase.from('agent_leads').update({
       profile_status: status,
       profile_updated_at: new Date().toISOString(),
@@ -897,7 +1025,7 @@ EVIDENCE: ${JSON.stringify(evidence).slice(0, 18000)}`);
         leadId: context.id,
         platform: context.platform,
         status,
-        evidenceCount: 0,
+        evidenceCount,
       }).catch((notificationError) => {
         logBuilderActivity('milestone_notification_failed', {
           userId: context.userId,

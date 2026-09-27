@@ -7,4 +7,4 @@ The backend must resolve vendored public-profile tools from both backend-root an
 
 **Why:** Railway can run compiled output from different working directories, while the public adapters need real tool files and honest health status. Legacy Supabase installations may also retain a NOT NULL `received_at` column during timestamp migration.
 
-**How to apply:** Keep bounded health/process timeouts and web fallback behavior. Set `DEEPKRAK3N_BASE_URL` and `JARVIS_BASE_URL` to their actual service URLs, and apply the legacy timestamp repair migration before relying on mixed-schema inbound writes.
+**How to apply:** Keep bounded health/process timeouts and web fallback behavior. Set `DEEPKRAK3N_BASE_URL` and `JARVIS_BASE_URL` to their actual service URLs, and apply the legacy timestamp repair migration before relying on mixed-schema inbound writes. Osintgraph credentials should come from Railway secrets, exist only in a mode-0600 short-lived runtime file, and be removed after the process exits; Maigret must use the general public-profile Python runtime, not the isolated Osintgraph interpreter.
