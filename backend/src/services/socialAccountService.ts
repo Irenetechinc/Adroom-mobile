@@ -98,6 +98,11 @@ function publicConnection(row: any): SocialConnectionPublic {
   };
 }
 
+function isWhatsAppCredentialFailure(error: unknown): boolean {
+  return /unsupported state|unable to authenticate data|bad decrypt|authentication tag|encrypted (whatsapp )?(credentials|auth bundle) (are )?unavailable/i
+    .test(String((error as any)?.message || error || ''));
+}
+
 function classifyProviderError(provider: string, message: string): {
   code: string;
   cooldown: boolean;
@@ -108,7 +113,10 @@ function classifyProviderError(provider: string, message: string): {
   if (provider === 'telegram' && /floodwait|flood wait/.test(value)) {
     return { code: 'telegram_flood_wait', cooldown: true, banned: false, requiresReconnect: false };
   }
-  if (provider === 'whatsapp_personal' && /logged.?out|401|bad session|connection closed.*logged/.test(value)) {
+  if (provider === 'whatsapp_personal' && (
+    isWhatsAppCredentialFailure(message)
+    || /logged.?out|401|bad session|connection closed.*logged/.test(value)
+  )) {
     return { code: 'whatsapp_logged_out', cooldown: false, banned: false, requiresReconnect: true };
   }
   if (provider === 'signal_personal' && /unregistered|invalid.*(session|account)|banned|registration denied/.test(value)) {
@@ -156,6 +164,7 @@ export class SocialAccountService {
     authDir: string;
     promise: Promise<void>;
   }>();
+  private readonly whatsappRestoreInFlight = new Map<string, Promise<any | null>>();
   private readonly whatsappReconnectTimers = new Map<string, NodeJS.Timeout>();
   private readonly whatsappReconnectAttempts = new Map<string, number>();
   private readonly whatsappInbound = new Map<string, PersonalInboundMessage[]>();
@@ -416,6 +425,21 @@ export class SocialAccountService {
   private async restoreWhatsAppSocket(userId: string, credential: any): Promise<any | null> {
     const current = this.whatsappSockets.get(userId);
     if (current) return current;
+    const inFlight = this.whatsappRestoreInFlight.get(userId);
+    if (inFlight) return inFlight;
+
+    const restore = this.createWhatsAppSocket(userId, credential);
+    this.whatsappRestoreInFlight.set(userId, restore);
+    try {
+      return await restore;
+    } finally {
+      if (this.whatsappRestoreInFlight.get(userId) === restore) {
+        this.whatsappRestoreInFlight.delete(userId);
+      }
+    }
+  }
+
+  private async createWhatsAppSocket(userId: string, credential: any): Promise<any | null> {
     let baileys: any;
     try { baileys = require('@whiskeysockets/baileys'); } catch { return null; }
     if (!credential?.bundle || typeof credential.bundle !== 'object') return null;
@@ -504,6 +528,13 @@ export class SocialAccountService {
         console.log(`[SocialAccountService] WhatsApp session restored for ${userId}`);
       } catch (error: any) {
         console.error(`[SocialAccountService] WhatsApp reconnect attempt failed for ${userId}: ${error.message}`);
+        if (isWhatsAppCredentialFailure(error)) {
+          await this.markWhatsAppNeedsReconnect(
+            userId,
+            'Stored WhatsApp credentials could not be decrypted. Configure the original stable SESSION_SECRET and reconnect the account.',
+          );
+          return;
+        }
         const row = await this.get(userId, 'whatsapp_personal').catch(() => null);
         if (row?.status === 'connected') this.scheduleWhatsAppReconnect(userId);
       }
@@ -522,7 +553,7 @@ export class SocialAccountService {
       .from('social_account_connections')
       .select('user_id, status, credential_ciphertext, credential_iv, credential_tag')
       .eq('provider', 'whatsapp_personal')
-      .eq('status', 'connected');
+      .in('status', ['connected', 'needs_reconnect']);
     if (error) {
       console.error(`[SocialAccountService] WhatsApp startup restore query failed: ${error.message}`);
       return;
@@ -532,11 +563,39 @@ export class SocialAccountService {
         const credential = decrypt(row);
         if (!credential) throw new Error('Encrypted auth bundle is unavailable.');
         await this.restoreWhatsAppSocket(row.user_id, credential);
+        if (row.status === 'needs_reconnect') {
+          await this.supabase.from('social_account_connections').update({
+            status: 'connected',
+            last_error: null,
+            updated_at: new Date().toISOString(),
+          }).eq('user_id', row.user_id).eq('provider', 'whatsapp_personal');
+        }
         console.log(`[SocialAccountService] Restored WhatsApp live session for ${row.user_id}`);
       } catch (restoreError: any) {
         console.error(`[SocialAccountService] WhatsApp startup restore failed for ${row.user_id}: ${restoreError.message}`);
-        this.scheduleWhatsAppReconnect(row.user_id);
+        if (isWhatsAppCredentialFailure(restoreError)) {
+          await this.markWhatsAppNeedsReconnect(
+            row.user_id,
+            'Stored WhatsApp credentials could not be decrypted. Configure the original stable SESSION_SECRET and reconnect the account.',
+          );
+        } else {
+          this.scheduleWhatsAppReconnect(row.user_id);
+        }
       }
+    }
+  }
+
+  private async markWhatsAppNeedsReconnect(userId: string, message: string): Promise<void> {
+    await this.supabase.from('social_account_connections').update({
+      status: 'needs_reconnect',
+      last_error: message.slice(0, 500),
+      updated_at: new Date().toISOString(),
+    }).eq('user_id', userId).eq('provider', 'whatsapp_personal');
+    try {
+      const { pushService } = await import('./pushService');
+      await pushService.notifyTokenRefreshFailed(userId, 'whatsapp_personal');
+    } catch (notificationError: any) {
+      console.warn(`[SocialAccountService] WhatsApp reconnect notification failed: ${notificationError.message}`);
     }
   }
 

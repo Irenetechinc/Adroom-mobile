@@ -20,3 +20,16 @@ First-link `creds.update` events must not start the debounced live-session persi
 **Why:** A delayed persistence timer can scan the removed pairing directory and produce `ENOENT`; saving without an immediate restart leaves WhatsApp without the companion socket it expects after `restartRequired`.
 
 **How to apply:** Pass the pending credential-write promise into first-link finalization, cancel and await any persistence tied to an auth directory before removing it, and call the normal encrypted-bundle restore path after a successful 515 first link.
+
+Stored WhatsApp bundles that fail AES-GCM decryption must not enter an endless
+reconnect loop. Treat the failure as a stable-key/session problem, pause the
+connection once, and allow startup to retry `needs_reconnect` rows after the
+original encryption key has been restored.
+
+**Why:** A changed `SESSION_SECRET` makes valid stored Baileys credentials
+undecryptable; retries cannot repair ciphertext and only create repeated
+background reconnect attempts.
+
+**How to apply:** Keep transient Baileys disconnects on exponential automatic
+reconnect, but classify decryption/auth-tag failures as terminal until the
+stable secret is corrected or the user intentionally pairs again.
