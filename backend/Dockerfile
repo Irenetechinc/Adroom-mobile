@@ -26,6 +26,12 @@ COPY tools/vendor ./tools/vendor
 RUN python3 -m pip install --no-cache-dir --break-system-packages \
     -e ./tools/vendor/maigret \
     -e ./tools/vendor/helix
+# Fail the image build instead of deploying with a vendored tool that cannot
+# be imported or started by the backend worker.
+RUN python3 -c "import maigret; print('Maigret runtime ready')" \
+    && cd ./tools/vendor/helix \
+    && python3 helix.py --help >/dev/null \
+    && echo "Helix runtime ready"
 
 # Osintgraph has a larger, pinned dependency set. Keep it isolated from the
 # Maigret/Helix runtime and point PROFILE_BUILDER_OSINTGRAPH_PYTHON at it only

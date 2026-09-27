@@ -26,6 +26,12 @@ RUN test -x node_modules/.bin/tsc
 RUN python3 -m pip install --no-cache-dir --break-system-packages \
     -e ./tools/vendor/maigret \
     -e ./tools/vendor/helix
+# Fail the image build instead of deploying with a vendored tool that cannot
+# be imported or started by the backend worker.
+RUN python3 -c "import maigret; print('Maigret runtime ready')" \
+    && cd ./tools/vendor/helix \
+    && python3 helix.py --help >/dev/null \
+    && echo "Helix runtime ready"
 RUN npm run build
 
 # Production image: no TypeScript, ts-node, or @types packages.
@@ -52,6 +58,10 @@ COPY --from=builder /app/public /public
 RUN python3 -m pip install --no-cache-dir --break-system-packages \
     -e ./tools/vendor/maigret \
     -e ./tools/vendor/helix
+RUN python3 -c "import maigret; print('Maigret runtime ready')" \
+    && cd ./tools/vendor/helix \
+    && python3 helix.py --help >/dev/null \
+    && echo "Helix runtime ready"
 
 # The admin route resolves this file from the container root at runtime.
 COPY admin-critic.html /admin-critic.html
