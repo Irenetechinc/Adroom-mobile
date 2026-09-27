@@ -504,13 +504,6 @@ export class SocialAccountService {
         console.log(`[SocialAccountService] WhatsApp session restored for ${userId}`);
       } catch (error: any) {
         console.error(`[SocialAccountService] WhatsApp reconnect attempt failed for ${userId}: ${error.message}`);
-        if (/unsupported state|unable to authenticate data|bad decrypt|authentication tag/i.test(String(error?.message || ''))) {
-          await this.markWhatsAppNeedsReconnect(
-            userId,
-            'Stored WhatsApp credentials could not be decrypted. Configure the original stable SESSION_SECRET and reconnect the account.',
-          );
-          return;
-        }
         const row = await this.get(userId, 'whatsapp_personal').catch(() => null);
         if (row?.status === 'connected') this.scheduleWhatsAppReconnect(userId);
       }
@@ -542,29 +535,8 @@ export class SocialAccountService {
         console.log(`[SocialAccountService] Restored WhatsApp live session for ${row.user_id}`);
       } catch (restoreError: any) {
         console.error(`[SocialAccountService] WhatsApp startup restore failed for ${row.user_id}: ${restoreError.message}`);
-        if (/unsupported state|unable to authenticate data|bad decrypt|authentication tag/i.test(String(restoreError?.message || ''))) {
-          await this.markWhatsAppNeedsReconnect(
-            row.user_id,
-            'Stored WhatsApp credentials could not be decrypted. Configure the original stable SESSION_SECRET and reconnect the account.',
-          );
-        } else {
-          this.scheduleWhatsAppReconnect(row.user_id);
-        }
+        this.scheduleWhatsAppReconnect(row.user_id);
       }
-    }
-  }
-
-  private async markWhatsAppNeedsReconnect(userId: string, message: string): Promise<void> {
-    await this.supabase.from('social_account_connections').update({
-      status: 'needs_reconnect',
-      last_error: message.slice(0, 500),
-      updated_at: new Date().toISOString(),
-    }).eq('user_id', userId).eq('provider', 'whatsapp_personal');
-    try {
-      const { pushService } = await import('./pushService');
-      await pushService.notifyTokenRefreshFailed(userId, 'whatsapp_personal');
-    } catch (notificationError: any) {
-      console.warn(`[SocialAccountService] WhatsApp reconnect notification failed: ${notificationError.message}`);
     }
   }
 
