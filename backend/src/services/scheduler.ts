@@ -831,7 +831,7 @@ export class SchedulerService {
             const supabase = getServiceSupabaseClient();
             const { data: activeStrategies } = await supabase
                 .from('strategies')
-                .select('id, user_id, goal, product_id, product_memory(name, category, description)')
+                .select('id, user_id, goal, product_id, product_memory(product_name, category, description)')
                 .eq('is_active', true)
                 .limit(10);
 
@@ -846,7 +846,7 @@ export class SchedulerService {
                     const result = await dataCollectionAgent.collectForStrategy({
                         strategyId: strategy.id,
                         strategyGoal: strategy.goal || 'live strategy refinement',
-                        productName: product.name || 'target product',
+                        productName: product.product_name || 'target product',
                         category: product.category || 'general',
                         dataNeed: 'fresh competitive, market, and audience evidence for the active strategy',
                         audience: 'target market',

@@ -327,7 +327,7 @@ export class DecisionEngine {
     try {
       const { data: strategies } = await this.supabase
         .from('strategies')
-        .select('id, current_execution_plan, product_memory(name, category)')
+        .select('id, current_execution_plan, product_memory(product_name, category)')
         .eq('status', 'active');
 
       if (!strategies?.length) return;
@@ -338,7 +338,7 @@ export class DecisionEngine {
         const platforms: string[] = plan.platforms || ['facebook', 'instagram', 'twitter', 'linkedin', 'tiktok'];
         const product = (s as any).product_memory;
         const category = product?.category || 'general';
-        const productName = product?.name || '';
+         const productName = product?.product_name || '';
 
         // Pull latest from all 4 intelligence tables in parallel
         const [platformRows, socialRows, emotionalRows, geoRows] = await Promise.all([

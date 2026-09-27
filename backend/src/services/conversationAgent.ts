@@ -483,7 +483,7 @@ GOAL: ${goal}`;
 
     const { data, error } = await this.supabase
       .from('product_memory')
-      .select('product_id, product_name, brand, category, product_type, description, enhanced_description, target_audience, images, image_url')
+      .select('product_id, product_name, brand, category, product_type, description, enhanced_description, target_audience, images')
       .eq('product_id', strategy.product_id)
       .eq('user_id', strategy.user_id)
       .maybeSingle();

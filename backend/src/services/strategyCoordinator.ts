@@ -66,7 +66,7 @@ export class StrategyCoordinator {
       this.supabase.from('agent_tasks').select('status, task_type, created_at, executed_at, error_message').eq('strategy_id', strategy.id).order('created_at', { ascending: false }).limit(30),
       this.supabase.from('agent_performance').select('reach, likes, comments, shares, fetched_at').eq('strategy_id', strategy.id).order('fetched_at', { ascending: false }).limit(10),
        strategy.product_id
-         ? this.supabase.from('product_memory').select('name, product_name, brand, category, description, enhanced_description, target_audience, images, image_url').eq('product_id', strategy.product_id).eq('user_id', strategy.user_id).maybeSingle()
+         ? this.supabase.from('product_memory').select('product_name, brand, category, description, enhanced_description, target_audience, images').eq('product_id', strategy.product_id).eq('user_id', strategy.user_id).maybeSingle()
         : Promise.resolve({ data: null }),
     ]);
 
