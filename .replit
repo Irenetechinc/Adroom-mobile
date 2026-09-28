@@ -35,3 +35,8 @@ outputType = "console"
 [nix]
 channel = "stable-25_05"
 packages = ["cacert", "freetype", "glibcLocales", "xcodebuild", "zlib"]
+
+[userenv]
+
+[userenv.shared]
+DEEPKRAK3N_BASE_URL = "https://deepkrak3n.adroomai.com"
