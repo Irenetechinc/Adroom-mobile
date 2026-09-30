@@ -13,4 +13,4 @@ The environment-level npm registry can differ from the `resolved` origins embedd
 
 **Why:** Environment configuration can shadow project defaults, even when the repository itself contains only public registry URLs.
 
-**How to apply:** Compare `npm config get registry` with the lockfile's `resolved` origins when checking package provenance.
+**How to apply:** Compare `npm config get registry` with the lockfile's `resolved` origins when checking package provenance. When a command must use public npm, explicitly override the effective setting with `npm_config_registry=https://registry.npmjs.org/` for that command.
