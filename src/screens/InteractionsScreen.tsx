@@ -528,6 +528,7 @@ export default function InteractionsScreen() {
 
   // ── Lead DMs tab state ────────────────────────────────────────────────────
   const [leads, setLeads] = useState<Lead[]>([]);
+  const [totalLeadCount, setTotalLeadCount] = useState(0);
   const [leadsLoading, setLeadsLoading] = useState(true);
   const [leadsRefreshing, setLeadsRefreshing] = useState(false);
   const [selectedLead, setSelectedLead] = useState<Lead | null>(null);
@@ -593,14 +594,17 @@ export default function InteractionsScreen() {
   const loadLeads = useCallback(async () => {
     if (!isSupabaseConfigured || !user) return;
     try {
-      const { data } = await supabase
+      const { data, count, error } = await supabase
         .from('agent_leads')
-        .select('id, platform, platform_username, platform_user_id, intent_score, stage, dm_sequence_step, first_interaction, last_contacted_at, next_followup_at, created_at')
+        .select('id, platform, platform_username, platform_user_id, intent_score, stage, dm_sequence_step, first_interaction, last_contacted_at, next_followup_at, created_at', { count: 'exact' })
         .eq('user_id', user.id)
         .not('stage', 'eq', 'lost')
-        .order('last_contacted_at', { ascending: false })
+        .order('created_at', { ascending: false })
+        .order('intent_score', { ascending: false })
         .limit(80);
+      if (error) throw error;
       const rows = (data || []) as Lead[];
+      setTotalLeadCount(count ?? rows.length);
       if (!rows.length) {
         setLeads([]);
         return;
@@ -896,7 +900,7 @@ export default function InteractionsScreen() {
               {/* Lead DM stats */}
               <View style={styles.statsRow}>
                 {[
-                  { label: 'Active Leads', count: leads.length, color: '#60A5FA' },
+                  { label: 'Active Leads', count: totalLeadCount, color: '#60A5FA' },
                   { label: 'Hot (70%+)', count: hotLeads, color: '#10B981' },
                   { label: 'Follow-up Due', count: overdueLeads, color: '#F59E0B' },
                 ].map((s) => (

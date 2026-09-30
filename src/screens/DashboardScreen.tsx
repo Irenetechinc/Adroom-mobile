@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { View, Text, ScrollView, RefreshControl, TouchableOpacity, StyleSheet } from 'react-native';
+import Constants from 'expo-constants';
 import TrialPromoModal from '../components/TrialPromoModal';
 import { Skeleton } from '../components/Skeleton';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -224,6 +225,127 @@ interface GmapsLead {
   }>;
 }
 
+interface PlatformIntelligenceRow {
+  id: string;
+  platform: string;
+  algorithm_priorities?: unknown;
+  trending_formats?: unknown;
+  optimal_times?: unknown;
+  detected_shifts?: unknown;
+  predictions?: unknown;
+  risks?: unknown;
+  captured_at: string;
+}
+
+const API_BASE_URL =
+  process.env.EXPO_PUBLIC_API_URL ||
+  Constants.expoConfig?.extra?.apiUrl ||
+  'https://backend.adroomai.com';
+
+function intelligenceItemText(item: unknown): string {
+  if (typeof item === 'string') return item.trim();
+  if (typeof item === 'number') return String(item);
+  if (!item || typeof item !== 'object') return '';
+
+  const value = item as Record<string, unknown>;
+  const primary = ['summary', 'title', 'description', 'prediction', 'priority', 'name', 'format', 'time', 'value', 'risk']
+    .map((key) => value[key])
+    .find((candidate) => typeof candidate === 'string' && candidate.trim());
+  const timeframe = typeof value.timeframe === 'string' ? value.timeframe.replace(/_/g, ' ') : '';
+  const detail = ['organic_leverage', 'recommendation', 'mitigation', 'reason']
+    .map((key) => value[key])
+    .find((candidate) => typeof candidate === 'string' && candidate.trim());
+
+  const text = typeof primary === 'string' ? primary.trim() : '';
+  const context = [timeframe, typeof detail === 'string' ? detail.trim() : ''].filter(Boolean);
+  return [text, ...context].filter(Boolean).join(' · ');
+}
+
+function intelligenceItems(value: unknown): string[] {
+  if (value == null) return [];
+  const values = Array.isArray(value) ? value : [value];
+  return values.map(intelligenceItemText).filter(Boolean).slice(0, 3);
+}
+
+function DiscoveredLeadsSection({ leads }: { leads: GmapsLead[] }) {
+  if (!leads.length) return null;
+
+  return (
+    <Animated.View entering={FadeInDown.delay(325).springify()} style={styles.section}>
+      <View style={styles.sectionHeader}>
+        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+          <Users size={18} color="#00D9A5" />
+          <Text style={styles.sectionTitle}>Discovered Leads</Text>
+        </View>
+        <View style={styles.gmapsBadge}>
+          <Text style={styles.gmapsBadgeText}>{leads.length}</Text>
+        </View>
+      </View>
+
+      <View style={styles.gmapsCard}>
+        <View style={styles.gmapsHeader}>
+          <Building2 size={12} color="#00D9A5" />
+          <Text style={styles.gmapsHeaderLabel}>PUBLIC AND CONNECTED SOURCES</Text>
+          <View style={styles.gmapsLiveDot} />
+          <Text style={styles.gmapsLiveText}>AUTO</Text>
+        </View>
+
+        {leads.map((lead) => {
+          const sig = (lead.intent_signals || [])[0] ?? null;
+          const score = Math.round((lead.intent_score ?? 0) * 100);
+          const scoreColor = score >= 75 ? '#10B981' : score >= 55 ? '#F59E0B' : '#64748B';
+          const stageColors: Record<string, string> = {
+            identified: '#64748B', contacted: '#00F0FF',
+            warm: '#F59E0B', closed: '#10B981',
+          };
+          const stageColor = stageColors[lead.stage] || '#64748B';
+          const diff = Date.now() - new Date(lead.created_at).getTime();
+          const mins = Math.floor(diff / 60000);
+          const timeAgo = mins < 60 ? `${mins}m ago`
+            : mins < 1440 ? `${Math.floor(mins / 60)}h ago`
+            : `${Math.floor(mins / 1440)}d ago`;
+
+          return (
+            <View key={lead.id} style={styles.gmapsRow}>
+              <View style={styles.gmapsIconWrap}>
+                {lead.platform === 'whatsapp' || lead.platform === 'whatsapp_personal'
+                  ? <Phone size={13} color="#25D366" />
+                  : lead.platform === 'email'
+                    ? <Mail size={13} color="#00F0FF" />
+                    : <MessageCircle size={13} color="#A78BFA" />
+                }
+              </View>
+
+              <View style={{ flex: 1 }}>
+                <Text style={styles.gmapsBizName} numberOfLines={1}>{lead.platform_username}</Text>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 2 }}>
+                  <Text style={styles.gmapsMeta}>{lead.platform.replace('_personal', '')}</Text>
+                  {sig?.rating != null && <Text style={styles.gmapsMeta}>★ {sig.rating}</Text>}
+                  {sig?.total_ratings != null && <Text style={styles.gmapsMeta}>· {sig.total_ratings} reviews</Text>}
+                </View>
+                {sig?.outreach_reason ? (
+                  <Text style={styles.gmapsReason} numberOfLines={1}>{sig.outreach_reason}</Text>
+                ) : null}
+              </View>
+
+              <View style={{ alignItems: 'flex-end', gap: 4 }}>
+                <View style={styles.gmapsScoreWrap}>
+                  <View style={[styles.gmapsScoreBar, { width: `${score}%` as any, backgroundColor: scoreColor }]} />
+                  <Text style={[styles.gmapsScoreText, { color: scoreColor }]}>{score}%</Text>
+                </View>
+                <View style={[styles.gmapsStageBadge, { backgroundColor: `${stageColor}18` }]}>
+                  <Text style={[styles.gmapsStageText, { color: stageColor }]}>{lead.stage?.toUpperCase()}</Text>
+                </View>
+                <Text style={styles.gmapsTime}>{timeAgo}</Text>
+              </View>
+            </View>
+          );
+        })}
+      </View>
+    </Animated.View>
+  );
+}
+
 export default function DashboardScreen() {
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const { session } = useAuthStore();
@@ -232,7 +354,7 @@ export default function DashboardScreen() {
   const { isEnabled } = useFeatureFlags();
 
   const [activeStrategies, setActiveStrategies] = useState<any[]>([]);
-  const [alerts, setAlerts] = useState<any[]>([]);
+  const [alerts, setAlerts] = useState<PlatformIntelligenceRow[]>([]);
   const [activeAgentTasks, setActiveAgentTasks] = useState<AgentTask[]>([]);
   const [closedDeals, setClosedDeals] = useState<ClosedDeal[]>([]);
   const [goalCompletions, setGoalCompletions] = useState<GoalCompletion[]>([]);
@@ -257,7 +379,7 @@ export default function DashboardScreen() {
       const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
       const [
         strategiesRes, logsRes, tasksRes, dealsRes, completedStratsRes,
-        gmapsRes, achievementsRes, perfRes, leadsCountRes, conversationRunsRes,
+        gmapsRes, achievementsRes, perfRes, leadsCountRes,
       ] = await Promise.all([
         supabase
           .from('strategies')
@@ -267,7 +389,7 @@ export default function DashboardScreen() {
           .order('updated_at', { ascending: false }),
         supabase
           .from('platform_intelligence')
-          .select('id, platform, algorithm_priorities, trending_formats, detected_shifts, predictions, risks, captured_at')
+          .select('id, platform, algorithm_priorities, trending_formats, optimal_times, detected_shifts, predictions, risks, captured_at')
           .order('captured_at', { ascending: false })
           .limit(5),
         supabase
@@ -318,13 +440,6 @@ export default function DashboardScreen() {
           .from('agent_leads')
           .select('id', { count: 'exact', head: true })
           .eq('user_id', session.user.id),
-        supabase
-          .from('strategy_conversation_runs')
-          .select('identified, high_potential, engaged, created_at')
-          .eq('user_id', session.user.id)
-          .order('created_at', { ascending: false })
-          .limit(1)
-          .maybeSingle(),
       ]);
 
       setActiveStrategies((strategiesRes.data || []).map((strategy: any) => ({
@@ -335,18 +450,26 @@ export default function DashboardScreen() {
         total_clicks: strategy.total_clicks || 0,
         total_conversions: strategy.total_conversions || 0,
       })));
-      setAlerts((logsRes.data || []).map((row: any) => ({
-        ...row,
-        timestamp: row.captured_at,
-        summary: `${row.platform || 'Platform'} intelligence refreshed${row.trending_formats?.length ? `: ${row.trending_formats.slice(0, 2).join(', ')}` : ''}`,
-      })));
+      setAlerts((logsRes.data as PlatformIntelligenceRow[]) || []);
       setGmapsLeads((gmapsRes.data as GmapsLead[]) || []);
-      const latestConversation = conversationRunsRes.data as any;
-      setConversationMilestones({
-        identified: Number(latestConversation?.identified || 0),
-        highPotential: Number(latestConversation?.high_potential || 0),
-        engaged: Number(latestConversation?.engaged || 0),
-      });
+      try {
+        const overviewResponse = await fetch(
+          `${API_BASE_URL.replace(/\/+$/, '')}/api/dashboard/conversation-overview`,
+          { headers: { Authorization: `Bearer ${session.access_token}` } },
+        );
+        if (!overviewResponse.ok) {
+          throw new Error(`Conversation overview request failed (${overviewResponse.status}).`);
+        }
+        const overview = await overviewResponse.json();
+        setConversationMilestones({
+          identified: Number(overview.summary?.identified ?? 0),
+          highPotential: Number(overview.summary?.high_potential ?? 0),
+          engaged: Number(overview.summary?.engaged ?? 0),
+        });
+      } catch (error) {
+        console.error('Dashboard conversation overview error:', error);
+        setConversationMilestones({ identified: 0, highPotential: 0, engaged: 0 });
+      }
 
       // Deals + revenue total
       const deals = (dealsRes.data as ClosedDeal[]) || [];
@@ -858,6 +981,9 @@ export default function DashboardScreen() {
           )}
         </Animated.View>
 
+        {/* Keep recently discovered leads immediately below active strategies. */}
+        <DiscoveredLeadsSection leads={gmapsLeads} />
+
         {/* ── Achievements Section (always visible) ── */}
         <Animated.View entering={FadeInDown.delay(310).springify()} style={styles.section}>
           <View style={styles.sectionHeader}>
@@ -874,25 +1000,11 @@ export default function DashboardScreen() {
             ) : null}
           </View>
 
-          {/* Revenue summary banner */}
-          <View style={styles.revenueBanner}>
-            <View style={styles.revenueIconWrap}>
-              <DollarSign size={16} color="#FBBF24" />
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.revenueLabel}>Total Revenue Generated by AI</Text>
-              <Text style={styles.revenueValue}>
-                {revenueCurrency} {totalRevenue.toLocaleString()}
-              </Text>
-            </View>
-            <ShoppingBag size={18} color="rgba(251,191,36,0.3)" />
-          </View>
-
           {/* ── Deals Closed ── */}
           <View style={styles.achievementCard}>
             <View style={styles.achievementHeader}>
               <DollarSign size={13} color="#10B981" />
-              <Text style={styles.achievementLabel}>DEALS CLOSED BY AI</Text>
+              <Text style={styles.achievementLabel}>DEALS CLOSED BY ADIRUM AI</Text>
               <View style={styles.achievementLiveDot} />
             </View>
             {closedDeals.length === 0 ? (
@@ -1024,97 +1136,21 @@ export default function DashboardScreen() {
               })}
             </View>
           )}
+
+          {/* Total revenue is the final achievement summary. */}
+          <View style={[styles.revenueBanner, { marginTop: 8 }]}>
+            <View style={styles.revenueIconWrap}>
+              <DollarSign size={16} color="#FBBF24" />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.revenueLabel}>Total Revenue Generated by Adirum AI</Text>
+              <Text style={styles.revenueValue}>
+                {revenueCurrency} {totalRevenue.toLocaleString()}
+              </Text>
+            </View>
+            <ShoppingBag size={18} color="rgba(251,191,36,0.3)" />
+          </View>
         </Animated.View>
-
-        {/* Discovered Leads Section */}
-        {gmapsLeads.length > 0 && (
-          <Animated.View entering={FadeInDown.delay(325).springify()} style={styles.section}>
-            <View style={styles.sectionHeader}>
-              <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                <Users size={18} color="#00D9A5" />
-                <Text style={styles.sectionTitle}>Discovered Leads</Text>
-              </View>
-              <View style={styles.gmapsBadge}>
-                <Text style={styles.gmapsBadgeText}>{gmapsLeads.length}</Text>
-              </View>
-            </View>
-
-            <View style={styles.gmapsCard}>
-              <View style={styles.gmapsHeader}>
-                <Building2 size={12} color="#00D9A5" />
-                <Text style={styles.gmapsHeaderLabel}>PUBLIC AND CONNECTED SOURCES</Text>
-                <View style={styles.gmapsLiveDot} />
-                <Text style={styles.gmapsLiveText}>AUTO</Text>
-              </View>
-
-              {gmapsLeads.map((lead, i) => {
-                const sig = (lead.intent_signals || [])[0] ?? null;
-                const score = Math.round((lead.intent_score ?? 0) * 100);
-                const scoreColor = score >= 75 ? '#10B981' : score >= 55 ? '#F59E0B' : '#64748B';
-                const stageColors: Record<string, string> = {
-                  identified: '#64748B', contacted: '#00F0FF',
-                  warm: '#F59E0B', closed: '#10B981',
-                };
-                const stageColor = stageColors[lead.stage] || '#64748B';
-                const timeAgo = (() => {
-                  const diff = Date.now() - new Date(lead.created_at).getTime();
-                  const mins = Math.floor(diff / 60000);
-                  if (mins < 60) return `${mins}m ago`;
-                  const hrs = Math.floor(mins / 60);
-                  if (hrs < 24) return `${hrs}h ago`;
-                  return `${Math.floor(hrs / 24)}d ago`;
-                })();
-
-                return (
-                  <View
-                    key={lead.id}
-                    style={[styles.gmapsRow, i < gmapsLeads.length - 1 && styles.gmapsRowBorder]}
-                  >
-                    <View style={styles.gmapsIconWrap}>
-                      {lead.platform === 'whatsapp' || lead.platform === 'whatsapp_personal'
-                        ? <Phone size={13} color="#25D366" />
-                        : lead.platform === 'email'
-                          ? <Mail size={13} color="#00F0FF" />
-                          : <MessageCircle size={13} color="#A78BFA" />
-                      }
-                    </View>
-
-                    <View style={{ flex: 1 }}>
-                      <Text style={styles.gmapsBizName} numberOfLines={1}>{lead.platform_username}</Text>
-                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 2 }}>
-                        <Text style={styles.gmapsMeta}>{lead.platform.replace('_personal', '')}</Text>
-                        {sig?.rating != null && (
-                          <Text style={styles.gmapsMeta}>★ {sig.rating}</Text>
-                        )}
-                        {sig?.total_ratings != null && (
-                          <Text style={styles.gmapsMeta}>· {sig.total_ratings} reviews</Text>
-                        )}
-                      </View>
-                      {sig?.outreach_reason ? (
-                        <Text style={styles.gmapsReason} numberOfLines={1}>{sig.outreach_reason}</Text>
-                      ) : null}
-                    </View>
-
-                    <View style={{ alignItems: 'flex-end', gap: 4 }}>
-                      {/* Score bar */}
-                      <View style={styles.gmapsScoreWrap}>
-                        <View style={[styles.gmapsScoreBar, { width: `${score}%` as any, backgroundColor: scoreColor }]} />
-                        <Text style={[styles.gmapsScoreText, { color: scoreColor }]}>{score}%</Text>
-                      </View>
-                      {/* Stage badge */}
-                      <View style={[styles.gmapsStageBadge, { backgroundColor: `${stageColor}18` }]}>
-                        <Text style={[styles.gmapsStageText, { color: stageColor }]}>
-                          {lead.stage?.toUpperCase()}
-                        </Text>
-                      </View>
-                      <Text style={styles.gmapsTime}>{timeAgo}</Text>
-                    </View>
-                  </View>
-                );
-              })}
-            </View>
-          </Animated.View>
-        )}
 
         {/* Campaign Performance Chart */}
         {activeStrategies.length > 0 && (
@@ -1144,24 +1180,58 @@ export default function DashboardScreen() {
 
           <View style={styles.alertsCard}>
             {alerts.length > 0 ? (
-              alerts.map((alert, i) => (
-                <View key={alert.id} style={[styles.alertItem, i < alerts.length - 1 && styles.alertBorder]}>
-                  <View style={styles.alertIcon}>
-                    <AlertTriangle size={14} color="#F59E0B" />
+              alerts.map((alert) => {
+                const sections = [
+                  { label: 'Algorithm priorities', values: intelligenceItems(alert.algorithm_priorities) },
+                  { label: 'Trending formats', values: intelligenceItems(alert.trending_formats) },
+                  { label: 'Detected shifts', values: intelligenceItems(alert.detected_shifts) },
+                  { label: 'Predictions', values: intelligenceItems(alert.predictions) },
+                  { label: 'Best times', values: intelligenceItems(alert.optimal_times) },
+                  { label: 'Risks', values: intelligenceItems(alert.risks) },
+                ].filter((section) => section.values.length > 0);
+
+                return (
+                  <View key={alert.id} style={styles.alertItem}>
+                    <View style={styles.intelligenceReportHeader}>
+                      <View style={styles.alertIcon}>
+                        <TrendingUp size={14} color="#F59E0B" />
+                      </View>
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.intelligencePlatform}>
+                          {alert.platform || 'Platform'} report
+                        </Text>
+                        <Text style={styles.alertMeta}>
+                          {alert.captured_at
+                            ? `${new Date(alert.captured_at).toLocaleDateString()} · ${new Date(alert.captured_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
+                            : 'Capture time unavailable'}
+                        </Text>
+                      </View>
+                    </View>
+
+                    {sections.length > 0 ? (
+                      <View style={styles.intelligenceSections}>
+                        {sections.map((section) => (
+                          <View key={section.label} style={styles.intelligenceSection}>
+                            <Text style={styles.intelligenceSectionLabel}>{section.label}</Text>
+                            {section.values.map((value, index) => (
+                              <View key={`${section.label}-${index}`} style={styles.intelligencePoint}>
+                                <View style={styles.intelligencePointDot} />
+                                <Text style={styles.alertSummary}>{value}</Text>
+                              </View>
+                            ))}
+                          </View>
+                        ))}
+                      </View>
+                    ) : (
+                      <Text style={styles.intelligenceEmptyDetail}>This report has no structured findings.</Text>
+                    )}
                   </View>
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.alertSummary} numberOfLines={2}>{alert.summary}</Text>
-                    <Text style={styles.alertMeta}>
-                      {new Date(alert.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                      {alert.platform ? ` • ${alert.platform}` : ''}
-                    </Text>
-                  </View>
-                </View>
-              ))
+                );
+              })
             ) : (
               <View style={styles.noAlerts}>
                 <Activity size={20} color="#1E293B" />
-                <Text style={styles.noAlertsText}>No intelligence alerts detected</Text>
+                <Text style={styles.noAlertsText}>No platform intelligence reports have been stored yet</Text>
               </View>
             )}
           </View>
@@ -1331,15 +1401,30 @@ const styles = StyleSheet.create({
   emptyTitle: { color: '#475569', fontWeight: '600', fontSize: 15, marginTop: 12 },
   emptySubtitle: { color: '#334155', fontSize: 12, marginTop: 4 },
   alertsCard: {
-    backgroundColor: '#151B2B', borderRadius: 16, overflow: 'hidden', shadowColor: '#F59E0B', shadowOpacity: 0.05, shadowRadius: 12, elevation: 2,
+    backgroundColor: '#151B2B', borderRadius: 16, padding: 10, gap: 8,
+    shadowColor: '#F59E0B', shadowOpacity: 0.05, shadowRadius: 12, elevation: 2,
   },
-  alertItem: { flexDirection: 'row', alignItems: 'flex-start', padding: 14 },
-  alertBorder: {},
+  alertItem: {
+    backgroundColor: 'rgba(255,255,255,0.025)', borderRadius: 12, padding: 12,
+  },
+  intelligenceReportHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 10 },
+  intelligencePlatform: { color: '#F8FAFC', fontSize: 13, fontWeight: '700', textTransform: 'capitalize' },
+  intelligenceSections: { gap: 10 },
+  intelligenceSection: { gap: 4 },
+  intelligenceSectionLabel: {
+    color: '#F59E0B', fontSize: 9, fontWeight: '800',
+    letterSpacing: 0.8, textTransform: 'uppercase',
+  },
+  intelligencePoint: { flexDirection: 'row', alignItems: 'flex-start', gap: 7 },
+  intelligencePointDot: {
+    width: 5, height: 5, borderRadius: 3, backgroundColor: '#F59E0B', marginTop: 6,
+  },
+  intelligenceEmptyDetail: { color: '#64748B', fontSize: 11, lineHeight: 16 },
   alertIcon: {
     width: 30, height: 30, borderRadius: 8,
     backgroundColor: 'rgba(245,158,11,0.1)', alignItems: 'center', justifyContent: 'center', marginRight: 12,
   },
-  alertSummary: { color: '#E2E8F0', fontSize: 13, fontWeight: '500', lineHeight: 18, marginBottom: 4 },
+  alertSummary: { flex: 1, color: '#CBD5E1', fontSize: 11, fontWeight: '500', lineHeight: 16 },
   alertMeta: { color: '#64748B', fontSize: 11 },
   noAlerts: { alignItems: 'center', paddingVertical: 32 },
   noAlertsText: { color: '#334155', fontSize: 13, marginTop: 8 },

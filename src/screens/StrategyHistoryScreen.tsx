@@ -67,7 +67,7 @@ function HistorySkeleton() {
   return (
     <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 16 }} scrollEnabled={false}>
       {[...Array(4)].map((_, i) => (
-        <View key={i} style={{ backgroundColor: '#151B2B', borderRadius: 18, borderWidth: 1, borderColor: '#1E293B', padding: 16, marginBottom: 12 }}>
+        <View key={i} style={{ backgroundColor: '#151B2B', borderRadius: 18, padding: 16, marginBottom: 14 }}>
           <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 12 }}>
             <Skeleton width={60} height={22} borderRadius={8} />
             <Skeleton width={54} height={22} borderRadius={8} />
@@ -741,7 +741,7 @@ function ConversionTrackerPanel({
           return (
             <React.Fragment key={step}>
               {idx > 0 && <ArrowRight size={12} color="#334155" />}
-              <View style={[styles.funnelStep, { borderColor: colors[step] + '40', backgroundColor: colors[step] + '10' }]}>
+              <View style={[styles.funnelStep, { backgroundColor: colors[step] + '14' }]}>
                 <Text style={[styles.funnelStepCount, { color: colors[step] }]}>{counts[step]}</Text>
                 <Text style={styles.funnelStepLabel}>{step.charAt(0).toUpperCase() + step.slice(1)}</Text>
               </View>
@@ -982,7 +982,6 @@ export default function StrategyHistoryScreen() {
 
     const statusColor = isActive ? '#00F0FF' : isPaused ? '#F59E0B' : '#64748B';
     const statusBg    = isActive ? 'rgba(0,240,255,0.08)' : isPaused ? 'rgba(245,158,11,0.08)' : 'rgba(100,116,139,0.08)';
-    const statusBorder = isActive ? 'rgba(0,240,255,0.2)' : isPaused ? 'rgba(245,158,11,0.2)' : 'rgba(100,116,139,0.15)';
 
     return (
       <Animated.View entering={FadeInDown.delay(index * 70).springify()}>
@@ -992,7 +991,7 @@ export default function StrategyHistoryScreen() {
             <View style={[styles.typeTag, { backgroundColor: isPaid ? 'rgba(112,0,255,0.12)' : 'rgba(16,185,129,0.12)' }]}>
               <Text style={[styles.typeTagText, { color: isPaid ? '#A78BFA' : '#34D399' }]}>{item.type}</Text>
             </View>
-            <View style={[styles.statusTag, { backgroundColor: statusBg, borderColor: statusBorder }]}>
+            <View style={[styles.statusTag, { backgroundColor: statusBg }]}>
               {isActive
                 ? <Play size={10} color={statusColor} fill={statusColor} />
                 : isPaused
@@ -1173,15 +1172,14 @@ const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: '#0B0F19' },
   header: {
     flexDirection: 'row', alignItems: 'center',
-    paddingHorizontal: 20, paddingVertical: 14,
-    borderBottomWidth: 1, borderBottomColor: 'rgba(0,240,255,0.08)',
+    paddingHorizontal: 20, paddingTop: 14, paddingBottom: 18,
   },
   backBtn: { marginRight: 14, padding: 4 },
   headerLabel: { color: '#64748B', fontSize: 11, fontWeight: '600', letterSpacing: 1, textTransform: 'uppercase' },
   headerTitle: { color: '#FFFFFF', fontSize: 22, fontWeight: '800', marginTop: 1 },
   countBadge: {
     flexDirection: 'row', alignItems: 'center',
-    backgroundColor: 'rgba(0,240,255,0.08)', borderWidth: 1, borderColor: 'rgba(0,240,255,0.15)',
+    backgroundColor: 'rgba(0,240,255,0.12)',
     borderRadius: 20, paddingHorizontal: 10, paddingVertical: 5, gap: 5,
   },
   countText: { color: '#00F0FF', fontWeight: '700', fontSize: 13 },
@@ -1190,21 +1188,21 @@ const styles = StyleSheet.create({
   // ── Strategy card ──────────────────────────────────────────────────────────
   card: {
     backgroundColor: '#151B2B', borderRadius: 18,
-    borderWidth: 1, borderColor: '#1E293B',
-    marginBottom: 12, overflow: 'hidden',
+    marginBottom: 16, overflow: 'hidden',
+    shadowColor: '#020617', shadowOpacity: 0.28, shadowRadius: 14, elevation: 3,
   },
-  cardHeader: { flexDirection: 'row', alignItems: 'center', padding: 16, paddingBottom: 0, gap: 8 },
+  cardHeader: { flexDirection: 'row', alignItems: 'center', padding: 16, paddingBottom: 2, gap: 8 },
   typeTag: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 20 },
   typeTagText: { fontSize: 11, fontWeight: '700', letterSpacing: 0.3 },
   statusTag: {
     flexDirection: 'row', alignItems: 'center', gap: 5,
-    paddingHorizontal: 9, paddingVertical: 4, borderRadius: 20, borderWidth: 1,
+    paddingHorizontal: 9, paddingVertical: 5, borderRadius: 20,
   },
   statusTagText: { fontSize: 11, fontWeight: '600' },
   cardTitle: { color: '#FFFFFF', fontWeight: '700', fontSize: 15, marginTop: 10, paddingHorizontal: 16 },
   cardDesc: { color: '#64748B', fontSize: 12, lineHeight: 18, marginTop: 4, marginBottom: 12, paddingHorizontal: 16 },
   assetsRow: { flexDirection: 'row', marginBottom: 12, paddingHorizontal: 16, gap: 8 },
-  assetThumb: { position: 'relative', width: 60, height: 60, borderRadius: 10, overflow: 'hidden', borderWidth: 1, borderColor: 'rgba(0,240,255,0.15)' },
+  assetThumb: { position: 'relative', width: 60, height: 60, borderRadius: 10, overflow: 'hidden', backgroundColor: '#101827' },
   assetImage: { width: '100%', height: '100%' },
   assetBadge: {
     position: 'absolute', bottom: 3, right: 3,
@@ -1212,14 +1210,15 @@ const styles = StyleSheet.create({
   },
   moreAssets: {
     width: 60, height: 60, borderRadius: 10,
-    backgroundColor: '#0B0F19', borderWidth: 1, borderColor: '#1E293B',
+    backgroundColor: '#0F1726',
     alignItems: 'center', justifyContent: 'center',
   },
   moreAssetsText: { color: '#94A3B8', fontWeight: '700', fontSize: 13 },
   cardFooter: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    paddingHorizontal: 16, paddingVertical: 12,
-    borderTopWidth: 1, borderTopColor: '#1E293B',
+    marginHorizontal: 12, marginTop: 8, marginBottom: 12,
+    paddingHorizontal: 12, paddingVertical: 10,
+    borderRadius: 12, backgroundColor: 'rgba(255,255,255,0.025)',
   },
   dateRow: { flexDirection: 'row', alignItems: 'center' },
   dateText: { color: '#475569', fontSize: 12 },
@@ -1228,20 +1227,20 @@ const styles = StyleSheet.create({
   aiMonitorText: { color: '#00F0FF', fontSize: 11, fontWeight: '600' },
   pauseBtn: {
     flexDirection: 'row', alignItems: 'center', gap: 4,
-    backgroundColor: 'rgba(245,158,11,0.1)', borderWidth: 1, borderColor: 'rgba(245,158,11,0.25)',
+    backgroundColor: 'rgba(245,158,11,0.14)',
     borderRadius: 8, paddingHorizontal: 9, paddingVertical: 5,
   },
   pauseBtnText: { color: '#F59E0B', fontSize: 11, fontWeight: '700' },
   resumeBtn: {
     flexDirection: 'row', alignItems: 'center', gap: 4,
-    backgroundColor: 'rgba(16,185,129,0.1)', borderWidth: 1, borderColor: 'rgba(16,185,129,0.25)',
+    backgroundColor: 'rgba(16,185,129,0.14)',
     borderRadius: 8, paddingHorizontal: 9, paddingVertical: 5,
   },
   resumeBtnText: { color: '#10B981', fontSize: 11, fontWeight: '700' },
   emptyWrap: { alignItems: 'center', paddingTop: 80, paddingHorizontal: 32 },
   emptyIcon: {
     width: 72, height: 72, borderRadius: 24,
-    backgroundColor: '#151B2B', borderWidth: 1, borderColor: '#1E293B',
+    backgroundColor: '#151B2B',
     alignItems: 'center', justifyContent: 'center', marginBottom: 20,
   },
   emptyTitle: { color: '#FFFFFF', fontWeight: '700', fontSize: 17, marginBottom: 8 },
@@ -1250,20 +1249,20 @@ const styles = StyleSheet.create({
   // ── Performance toggle ─────────────────────────────────────────────────────
   perfToggle: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    paddingHorizontal: 16, paddingVertical: 11,
-    borderTopWidth: 1, borderTopColor: 'rgba(16,185,129,0.12)',
-    backgroundColor: 'rgba(16,185,129,0.04)',
+    marginHorizontal: 12, marginTop: 8, paddingHorizontal: 12, paddingVertical: 11,
+    borderRadius: 11, backgroundColor: 'rgba(16,185,129,0.07)',
   },
   perfToggleText: { color: '#10B981', fontSize: 12, fontWeight: '700', letterSpacing: 0.3 },
 
   // ── Performance panel ──────────────────────────────────────────────────────
   perfPanel: {
-    padding: 16,
-    borderTopWidth: 1, borderTopColor: 'rgba(16,185,129,0.1)',
+    marginHorizontal: 12, marginTop: 5, padding: 14,
+    borderRadius: 12, backgroundColor: 'rgba(16,185,129,0.025)',
   },
   perfLoading: {
     flexDirection: 'row', alignItems: 'center', gap: 10,
-    padding: 16, borderTopWidth: 1, borderTopColor: 'rgba(16,185,129,0.1)',
+    marginHorizontal: 12, marginTop: 5, padding: 14,
+    borderRadius: 12, backgroundColor: 'rgba(16,185,129,0.025)',
   },
 
   // ── KPI grid ───────────────────────────────────────────────────────────────
@@ -1272,8 +1271,7 @@ const styles = StyleSheet.create({
   },
   kpiTile: {
     flex: 1, alignItems: 'center', gap: 3,
-    backgroundColor: 'rgba(255,255,255,0.03)', borderRadius: 12,
-    borderWidth: 1, borderColor: '#1E293B', padding: 10,
+    backgroundColor: 'rgba(255,255,255,0.045)', borderRadius: 12, padding: 10,
   },
   kpiValue: { fontSize: 16, fontWeight: '800' },
   kpiLabel: { color: '#94A3B8', fontSize: 10, fontWeight: '700', letterSpacing: 0.3 },
@@ -1282,7 +1280,7 @@ const styles = StyleSheet.create({
   // ── Media value badge ──────────────────────────────────────────────────────
   mediaValueBadge: {
     flexDirection: 'row', alignItems: 'center', gap: 3,
-    backgroundColor: 'rgba(251,191,36,0.1)', borderWidth: 1, borderColor: 'rgba(251,191,36,0.25)',
+    backgroundColor: 'rgba(251,191,36,0.15)',
     borderRadius: 20, paddingHorizontal: 8, paddingVertical: 3,
   },
   mediaValueText: { color: '#FBBF24', fontSize: 10, fontWeight: '700' },
@@ -1291,8 +1289,8 @@ const styles = StyleSheet.create({
   platformList: { gap: 6 },
   platformRow: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    backgroundColor: 'rgba(255,255,255,0.02)', borderRadius: 10,
-    borderWidth: 1, borderColor: '#1E293B', paddingHorizontal: 12, paddingVertical: 8,
+    backgroundColor: 'rgba(255,255,255,0.035)', borderRadius: 10,
+    paddingHorizontal: 12, paddingVertical: 9,
   },
   platformName: { color: '#E2E8F0', fontSize: 12, fontWeight: '600', textTransform: 'capitalize' },
   platformStats: { flexDirection: 'row', alignItems: 'center', gap: 4 },
@@ -1302,16 +1300,15 @@ const styles = StyleSheet.create({
   // ── Intelligence toggle ────────────────────────────────────────────────────
   intelToggle: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    paddingHorizontal: 16, paddingVertical: 11,
-    borderTopWidth: 1, borderTopColor: 'rgba(129,140,248,0.12)',
-    backgroundColor: 'rgba(129,140,248,0.04)',
+    marginHorizontal: 12, marginTop: 8, paddingHorizontal: 12, paddingVertical: 11,
+    borderRadius: 11, backgroundColor: 'rgba(129,140,248,0.07)',
   },
   intelToggleText: { color: '#818CF8', fontSize: 12, fontWeight: '700', letterSpacing: 0.3 },
 
   // ── Intel panel ────────────────────────────────────────────────────────────
   intelPanel: {
-    padding: 16,
-    borderTopWidth: 1, borderTopColor: 'rgba(129,140,248,0.1)',
+    marginHorizontal: 12, marginTop: 5, padding: 14,
+    borderRadius: 12, backgroundColor: 'rgba(129,140,248,0.025)',
   },
   intelPanelHeader: {
     flexDirection: 'row', alignItems: 'center', gap: 7, marginBottom: 14,
@@ -1319,12 +1316,14 @@ const styles = StyleSheet.create({
   intelPanelTitle: { color: '#E2E8F0', fontSize: 13, fontWeight: '700', flex: 1 },
   intelLoading: {
     flexDirection: 'row', alignItems: 'center', gap: 10,
-    padding: 16, borderTopWidth: 1, borderTopColor: 'rgba(129,140,248,0.1)',
+    marginHorizontal: 12, marginTop: 5, padding: 14,
+    borderRadius: 12, backgroundColor: 'rgba(129,140,248,0.025)',
   },
   intelLoadingText: { color: '#64748B', fontSize: 12 },
   intelError: {
     flexDirection: 'row', alignItems: 'center', gap: 8,
-    padding: 16, borderTopWidth: 1, borderTopColor: 'rgba(248,113,113,0.1)',
+    marginHorizontal: 12, marginTop: 5, padding: 14,
+    borderRadius: 12, backgroundColor: 'rgba(248,113,113,0.06)',
   },
   intelErrorText: { color: '#F87171', fontSize: 12, flex: 1 },
   retryBtn: { flexDirection: 'row', alignItems: 'center', gap: 4 },
@@ -1342,8 +1341,7 @@ const styles = StyleSheet.create({
   // ── Market stats row ───────────────────────────────────────────────────────
   intelStatsRow: {
     flexDirection: 'row', alignItems: 'center',
-    backgroundColor: 'rgba(255,255,255,0.03)', borderRadius: 12,
-    borderWidth: 1, borderColor: '#1E293B',
+    backgroundColor: 'rgba(255,255,255,0.04)', borderRadius: 12,
     marginBottom: 14, padding: 12,
   },
   intelStat: { flex: 1, alignItems: 'center', gap: 4 },
@@ -1354,14 +1352,13 @@ const styles = StyleSheet.create({
   // ── Segment ────────────────────────────────────────────────────────────────
   segTab: {
     paddingHorizontal: 12, paddingVertical: 6, borderRadius: 20,
-    backgroundColor: 'rgba(255,255,255,0.04)', borderWidth: 1, borderColor: '#1E293B',
+    backgroundColor: 'rgba(255,255,255,0.055)',
   },
-  segTabActive: { backgroundColor: 'rgba(0,240,255,0.1)', borderColor: 'rgba(0,240,255,0.3)' },
+  segTabActive: { backgroundColor: 'rgba(0,240,255,0.16)' },
   segTabText: { color: '#64748B', fontSize: 11, fontWeight: '600' },
   segTabTextActive: { color: '#00F0FF' },
   segCard: {
-    backgroundColor: 'rgba(255,255,255,0.02)', borderRadius: 12,
-    borderWidth: 1, borderColor: '#1E293B', padding: 12,
+    backgroundColor: 'rgba(255,255,255,0.035)', borderRadius: 12, padding: 13,
   },
   segHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 },
   segName: { color: '#FFFFFF', fontSize: 13, fontWeight: '700', flex: 1 },
@@ -1383,47 +1380,45 @@ const styles = StyleSheet.create({
 
   // ── Suggestions box ────────────────────────────────────────────────────────
   suggestionsBox: {
-    backgroundColor: 'rgba(251,191,36,0.04)', borderRadius: 12,
-    borderWidth: 1, borderColor: 'rgba(251,191,36,0.15)', padding: 12,
+    backgroundColor: 'rgba(251,191,36,0.075)', borderRadius: 12, padding: 13,
   },
   suggestionItem: { color: '#FBBF24', fontSize: 12, lineHeight: 19, marginBottom: 4 },
 
   // ── Conversion tracker toggle ───────────────────────────────────────────────
   convToggle: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    paddingHorizontal: 16, paddingVertical: 11,
-    borderTopWidth: 1, borderTopColor: 'rgba(245,158,11,0.12)',
-    backgroundColor: 'rgba(245,158,11,0.04)',
+    marginHorizontal: 12, marginTop: 8, paddingHorizontal: 12, paddingVertical: 11,
+    borderRadius: 11, backgroundColor: 'rgba(245,158,11,0.07)',
   },
   convToggleText: { color: '#F59E0B', fontSize: 12, fontWeight: '700', letterSpacing: 0.3 },
   convCountBadge: {
-    backgroundColor: 'rgba(245,158,11,0.18)',
+    backgroundColor: 'rgba(245,158,11,0.22)',
     borderRadius: 8, paddingHorizontal: 6, paddingVertical: 2,
-    borderWidth: 1, borderColor: 'rgba(245,158,11,0.35)',
     minWidth: 22, alignItems: 'center',
   },
   convCountBadgeText: { color: '#F59E0B', fontSize: 10, fontWeight: '800' },
   convNewBadge: {
-    backgroundColor: 'rgba(16,185,129,0.15)',
+    backgroundColor: 'rgba(16,185,129,0.2)',
     borderRadius: 8, paddingHorizontal: 6, paddingVertical: 2,
-    borderWidth: 1, borderColor: 'rgba(16,185,129,0.4)',
     minWidth: 36, alignItems: 'center',
   },
   convNewBadgeText: { color: '#10B981', fontSize: 10, fontWeight: '800' },
 
   // ── Conversion tracker panel ────────────────────────────────────────────────
   convPanel: {
-    padding: 16,
-    borderTopWidth: 1, borderTopColor: 'rgba(245,158,11,0.1)',
+    marginHorizontal: 12, marginTop: 5, padding: 14,
+    borderRadius: 12, backgroundColor: 'rgba(245,158,11,0.025)',
   },
   convLoading: {
     flexDirection: 'row', alignItems: 'center', gap: 10,
-    padding: 16, borderTopWidth: 1, borderTopColor: 'rgba(245,158,11,0.1)',
+    marginHorizontal: 12, marginTop: 5, padding: 14,
+    borderRadius: 12, backgroundColor: 'rgba(245,158,11,0.025)',
   },
   convLoadingText: { color: '#64748B', fontSize: 12 },
   convEmpty: {
     alignItems: 'center', gap: 8,
-    padding: 20, borderTopWidth: 1, borderTopColor: 'rgba(245,158,11,0.1)',
+    marginHorizontal: 12, marginTop: 5, padding: 20,
+    borderRadius: 12, backgroundColor: 'rgba(245,158,11,0.025)',
   },
   convEmptyTitle: { color: '#475569', fontSize: 13, fontWeight: '600' },
   convEmptyBody: { color: '#334155', fontSize: 11, textAlign: 'center', lineHeight: 16 },
@@ -1431,8 +1426,8 @@ const styles = StyleSheet.create({
   // ── Live badge ──────────────────────────────────────────────────────────────
   convLiveDot: {
     flexDirection: 'row', alignItems: 'center', gap: 4,
-    backgroundColor: 'rgba(245,158,11,0.1)', borderWidth: 1, borderColor: 'rgba(245,158,11,0.25)',
-    borderRadius: 20, paddingHorizontal: 7, paddingVertical: 2,
+    backgroundColor: 'rgba(245,158,11,0.15)',
+    borderRadius: 20, paddingHorizontal: 7, paddingVertical: 3,
   },
   convLiveDotInner: { width: 5, height: 5, borderRadius: 3, backgroundColor: '#F59E0B' },
   convLiveText: { color: '#F59E0B', fontSize: 9, fontWeight: '700', letterSpacing: 0.5 },
@@ -1443,15 +1438,14 @@ const styles = StyleSheet.create({
     marginBottom: 16, flexWrap: 'wrap',
   },
   funnelStep: {
-    alignItems: 'center', borderRadius: 10, borderWidth: 1,
+    alignItems: 'center', borderRadius: 10,
     paddingHorizontal: 10, paddingVertical: 6, minWidth: 60,
   },
   funnelStepCount: { fontSize: 18, fontWeight: '800' },
   funnelStepLabel: { color: '#94A3B8', fontSize: 9, fontWeight: '700', letterSpacing: 0.5, marginTop: 1 },
   funnelTotal: {
     marginLeft: 6, alignItems: 'center',
-    backgroundColor: 'rgba(255,255,255,0.03)', borderRadius: 10,
-    borderWidth: 1, borderColor: '#1E293B',
+    backgroundColor: 'rgba(255,255,255,0.05)', borderRadius: 10,
     paddingHorizontal: 10, paddingVertical: 6, minWidth: 48,
   },
   funnelTotalCount: { color: '#E2E8F0', fontSize: 18, fontWeight: '800' },
@@ -1459,8 +1453,7 @@ const styles = StyleSheet.create({
 
   // ── Per-platform rows ───────────────────────────────────────────────────────
   convPlatRow: {
-    backgroundColor: 'rgba(255,255,255,0.02)', borderRadius: 12,
-    borderWidth: 1, borderColor: '#1E293B',
+    backgroundColor: 'rgba(255,255,255,0.035)', borderRadius: 12,
     paddingHorizontal: 12, paddingTop: 10, paddingBottom: 10,
   },
   convPlatHeader: {

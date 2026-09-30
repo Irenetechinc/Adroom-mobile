@@ -363,6 +363,7 @@ export default function LeadsScreen({ route }: Props) {
   };
 
   const [leads, setLeads] = useState<Lead[]>([]);
+  const [totalLeadCount, setTotalLeadCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [filter, setFilter] = useState<FilterKey>('all');
@@ -373,18 +374,23 @@ export default function LeadsScreen({ route }: Props) {
     try {
       let query = supabase
         .from('agent_leads')
-          .select('id, platform, platform_user_id, platform_username, first_interaction, intent_score, intent_signals, stage, dm_sequence_step, last_contacted_at, next_followup_at, profile_status, profile_updated_at, profile_error, created_at')
+          .select('id, platform, platform_user_id, platform_username, first_interaction, intent_score, intent_signals, stage, dm_sequence_step, last_contacted_at, next_followup_at, profile_status, profile_updated_at, profile_error, created_at', { count: 'exact' })
         .eq('user_id', session.user.id)
-        .order('intent_score', { ascending: false })
         .order('created_at', { ascending: false })
+        .order('intent_score', { ascending: false })
         .limit(200);
 
       if (strategyId) query = query.eq('strategy_id', strategyId);
       if (platformFilter) query = query.eq('platform', platformFilter);
 
-      const { data, error } = await query;
-      if (!error && data) {
+      const { data, count, error } = await query;
+      if (error) {
+        console.error('LeadsScreen query error:', error);
+        return;
+      }
+      if (data) {
         const rows = data as Lead[];
+        setTotalLeadCount(count ?? rows.length);
         const ids = rows.map((lead) => lead.id);
         if (ids.length) {
           const { data: profiles } = await supabase
@@ -464,7 +470,7 @@ export default function LeadsScreen({ route }: Props) {
   });
 
   // ── Summary stats ──
-  const totalLeads = leads.length;
+  const totalLeads = totalLeadCount;
   const hotLeads   = leads.filter(l => l.intent_score >= 0.8).length;
   const dueLeads   = leads.filter(l =>
     l.next_followup_at &&
