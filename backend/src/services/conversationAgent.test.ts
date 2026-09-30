@@ -1,5 +1,6 @@
 import assert from 'assert';
 import {
+  mergeOfferContexts,
   normalizeDiscoveryQueryPlan,
   normalizeOfferContext,
   selectConversationResults,
@@ -28,6 +29,14 @@ assert.deepEqual(offer.imageUrls, [
 ]);
 assert.equal(offer.name, 'Lagos Night Market Meal Box');
 assert.ok(offer.searchableTerms.includes('Lagos'));
+
+const mergedOffer = mergeOfferContexts(
+  normalizeOfferContext({ product_name: 'L' }),
+  offer,
+);
+assert.equal(mergedOffer.name, 'Lagos Night Market Meal Box');
+const mergedPlan = normalizeDiscoveryQueryPlan({ queries: ['people looking for meal boxes'] }, mergedOffer);
+assert.ok(mergedPlan.queries[0].includes('"Lagos Night Market Meal Box"'));
 
 const plan = normalizeDiscoveryQueryPlan({
   queries: ['people comparing weekly dinner options', 'Kora Kitchen meal box recommendations'],

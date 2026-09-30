@@ -526,7 +526,7 @@ GOAL: ${goal}`;
     }
 
     const resolved = normalizeOfferContext(data);
-    return resolved.name || resolved.brand || resolved.category ? resolved : embedded;
+    return mergeOfferContexts(embedded, resolved);
   }
 
   async runForStrategy(strategy: any): Promise<{ identified: number; highPotential: number; engaged: number; routed: number }> {

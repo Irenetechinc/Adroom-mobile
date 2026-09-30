@@ -2795,12 +2795,13 @@ app.get('/api/dashboard/conversation-overview', async (req, res) => {
         const { data: { user } } = await supabase.auth.getUser();
         if (!user) return res.status(401).json({ error: 'Unauthorized.' });
 
-        const { data: activeStrategies } = await supabase
+        const { data: activeStrategies, error: strategiesError } = await supabase
             .from('strategies')
             .select('id, title, goal, status, is_active')
             .eq('user_id', user.id)
             .eq('is_active', true)
             .order('updated_at', { ascending: false });
+        if (strategiesError) throw new Error(strategiesError.message);
 
         const strategyIds = (activeStrategies || []).map((strategy: any) => strategy.id);
         const overview = (activeStrategies || []).map((strategy: any) => ({
@@ -2811,30 +2812,73 @@ app.get('/api/dashboard/conversation-overview', async (req, res) => {
         }));
 
         if (strategyIds.length) {
-            const { data: runs } = await supabase
-                .from('strategy_conversation_runs')
-                .select('strategy_id, identified, high_potential, engaged, routed, created_at')
-                .eq('user_id', user.id)
-                .in('strategy_id', strategyIds)
-                .order('created_at', { ascending: false });
+            const [runsResult, signalsResult, leadsResult] = await Promise.all([
+                supabase
+                    .from('strategy_conversation_runs')
+                    .select('strategy_id, identified, high_potential, engaged, routed, created_at')
+                    .eq('user_id', user.id)
+                    .in('strategy_id', strategyIds)
+                    .order('created_at', { ascending: false }),
+                supabase
+                    .from('strategy_conversation_signals')
+                    .select('strategy_id, status')
+                    .eq('user_id', user.id)
+                    .in('strategy_id', strategyIds),
+                supabase
+                    .from('agent_leads')
+                    .select('strategy_id, stage, intent_score')
+                    .eq('user_id', user.id)
+                    .in('strategy_id', strategyIds),
+            ]);
+            if (runsResult.error) throw new Error(runsResult.error.message);
+            if (signalsResult.error) throw new Error(signalsResult.error.message);
+            if (leadsResult.error) throw new Error(leadsResult.error.message);
 
             const latestByStrategy = new Map<string, any>();
-            for (const run of runs || []) {
+            for (const run of runsResult.data || []) {
                 if (!latestByStrategy.has(run.strategy_id)) {
                     latestByStrategy.set(run.strategy_id, run);
                 }
             }
 
+            const signalsByStrategy = new Map<string, any[]>();
+            for (const signal of signalsResult.data || []) {
+                const signals = signalsByStrategy.get(signal.strategy_id) || [];
+                signals.push(signal);
+                signalsByStrategy.set(signal.strategy_id, signals);
+            }
+
+            const leadsByStrategy = new Map<string, any[]>();
+            for (const lead of leadsResult.data || []) {
+                if (!lead.strategy_id) continue;
+                const leads = leadsByStrategy.get(lead.strategy_id) || [];
+                leads.push(lead);
+                leadsByStrategy.set(lead.strategy_id, leads);
+            }
+
             for (const item of overview) {
                 const latest = latestByStrategy.get(item.strategyId);
-                if (latest) {
-                    item.counts = {
-                        identified: latest.identified || 0,
-                        high_potential: latest.high_potential || 0,
-                        engaged: latest.engaged || 0,
-                        routed: latest.routed || 0,
-                    };
-                }
+                const signals = signalsByStrategy.get(item.strategyId) || [];
+                const leads = leadsByStrategy.get(item.strategyId) || [];
+                const identified = signals.length
+                    ? signals.length
+                    : leads.length
+                        ? leads.length
+                        : latest?.identified || 0;
+                const highPotential = signals.length
+                    ? signals.filter((signal) => signal.status === 'high_potential').length
+                    : leads.length
+                        ? leads.filter((lead) => Number(lead.intent_score) >= 0.65).length
+                        : latest?.high_potential || 0;
+                const engagedFromLeads = leads.filter((lead) =>
+                    ['engaged', 'nurturing', 'converted', 'closed', 'closed_won'].includes(String(lead.stage || '').toLowerCase()),
+                ).length;
+                item.counts = {
+                    identified,
+                    high_potential: highPotential,
+                    engaged: latest?.engaged || engagedFromLeads,
+                    routed: latest?.routed || 0,
+                };
             }
         }
 
