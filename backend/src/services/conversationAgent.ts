@@ -69,6 +69,29 @@ export function normalizeOfferContext(raw: any): OfferContext {
   return { name, brand, category, description, targetAudience, imageUrls: normalizeImageUrls(source), searchableTerms };
 }
 
+/**
+ * Product context can be embedded in a strategy as well as loaded from
+ * product_memory.  Prefer the fullest value when those two snapshots
+ * disagree; a one-character stale database value must never replace a real
+ * offer identity that is still present in the strategy.
+ */
+export function mergeOfferContexts(...contexts: OfferContext[]): OfferContext {
+  const longest = (field: keyof Pick<OfferContext, 'name' | 'brand' | 'category' | 'description' | 'targetAudience'>): string =>
+    contexts
+      .map((context) => String(context?.[field] || '').replace(/\s+/g, ' ').trim())
+      .filter(Boolean)
+      .sort((a, b) => b.length - a.length)[0] || '';
+  const merged = {
+    name: longest('name'),
+    brand: longest('brand'),
+    category: longest('category'),
+    description: longest('description'),
+    targetAudience: longest('targetAudience'),
+    imageUrls: Array.from(new Set(contexts.flatMap((context) => context?.imageUrls || []))).slice(0, 5),
+  };
+  return normalizeOfferContext(merged);
+}
+
 function quoteSearchTerm(value: string): string {
   return `"${value.replace(/"/g, '').trim()}"`;
 }
@@ -95,16 +118,25 @@ export function normalizeDiscoveryQueryPlan(raw: any, context: OfferContext): Di
   const rawQueries = Array.isArray(raw?.queries)
     ? raw.queries.map((value: unknown) => safeSearchValue(value, 280)).filter(Boolean)
     : [];
+  // A one-character name is not a meaningful identity anchor and commonly
+  // indicates an upstream truncation.  Do not let it make a query such as
+  // `"L"` appear anchored merely because it occurs in another word.
   const identityAnchors = [context.name, context.brand, context.category]
+    .filter((value) => value.trim().length > 1)
     .map((value) => value.toLowerCase())
     .filter(Boolean);
-  const primaryAnchor = context.name || context.brand || context.category;
+  const primaryAnchor = [context.name, context.brand, context.category]
+    .find((value) => value.trim().length > 1) || '';
   const queries = rawQueries
     .map((query: string) => {
       if (!primaryAnchor || identityAnchors.some((anchor) => query.toLowerCase().includes(anchor))) {
         return query;
       }
-      return safeSearchValue(`${quoteSearchTerm(primaryAnchor)} ${query}`, 280);
+      const prefix = quoteSearchTerm(primaryAnchor);
+      const suffix = safeSearchValue(query, Math.max(0, 280 - prefix.length - 1));
+      // Keep the complete identity even when the model returns an unusually
+      // long query.  The demand suffix is the part that may be shortened.
+      return suffix ? `${prefix} ${suffix}` : prefix;
     })
     .filter(Boolean);
   const demandTerms = Array.isArray(raw?.demandTerms)
@@ -113,7 +145,8 @@ export function normalizeDiscoveryQueryPlan(raw: any, context: OfferContext): Di
   const exclusions = Array.isArray(raw?.exclusions)
     ? raw.exclusions.map((value: unknown) => safeSearchValue(value, 100).toLowerCase()).filter((value: string) => value.length >= 3)
     : [];
-  const anchor = context.name || context.brand || context.category;
+  const anchor = [context.name, context.brand, context.category]
+    .find((value) => value.trim().length > 1) || '';
   const fallbackQueries = anchor ? [quoteSearchTerm(anchor)] : [];
   return {
     queries: Array.from(new Set<string>(queries)).slice(0, 5).concat(
