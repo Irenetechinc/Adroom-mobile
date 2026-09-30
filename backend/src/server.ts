@@ -5493,15 +5493,18 @@ app.get('/api/strategy/:id/intelligence/demographics', async (req, res) => {
     if (!strategy) return res.status(404).json({ error: 'Strategy not found.' });
 
     // Fetch stored demographic analysis
-    const { data: intel } = await supabase
-      .from('platform_intelligence')
+    const { data: intel, error: intelError } = await supabase
+      .from('strategy_audience_intelligence')
       .select('data, confidence, generated_at')
       .eq('strategy_id', strategyId)
       .eq('user_id', user.id)
       .eq('intel_type', 'demographic_analysis')
-      .order('generated_at', { ascending: false })
-      .limit(1)
-      .single();
+      .maybeSingle();
+
+    if (intelError) {
+      console.error(`[AudienceIntel] Failed to read report for strategy ${strategyId}:`, intelError.message);
+      return res.status(500).json({ error: 'Could not load audience intelligence.' });
+    }
 
     if (intel?.data) {
       return res.json({ ok: true, intel: intel.data, confidence: intel.confidence, generatedAt: intel.generated_at });
@@ -5509,6 +5512,10 @@ app.get('/api/strategy/:id/intelligence/demographics', async (req, res) => {
 
     // No data yet — trigger async analysis and return 202
     const { RadarAgent } = await import('./agents/radarAgent');
+    if (req.query.retry === '1') RadarAgent.clearDemographicFailure(user.id, strategyId);
+    if (RadarAgent.getDemographicFailure(user.id, strategyId)) {
+      return res.status(503).json({ error: 'Audience intelligence could not be generated or saved. Retry to try again.' });
+    }
     const radar = new RadarAgent();
     radar.runDemographicAnalysis(user.id, strategyId).catch(() => {});
 

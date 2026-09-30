@@ -11,6 +11,7 @@
 - [Expo push project routing](expo-push-project-routing.md) — batch tokens by EAS project and retire unscoped legacy rows; never send mixed-project tokens together.
 - [Credential-free discovery routing](credential-free-discovery-routing.md) — keep web as the fallback and only search strategy-selected social sources; never turn discovery results into web outbound work.
 - [Conversation discovery context](conversation-discovery-context.md) — anchor searches to the actual promoted offer and public demand language, never the strategy title.
+- [Audience report storage](audience-report-storage.md) — isolate user-owned audience analyses from the globally shared platform intelligence feed.
 - [Root package install drift](root-package-install-drift.md) — package installation helpers can rewrite root ranges and registry URLs; verify and restore package manifests before finishing.
 - [Public profile tool boundaries](public-profile-tool-boundaries.md) — run incompatible OSINT tools through the backend queue with bounded fallbacks; persist only sanitized public evidence.
 - [Public data Railway runtime](public-data-railway-runtime.md) — resolve vendored tools across Railway layouts; keep Deepkrak3n/J.A.R.V.I.S as separate real services and repair legacy inbound timestamps.

@@ -41,10 +41,20 @@ interface DemographicIntel {
 export class RadarAgent {
   private ai: AIEngine;
   private supabase: ReturnType<typeof getServiceSupabaseClient>;
+  private static readonly demographicRuns = new Set<string>();
+  private static readonly demographicFailures = new Map<string, string>();
 
   constructor() {
     this.ai = AIEngine.getInstance();
     this.supabase = getServiceSupabaseClient();
+  }
+
+  static getDemographicFailure(userId: string, strategyId: string): string | undefined {
+    return RadarAgent.demographicFailures.get(`${userId}:${strategyId}`);
+  }
+
+  static clearDemographicFailure(userId: string, strategyId: string): void {
+    RadarAgent.demographicFailures.delete(`${userId}:${strategyId}`);
   }
 
   async runScan(userId: string, strategyId: string): Promise<RadarIntel | null> {
@@ -136,20 +146,30 @@ Be specific, actionable, and data-driven. Focus on insights that can improve cam
    */
   async runDemographicAnalysis(userId: string, strategyId: string): Promise<DemographicIntel | null> {
     console.log(`[RadarAgent] Running demographic & market intelligence for strategy ${strategyId}`);
+    const runKey = `${userId}:${strategyId}`;
+    if (RadarAgent.demographicRuns.has(runKey)) {
+      console.log(`[RadarAgent] Demographic analysis already running for strategy ${strategyId}; skipping duplicate`);
+      return null;
+    }
+    RadarAgent.demographicRuns.add(runKey);
+    RadarAgent.demographicFailures.delete(runKey);
     try {
       const [stratRes, leadsRes, convRes, socialRes] = await Promise.all([
-        this.supabase.from('strategy_memory').select('*, product_id').eq('strategy_id', strategyId).single(),
+        this.supabase.from('strategy_memory').select('*, product_id').eq('strategy_id', strategyId).eq('user_id', userId).single(),
         this.supabase.from('agent_leads').select('platform, country, intent_score, stage, platform_bio').eq('user_id', userId).eq('strategy_id', strategyId).limit(50),
         this.supabase.from('social_conversations').select('platform, sentiment, topic, language').eq('user_id', userId).eq('strategy_id', strategyId).order('created_at', { ascending: false }).limit(30),
         this.supabase.from('social_listening_data').select('content, platform, sentiment').eq('user_id', userId).order('created_at', { ascending: false }).limit(20),
       ]);
 
       const strategy = stratRes.data;
-      if (!strategy) return null;
+      if (!strategy) {
+        RadarAgent.demographicFailures.set(runKey, 'Strategy data is unavailable.');
+        return null;
+      }
 
       let product = null;
       if (strategy.product_id) {
-        const { data } = await this.supabase.from('product_memory').select('*').eq('product_id', strategy.product_id).single();
+        const { data } = await this.supabase.from('product_memory').select('*').eq('product_id', strategy.product_id).eq('user_id', userId).single();
         product = data;
       }
 
@@ -230,23 +250,40 @@ Return JSON ONLY:
       const result = await this.ai.generateStrategy({}, demographicPrompt);
       const intel = result.parsedJson as DemographicIntel;
 
-      if (!intel) return null;
+      if (!intel) {
+        RadarAgent.demographicFailures.set(runKey, 'Audience analysis did not return a report.');
+        return null;
+      }
 
-      // Persist to platform_intelligence table so Dashboard can display it
-      await this.supabase.from('platform_intelligence').upsert({
+      // Audience reports are user-owned data; keep them separate from the
+      // globally readable platform feed.
+      const generatedAt = new Date().toISOString();
+      const { data: savedReport, error: persistError } = await this.supabase.from('strategy_audience_intelligence').upsert({
         user_id: userId,
         strategy_id: strategyId,
         intel_type: 'demographic_analysis',
         data: intel,
         confidence: dataConfidence,
-        generated_at: new Date().toISOString(),
-      }, { onConflict: 'user_id,strategy_id,intel_type' });
+        generated_at: generatedAt,
+        updated_at: generatedAt,
+      }, { onConflict: 'user_id,strategy_id,intel_type' })
+        .select('id')
+        .single();
+      if (persistError || !savedReport?.id) {
+        const saveError = persistError?.message || 'The database did not confirm the saved report.';
+        console.error(`[RadarAgent] Audience report save failed for strategy ${strategyId}:`, saveError);
+        RadarAgent.demographicFailures.set(runKey, saveError);
+        return null;
+      }
 
       console.log(`[RadarAgent] Demographic analysis complete for strategy ${strategyId}. Confidence: ${dataConfidence}`);
       return intel;
     } catch (e: any) {
       console.error('[RadarAgent] Demographic analysis failed:', e.message);
+      RadarAgent.demographicFailures.set(runKey, e.message || 'Audience analysis failed.');
       return null;
+    } finally {
+      RadarAgent.demographicRuns.delete(runKey);
     }
   }
 
