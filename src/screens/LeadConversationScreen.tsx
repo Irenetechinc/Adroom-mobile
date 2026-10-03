@@ -8,7 +8,7 @@
  */
 import React, { useState, useCallback, useRef, useEffect } from 'react';
 import {
-  View, Text, ScrollView, TouchableOpacity, StyleSheet,
+  Alert, View, Text, ScrollView, TouchableOpacity, StyleSheet,
   ActivityIndicator, RefreshControl,
 } from 'react-native';
 import { createRealtimeEventGuard, type RealtimePayload } from '../utils/realtimeEventGuard';
@@ -18,10 +18,11 @@ import { useFocusEffect } from '@react-navigation/native';
 import Animated, { FadeInDown, FadeInUp } from 'react-native-reanimated';
 import {
   ArrowLeft, MessageCircle, Clock, Send, Bot, User,
-  Target, Calendar, CheckCircle2, Zap, AlertCircle,
+  Target, Calendar, CheckCircle2, Zap, AlertCircle, PhoneCall,
 } from 'lucide-react-native';
 import { supabase } from '../services/supabase';
 import { useAuthStore } from '../store/authStore';
+import { OutreachService } from '../services/outreach';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 interface DmMessage {
@@ -52,6 +53,9 @@ interface Lead {
   first_interaction?: string;
   last_contacted_at?: string;
   next_followup_at?: string;
+  call_consent?: boolean;
+  call_consent_at?: string | null;
+  call_consent_source?: string | null;
   created_at: string;
 }
 
@@ -107,6 +111,9 @@ export default function LeadConversationScreen() {
 
   const [messages, setMessages] = useState<DmMessage[]>([]);
   const [scheduled, setScheduled] = useState<ScheduledMessage[]>([]);
+  const [callConsent, setCallConsent] = useState(lead?.call_consent === true);
+  const [callConsentAt, setCallConsentAt] = useState<string | null>(lead?.call_consent_at || null);
+  const [savingCallConsent, setSavingCallConsent] = useState(false);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
@@ -177,6 +184,42 @@ export default function LeadConversationScreen() {
     fetchData();
   };
 
+  const updateCallConsent = async (consented: boolean) => {
+    if (!session?.user?.id || !lead?.id || savingCallConsent) return;
+    setSavingCallConsent(true);
+    try {
+      const result = await OutreachService.setLeadCallConsent(lead.id, consented);
+      setCallConsent(result.lead?.call_consent === true);
+      setCallConsentAt(result.lead?.call_consent_at || null);
+    } catch (error: any) {
+      Alert.alert('Could not update call consent', error?.message || 'Please try again.');
+    } finally {
+      setSavingCallConsent(false);
+    }
+  };
+
+  const promptCallConsent = () => {
+    if (callConsent) {
+      Alert.alert(
+        'Revoke call consent?',
+        'Future autonomous calls to this lead will be blocked.',
+        [
+          { text: 'Keep enabled', style: 'cancel' },
+          { text: 'Revoke consent', style: 'destructive', onPress: () => updateCallConsent(false) },
+        ],
+      );
+      return;
+    }
+    Alert.alert(
+      'Record explicit call consent',
+      'Only continue if this lead explicitly agreed to receive automated calls, which may be recorded. A public business listing is not consent.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'The lead agreed', onPress: () => updateCallConsent(true) },
+      ],
+    );
+  };
+
   if (!lead) {
     return (
       <SafeAreaView style={styles.safe}>
@@ -228,6 +271,30 @@ export default function LeadConversationScreen() {
           </Text>
         </Animated.View>
       ) : null}
+
+      <View style={{ marginHorizontal: 16, marginTop: 12, padding: 14, borderRadius: 12, backgroundColor: '#111827', borderWidth: 1, borderColor: callConsent ? '#10B98155' : '#334155' }}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 9 }}>
+          <PhoneCall size={16} color={callConsent ? '#10B981' : '#94A3B8'} />
+          <Text style={{ color: '#E2E8F0', fontSize: 14, fontWeight: '700', flex: 1 }}>Autonomous calling</Text>
+          <Text style={{ color: callConsent ? '#10B981' : '#F59E0B', fontSize: 12, fontWeight: '700' }}>{callConsent ? 'Consent recorded' : 'Off'}</Text>
+        </View>
+        <Text style={{ color: '#94A3B8', fontSize: 12, lineHeight: 18, marginTop: 7 }}>
+          {callConsent
+            ? `The owner recorded consent${callConsentAt ? ` on ${new Date(callConsentAt).toLocaleDateString()}` : ''}. Calls also require an eligible plan and an international phone number such as +2348012345678.`
+            : 'Record consent only after the lead explicitly agrees to automated calls that may be recorded. Public listings do not count.'}
+        </Text>
+        <TouchableOpacity
+          onPress={promptCallConsent}
+          disabled={savingCallConsent}
+          accessibilityRole="button"
+          accessibilityLabel={callConsent ? 'Revoke autonomous call consent' : 'Record explicit autonomous call consent'}
+          style={{ alignSelf: 'flex-start', marginTop: 11, paddingHorizontal: 12, paddingVertical: 8, borderRadius: 8, backgroundColor: callConsent ? '#7F1D1D' : '#065F46', opacity: savingCallConsent ? 0.6 : 1 }}
+        >
+          <Text style={{ color: '#F8FAFC', fontSize: 12, fontWeight: '700' }}>
+            {savingCallConsent ? 'Saving…' : callConsent ? 'Revoke consent' : 'Record consent'}
+          </Text>
+        </TouchableOpacity>
+      </View>
 
       {/* ── Thread ── */}
       <ScrollView

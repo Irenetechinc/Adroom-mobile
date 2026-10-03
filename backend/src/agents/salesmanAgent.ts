@@ -746,23 +746,34 @@ Do not claim private facts or invent a relationship. Address the public signal d
         });
 
         try {
-            const { data: prefs } = await this.supabase.from('outreach_preferences').select('do_not_call').eq('user_id', task.user_id).maybeSingle();
-            const publicBusinessSource = ['google_places', 'google_business_profile', 'public_domain', 'public_directory', 'website'].includes(String(lead.contact_source || lead.source || '').toLowerCase());
+            const { data: prefs, error: preferencesError } = await this.supabase.from('outreach_preferences').select('do_not_call').eq('user_id', task.user_id).maybeSingle();
+            if (preferencesError) throw preferencesError;
             const callDecision = await this.ai.generateJson(`Decide whether a phone call is warranted for this current sales conversation. Return only {"should_call": boolean, "reason": string}. Use only the supplied evidence. Never call merely to increase contact volume.
-LEAD: ${JSON.stringify({ platform: lead.platform, intent_score: lead.intent_score, phone_present: Boolean(lead.phone || lead.phone_number || lead.contact_phone), public_business_contact: publicBusinessSource })}
+LEAD: ${JSON.stringify({ platform: lead.platform, intent_score: lead.intent_score, phone_present: Boolean(lead.phone || lead.phone_number || lead.contact_phone) })}
 PROFILE: ${JSON.stringify(leadProfile)}
 MESSAGE: ${inbound_message}
 HISTORY: ${conversationThread}`);
-            if (callDecision?.should_call && (lead.call_consent === true || publicBusinessSource) && !prefs?.do_not_call && (lead.phone || lead.phone_number || lead.contact_phone)) {
-                const { data: existingCall } = await this.supabase.from('call_logs').select('id').eq('lead_id', lead_id).in('status', ['queued', 'provider_started', 'ringing', 'in_progress']).maybeSingle();
-                if (!existingCall) await this.supabase.from('call_logs').insert({
-                    user_id: task.user_id,
-                    lead_id,
-                    strategy_id: task.strategy_id,
-                    consent_confirmed: lead.call_consent === true || publicBusinessSource,
-                    status: 'queued',
-                    summary: { requested_goal: callDecision.reason, source: 'salesman_ai_decision', contact_source: lead.contact_source || lead.source || null, country_code: lead.country_code || lead.country || null },
-                });
+            const rawPhone = String(lead.phone || lead.phone_number || lead.contact_phone || '').trim().replace(/[()\s-]/g, '');
+            if (callDecision?.should_call && lead.call_consent === true && !prefs?.do_not_call && /^\+[1-9]\d{7,14}$/.test(rawPhone)) {
+                const { data: existingCall, error: existingCallError } = await this.supabase
+                    .from('call_logs')
+                    .select('id')
+                    .eq('user_id', task.user_id)
+                    .eq('lead_id', lead_id)
+                    .in('status', ['queued', 'processing', 'provider_started', 'ringing', 'in_progress'])
+                    .maybeSingle();
+                if (existingCallError) throw existingCallError;
+                if (!existingCall) {
+                    const { error: insertCallError } = await this.supabase.from('call_logs').insert({
+                        user_id: task.user_id,
+                        lead_id,
+                        strategy_id: task.strategy_id,
+                        consent_confirmed: true,
+                        status: 'queued',
+                        summary: { requested_goal: callDecision.reason, source: 'salesman_ai_decision', contact_source: lead.contact_source || lead.source || null, country_code: lead.country_code || lead.country || null },
+                    });
+                    if (insertCallError) throw insertCallError;
+                }
             }
         } catch (error: any) { this.log(`Call recommendation skipped: ${error.message}`); }
 
@@ -1167,17 +1178,20 @@ Return JSON: { "message": "the reply" }`;
                     const { data: existingShipment } = await this.supabase.from('shipments')
                         .select('id').eq('user_id', task.user_id).eq('lead_id', lead.id).eq('strategy_id', task.strategy_id).maybeSingle();
                     if (!existingShipment) {
-                        const { data: shipment } = await this.supabase.from('shipments').insert({
+                        const { data: shipment, error: shipmentInsertError } = await this.supabase.from('shipments').insert({
                             user_id: task.user_id,
                             strategy_id: task.strategy_id,
                             product_id: strategyRes.data?.product_id || null,
                             lead_id: lead.id,
                             product_type: 'physical',
                             pickup_address: strategyRes.data?.dispatch_address || product.dispatch_address || null,
-                            delivery_address: lead.delivery_address || lead.address || null,
+                            delivery_address: lead.delivery_address || null,
                             status: 'awaiting_dispatch',
                             pickup_details: { deal_id: deal.id, requested_at: new Date().toISOString() },
                         }).select('id').single();
+                        if (shipmentInsertError || !shipment?.id) {
+                            throw new Error(shipmentInsertError?.message || 'Shipment record was not created.');
+                        }
                         if (shipment?.id) await shipmentService.dispatchShipment(shipment.id);
                     }
                 } catch (shipmentError: any) {

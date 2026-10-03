@@ -21,11 +21,19 @@ const requiredTables = [
   'strategy_conversation_runs',
   'strategy_conversation_signals',
   'agent_deals',
+  'call_logs',
+  'shipments',
+  'user_phone_numbers',
+  'outreach_preferences',
   'lead_profile_builder_runs',
   'lead_sales_profiles',
 ];
 
 const requiredColumns: Record<string, string[]> = {
+  agent_leads: ['call_consent', 'call_consent_at', 'call_consent_source'],
+  call_logs: ['user_id', 'lead_id', 'status', 'consent_confirmed', 'summary'],
+  shipments: ['user_id', 'product_type', 'pickup_address', 'delivery_address', 'status', 'pickup_details', 'tracking_events'],
+  user_phone_numbers: ['user_id', 'phone_number', 'provider', 'provider_sid', 'status'],
   personal_inbound_messages: ['user_id', 'provider', 'external_id', 'sender_id', 'message', 'message_timestamp'],
   lead_profile_builder_runs: ['active_tool', 'active_platform', 'active_tool_status', 'active_tool_error'],
   device_push_tokens: ['user_id', 'token', 'project_id', 'is_active'],

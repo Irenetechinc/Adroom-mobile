@@ -374,7 +374,7 @@ export default function LeadsScreen({ route }: Props) {
     try {
       let query = supabase
         .from('agent_leads')
-          .select('id, platform, platform_user_id, platform_username, first_interaction, intent_score, intent_signals, stage, dm_sequence_step, last_contacted_at, next_followup_at, profile_status, profile_updated_at, profile_error, created_at', { count: 'exact' })
+          .select('id, platform, platform_user_id, platform_username, first_interaction, intent_score, intent_signals, stage, dm_sequence_step, last_contacted_at, next_followup_at, profile_status, profile_updated_at, profile_error, call_consent, call_consent_at, call_consent_source, created_at', { count: 'exact' })
         .eq('user_id', session.user.id)
         .order('created_at', { ascending: false })
         .order('intent_score', { ascending: false })

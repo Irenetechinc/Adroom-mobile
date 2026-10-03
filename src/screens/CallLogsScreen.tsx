@@ -25,7 +25,7 @@ export default function CallLogsScreen() {
         {!!call.summary?.requested_goal && <Text style={styles.body}>{call.summary.requested_goal}</Text>}
         {!!call.summary?.duration_seconds && <Text style={styles.meta}>Duration: {call.summary.duration_seconds}s</Text>}
         {!!call.transcript && <Text style={styles.transcript}>{call.transcript}</Text>}
-        {!!call.summary?.recording_url && <InlineAudioPlayer uri={`${call.summary.recording_url}.mp3`} />}
+        {!!call.summary?.recording_url && <InlineAudioPlayer uri={call.summary.recording_url} />}
       </View>)}
     </ScrollView>}
   </SafeAreaView></FeatureGate>;

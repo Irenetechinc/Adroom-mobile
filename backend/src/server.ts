@@ -35,8 +35,8 @@ import { popOAuthEntry, setOAuthCode, setOAuthError } from './auth/oauthStore';
 import { validateEmailAsync } from './utils/emailValidator';
 import { apmaClientRouter } from './apma/apmaRouter';
 import { apmaOAuthRouter } from './apma/apmaOAuthRouter';
-import { telephonyService } from './services/telephonyService';
-import { shipmentService } from './services/shipmentService';
+import { TelephonyService, telephonyService } from './services/telephonyService';
+import { ShipmentService, shipmentService } from './services/shipmentService';
 import { socialAccountService, type PersonalProvider } from './services/socialAccountService';
 import { deltaChatBridgeToken, deltaChatCore, type DeltaChatCredential } from './services/deltaChatCore';
 import { getTelegramAppConfigStatus } from './services/telegramConfig';
@@ -122,6 +122,7 @@ const TIKTOK_CLIENT_SECRET = process.env.TIKTOK_CLIENT_SECRET;
 const REQUIRED_RUNTIME_CONFIG = [
   { key: 'SUPABASE_URL', required: true },
   { key: 'SUPABASE_SERVICE_ROLE_KEY', required: true },
+  { key: 'SUPABASE_ANON_KEY', required: true, alt: ['SUPABASE_KEY'] },
   { key: 'SESSION_SECRET', required: false, alt: ['ENCRYPTION_KEY'] },
   { key: 'TELEGRAM_API_ID', required: false },
   { key: 'TELEGRAM_API_HASH', required: false },
@@ -155,6 +156,8 @@ const REQUIRED_RUNTIME_CONFIG = [
 
 function getRuntimeConfigStatus() {
   const telegramConfig = getTelegramAppConfigStatus();
+  const calling = TelephonyService.getConfigurationStatus();
+  const shipments = ShipmentService.getConfigurationStatus();
   const checks = REQUIRED_RUNTIME_CONFIG.map((entry) => {
     const alternatives = entry.alt || [];
     const present = entry.key === 'TELEGRAM_API_ID'
@@ -182,6 +185,10 @@ function getRuntimeConfigStatus() {
     missingRequired,
     missingOptional,
     checks,
+    providerIntegrations: {
+      calling,
+      shipments,
+    },
     publicProfileTools: {
       configuration: publicProfileToolAdapters.getConfigurationStatus(),
       diagnostics: publicProfileToolAdapters.getStartupDiagnostics(),
@@ -199,8 +206,11 @@ if (!VERIFY_TOKEN) {
   console.warn('[Server] WARNING: FB_VERIFY_TOKEN not set — Facebook webhook verification disabled.');
 }
 
-// Middleware to parse JSON bodies
-app.use(bodyParser.json({ limit: '10mb' }));
+// Keep the exact JSON bytes for signed shipment-provider callbacks.
+app.use(bodyParser.json({
+  limit: '10mb',
+  verify: (req, _res, buffer) => { (req as any).rawBody = buffer.toString('utf8'); },
+}));
 app.use(express.urlencoded({ extended: false }));
 
 app.get('/api/health', (_req, res) => {
@@ -224,6 +234,7 @@ app.get('/api/health/config', (_req, res) => {
     missingRequired: runtime.missingRequired,
     missingOptional: runtime.missingOptional,
     checks: runtime.checks,
+    providerIntegrations: runtime.providerIntegrations,
   });
 });
 
@@ -659,6 +670,36 @@ app.patch('/api/outreach/preferences', async (req, res) => {
   } catch (error: any) { return res.status(500).json({ error: error.message }); }
 });
 
+app.patch('/api/leads/:id/call-consent', async (req, res) => {
+  try {
+    const authClient = getSupabaseClient(req as any);
+    const { data: { user } } = await authClient.auth.getUser();
+    if (!user) return res.status(401).json({ error: 'Unauthorized.' });
+    if (typeof req.body?.consented !== 'boolean') {
+      return res.status(400).json({ error: 'CONSENT_VALUE_REQUIRED', message: 'consented must be true or false.' });
+    }
+    if (req.body.consented && req.body.explicit_confirmation !== true) {
+      return res.status(400).json({ error: 'EXPLICIT_CONFIRMATION_REQUIRED', message: 'Confirm that the lead explicitly agreed to automated calls that may be recorded.' });
+    }
+
+    const consented = req.body.consented === true;
+    const { data: lead, error } = await getServiceSupabaseClient()
+      .from('agent_leads')
+      .update({
+        call_consent: consented,
+        call_consent_at: consented ? new Date().toISOString() : null,
+        call_consent_source: consented ? 'owner_attested_in_app' : null,
+      })
+      .eq('id', req.params.id)
+      .eq('user_id', user.id)
+      .select('id, call_consent, call_consent_at, call_consent_source')
+      .maybeSingle();
+    if (error) return res.status(500).json({ error: error.message });
+    if (!lead) return res.status(404).json({ error: 'Lead not found.' });
+    return res.json({ lead });
+  } catch (error: any) { return res.status(500).json({ error: error.message }); }
+});
+
 app.post('/api/calls/queue', async (req, res) => {
   try {
     const supabase = getSupabaseClient(req as any);
@@ -668,16 +709,44 @@ app.post('/api/calls/queue', async (req, res) => {
     if (!['pro', 'pro_plus'].includes(guard.plan) || !['active', 'trialing'].includes(guard.status)) {
       return res.status(403).json({ error: 'CALLING_REQUIRES_PRO', message: 'Autonomous calling requires an active Pro or Pro+ plan.' });
     }
+    const leadId = String(req.body?.lead_id || '');
+    if (!leadId) return res.status(400).json({ error: 'LEAD_REQUIRED', message: 'A lead with recorded consent is required.' });
     if (req.body?.consent_confirmed !== true) return res.status(400).json({ error: 'CALL_CONSENT_REQUIRED', message: 'Explicit call consent is required.' });
-    const { data: preferences } = await supabase.from('outreach_preferences').select('do_not_call').eq('user_id', user.id).maybeSingle();
+    const { data: lead, error: leadError } = await supabase
+      .from('agent_leads')
+      .select('id, call_consent, phone, phone_number, contact_phone, country, country_code')
+      .eq('id', leadId)
+      .eq('user_id', user.id)
+      .maybeSingle();
+    if (leadError) return res.status(500).json({ error: leadError.message });
+    if (!lead) return res.status(404).json({ error: 'LEAD_NOT_FOUND' });
+    if (lead.call_consent !== true) return res.status(400).json({ error: 'CALL_CONSENT_REQUIRED', message: 'Record explicit consent for this lead before queueing a call.' });
+    const destination = String(lead.phone || lead.phone_number || lead.contact_phone || '').trim().replace(/[()\s-]/g, '');
+    if (!/^\+[1-9]\d{7,14}$/.test(destination)) {
+      return res.status(400).json({ error: 'LEAD_PHONE_E164_REQUIRED', message: 'The lead needs a phone number in international E.164 format, such as +2348012345678.' });
+    }
+    const { data: preferences, error: preferencesError } = await supabase.from('outreach_preferences').select('do_not_call').eq('user_id', user.id).maybeSingle();
+    if (preferencesError) return res.status(500).json({ error: preferencesError.message });
     if (preferences?.do_not_call) return res.status(403).json({ error: 'DO_NOT_CALL', message: 'Calling is disabled in your outreach preferences.' });
+    const { data: activeCall, error: activeCallError } = await supabase
+      .from('call_logs')
+      .select('id,status,created_at')
+      .eq('user_id', user.id)
+      .eq('lead_id', lead.id)
+      .in('status', ['queued', 'processing', 'provider_started', 'ringing', 'in_progress'])
+      .maybeSingle();
+    if (activeCallError) return res.status(500).json({ error: activeCallError.message });
+    if (activeCall) return res.status(200).json({ call: activeCall, already_active: true });
     const { data, error } = await supabase.from('call_logs').insert({
       user_id: user.id,
-      lead_id: req.body.lead_id || null,
+      lead_id: lead.id,
       strategy_id: req.body.strategy_id || null,
       consent_confirmed: true,
       status: 'queued',
-      summary: { requested_goal: String(req.body.goal || '').slice(0, 500) },
+      summary: {
+        requested_goal: String(req.body.goal || '').slice(0, 500),
+        country_code: lead.country_code || lead.country || null,
+      },
     }).select('id,status,created_at').single();
     if (error) return res.status(500).json({ error: error.message });
     return res.status(202).json({ call: data, message: 'Call queued for provider execution after consent and provider checks.' });
@@ -691,8 +760,47 @@ app.get('/api/calls', async (req, res) => {
     if (!user) return res.status(401).json({ error: 'Unauthorized.' });
     const { data, error } = await supabase.from('call_logs').select('*').eq('user_id', user.id).order('created_at', { ascending: false }).limit(100);
     if (error) return res.status(500).json({ error: error.message });
-    return res.json({ calls: data || [] });
+    const calls = await Promise.all((data || []).map(async (call) => {
+      if (!call.summary?.recording_url) return call;
+      const expiresAt = Math.floor(Date.now() / 1000) + 600;
+      const signature = telephonyService.createRecordingPlaybackSignature(call.id, expiresAt);
+      return {
+        ...call,
+        summary: {
+          ...call.summary,
+          recording_url: `${getPublicBaseUrl(req)}/api/calls/${encodeURIComponent(call.id)}/recording?expires=${expiresAt}&signature=${signature}`,
+        },
+      };
+    }));
+    return res.json({ calls });
   } catch (error: any) { return res.status(500).json({ error: error.message }); }
+});
+
+app.get('/api/calls/:id/recording', async (req, res) => {
+  try {
+    const callId = String(req.params.id || '');
+    const expiresAt = Number(req.query.expires);
+    const signature = String(req.query.signature || '');
+    if (!telephonyService.verifyRecordingPlaybackSignature(callId, expiresAt, signature)) {
+      return res.status(403).send('Recording link expired or invalid.');
+    }
+    const { data: call, error } = await getServiceSupabaseClient()
+      .from('call_logs')
+      .select('summary')
+      .eq('id', callId)
+      .maybeSingle();
+    if (error) return res.status(500).send('Could not load call recording.');
+    if (!call?.summary?.recording_url) return res.status(404).send('Recording not found.');
+    const audio = await telephonyService.downloadRecording(call.summary.recording_url);
+    return res
+      .status(200)
+      .type('audio/mpeg')
+      .set('Cache-Control', 'private, max-age=300')
+      .set('Content-Disposition', 'inline')
+      .send(audio);
+  } catch (error: any) {
+    return res.status(502).send(error.message || 'Could not load call recording.');
+  }
 });
 
 app.post('/api/calls/number', async (req, res) => {
@@ -714,7 +822,7 @@ function webhookParams(req: any): Record<string, string> {
 app.post('/api/webhooks/twilio/voice', async (req, res) => {
   const params = webhookParams(req);
   const signature = String(req.headers['x-twilio-signature'] || '');
-  const valid = telephonyService.verifyWebhook(signature, `${getPublicBaseUrl(req)}/api/webhooks/twilio/voice`, params);
+  const valid = telephonyService.verifyWebhook(signature, `${getPublicBaseUrl(req)}${req.originalUrl}`, params);
   if (!valid) return res.status(403).type('text/plain').send('Invalid signature');
   const callId = String(req.query.call_id || '');
   if (!callId) return res.status(400).type('text/plain').send('Missing call id');
@@ -724,7 +832,7 @@ app.post('/api/webhooks/twilio/voice', async (req, res) => {
 app.post('/api/webhooks/twilio/status', async (req, res) => {
   const params = webhookParams(req);
   const signature = String(req.headers['x-twilio-signature'] || '');
-  if (!telephonyService.verifyWebhook(signature, `${getPublicBaseUrl(req)}/api/webhooks/twilio/status`, params)) return res.status(403).send('Invalid signature');
+  if (!telephonyService.verifyWebhook(signature, `${getPublicBaseUrl(req)}${req.originalUrl}`, params)) return res.status(403).send('Invalid signature');
   const callId = String(req.query.call_id || '');
   if (callId) await telephonyService.handleStatus(callId, params);
   return res.sendStatus(204);
@@ -733,7 +841,7 @@ app.post('/api/webhooks/twilio/status', async (req, res) => {
 app.post('/api/webhooks/twilio/recording', async (req, res) => {
   const params = webhookParams(req);
   const signature = String(req.headers['x-twilio-signature'] || '');
-  if (!telephonyService.verifyWebhook(signature, `${getPublicBaseUrl(req)}/api/webhooks/twilio/recording`, params)) return res.status(403).send('Invalid signature');
+  if (!telephonyService.verifyWebhook(signature, `${getPublicBaseUrl(req)}${req.originalUrl}`, params)) return res.status(403).send('Invalid signature');
   const callId = String(req.query.call_id || '');
   if (callId && params.RecordingUrl) await telephonyService.handleRecording(callId, params.RecordingUrl);
   return res.sendStatus(204);
@@ -778,14 +886,54 @@ app.post('/api/logistics/shipments/:id/confirm-pickup', async (req, res) => {
     const supabase = getSupabaseClient(req as any);
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return res.status(401).json({ error: 'Unauthorized.' });
+    const { data: existing, error: readError } = await supabase.from('shipments').select('*').eq('id', req.params.id).eq('user_id', user.id).maybeSingle();
+    if (readError) return res.status(500).json({ error: readError.message });
+    if (!existing) return res.status(404).json({ error: 'Shipment not found.' });
+    if (!existing.pickup_details?.provider_id || ['awaiting_dispatch', 'in_transit', 'delivered', 'cancelled'].includes(String(existing.status))) {
+      return res.status(409).json({ error: 'PICKUP_NOT_READY', message: 'The shipment must be accepted by the dispatch provider before pickup can be confirmed.' });
+    }
+    const trackingEvents = Array.isArray(existing.tracking_events) ? existing.tracking_events : [];
+    const confirmedAt = new Date().toISOString();
     const { data, error } = await supabase.from('shipments').update({
       status: 'in_transit',
-      pickup_confirmed_at: new Date().toISOString(),
+      pickup_confirmed_at: confirmedAt,
       pickup_evidence_url: req.body?.evidence_url || null,
+      tracking_events: [...trackingEvents, { status: 'in_transit', at: confirmedAt, source: 'owner_confirmed_pickup' }],
+      updated_at: confirmedAt,
+    }).eq('id', req.params.id).eq('user_id', user.id).select().single();
+    if (error) return res.status(500).json({ error: error.message });
+    return res.json({ shipment: data });
+  } catch (error: any) { return res.status(500).json({ error: error.message }); }
+});
+
+app.patch('/api/logistics/shipments/:id/delivery-address', async (req, res) => {
+  try {
+    const supabase = getSupabaseClient(req as any);
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return res.status(401).json({ error: 'Unauthorized.' });
+    const deliveryAddress = String(req.body?.delivery_address || '').trim();
+    if (deliveryAddress.length < 10) return res.status(400).json({ error: 'DELIVERY_ADDRESS_REQUIRED', message: 'Enter a complete delivery address of at least 10 characters.' });
+    const { data: existing, error: readError } = await supabase.from('shipments').select('*').eq('id', req.params.id).eq('user_id', user.id).maybeSingle();
+    if (readError) return res.status(500).json({ error: readError.message });
+    if (!existing) return res.status(404).json({ error: 'Shipment not found.' });
+    if (existing.product_type !== 'physical' || existing.status !== 'awaiting_dispatch') {
+      return res.status(409).json({ error: 'SHIPMENT_NOT_EDITABLE', message: 'Only physical shipments awaiting dispatch can have their delivery address changed.' });
+    }
+    const { data: shipment, error } = await supabase.from('shipments').update({
+      delivery_address: deliveryAddress,
       updated_at: new Date().toISOString(),
     }).eq('id', req.params.id).eq('user_id', user.id).select().single();
-    if (error) return res.status(404).json({ error: 'Shipment not found or could not be confirmed.' });
-    return res.json({ shipment: data });
+    if (error) return res.status(500).json({ error: error.message });
+    try {
+      const dispatch = await shipmentService.dispatchShipment(req.params.id);
+      return res.status(202).json({ shipment, dispatch });
+    } catch (dispatchError: any) {
+      return res.status(202).json({
+        dispatch_pending: true,
+        dispatch_error: dispatchError.message,
+        shipment,
+      });
+    }
   } catch (error: any) { return res.status(500).json({ error: error.message }); }
 });
 
@@ -794,7 +942,8 @@ app.post('/api/logistics/shipments/:id/dispatch', async (req, res) => {
     const supabase = getSupabaseClient(req as any);
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return res.status(401).json({ error: 'Unauthorized.' });
-    const { data: owned } = await supabase.from('shipments').select('id').eq('id', req.params.id).eq('user_id', user.id).single();
+    const { data: owned, error } = await supabase.from('shipments').select('id').eq('id', req.params.id).eq('user_id', user.id).maybeSingle();
+    if (error) return res.status(500).json({ error: error.message });
     if (!owned) return res.status(404).json({ error: 'Shipment not found.' });
     const result = await shipmentService.dispatchShipment(req.params.id);
     return res.status(202).json({ shipment: result });
@@ -803,10 +952,15 @@ app.post('/api/logistics/shipments/:id/dispatch', async (req, res) => {
 
 app.post('/api/webhooks/shipments', async (req, res) => {
   const signature = String(req.headers['x-shipment-signature'] || '');
-  const rawBody = JSON.stringify(req.body || {});
+  const rawBody = String((req as any).rawBody || '');
+  if (!rawBody) return res.status(400).json({ error: 'Raw JSON body is required.' });
   if (!shipmentService.verifyWebhook(signature, rawBody)) return res.status(403).json({ error: 'Invalid signature' });
-  await shipmentService.applyWebhook(req.body || {});
-  return res.sendStatus(204);
+  try {
+    await shipmentService.applyWebhook(req.body || {});
+    return res.sendStatus(204);
+  } catch (error: any) {
+    return res.status(500).json({ error: error.message });
+  }
 });
 
 // Admin panel

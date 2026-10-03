@@ -39,6 +39,12 @@ CREATE TABLE IF NOT EXISTS public.outreach_preferences (
 ALTER TABLE public.outreach_preferences ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "Users manage own outreach preferences" ON public.outreach_preferences FOR ALL USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
 
+-- Public contact details do not imply permission to make an automated call.
+-- Consent is recorded only after the account owner attests that the lead agreed.
+ALTER TABLE public.agent_leads ADD COLUMN IF NOT EXISTS call_consent boolean NOT NULL DEFAULT false;
+ALTER TABLE public.agent_leads ADD COLUMN IF NOT EXISTS call_consent_at timestamptz;
+ALTER TABLE public.agent_leads ADD COLUMN IF NOT EXISTS call_consent_source text;
+
 CREATE TABLE IF NOT EXISTS public.call_logs (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id uuid NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,

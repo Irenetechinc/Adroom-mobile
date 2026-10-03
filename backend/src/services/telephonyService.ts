@@ -42,8 +42,21 @@ async function twilioRequest(path: string, method: 'GET' | 'POST', body?: URLSea
 export class TelephonyService {
   private supabase = getServiceSupabaseClient();
 
+  static getConfigurationStatus() {
+    const missingKeys = [
+      !ACCOUNT_SID && 'TWILIO_ACCOUNT_SID',
+      !AUTH_TOKEN && 'TWILIO_AUTH_TOKEN',
+    ].filter(Boolean) as string[];
+    return {
+      ready: missingKeys.length === 0,
+      missingKeys,
+      publicBaseUrlSource: process.env.PUBLIC_BASE_URL ? 'PUBLIC_BASE_URL' : process.env.APP_URL ? 'APP_URL' : 'canonical_fallback',
+    };
+  }
+
   async ensureUserNumber(userId: string, country = TWILIO_FROM_COUNTRY): Promise<string> {
-    const { data: existing } = await this.supabase.from('user_phone_numbers').select('phone_number').eq('user_id', userId).eq('status', 'active').maybeSingle();
+    const { data: existing, error: existingError } = await this.supabase.from('user_phone_numbers').select('phone_number').eq('user_id', userId).eq('status', 'active').maybeSingle();
+    if (existingError) throw new Error(`Could not check for an existing Twilio number: ${existingError.message}`);
     if (existing?.phone_number) return existing.phone_number;
     if (!configured()) throw new Error('No outbound number is available because Twilio is not configured.');
 
@@ -75,12 +88,30 @@ export class TelephonyService {
 
   async processQueuedCalls(limit = 10): Promise<number> {
     if (!configured()) return 0;
-    const { data: calls } = await this.supabase.from('call_logs').select('*').eq('status', 'queued').order('created_at', { ascending: true }).limit(limit);
+    const { data: calls, error } = await this.supabase.from('call_logs').select('*').eq('status', 'queued').order('created_at', { ascending: true }).limit(limit);
+    if (error) throw new Error(`Could not load queued calls: ${error.message}`);
     let processed = 0;
     for (const call of calls || []) {
-      try { await this.startCall(call); processed++; }
+      const { data: claimed, error: claimError } = await this.supabase
+        .from('call_logs')
+        .update({ status: 'processing' })
+        .eq('id', call.id)
+        .eq('status', 'queued')
+        .select('*')
+        .maybeSingle();
+      if (claimError) {
+        console.error(`[Telephony] Could not claim queued call ${call.id}: ${claimError.message}`);
+        continue;
+      }
+      if (!claimed) continue;
+      try { await this.startCall(claimed); processed++; }
       catch (error: any) {
-        await this.supabase.from('call_logs').update({ status: 'failed', summary: { error: error.message }, ended_at: new Date().toISOString() }).eq('id', call.id);
+        const { error: updateError } = await this.supabase.from('call_logs').update({
+          status: 'failed',
+          summary: { ...(claimed.summary || {}), error: error.message },
+          ended_at: new Date().toISOString(),
+        }).eq('id', call.id).eq('status', 'processing');
+        if (updateError) console.error(`[Telephony] Could not record call failure ${call.id}: ${updateError.message}`);
       }
     }
     return processed;
@@ -89,15 +120,25 @@ export class TelephonyService {
   private async startCall(call: any) {
     const guard = await getSubscriptionGuard(call.user_id, this.supabase as any);
     if (!['pro', 'pro_plus'].includes(guard.plan) || !['active', 'trialing'].includes(guard.status)) throw new Error('Calling requires an active Pro or Pro+ subscription.');
-    const { data: prefs } = await this.supabase.from('outreach_preferences').select('do_not_call').eq('user_id', call.user_id).maybeSingle();
+    const { data: prefs, error: preferencesError } = await this.supabase.from('outreach_preferences').select('do_not_call').eq('user_id', call.user_id).maybeSingle();
+    if (preferencesError) throw new Error(`Could not verify calling preferences: ${preferencesError.message}`);
     if (prefs?.do_not_call) throw new Error('User has disabled outbound calls.');
-    const { data: lead } = call.lead_id ? await this.supabase.from('agent_leads').select('phone, phone_number, contact_phone, platform_username, country, country_code, source, contact_source').eq('id', call.lead_id).single() : { data: null };
-    const destination = lead?.phone || lead?.phone_number || lead?.contact_phone;
-    if (!destination) throw new Error('Lead has no verified phone number.');
-    const contactSource = String(call.summary?.contact_source || lead?.contact_source || lead?.source || '').toLowerCase();
-    const publicBusinessSource = ['google_places', 'google_business_profile', 'public_domain', 'public_directory', 'website'].includes(contactSource);
-    if (!call.consent_confirmed && !publicBusinessSource) {
-      throw new Error('Outbound call requires consent or a recorded public-business contact source.');
+    const { data: lead, error: leadError } = call.lead_id
+      ? await this.supabase.from('agent_leads')
+        .select('phone, phone_number, contact_phone, platform_username, country, country_code, call_consent')
+        .eq('id', call.lead_id)
+        .eq('user_id', call.user_id)
+        .single()
+      : { data: null, error: new Error('Call has no lead.') };
+    if (leadError || !lead) throw new Error(`Could not load call lead: ${leadError?.message || 'lead not found'}`);
+    if (lead.call_consent !== true || call.consent_confirmed !== true) {
+      throw new Error('Outbound call requires recorded, explicit consent from this lead.');
+    }
+    const rawDestination = lead.phone || lead.phone_number || lead.contact_phone;
+    if (!rawDestination) throw new Error('Lead has no phone number.');
+    const destination = String(rawDestination).trim().replace(/[()\s-]/g, '');
+    if (!/^\+[1-9]\d{7,14}$/.test(destination)) {
+      throw new Error('Lead phone number must be in E.164 format, including its country code.');
     }
     const destinationCountry = String(call.summary?.country_code || lead?.country_code || lead?.country || TWILIO_FROM_COUNTRY);
     const from = await this.ensureUserNumber(call.user_id, destinationCountry);
@@ -109,25 +150,85 @@ export class TelephonyService {
       StatusCallbackEvent: 'initiated ringing answered completed',
       Record: 'true',
     }));
-    await this.supabase.from('call_logs').update({ status: 'provider_started', provider: 'twilio', provider_call_id: twilioCall.sid, started_at: new Date().toISOString(), summary: { ...(call.summary || {}), country_code: destinationCountry.toUpperCase(), from_number: from } }).eq('id', call.id);
+    const { error: updateError } = await this.supabase.from('call_logs').update({
+      status: 'provider_started',
+      provider: 'twilio',
+      provider_call_id: twilioCall.sid,
+      started_at: new Date().toISOString(),
+      summary: { ...(call.summary || {}), country_code: destinationCountry.toUpperCase(), from_number: from },
+    }).eq('id', call.id).eq('status', 'processing');
+    if (updateError) throw new Error(`Twilio started the call, but its call record could not be updated: ${updateError.message}`);
   }
 
   verifyWebhook(signature: string, url: string, params: Record<string, string>): boolean {
     if (!AUTH_TOKEN || !signature) return false;
     const payload = Object.keys(params).sort().map(key => key + params[key]).join('');
     const digest = crypto.createHmac('sha1', AUTH_TOKEN).update(url + payload).digest('base64');
-    return crypto.timingSafeEqual(Buffer.from(digest), Buffer.from(signature));
+    const expected = Buffer.from(digest);
+    const received = Buffer.from(signature);
+    return expected.length === received.length && crypto.timingSafeEqual(expected, received);
+  }
+
+  createRecordingPlaybackSignature(callId: string, expiresAt: number): string {
+    const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SESSION_SECRET || '';
+    if (!key) throw new Error('Call recording playback signing is not configured.');
+    return crypto.createHmac('sha256', key).update(`${callId}.${expiresAt}`).digest('hex');
+  }
+
+  verifyRecordingPlaybackSignature(callId: string, expiresAt: number, signature: string): boolean {
+    const now = Math.floor(Date.now() / 1000);
+    if (!Number.isSafeInteger(expiresAt) || expiresAt <= now || expiresAt > now + 900 || !/^[a-f0-9]{64}$/i.test(signature)) return false;
+    const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SESSION_SECRET || '';
+    if (!key) return false;
+    const expected = Buffer.from(this.createRecordingPlaybackSignature(callId, expiresAt), 'hex');
+    const received = Buffer.from(signature, 'hex');
+    return expected.length === received.length && crypto.timingSafeEqual(expected, received);
+  }
+
+  async downloadRecording(recordingUrl: string): Promise<Buffer> {
+    if (!configured()) throw new Error('Twilio recording playback is not configured.');
+    const parsed = new URL(recordingUrl);
+    const expectedPrefix = `/2010-04-01/Accounts/${ACCOUNT_SID}/Recordings/`;
+    if (
+      parsed.protocol !== 'https:'
+      || parsed.hostname !== 'api.twilio.com'
+      || parsed.username
+      || parsed.password
+      || parsed.search
+      || parsed.hash
+      || !parsed.pathname.startsWith(expectedPrefix)
+      || !/^RE[a-fA-F0-9]+$/.test(parsed.pathname.slice(expectedPrefix.length))
+    ) {
+      throw new Error('Stored recording URL is not a valid Twilio recording resource.');
+    }
+    const url = `${parsed.toString().replace(/\/$/, '')}.mp3`;
+    const response = await fetch(url, {
+      headers: { Authorization: basicAuth(), Accept: 'audio/mpeg' },
+    });
+    if (!response.ok) throw new Error(`Twilio recording download failed (${response.status}).`);
+    return Buffer.from(await response.arrayBuffer());
   }
 
   async handleStatus(callId: string, params: Record<string, string>) {
     const statusMap: Record<string, string> = { queued: 'provider_queued', initiated: 'provider_started', ringing: 'ringing', in_progress: 'in_progress', completed: 'completed', busy: 'failed', no_answer: 'no_answer', failed: 'failed', canceled: 'canceled' };
     const status = statusMap[params.CallStatus] || 'provider_started';
-    await this.supabase.from('call_logs').update({
+    const { data: call, error: readError } = await this.supabase.from('call_logs').select('status, summary').eq('id', callId).maybeSingle();
+    if (readError) throw new Error(`Could not load call status: ${readError.message}`);
+    if (!call) return;
+    const terminalStatuses = ['completed', 'failed', 'no_answer', 'canceled', 'recorded'];
+    if (terminalStatuses.includes(call.status) && !terminalStatuses.includes(status)) return;
+    const patch: Record<string, any> = {
       status,
       provider_call_id: params.CallSid,
-      ended_at: ['completed', 'failed', 'no_answer', 'busy', 'canceled'].includes(status) ? new Date().toISOString() : null,
-      summary: { provider_status: params.CallStatus, duration_seconds: params.CallDuration || null },
-    }).eq('id', callId);
+      summary: {
+        ...(call.summary || {}),
+        provider_status: params.CallStatus,
+        duration_seconds: params.CallDuration || call.summary?.duration_seconds || null,
+      },
+    };
+    if (terminalStatuses.includes(status)) patch.ended_at = new Date().toISOString();
+    const { error } = await this.supabase.from('call_logs').update(patch).eq('id', callId);
+    if (error) throw new Error(`Could not save call status: ${error.message}`);
   }
 
   async voiceInstructions(callId: string) {
@@ -195,7 +296,15 @@ export class TelephonyService {
   }
 
   async handleRecording(callId: string, recordingUrl: string) {
-    await this.supabase.from('call_logs').update({ summary: { recording_url: recordingUrl }, status: 'recorded' }).eq('id', callId);
+    const { data: call, error: readError } = await this.supabase.from('call_logs').select('summary').eq('id', callId).maybeSingle();
+    if (readError) throw new Error(`Could not load call recording state: ${readError.message}`);
+    if (!call) return;
+    const { error } = await this.supabase.from('call_logs').update({
+      summary: { ...(call.summary || {}), recording_url: recordingUrl },
+      status: 'recorded',
+      ended_at: new Date().toISOString(),
+    }).eq('id', callId);
+    if (error) throw new Error(`Could not save call recording: ${error.message}`);
   }
 }
 
