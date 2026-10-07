@@ -315,8 +315,6 @@ export class TelephonyService {
       this.supabase.from('subscriptions')
         .select('plan, status')
         .eq('user_id', call.user_id)
-        .order('updated_at', { ascending: false })
-        .limit(1)
         .maybeSingle(),
     ]);
     const error = leadResult.error || preferencesResult.error || subscriptionResult.error;
@@ -353,7 +351,9 @@ export class TelephonyService {
       const existingTurn = Number(call.summary?.voice_turn_index);
       if (call.summary?.voice_conversation_started && Number.isFinite(existingTurn)) {
         const lastResponse = safeVoiceText(call.summary?.voice_last_response || 'Please go ahead.');
-        return `<Response><Say voice="alice">${escapeXml(lastResponse)}</Say>${this.gatherXml(callId, existingTurn + 1, 'What else would you like to know?')}</Response>`;
+        if (existingTurn >= MAX_VOICE_TURNS) return this.hangupXml(lastResponse);
+        const audio = await this.speechXml(callId, lastResponse, String(call.summary?.country_code || TWILIO_FROM_COUNTRY));
+        return `<Response>${audio}${this.gatherXml(callId, existingTurn + 1, 'What else would you like to know?')}</Response>`;
       }
 
       const goal = safeVoiceText(call.summary?.requested_goal || 'the product or service you asked about', 240);
@@ -419,7 +419,7 @@ export class TelephonyService {
         return `<Response>${this.gatherXml(callId, turn + 1, message)}</Response>`;
       }
 
-      const optedOut = /\b(?:stop\s+(?:calling|call(?:s)?|contacting)|(?:do not|don't|never)\s+call(?:\s+me)?|remove\s+me\s+from\s+(?:your\s+)?call(?:ing)?\s+list|take\s+me\s+off\s+(?:your\s+)?call(?:ing)?\s+list|opt[\s-]?out\s+of\s+(?:these\s+)?calls|unsubscribe\s+from\s+calls)\b/i.test(speech);
+      const optedOut = /\b(?:stop\s+(?:calling|call(?:s)?|contacting|texting)|(?:do not|don't|never)\s+(?:call|contact)(?:\s+me)?|no\s+more\s+calls?|remove\s+(?:me|my\s+number)\s+from\s+(?:your\s+)?(?:call(?:ing)?\s+)?(?:list|system)|take\s+me\s+off\s+(?:your\s+)?(?:call(?:ing)?\s+)?list|opt[\s-]?out|unsubscribe)\b/i.test(speech);
       if (optedOut) {
         const { error: consentError } = await this.supabase.from('agent_leads').update({
           call_consent: false,

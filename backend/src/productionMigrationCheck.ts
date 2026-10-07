@@ -27,6 +27,7 @@ const requiredTables = [
   'outreach_preferences',
   'lead_profile_builder_runs',
   'lead_sales_profiles',
+  'scheduler_cursors',
 ];
 
 const requiredColumns: Record<string, string[]> = {
@@ -38,6 +39,7 @@ const requiredColumns: Record<string, string[]> = {
   lead_profile_builder_runs: ['active_tool', 'active_platform', 'active_tool_status', 'active_tool_error'],
   device_push_tokens: ['user_id', 'token', 'project_id', 'is_active'],
   agent_tasks: ['action_type', 'selected_account_id', 'recipient_id', 'conversation_id', 'media'],
+  scheduler_cursors: ['cursor_name', 'cursor_value', 'updated_at'],
 };
 
 async function main(): Promise<void> {

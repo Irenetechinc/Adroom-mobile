@@ -4,6 +4,7 @@ import { getServiceSupabaseClient } from '../config/supabase';
 import { pushService } from './pushService';
 import { agentReachAdapter, normalizePublicAuthorName, ReachResult } from './agentReachAdapter';
 import { normalizeSelectedPlatforms } from './platformIdentity';
+import { mapWithConcurrency } from '../utils/asyncConcurrency';
 
 export type StrategyGoal = 'SALESMAN' | 'AWARENESS' | 'PROMOTION' | 'LAUNCH';
 
@@ -264,8 +265,11 @@ export class ConversationAgent {
       const plan = await this.buildDiscoveryQueryPlan(product, goal);
       const selectedPlatforms = normalizeSelectedPlatforms(strategy.selected_accounts || strategy.platforms || []);
       console.log(`[ConversationAgent] demand discovery strategy=${strategy.id} offer=${product.name || product.brand || product.category} queries=${plan.queries.length} platforms=${selectedPlatforms.join(',') || 'web'}`);
-      const discovered = await Promise.all(
-        plan.queries.map((query) => agentReachAdapter.searchAcrossSources(query, selectedPlatforms)),
+      const queryConcurrency = Number.parseInt(process.env.CONVERSATION_SEARCH_QUERY_CONCURRENCY || '2', 10);
+      const discovered = await mapWithConcurrency(
+        plan.queries,
+        Number.isFinite(queryConcurrency) ? Math.max(1, Math.min(4, queryConcurrency)) : 2,
+        (query) => agentReachAdapter.searchAcrossSources(query, selectedPlatforms),
       );
 
       const results = discovered.flat();
