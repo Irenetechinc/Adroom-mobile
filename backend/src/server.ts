@@ -829,6 +829,17 @@ app.post('/api/webhooks/twilio/voice', async (req, res) => {
   res.type('text/xml').send(await telephonyService.voiceInstructions(callId));
 });
 
+app.post('/api/webhooks/twilio/voice/turn', async (req, res) => {
+  const params = webhookParams(req);
+  const signature = String(req.headers['x-twilio-signature'] || '');
+  const valid = telephonyService.verifyWebhook(signature, `${getPublicBaseUrl(req)}${req.originalUrl}`, params);
+  if (!valid) return res.status(403).type('text/plain').send('Invalid signature');
+  const callId = String(req.query.call_id || '');
+  const turn = Number(req.query.turn);
+  if (!callId || !Number.isSafeInteger(turn)) return res.status(400).type('text/plain').send('Invalid call turn');
+  res.type('text/xml').send(await telephonyService.handleVoiceTurn(callId, turn, params.SpeechResult));
+});
+
 app.post('/api/webhooks/twilio/status', async (req, res) => {
   const params = webhookParams(req);
   const signature = String(req.headers['x-twilio-signature'] || '');

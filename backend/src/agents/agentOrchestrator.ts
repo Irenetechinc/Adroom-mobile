@@ -31,6 +31,13 @@ const GOAL_MAP: Record<string, 'SALESMAN' | 'AWARENESS' | 'PROMOTION' | 'LAUNCH'
     new_product: 'LAUNCH'
 };
 
+const CONTENT_TASK_TYPES = ['POST', 'URGENCY_POST', 'TEASER', 'HASHTAG_CAMPAIGN'];
+
+function boundedIntegerEnv(name: string, fallback: number, min: number, max: number): number {
+    const parsed = Number.parseInt(process.env[name] || '', 10);
+    return Number.isFinite(parsed) ? Math.max(min, Math.min(max, parsed)) : fallback;
+}
+
 function resolveGoal(goal: string): 'SALESMAN' | 'AWARENESS' | 'PROMOTION' | 'LAUNCH' {
     const normalized = (goal || '').toLowerCase().trim().replace(/\s+/g, '_');
     return GOAL_MAP[normalized] || 'AWARENESS';
@@ -255,32 +262,57 @@ export class AgentOrchestrator {
 
         await this.expireDueStrategies(now);
 
-        const { data: dueTasks, error } = await this.supabase
-            .from('agent_tasks')
-            .select('id, agent_type, strategy_id, user_id, task_type, platform, action_type, selected_account_id, recipient_id, conversation_id, content, strategies(selected_accounts, platforms)')
-            .eq('status', 'pending')
-            .lte('scheduled_at', now)
-            .neq('task_type', 'LEAD_SCAN')       // Lead scans handled separately
-            .neq('task_type', 'PERFORMANCE_CHECK')
-            .neq('task_type', 'GMAPS_OUTREACH')  // Google Maps outreach handled by executeSpecialTasks
-            .neq('task_type', 'COMMENT_SCAN')    // Comment scanning handled by executeSpecialTasks
-            .neq('task_type', 'MENTION_SCAN')    // Mention scanning handled by executeSpecialTasks
-            .order('scheduled_at', { ascending: true })
-            .limit(20); // Process max 20 tasks per cycle
+        const taskLimit = boundedIntegerEnv('AGENT_TASKS_PER_CYCLE', 20, 1, 100);
+        const contentLimit = Math.max(1, Math.ceil(taskLimit * 0.6));
+        const taskColumns = 'id, agent_type, strategy_id, user_id, task_type, platform, action_type, selected_account_id, recipient_id, conversation_id, content, strategies(selected_accounts, platforms)';
+        const [contentResult, otherResult] = await Promise.all([
+            this.supabase
+                .from('agent_tasks')
+                .select(taskColumns)
+                .eq('status', 'pending')
+                .lte('scheduled_at', now)
+                .in('task_type', CONTENT_TASK_TYPES)
+                .order('scheduled_at', { ascending: true })
+                .limit(contentLimit),
+            this.supabase
+                .from('agent_tasks')
+                .select(taskColumns)
+                .eq('status', 'pending')
+                .lte('scheduled_at', now)
+                .not('task_type', 'in', `(${CONTENT_TASK_TYPES.join(',')})`)
+                .neq('task_type', 'LEAD_SCAN')       // Lead scans handled separately
+                .neq('task_type', 'PERFORMANCE_CHECK')
+                .neq('task_type', 'GMAPS_OUTREACH')  // Google Maps outreach handled by executeSpecialTasks
+                .neq('task_type', 'COMMENT_SCAN')    // Comment scanning handled by executeSpecialTasks
+                .neq('task_type', 'MENTION_SCAN')    // Mention scanning handled by executeSpecialTasks
+                .order('scheduled_at', { ascending: true })
+                .limit(taskLimit),
+        ]);
 
-        if (error) {
-            console.error('[Orchestrator] Error fetching due tasks:', error.message);
+        if (contentResult.error || otherResult.error) {
+            console.error('[Orchestrator] Error fetching due tasks:', contentResult.error?.message || otherResult.error?.message);
             return { executed: 0, failed: 0 };
         }
 
-        if (!dueTasks?.length) return { executed: 0, failed: 0 };
+        // Reserve most worker capacity for strategy content so a large stream of
+        // prospect engagement cannot keep scheduled posts behind the queue forever.
+        const contentTasks = contentResult.data || [];
+        const otherTasks = (otherResult.data || []).slice(0, Math.max(0, taskLimit - contentTasks.length));
+        const dueTasks = [...contentTasks, ...otherTasks];
+        if (!dueTasks.length) return { executed: 0, failed: 0 };
 
         console.log(`[Orchestrator] Processing ${dueTasks.length} due tasks`);
 
         let executed = 0;
         let failed = 0;
 
-        for (const task of dueTasks) {
+        const executionConcurrency = boundedIntegerEnv('AGENT_TASK_EXECUTION_CONCURRENCY', 3, 1, 8);
+        let nextTaskIndex = 0;
+        const processWorker = async () => {
+          while (true) {
+            const taskIndex = nextTaskIndex++;
+            if (taskIndex >= dueTasks.length) return;
+            const task = dueTasks[taskIndex];
             if (!(await this.claimTask(task.id))) continue;
             try {
                 const strategyAccounts = Array.isArray((task as any).strategies?.selected_accounts)
@@ -437,7 +469,12 @@ export class AgentOrchestrator {
                 try { const { adminBroadcast } = await import('../admin/adminRouter'); adminBroadcast('agent_task_failed', { task_id: task.id, agent_type: task.agent_type, platform: task.platform, error: err.message }); } catch {}
                 failed++;
             }
-        }
+          }
+        };
+        await Promise.all(Array.from(
+            { length: Math.min(executionConcurrency, dueTasks.length) },
+            () => processWorker(),
+        ));
 
         console.log(`[Orchestrator] Cycle complete — ${executed} executed, ${failed} failed`);
         return { executed, failed };

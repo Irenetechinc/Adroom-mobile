@@ -3,6 +3,7 @@ import {
   publicProfileToolAdapters,
   type PublicProfileTool,
 } from './publicProfileToolAdapters';
+import { mapWithConcurrency } from '../utils/asyncConcurrency';
 
 export interface ReachResult {
   platform: string;
@@ -192,8 +193,11 @@ export class AgentReachAdapter {
     const defaultSources = ['web'];
     const sources = Array.from(new Set([...defaultSources, ...extraSources.map(normalizePlatform)])).filter(Boolean);
 
-    const results = await Promise.all(
-      sources.map((source) => this.search(source, query).catch(() => [])),
+    const sourceConcurrency = Number.parseInt(process.env.AGENT_REACH_SOURCE_CONCURRENCY || '3', 10);
+    const results = await mapWithConcurrency(
+      sources,
+      Number.isFinite(sourceConcurrency) ? Math.max(1, Math.min(6, sourceConcurrency)) : 3,
+      (source) => this.search(source, query).catch(() => []),
     );
 
     return results.flat().filter((item) => item.text && item.text.trim().length > 12);

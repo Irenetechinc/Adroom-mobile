@@ -308,7 +308,16 @@ export class LeadProfileBuilder {
       requestedLimit: limit,
     });
     let processed = 0;
-    for (const run of runs || []) {
+    const requestedConcurrency = Number.parseInt(process.env.PROFILE_BUILDER_CONCURRENCY || '2', 10);
+    const concurrency = Number.isFinite(requestedConcurrency)
+      ? Math.max(1, Math.min(4, requestedConcurrency))
+      : 2;
+    let nextRunIndex = 0;
+    const processWorker = async () => {
+      while (true) {
+      const runIndex = nextRunIndex++;
+      if (runIndex >= (runs || []).length) return;
+      const run = (runs || [])[runIndex];
       if (this.running.has(run.lead_id)) continue;
       if (!(await featureFlags.isEnabled('lead_profile_builder', run.user_id))) continue;
       const { data: claimed, error: claimError } = await this.supabase.from('lead_profile_builder_runs').update({
@@ -337,7 +346,12 @@ export class LeadProfileBuilder {
       });
       await this.buildForLead(run.user_id, run.lead_id);
       processed++;
-    }
+      }
+    };
+    await Promise.all(Array.from(
+      { length: Math.min(concurrency, runs?.length || 0) },
+      () => processWorker(),
+    ));
     return processed;
   }
 

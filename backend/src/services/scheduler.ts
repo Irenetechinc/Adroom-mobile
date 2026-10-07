@@ -62,6 +62,11 @@ const SCHED_CALLS_CRON             = process.env.SCHED_CALLS_CRON             ||
 const SCHED_COORDINATOR_CRON       = process.env.SCHED_COORDINATOR_CRON       || '*/10 * * * *'; // Cross-agent coordination every 10 minutes
 const SCHED_CONVERSATION_DAILY_CRON = process.env.SCHED_CONVERSATION_DAILY_CRON || '30 0 * * *'; // Guaranteed daily prospect sweep
 
+function boundedIntegerEnv(name: string, fallback: number, min: number, max: number): number {
+    const parsed = Number.parseInt(process.env[name] || '', 10);
+    return Number.isFinite(parsed) ? Math.max(min, Math.min(max, parsed)) : fallback;
+}
+
 export class SchedulerService {
     private ipe: PlatformIntelligenceEngine;
     private social: SocialListeningEngine;
@@ -75,6 +80,10 @@ export class SchedulerService {
     private psychologist: PsychologistEngine;
     private deepProductBrandAnalysis: DeepProductBrandAnalysisAgent;
     private readonly schedulerOwner = randomUUID();
+    private readonly activeCycles = new Set<string>();
+    private readonly localStrategyCursors = new Map<string, string>();
+    private readonly cursorStorageWarnings = new Set<string>();
+    private agentTaskCycleRunning = false;
 
     constructor() {
         this.ipe = new PlatformIntelligenceEngine();
@@ -91,6 +100,10 @@ export class SchedulerService {
     }
 
     private async withCycleLock<T>(name: string, work: () => Promise<T>, ttlMs = 10 * 60 * 1000): Promise<T | undefined> {
+        if (this.activeCycles.has(name)) {
+            console.log(`[Scheduler] Skipping overlapping local cycle: ${name}`);
+            return undefined;
+        }
         const supabase = getServiceSupabaseClient();
         const now = new Date();
         const expiresAt = new Date(now.getTime() + ttlMs).toISOString();
@@ -117,10 +130,90 @@ export class SchedulerService {
             return undefined;
         }
 
+        this.activeCycles.add(name);
+        const heartbeat = setInterval(async () => {
+            const nextExpiry = new Date(Date.now() + ttlMs).toISOString();
+            const { data, error } = await supabase
+                .from('scheduler_locks')
+                .update({ expires_at: nextExpiry })
+                .eq('lock_name', name)
+                .eq('owner_id', this.schedulerOwner)
+                .select('lock_name')
+                .maybeSingle();
+            if (error || !data?.lock_name) {
+                console.error(`[Scheduler] Could not renew cycle lease ${name}: ${error?.message || 'lease ownership lost'}`);
+            }
+        }, Math.max(5000, Math.floor(ttlMs / 3)));
+        heartbeat.unref?.();
         try {
             return await work();
         } finally {
+            clearInterval(heartbeat);
+            this.activeCycles.delete(name);
             await supabase.from('scheduler_locks').delete().eq('lock_name', name).eq('owner_id', this.schedulerOwner);
+        }
+    }
+
+    private async fetchStrategyPage(
+        cursorName: string,
+        selectColumns: string,
+        limit: number,
+        requireActiveStatus = false,
+        filters: Array<[string, string]> = [],
+    ): Promise<any[]> {
+        const supabase = getServiceSupabaseClient();
+        const { data: cursorRow, error: cursorError } = await supabase
+            .from('scheduler_cursors')
+            .select('cursor_value')
+            .eq('cursor_name', cursorName)
+            .maybeSingle();
+        if (cursorError && !this.cursorStorageWarnings.has(cursorName)) {
+            this.cursorStorageWarnings.add(cursorName);
+            console.warn(`[Scheduler] Durable cursor unavailable for ${cursorName}; using process-local rotation until its migration is applied: ${cursorError.message}`);
+        }
+        const cursor = cursorRow?.cursor_value || this.localStrategyCursors.get(cursorName) || null;
+        const loadPage = async (after?: string | null) => {
+            let query: any = supabase.from('strategies').select(selectColumns).eq('is_active', true);
+            if (requireActiveStatus) query = query.eq('status', 'active');
+            for (const [column, value] of filters) query = query.eq(column, value);
+            if (after) query = query.gt('id', after);
+            return query.order('id', { ascending: true }).limit(limit);
+        };
+
+        let page = await loadPage(cursor);
+        if (page.error) throw new Error(`Could not page ${cursorName} strategies: ${page.error.message}`);
+        if ((!page.data || page.data.length === 0) && cursor) {
+            page = await loadPage(null);
+            if (page.error) throw new Error(`Could not wrap ${cursorName} strategy cursor: ${page.error.message}`);
+        }
+        const rows = page.data || [];
+        const lastId = rows.length ? String(rows[rows.length - 1].id) : '';
+        if (lastId) {
+            this.localStrategyCursors.set(cursorName, lastId);
+            if (!cursorError) {
+                const { error: saveError } = await supabase.from('scheduler_cursors').upsert({
+                    cursor_name: cursorName,
+                    cursor_value: lastId,
+                    updated_at: new Date().toISOString(),
+                }, { onConflict: 'cursor_name' });
+                if (saveError && !this.cursorStorageWarnings.has(cursorName)) {
+                    this.cursorStorageWarnings.add(cursorName);
+                    console.warn(`[Scheduler] Could not persist ${cursorName} cursor; process-local rotation remains active: ${saveError.message}`);
+                }
+            }
+        }
+        return rows;
+    }
+
+    private async runAgentTaskWorkerCycle() {
+        // agent_tasks are claimed atomically per row; do not hold one global
+        // distributed cycle lock, which would serialize all Railway workers.
+        if (this.agentTaskCycleRunning) return undefined;
+        this.agentTaskCycleRunning = true;
+        try {
+            return await this.orchestrator.executeDueTasks();
+        } finally {
+            this.agentTaskCycleRunning = false;
         }
     }
 
@@ -353,7 +446,7 @@ export class SchedulerService {
         // Execute due content tasks (posts, reels, stories, threads) — every 5 minutes
         cron.schedule(SCHED_AGENT_EXEC_CRON, async () => {
             try {
-                const result = await this.withCycleLock('agent_execution', () => this.orchestrator.executeDueTasks());
+                const result = await this.runAgentTaskWorkerCycle();
                 if (!result) return;
                 if (result.executed > 0 || result.failed > 0) {
                     console.log(`[Scheduler] Agent execution cycle: ${result.executed} published, ${result.failed} failed`);
@@ -419,7 +512,7 @@ export class SchedulerService {
         // SALESMAN agent lead follow-ups — every 30 minutes
         cron.schedule(SCHED_LEAD_FOLLOWUP_CRON, async () => {
             try {
-                await this.runLeadFollowUps();
+                await this.withCycleLock('lead_follow_ups', () => this.runLeadFollowUps(), 45 * 60 * 1000);
             } catch (e: any) {
                 console.error('[Scheduler] Lead follow-up error:', e.message);
             }
@@ -440,7 +533,7 @@ export class SchedulerService {
         // every strategy goal — product, brand, or service — benefits from local client discovery.
         cron.schedule(SCHED_GMAPS_CRON, async () => {
             try {
-                await this.runGoogleMapsOutreach();
+                await this.withCycleLock('google_maps_outreach', () => this.runGoogleMapsOutreach(), 2 * 60 * 60 * 1000);
             } catch (e: any) {
                 console.error('[Scheduler] Google Maps outreach error:', e.message);
             }
@@ -586,7 +679,11 @@ export class SchedulerService {
         // ─── SHARED LIVE DATA COLLECTION FOR ALL AGENTS ────────────────────────
         cron.schedule(SCHED_DATA_COLLECTION_CRON, async () => {
             console.log('[Scheduler] Running shared live data collection cycle...');
-            await this.runSharedDataCollection();
+            try {
+                await this.withCycleLock('shared_data_collection', () => this.runSharedDataCollection(), 30 * 60 * 1000);
+            } catch (e: any) {
+                console.error('[Scheduler] Shared data collection lock/cycle error:', e.message);
+            }
         });
 
         // ─── STRATEGY CONVERSATION MONITORING ───────────────────────────────────
@@ -666,14 +763,15 @@ export class SchedulerService {
     private async runLeadFollowUps() {
         const supabase = getServiceSupabaseClient();
 
-        // Get all active SALESMAN strategies
-        const { data: strategies } = await supabase
-            .from('strategies')
-            .select('id, user_id')
-            .eq('is_active', true)
-            .eq('agent_type', 'SALESMAN');
+        const strategies = await this.fetchStrategyPage(
+            'lead_follow_ups',
+            'id, user_id',
+            boundedIntegerEnv('SCHED_LEAD_FOLLOWUP_STRATEGIES_PER_CYCLE', 25, 1, 100),
+            false,
+            [['agent_type', 'SALESMAN']],
+        );
 
-        if (!strategies?.length) return;
+        if (!strategies.length) return;
 
         const { SalesmanAgent } = await import('../agents/salesmanAgent');
 
@@ -697,13 +795,15 @@ export class SchedulerService {
     private async runGoogleMapsOutreach() {
         const supabase = getServiceSupabaseClient();
 
-        // Get all active strategies across all agent types
-        const { data: strategies } = await supabase
-            .from('strategies')
-            .select('id, user_id, agent_type, current_execution_plan')
-            .eq('is_active', true);
+        // Page through strategies durably rather than materializing every
+        // account into one Railway worker cycle.
+        const strategies = await this.fetchStrategyPage(
+            'google_maps_outreach',
+            'id, user_id, agent_type, current_execution_plan',
+            boundedIntegerEnv('SCHED_GMAPS_STRATEGIES_PER_CYCLE', 25, 1, 100),
+        );
 
-        if (!strategies?.length) {
+        if (!strategies.length) {
             console.log('[Scheduler] GMaps outreach: no active strategies');
             return;
         }
@@ -829,15 +929,26 @@ export class SchedulerService {
     private async runSharedDataCollection() {
         try {
             const supabase = getServiceSupabaseClient();
-            const { data: activeStrategies } = await supabase
-                .from('strategies')
-                .select('id, user_id, goal, product_id, product_memory(product_name, category, description)')
-                .eq('is_active', true)
-                .limit(10);
+            const batchSize = boundedIntegerEnv('SCHED_DATA_COLLECTION_STRATEGIES_PER_CYCLE', 3, 1, 100);
+            const refreshHours = boundedIntegerEnv('SCHED_DATA_COLLECTION_REFRESH_HOURS', 24, 1, 168);
+            const activeStrategies = await this.fetchStrategyPage(
+                'shared_data_collection',
+                'id, user_id, goal, product_id, selected_accounts, platforms, current_execution_plan, product_memory(product_name, category, description)',
+                Math.min(200, batchSize * 3),
+            );
 
-            if (!activeStrategies?.length) return;
+            if (!activeStrategies.length) return;
+            const now = Date.now();
+            const refreshIntervalMs = refreshHours * 60 * 60 * 1000;
+            const dueStrategies = activeStrategies
+                .filter((strategy) => {
+                    const updatedAt = strategy.current_execution_plan?.shared_research?.updated_at;
+                    const collectedAt = updatedAt ? new Date(updatedAt).getTime() : 0;
+                    return !Number.isFinite(collectedAt) || now - collectedAt >= refreshIntervalMs;
+                })
+                .slice(0, batchSize);
 
-            for (const strategy of activeStrategies) {
+            for (const strategy of dueStrategies) {
                 try {
                     const productMemory = Array.isArray(strategy.product_memory)
                         ? strategy.product_memory[0] || {}
@@ -853,7 +964,9 @@ export class SchedulerService {
                         marketContext: product.description || 'live strategy signal collection',
                         userId: strategy.user_id,
                         timeWindowHours: 24,
-                        sourceHints: ['search', 'social', 'news', 'reddit', 'forum'],
+                        platformHints: Array.isArray(strategy.selected_accounts) && strategy.selected_accounts.length
+                            ? strategy.selected_accounts
+                            : (Array.isArray(strategy.platforms) ? strategy.platforms : []),
                     });
 
                     if (result.evidence.verified.length > 0) {
@@ -870,15 +983,15 @@ export class SchedulerService {
 
     private async runConversationMonitoring() {
         try {
-            const supabase = getServiceSupabaseClient();
-            const { data: activeStrategies } = await supabase
-                .from('strategies')
-                .select('id, user_id, title, goal, product_id, selected_accounts, platforms, is_active, status')
-                .eq('is_active', true)
-                .eq('status', 'active')
-                .limit(25);
+            const batchSize = boundedIntegerEnv('SCHED_CONVERSATION_STRATEGIES_PER_CYCLE', 25, 1, 100);
+            const activeStrategies = await this.fetchStrategyPage(
+                'strategy_conversation_monitoring',
+                'id, user_id, title, goal, product_id, selected_accounts, platforms, is_active, status',
+                batchSize,
+                true,
+            );
 
-            if (!activeStrategies?.length) return;
+            if (!activeStrategies.length) return;
 
             for (const strategy of activeStrategies) {
                 try {

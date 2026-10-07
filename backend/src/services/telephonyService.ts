@@ -2,6 +2,7 @@ import crypto from 'crypto';
 import fetch from 'node-fetch';
 import { getServiceSupabaseClient } from '../config/supabase';
 import { getSubscriptionGuard } from './subscriptionGuard';
+import { AIEngine, runWithAIRequestContext } from '../config/ai-models';
 
 const ACCOUNT_SID = process.env.TWILIO_ACCOUNT_SID || '';
 const AUTH_TOKEN = process.env.TWILIO_AUTH_TOKEN || '';
@@ -12,6 +13,36 @@ const ELEVENLABS_API_KEY = process.env.ELEVENLABS_API_KEY || '';
 const ELEVENLABS_DEFAULT_VOICE_ID = process.env.ELEVENLABS_VOICE_ID || '';
 const ELEVENLABS_VOICE_IDS_BY_COUNTRY = parseVoiceMap(process.env.ELEVENLABS_VOICE_IDS_BY_COUNTRY);
 let elevenLabsVoicesCache: Array<{ voice_id: string; name?: string; labels?: Record<string, string> }> | null = null;
+const MAX_VOICE_TURNS = 6;
+const MAX_VOICE_TRANSCRIPT_CHARS = 12000;
+const VOICE_GATHER_TIMEOUT_SECONDS = 7;
+const VOICE_TURN_AI_TIMEOUT_MS = 6500;
+
+function escapeXml(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&apos;');
+}
+
+function safeVoiceText(value: unknown, maxLength = 700): string {
+  return String(value ?? '')
+    .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, maxLength);
+}
+
+function appendVoiceTranscript(existing: unknown, entries: string[]): string {
+  const combined = [String(existing || '').trim(), ...entries].filter(Boolean).join('\n');
+  return combined.slice(-MAX_VOICE_TRANSCRIPT_CHARS);
+}
+
+function isCallTerminal(status: unknown): boolean {
+  return ['completed', 'failed', 'no_answer', 'canceled', 'recorded'].includes(String(status || '').toLowerCase());
+}
 
 function parseVoiceMap(value?: string): Record<string, string> {
   if (!value) return {};
@@ -41,6 +72,7 @@ async function twilioRequest(path: string, method: 'GET' | 'POST', body?: URLSea
 
 export class TelephonyService {
   private supabase = getServiceSupabaseClient();
+  private ai = AIEngine.getInstance();
 
   static getConfigurationStatus() {
     const missingKeys = [
@@ -148,7 +180,10 @@ export class TelephonyService {
       Url: `${PUBLIC_BASE_URL}/api/webhooks/twilio/voice?call_id=${encodeURIComponent(call.id)}`,
       StatusCallback: `${PUBLIC_BASE_URL}/api/webhooks/twilio/status?call_id=${encodeURIComponent(call.id)}`,
       StatusCallbackEvent: 'initiated ringing answered completed',
+      RecordingStatusCallback: `${PUBLIC_BASE_URL}/api/webhooks/twilio/recording?call_id=${encodeURIComponent(call.id)}`,
+      RecordingStatusCallbackEvent: 'completed',
       Record: 'true',
+      TimeLimit: '180',
     }));
     const { error: updateError } = await this.supabase.from('call_logs').update({
       status: 'provider_started',
@@ -231,14 +266,233 @@ export class TelephonyService {
     if (error) throw new Error(`Could not save call status: ${error.message}`);
   }
 
-  async voiceInstructions(callId: string) {
-    const { data: call } = await this.supabase.from('call_logs').select('summary').eq('id', callId).single();
-    const goal = String(call?.summary?.requested_goal || 'Please connect the caller with the business owner.').replace(/[<&>]/g, '');
-    const country = String(call?.summary?.country_code || TWILIO_FROM_COUNTRY).toUpperCase();
+  private hangupXml(message?: string): string {
+    const spoken = message ? `<Say voice="alice">${escapeXml(safeVoiceText(message))}</Say>` : '';
+    return `<Response>${spoken}<Hangup/></Response>`;
+  }
+
+  private gatherXml(callId: string, turn: number, prompt: string): string {
+    const action = `${PUBLIC_BASE_URL}/api/webhooks/twilio/voice/turn?call_id=${encodeURIComponent(callId)}&amp;turn=${turn}`;
+    return `<Gather input="speech" action="${action}" method="POST" language="en-US" speechTimeout="auto" timeout="${VOICE_GATHER_TIMEOUT_SECONDS}" actionOnEmptyResult="true"><Say voice="alice">${escapeXml(safeVoiceText(prompt, 240))}</Say></Gather>`;
+  }
+
+  private async speechXml(callId: string, text: string, country: string): Promise<string> {
     const voiceId = await this.selectVoiceForCountry(country);
-    const audioUrl = voiceId ? await this.createElevenLabsAudio(callId, goal.slice(0, 800), voiceId) : null;
-    const greeting = audioUrl ? `<Play>${audioUrl}</Play>` : `<Say voice="alice">${goal.slice(0, 800)}</Say>`;
-    return `<Response>${greeting}<Record maxLength="120" playBeep="true" recordingStatusCallback="${PUBLIC_BASE_URL}/api/webhooks/twilio/recording?call_id=${encodeURIComponent(callId)}" /></Response>`;
+    const audioUrl = voiceId ? await this.createElevenLabsAudio(callId, text, voiceId) : null;
+    return audioUrl
+      ? `<Play>${escapeXml(audioUrl)}</Play>`
+      : `<Say voice="alice">${escapeXml(text)}</Say>`;
+  }
+
+  private async speechAndHangupXml(callId: string, text: string, country: string): Promise<string> {
+    return `<Response>${await this.speechXml(callId, text, country)}<Hangup/></Response>`;
+  }
+
+  private async loadVoiceCall(callId: string): Promise<any | null> {
+    const { data, error } = await this.supabase
+      .from('call_logs')
+      .select('id, user_id, lead_id, status, consent_confirmed, summary, transcript')
+      .eq('id', callId)
+      .maybeSingle();
+    if (error) throw new Error(`Could not load voice call: ${error.message}`);
+    return data || null;
+  }
+
+  private async checkVoiceEligibility(call: any): Promise<{ allowed: boolean; plan?: string; status?: string; reason?: string }> {
+    if (!call?.user_id || !call?.lead_id || call.consent_confirmed !== true) {
+      return { allowed: false, reason: 'call_consent_not_confirmed' };
+    }
+    const [leadResult, preferencesResult, subscriptionResult] = await Promise.all([
+      this.supabase.from('agent_leads')
+        .select('call_consent')
+        .eq('id', call.lead_id)
+        .eq('user_id', call.user_id)
+        .maybeSingle(),
+      this.supabase.from('outreach_preferences')
+        .select('do_not_call')
+        .eq('user_id', call.user_id)
+        .maybeSingle(),
+      this.supabase.from('subscriptions')
+        .select('plan, status')
+        .eq('user_id', call.user_id)
+        .order('updated_at', { ascending: false })
+        .limit(1)
+        .maybeSingle(),
+    ]);
+    const error = leadResult.error || preferencesResult.error || subscriptionResult.error;
+    if (error) return { allowed: false, reason: `eligibility_check_failed:${error.message}` };
+    const plan = String(subscriptionResult.data?.plan || 'none');
+    const status = String(subscriptionResult.data?.status || 'inactive');
+    if (leadResult.data?.call_consent !== true) return { allowed: false, plan, status, reason: 'lead_consent_revoked' };
+    if (preferencesResult.data?.do_not_call === true) return { allowed: false, plan, status, reason: 'user_do_not_call_enabled' };
+    if (!['pro', 'pro_plus'].includes(plan) || !['active', 'trialing'].includes(status)) {
+      return { allowed: false, plan, status, reason: 'calling_plan_inactive' };
+    }
+    return { allowed: true, plan, status };
+  }
+
+  private async saveVoiceState(call: any, summaryPatch: Record<string, any>, transcriptEntries: string[]): Promise<void> {
+    const summary = { ...(call.summary || {}), ...summaryPatch };
+    const transcript = appendVoiceTranscript(call.transcript, transcriptEntries);
+    const { error } = await this.supabase.from('call_logs').update({ summary, transcript }).eq('id', call.id);
+    if (error) throw new Error(`Could not save voice conversation: ${error.message}`);
+    call.summary = summary;
+    call.transcript = transcript;
+  }
+
+  async voiceInstructions(callId: string): Promise<string> {
+    try {
+      const call = await this.loadVoiceCall(callId);
+      if (!call || isCallTerminal(call.status)) return this.hangupXml();
+      const eligibility = await this.checkVoiceEligibility(call);
+      if (!eligibility.allowed) {
+        console.warn(`[Telephony] Ending call ${callId} before greeting: ${eligibility.reason}`);
+        return this.hangupXml('I’m sorry, I can’t continue this call. Goodbye.');
+      }
+
+      const existingTurn = Number(call.summary?.voice_turn_index);
+      if (call.summary?.voice_conversation_started && Number.isFinite(existingTurn)) {
+        const lastResponse = safeVoiceText(call.summary?.voice_last_response || 'Please go ahead.');
+        return `<Response><Say voice="alice">${escapeXml(lastResponse)}</Say>${this.gatherXml(callId, existingTurn + 1, 'What else would you like to know?')}</Response>`;
+      }
+
+      const goal = safeVoiceText(call.summary?.requested_goal || 'the product or service you asked about', 240);
+      const greeting = `Hi, I’m an AI assistant calling about ${goal}. This call is recorded. Is now a good time to talk?`;
+      await this.saveVoiceState(call, {
+        voice_conversation_started: true,
+        voice_turn_index: 0,
+        voice_turn_count: 0,
+        voice_no_speech_count: 0,
+        voice_last_response: greeting,
+        voice_started_at: new Date().toISOString(),
+        voice_ai_plan: eligibility.plan,
+        voice_ai_status: eligibility.status,
+      }, [`AI: ${greeting}`]);
+      const audio = await this.speechXml(callId, greeting, String(call.summary?.country_code || TWILIO_FROM_COUNTRY));
+      return `<Response>${audio}${this.gatherXml(callId, 1, 'Please go ahead.')}</Response>`;
+    } catch (error: any) {
+      console.error(`[Telephony] Could not prepare voice conversation ${callId}:`, error.message);
+      return this.hangupXml('I’m sorry, I can’t continue this call right now. Goodbye.');
+    }
+  }
+
+  async handleVoiceTurn(callId: string, turn: number, rawSpeech: unknown): Promise<string> {
+    try {
+      if (!Number.isSafeInteger(turn) || turn < 1 || turn > MAX_VOICE_TURNS) return this.hangupXml();
+      const call = await this.loadVoiceCall(callId);
+      if (!call || isCallTerminal(call.status)) return this.hangupXml();
+
+      const eligibility = await this.checkVoiceEligibility(call);
+      if (!eligibility.allowed) {
+        await this.saveVoiceState(call, {
+          voice_disposition: 'cancelled_by_policy',
+          voice_stopped_reason: eligibility.reason,
+        }, []);
+        return this.hangupXml('I’m sorry, I can’t continue this call. Goodbye.');
+      }
+
+      const currentTurn = Number(call.summary?.voice_turn_index || 0);
+      if (turn <= currentTurn) {
+        const lastResponse = safeVoiceText(call.summary?.voice_last_response || 'Thank you for speaking with me.');
+        if (currentTurn >= MAX_VOICE_TURNS) return this.hangupXml(lastResponse);
+        const audio = await this.speechXml(callId, lastResponse, String(call.summary?.country_code || TWILIO_FROM_COUNTRY));
+        return `<Response>${audio}${this.gatherXml(callId, currentTurn + 1, 'What else would you like to know?')}</Response>`;
+      }
+      if (turn !== currentTurn + 1 || !call.summary?.voice_conversation_started) return this.hangupXml();
+
+      const speech = safeVoiceText(rawSpeech, 1000);
+      const nextTurnCount = Number(call.summary?.voice_turn_count || 0) + (speech ? 1 : 0);
+      const priorSilenceCount = Number(call.summary?.voice_no_speech_count || 0);
+      if (!speech) {
+        const silenceCount = priorSilenceCount + 1;
+        const message = silenceCount > 1 || turn >= MAX_VOICE_TURNS
+          ? 'I’m sorry we could not connect. Goodbye.'
+          : 'I didn’t hear a response. Are you still there?';
+        await this.saveVoiceState(call, {
+          voice_turn_index: turn,
+          voice_turn_count: nextTurnCount,
+          voice_no_speech_count: silenceCount,
+          voice_last_response: message,
+          ...(silenceCount > 1 || turn >= MAX_VOICE_TURNS ? { voice_disposition: 'no_response' } : {}),
+        }, [`AI: ${message}`]);
+        if (silenceCount > 1 || turn >= MAX_VOICE_TURNS) return this.hangupXml(message);
+        return `<Response>${this.gatherXml(callId, turn + 1, message)}</Response>`;
+      }
+
+      const optedOut = /\b(?:stop\s+(?:calling|call(?:s)?|contacting)|(?:do not|don't|never)\s+call(?:\s+me)?|remove\s+me\s+from\s+(?:your\s+)?call(?:ing)?\s+list|take\s+me\s+off\s+(?:your\s+)?call(?:ing)?\s+list|opt[\s-]?out\s+of\s+(?:these\s+)?calls|unsubscribe\s+from\s+calls)\b/i.test(speech);
+      if (optedOut) {
+        const { error: consentError } = await this.supabase.from('agent_leads').update({
+          call_consent: false,
+          call_consent_at: null,
+          call_consent_source: 'lead_revoked_during_call',
+        }).eq('id', call.lead_id).eq('user_id', call.user_id);
+        if (consentError) console.error(`[Telephony] Could not persist call opt-out for call ${callId}: ${consentError.message}`);
+        const message = 'I understand. We will not call you again. Goodbye.';
+        await this.saveVoiceState(call, {
+          voice_turn_index: turn,
+          voice_turn_count: nextTurnCount,
+          voice_last_response: message,
+          voice_disposition: 'do_not_call',
+          voice_opt_out_persisted: !consentError,
+        }, [`Lead: ${speech}`, `AI: ${message}`]);
+        return this.hangupXml(message);
+      }
+
+      const goal = safeVoiceText(call.summary?.requested_goal || 'the product or service the caller asked about', 500);
+      const history = safeVoiceText(call.transcript || '', 5000);
+      const prompt = `You are the disclosed AI assistant in a short, recorded business phone conversation.
+Use the caller's words and this call objective to answer naturally, then ask at most one relevant follow-up question.
+Never invent product facts, prices, guarantees, discounts, or private facts. Do not request payment details, passwords, or sensitive personal information. If the caller is not interested or asks to end the call, politely end it. If they ask not to be called again, confirm and end the call.
+Keep the reply to 1–2 short spoken sentences. Return JSON only: {"reply":"...", "end_call":false, "disposition":"continue"}.
+OBJECTIVE: ${goal}
+RECENT TRANSCRIPT: ${history}
+CALLER JUST SAID: ${speech}`;
+
+      let response: any = null;
+      let timeout: NodeJS.Timeout | undefined;
+      try {
+        const generate = runWithAIRequestContext({
+          userId: call.user_id,
+          plan: eligibility.plan || String(call.summary?.voice_ai_plan || 'trial'),
+          status: eligibility.status || String(call.summary?.voice_ai_status || 'active'),
+        }, () => this.ai.generateJson(prompt));
+        response = await Promise.race([
+          generate,
+          new Promise((_, reject) => {
+            timeout = setTimeout(() => reject(new Error('Voice response timed out')), VOICE_TURN_AI_TIMEOUT_MS);
+          }),
+        ]);
+      } catch (error: any) {
+        console.warn(`[Telephony] AI voice reply failed for call ${callId}: ${error.message}`);
+      } finally {
+        if (timeout) clearTimeout(timeout);
+      }
+
+      const reply = safeVoiceText(response?.reply, 500);
+      const reachedTurnLimit = turn >= MAX_VOICE_TURNS;
+      const shouldEnd = response?.end_call === true || !reply || reachedTurnLimit;
+      const assistantReply = reply || 'I’m sorry, I can’t continue this conversation right now. Goodbye.';
+      const disposition = safeVoiceText(
+        reachedTurnLimit ? 'turn_limit' : response?.disposition || (shouldEnd ? 'ai_unavailable' : 'continue'),
+        80,
+      );
+      await this.saveVoiceState(call, {
+        voice_turn_index: turn,
+        voice_turn_count: nextTurnCount,
+        voice_no_speech_count: 0,
+        voice_last_response: assistantReply,
+        ...(shouldEnd ? { voice_disposition: disposition } : {}),
+      }, [`Lead: ${speech}`, `AI: ${assistantReply}`]);
+
+      if (shouldEnd) {
+        return this.speechAndHangupXml(callId, assistantReply, String(call.summary?.country_code || TWILIO_FROM_COUNTRY));
+      }
+      const audio = await this.speechXml(callId, assistantReply, String(call.summary?.country_code || TWILIO_FROM_COUNTRY));
+      return `<Response>${audio}${this.gatherXml(callId, turn + 1, 'What else would you like to know?')}</Response>`;
+    } catch (error: any) {
+      console.error(`[Telephony] Voice turn failed for call ${callId}:`, error.message);
+      return this.hangupXml('I’m sorry, I can’t continue this call right now. Goodbye.');
+    }
   }
 
   private async selectVoiceForCountry(country: string): Promise<string> {
@@ -246,7 +500,10 @@ export class TelephonyService {
     if (!ELEVENLABS_API_KEY) return ELEVENLABS_DEFAULT_VOICE_ID;
     try {
       if (!elevenLabsVoicesCache) {
-        const response = await fetch('https://api.elevenlabs.io/v1/voices', { headers: { 'xi-api-key': ELEVENLABS_API_KEY, Accept: 'application/json' } });
+        const response = await fetch('https://api.elevenlabs.io/v1/voices', {
+          headers: { 'xi-api-key': ELEVENLABS_API_KEY, Accept: 'application/json' },
+          timeout: 2000,
+        } as any);
         if (response.ok) {
           const data: any = await response.json();
           elevenLabsVoicesCache = Array.isArray(data?.voices) ? data.voices : [];
@@ -280,7 +537,8 @@ export class TelephonyService {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({ text, model_id: 'eleven_multilingual_v2', output_format: 'mp3_44100_128' }),
-      });
+        timeout: 3000,
+      } as any);
       if (!response.ok) throw new Error(`ElevenLabs request failed (${response.status})`);
       const audio = Buffer.from(await response.arrayBuffer());
       const path = `calls/${callId}-${Date.now()}.mp3`;
@@ -300,9 +558,7 @@ export class TelephonyService {
     if (readError) throw new Error(`Could not load call recording state: ${readError.message}`);
     if (!call) return;
     const { error } = await this.supabase.from('call_logs').update({
-      summary: { ...(call.summary || {}), recording_url: recordingUrl },
-      status: 'recorded',
-      ended_at: new Date().toISOString(),
+      summary: { ...(call.summary || {}), recording_url: recordingUrl, recording_saved_at: new Date().toISOString() },
     }).eq('id', callId);
     if (error) throw new Error(`Could not save call recording: ${error.message}`);
   }

@@ -1,6 +1,7 @@
 import { AIEngine } from '../config/ai-models';
 import { getServiceSupabaseClient } from '../config/supabase';
 import { agentReachAdapter } from './agentReachAdapter';
+import { mapWithConcurrency } from '../utils/asyncConcurrency';
 
 export interface CollectionRequest {
   strategyId?: string;
@@ -221,11 +222,14 @@ export class DataCollectionAgent {
         `${product} current competitors pricing audience discussion`,
       ])).slice(0, 3);
       const sources = Array.isArray(request.platformHints) ? request.platformHints : [];
-      const reachResults = (await Promise.all(
-        queries.map((query) => agentReachAdapter.searchAcrossSources(query, sources).catch((error: any) => {
+      const queryConcurrency = Number.parseInt(process.env.DATA_COLLECTION_SEARCH_QUERY_CONCURRENCY || '2', 10);
+      const reachResults = (await mapWithConcurrency(
+        queries,
+        Number.isFinite(queryConcurrency) ? Math.max(1, Math.min(3, queryConcurrency)) : 2,
+        (query) => agentReachAdapter.searchAcrossSources(query, sources).catch((error: any) => {
           console.warn(`[DataCollectionAgent] AgentReach fallback query failed: ${error?.message || error}`);
           return [];
-        })),
+        }),
       )).flat();
       rawResults = reachResults.map((result) => ({
         title: result.authorName || `${result.platform} public signal`,

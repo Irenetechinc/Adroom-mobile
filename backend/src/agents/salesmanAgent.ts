@@ -518,9 +518,12 @@ Return valid JSON only with this schema:
             if (!lead) throw new Error('Could not create the discovered lead record.');
 
             const { leadProfileBuilder } = await import('../services/leadProfileBuilder');
-            const profile = await leadProfileBuilder.buildForLead(task.user_id, lead.id).catch((error: any) => {
+            const profile = await leadProfileBuilder.getLatest(task.user_id, lead.id).catch((error: any) => {
                 this.log(`Lead profile handoff unavailable for ${lead.id}: ${String(error?.message || error).slice(0, 240)}`);
                 return null;
+            });
+            void leadProfileBuilder.enqueueForLead(task.user_id, lead.id).catch((error: any) => {
+                this.log(`Lead profile queue unavailable for ${lead.id}: ${String(error?.message || error).slice(0, 240)}`);
             });
             const prompt = `Write the first respectful, human conversation message to a high-intent prospect.
 Goal: ${strategy?.goal || 'sales'}
@@ -740,9 +743,12 @@ Do not claim private facts or invent a relationship. Address the public signal d
             .join('\n');
 
         const { leadProfileBuilder } = await import('../services/leadProfileBuilder');
-        const leadProfile = await leadProfileBuilder.buildForLead(task.user_id, lead_id).catch((error: any) => {
+        const leadProfile = await leadProfileBuilder.getLatest(task.user_id, lead_id).catch((error: any) => {
             this.log(`Lead profile handoff unavailable for ${lead_id}: ${String(error?.message || error).slice(0, 240)}`);
             return null;
+        });
+        void leadProfileBuilder.enqueueForLead(task.user_id, lead_id).catch((error: any) => {
+            this.log(`Lead profile queue unavailable for ${lead_id}: ${String(error?.message || error).slice(0, 240)}`);
         });
 
         try {
