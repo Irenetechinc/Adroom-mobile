@@ -734,6 +734,15 @@ ${emailChannel
             await this.failTask(taskId, `Lead ${lead_id} not found`);
             return;
         }
+        if (['lost', 'won'].includes(String(lead.stage || '').toLowerCase())) {
+            await this.supabase.from('agent_tasks').update({
+                status: 'skipped',
+                executed_at: new Date().toISOString(),
+                error_message: 'The conversation is closed.',
+                result: { action: 'closed_conversation', lead_id },
+            }).eq('id', taskId);
+            return;
+        }
 
         const history = historyRes.data || [];
         const product = strategyRes.data?.product_id
@@ -864,21 +873,25 @@ HISTORY: ${conversationThread}`);
                         lead_id,
                     );
                 } catch {}
-                try {
-                    await this.supabase.from('lead_dm_messages').insert({
-                        lead_id,
-                        user_id: task.user_id,
-                        direction: 'outbound',
-                        message: guard.dynamicRedirect,
-                        platform: lead.platform,
-                        meta: { triggered_by: 'GUARDRAIL', threat_type: guard.threatType },
-                    });
-                } catch {}
-                await this.supabase.from('agent_tasks').update({
-                    status: 'done',
-                    executed_at: new Date().toISOString(),
-                    result: { action: 'guardrail_redirect', threat_type: guard.threatType, sent },
-                }).eq('id', taskId);
+                if (sent) {
+                    try {
+                        await this.supabase.from('lead_dm_messages').insert({
+                            lead_id,
+                            user_id: task.user_id,
+                            direction: 'outbound',
+                            message: guard.dynamicRedirect,
+                            platform: lead.platform,
+                            meta: { triggered_by: 'GUARDRAIL', threat_type: guard.threatType },
+                        });
+                    } catch {}
+                    await this.supabase.from('agent_tasks').update({
+                        status: 'done',
+                        executed_at: new Date().toISOString(),
+                        result: { action: 'guardrail_redirect', threat_type: guard.threatType, sent: true },
+                    }).eq('id', taskId);
+                } else {
+                    await this.failTask(taskId, 'The connected account could not send the safety reply.');
+                }
             } else {
                 // Threat but no redirect generated — mark done, do not respond
                 await this.supabase.from('agent_tasks').update({
@@ -946,10 +959,25 @@ Return JSON only: { "name": "first name only", "tone": "2-4 word style descripto
         } catch {}
 
         // AI Brain reads the full thread and writes a direct, context-aware reply
+        const strategyGoal = String(strategyRes.data?.goal || 'Respond helpfully and support the active campaign objective.').slice(0, 500);
+        const priorEmailOutbound = lead.platform === 'email'
+            && history.some((message: any) => message.direction === 'outbound');
+        const emailReplyConstraints = lead.platform === 'email'
+            ? `EMAIL REQUIREMENTS:
+- Reply within the existing email thread, use plain text, and stay within 80 words.
+- Include no more than one link.
+- ${priorEmailOutbound ? 'A relevant single link is allowed if useful.' : 'This is the first outbound email; do not include a link.'}`
+            : '';
         const replyPrompt = `You are ${persona.name}. Your communication style: ${persona.tone}.
 
 WHAT THE LEAD JUST SAID:
 "${inbound_message}"
+
+STRATEGY GOAL:
+${strategyGoal}
+
+LEAD STATUS:
+Stage: ${lead.stage || 'new'} · Purchase intent: ${lead.intent_score} (0=cold, 1=ready to buy)
 
 FULL CONVERSATION HISTORY (most recent context):
 ${conversationThread || '(this is the first exchange)'}
@@ -975,6 +1003,7 @@ Rules you MUST follow:
 - Write exactly like a confident human would text, not a customer service rep
 - Never say "I'm here to help" or any variant — you are a closer, not a helper
 - No emojis unless they used them first
+${emailReplyConstraints}
 
 Return JSON: { "message": "the reply text", "reasoning": "why this reply" }`;
 
@@ -1011,8 +1040,26 @@ Return JSON: { "message": "the reply text", "reasoning": "why this reply" }`;
             );
             // Additional platforms as they gain DM API support
         } catch (e: any) {
-            this.log(`INBOUND_REPLY send failed: ${e.message}`);
+            this.log(`INBOUND_REPLY send failed: ${lead.platform === 'email' ? 'connected mailbox could not send' : e.message}`);
         }
+
+        if (!sent) {
+            await this.failTask(
+                taskId,
+                lead.platform === 'email'
+                    ? 'The connected mailbox could not send this reply. Check the account status before retrying.'
+                    : `No connected ${lead.platform} account could send this reply.`,
+            );
+            return;
+        }
+
+        const inboundSubject = String((storedInbound as any)?.meta?.email_subject || '')
+            .replace(/[\r\n]+/g, ' ')
+            .trim()
+            .slice(0, 140);
+        const replySubject = inboundSubject
+            ? (/^re\s*:/i.test(inboundSubject) ? inboundSubject : `Re: ${inboundSubject}`)
+            : 'Re: Email conversation';
 
         // Log the outbound reply to the conversation thread
         try {
@@ -1027,6 +1074,7 @@ Return JSON: { "message": "the reply text", "reasoning": "why this reply" }`;
                     triggered_by: 'INBOUND_REPLY',
                     inbound_preview: inbound_message.slice(0, 100),
                     reasoning: response.parsedJson?.reasoning?.slice(0, 200),
+                    ...(lead.platform === 'email' ? { email_subject: replySubject } : {}),
                 },
             });
         } catch { /* best-effort log */ }
@@ -1040,7 +1088,10 @@ Return JSON: { "message": "the reply text", "reasoning": "why this reply" }`;
             stage: newStage,
             last_contacted_at: new Date().toISOString(),
             next_followup_at: new Date(Date.now() + 6 * 60 * 60 * 1000).toISOString(),
-        }).eq('id', lead.id);
+        }).eq('id', lead.id)
+          .eq('user_id', task.user_id)
+          .not('stage', 'eq', 'lost')
+          .not('stage', 'eq', 'won');
 
         await this.supabase.from('agent_tasks').update({
             status: 'done',

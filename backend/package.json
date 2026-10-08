@@ -9,6 +9,7 @@
     "test:whatsapp-pairing": "npm run build && node dist/services/whatsappPairing.test.js",
     "test:contracts": "npm run build && node dist/agentFrameworkContract.test.js",
     "test:email-cleaner": "npm run build && node dist/services/emailReplyCleaner.test.js",
+    "test:email-dns-policy": "npm run build && node dist/services/emailDnsPolicy.test.js",
     "test:flutterwave-encryption": "npm run build && node dist/services/flutterwaveService.test.js",
     "test:public-profile": "npm run build && node dist/services/publicProfileToolAdapters.test.js && node dist/leadProfileBuilderMigration.test.js",
     "smoke:production": "npm run build && node dist/productionSmoke.js",

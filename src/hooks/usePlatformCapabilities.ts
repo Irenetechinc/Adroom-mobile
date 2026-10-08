@@ -9,11 +9,16 @@ export type PlatformCapability = {
   comingSoon: boolean;
   configured: boolean;
   available: boolean;
+  emailStatus?: {
+    connected: boolean;
+    status: string;
+  };
   dnsDiagnostics?: {
     domain: string;
     spf: 'configured' | 'missing' | 'unavailable';
     dmarc: 'configured' | 'missing' | 'unavailable';
     dkim: 'detected' | 'not_detected' | 'unavailable';
+    providerManaged: boolean;
     checkedAt: string;
   };
   reason: 'disabled' | 'coming_soon' | 'missing_server_configuration' | 'bridge_unavailable' | 'available' | string;

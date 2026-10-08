@@ -20,7 +20,17 @@ export default function AccountSelectionScreen() {
   const emailComingSoon = isEnabled('social_email_coming_soon', false);
   const emailConnectionEnabled = isEnabled('social_email_connections');
   const emailAccount = connectedPlatforms?.email;
-  const emailConnected = Boolean(emailAccount && emailAccount.connected !== false && emailAccount.status !== 'needs_reconnect');
+  const emailAccountStatus = capabilities.email?.emailStatus?.status || emailAccount?.status || '';
+  const emailCooldownUntil = emailAccount?.cooldown_until;
+  const emailCoolingDown = Boolean(emailCooldownUntil && new Date(emailCooldownUntil).getTime() > Date.now());
+  const emailAccountSelectable = Boolean(
+    emailAccount
+    && emailConnectionEnabled
+    && !emailComingSoon
+    && emailAccount.connected !== false
+    && emailAccountStatus === 'connected'
+    && !emailCoolingDown,
+  );
 
   useFocusEffect(useCallback(() => {
     setLoading(true);
@@ -30,6 +40,7 @@ export default function AccountSelectionScreen() {
   const platforms = (Object.values(connectedPlatforms || {}) as any[])
     .filter((account) => {
       const platform = String(account.platform || account.provider || '').toLowerCase();
+      if (platform === 'email') return true;
       const capability = capabilities[platform];
       const capabilityAllowsSelection = platform === 'delta_chat'
         ? capability?.available === true
@@ -40,9 +51,10 @@ export default function AccountSelectionScreen() {
         && capabilityAllowsSelection;
     });
   const selected = (productData.selectedAccounts || []).filter((platform) =>
-    platform !== 'email' || (emailConnectionEnabled && !emailComingSoon),
+    platform !== 'email' || emailAccountSelectable,
   );
   const toggle = (platform: string) => {
+    if (platform === 'email' && !emailAccountSelectable) return;
     setProductData({
       selectedAccounts: selected.includes(platform)
         ? selected.filter((item) => item !== platform)
@@ -68,39 +80,53 @@ export default function AccountSelectionScreen() {
           {platforms.map((account: any) => {
           const platform = String(account.platform || account.provider || '').toLowerCase();
           const isSelected = selected.includes(platform);
-           const disabledForComingSoon = platform === 'email' && emailComingSoon;
+            const disabledEmail = platform === 'email' && !emailAccountSelectable;
+            const emailStatusText = !emailConnectionEnabled
+              ? 'Disabled by an administrator'
+              : emailComingSoon
+                ? 'Coming soon'
+                : emailAccountStatus === 'needs_reconnect'
+                  ? 'Reconnect this mailbox'
+                  : emailAccountStatus === 'paused' || emailAccountStatus === 'error'
+                    ? 'Email sending is paused'
+                    : emailCoolingDown
+                      ? 'Mailbox cooling down'
+                      : '';
           return (
              <TouchableOpacity
                key={platform}
-               style={[styles.account, isSelected && styles.accountSelected, disabledForComingSoon && { opacity: 0.55 }]}
+                style={[styles.account, isSelected && styles.accountSelected, disabledEmail && { opacity: 0.55 }]}
                onPress={() => toggle(platform)}
-               disabled={disabledForComingSoon}
+                disabled={disabledEmail}
              >
               <View style={[styles.accountMark, isSelected && styles.accountMarkSelected]}><Text style={styles.accountLetter}>{platform.charAt(0).toUpperCase()}</Text></View>
               <View style={{ flex: 1 }}>
                 <Text style={styles.accountName}>{account.page_name || account.display_name || account.handle || platform}</Text>
-                 <Text style={styles.accountPlatform}>{disabledForComingSoon ? 'Email · Coming soon' : platform.replace('_personal', '').replace('_', ' ')}</Text>
+                  <Text style={styles.accountPlatform}>{disabledEmail ? emailStatusText : platform.replace('_personal', '').replace('_', ' ')}</Text>
               </View>
-               {disabledForComingSoon ? <Text style={styles.accountPlatform}>SOON</Text> : isSelected ? <Check color={colors.bg} size={18} /> : <Plus color={colors.muted} size={18} />}
+                {disabledEmail
+                  ? <Text style={styles.accountPlatform}>{emailComingSoon ? 'SOON' : !emailConnectionEnabled ? 'OFF' : emailAccountStatus === 'needs_reconnect' ? 'RECONNECT' : 'PAUSED'}</Text>
+                  : isSelected ? <Check color={colors.bg} size={18} /> : <Plus color={colors.muted} size={18} />}
             </TouchableOpacity>
           );
           })}
-          {emailConnectionEnabled && !emailConnected && (
+          {!emailAccount && (
             <TouchableOpacity
-              style={[styles.account, emailComingSoon && { opacity: 0.55 }]}
+              style={[styles.account, (!emailConnectionEnabled || emailComingSoon) && { opacity: 0.55 }]}
               onPress={() => navigation.navigate('ConnectedAccounts')}
-              disabled={emailComingSoon}
+              disabled={!emailConnectionEnabled || emailComingSoon}
             >
               <View style={styles.accountMark}><Text style={styles.accountLetter}>E</Text></View>
               <View style={{ flex: 1 }}>
                 <Text style={styles.accountName}>Email</Text>
-                <Text style={styles.accountPlatform}>{emailComingSoon ? 'Coming soon' : 'Connect an email account to use it in this strategy'}</Text>
+                <Text style={styles.accountPlatform}>
+                  {!emailConnectionEnabled ? 'Disabled by an administrator' : emailComingSoon ? 'Coming soon' : 'Connect an email account to use it in this strategy'}
+                </Text>
               </View>
-              {emailComingSoon ? <Text style={styles.accountPlatform}>SOON</Text> : <ArrowRight color={colors.cyan} size={18} />}
+              {!emailConnectionEnabled || emailComingSoon
+                ? <Text style={styles.accountPlatform}>{emailComingSoon ? 'SOON' : 'OFF'}</Text>
+                : <ArrowRight color={colors.cyan} size={18} />}
             </TouchableOpacity>
-          )}
-          {platforms.length === 0 && !emailConnectionEnabled && (
-            <TouchableOpacity style={styles.connectCard} onPress={() => navigation.navigate('ConnectedAccounts')}><Link2 color={colors.cyan} size={22} /><View style={{ flex: 1 }}><Text style={styles.connectTitle}>Connect an available account</Text><Text style={styles.connectText}>Only enabled, configured, connected accounts can be selected for a strategy. Reconnect or configure unavailable accounts first.</Text></View><ArrowRight color={colors.cyan} size={18} /></TouchableOpacity>
           )}
           </>
          )}

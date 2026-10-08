@@ -822,22 +822,39 @@ export class SocialAccountService {
   async recordError(userId: string, provider: string, message: string): Promise<void> {
     provider = normalizePlatform(provider);
     const row = await this.get(userId, provider);
-    const consecutiveErrors = Number(row?.consecutive_errors || 0) + 1;
+    const consecutiveErrors = provider === 'email'
+      ? Number(row?.metadata?.email_send_error_count || 0) + 1
+      : Number(row?.consecutive_errors || 0) + 1;
     const classification = classifyProviderError(provider, message);
+    const emailNeedsReconnect = provider === 'email'
+      && /(?:\b401\b|\b403\b|\b535\b|authentication|invalid login|invalid credentials|credentials (?:are )?unavailable|invalid grant|authorization expired|could not be decrypted|bad decrypt|unable to authenticate data)/i.test(message);
+    const requiresReconnect = classification.requiresReconnect || emailNeedsReconnect;
     const shouldPause = consecutiveErrors >= 3 || classification.cooldown;
-    const cooldownUntil = shouldPause
-      ? new Date(Date.now() + Math.min(6 * 60 * 60 * 1000, 15 * 60 * 1000 * Math.pow(2, Math.min(consecutiveErrors - 3, 4)))).toISOString()
-      : null;
-    const nextStatus = classification.requiresReconnect
+    const emailTransientFailure = provider === 'email' && !requiresReconnect && !classification.banned;
+    const cooldownUntil = classification.banned || requiresReconnect
+      ? null
+      : emailTransientFailure
+        ? new Date(Date.now() + Math.min(6 * 60 * 60 * 1000, 15 * 60 * 1000 * Math.pow(2, Math.min(consecutiveErrors - 1, 4)))).toISOString()
+        : shouldPause
+          ? new Date(Date.now() + Math.min(6 * 60 * 60 * 1000, 15 * 60 * 1000 * Math.pow(2, Math.min(consecutiveErrors - 3, 4)))).toISOString()
+          : null;
+    const nextStatus = requiresReconnect
       ? 'needs_reconnect'
       : classification.banned
         ? 'paused'
-        : shouldPause ? 'paused' : 'error';
+        : provider === 'email'
+          ? shouldPause ? 'paused' : 'connected'
+          : shouldPause ? 'paused' : 'error';
     await this.supabase.from('social_account_connections').update({
       status: nextStatus,
       last_error: `${classification.code}: ${message}`.slice(0, 500),
-      consecutive_errors: consecutiveErrors,
+      consecutive_errors: provider === 'email'
+        ? Number(row?.consecutive_errors || 0)
+        : consecutiveErrors,
       cooldown_until: cooldownUntil,
+      ...(provider === 'email'
+        ? { metadata: { ...(row?.metadata || {}), email_send_error_count: consecutiveErrors } }
+        : {}),
       updated_at: new Date().toISOString(),
     }).eq('user_id', userId).eq('provider', provider);
     await this.supabase.from('social_action_log').insert({
@@ -854,11 +871,17 @@ export class SocialAccountService {
 
   async recordSuccess(userId: string, provider: string): Promise<void> {
     const normalized = normalizePlatform(provider);
+    const emailMetadata = normalized === 'email'
+      ? (await this.get(userId, normalized))?.metadata || {}
+      : null;
     await this.supabase.from('social_account_connections').update({
       consecutive_errors: 0,
       cooldown_until: null,
       status: 'connected',
       last_error: null,
+      ...(normalized === 'email'
+        ? { metadata: { ...emailMetadata, email_send_error_count: 0 } }
+        : {}),
       updated_at: new Date().toISOString(),
     }).eq('user_id', userId).eq('provider', normalized);
     await this.supabase.from('social_action_log').insert({
@@ -1423,16 +1446,18 @@ export class SocialAccountService {
     await this.assertMessageVariation(userId, provider, recipient, text);
     if (provider === 'email') {
       const { emailAccountService } = await import('./emailAccountService');
+      await emailAccountService.assertSenderDomainReady(userId);
       await this.assertEmailContentVariation(userId, text);
       await emailAccountService.setWarmupLimit(userId);
     }
     if (!(await this.reserveAction(userId, provider, recipient))) throw new Error(`${provider} daily safety limit reached or account is not ready.`);
     await this.safetyDelay(provider);
-    const credential = await this.credentials(userId, provider);
-    if (!credential) throw new Error(`${provider} credentials are unavailable.`);
     const exec = promisify(execFile);
 
     try {
+      const credential = await this.credentials(userId, provider);
+      if (!credential) throw new Error(`${provider} credentials are unavailable.`);
+
       if (provider === 'email') {
         const { emailAccountService } = await import('./emailAccountService');
         await emailAccountService.sendForLead(userId, recipient, text, credential, leadId, emailSubject);
@@ -1535,7 +1560,21 @@ export class SocialAccountService {
         return;
       }
     } catch (error: any) {
-      await this.recordError(userId, provider, provider === 'email' ? 'Email delivery failed. Recheck the connected provider and retry later.' : error.message);
+      if (provider === 'email') {
+        const { EmailSendPolicyError } = await import('./emailAccountService');
+        if (error instanceof EmailSendPolicyError) throw error;
+        const emailError = String(error?.message || '');
+        const requiresReconnect = /(?:\b401\b|\b403\b|\b535\b|authentication|invalid login|invalid credentials|credentials (?:are )?unavailable|invalid grant|authorization expired|could not be decrypted|bad decrypt|unable to authenticate data)/i.test(emailError);
+        await this.recordError(
+          userId,
+          provider,
+          requiresReconnect
+            ? 'Email authorization expired. Reconnect this account.'
+            : 'Email delivery failed. Recheck the connected provider and retry later.',
+        );
+      } else {
+        await this.recordError(userId, provider, error.message);
+      }
       throw error;
     }
 

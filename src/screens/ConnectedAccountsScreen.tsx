@@ -299,7 +299,11 @@ export default function ConnectedAccountsScreen() {
 
   const isConnected = (id: string) => {
     const config = connectedPlatforms[id];
-    return !!tokens[id] || Boolean(config && (config.connected !== false || config.status === 'needs_reconnect'));
+    return !!tokens[id] || Boolean(config && (
+      config.connected !== false
+      || config.status === 'needs_reconnect'
+      || (id === 'email' && ['paused', 'error'].includes(String(config.status || '')))
+    ));
   };
   const connectedCount = PLATFORMS.filter(p => !p.comingSoon && isConnected(p.id)).length;
   const isStarterLimited = !isPro && connectedCount >= 1;
@@ -630,7 +634,21 @@ export default function ConnectedAccountsScreen() {
           const bridgeUnavailable = capability?.reason === 'bridge_unavailable';
           const deltaCapabilityUnknown = platform.id === 'delta_chat' && capability?.available !== true;
           const blocked = comingSoon || disabled || missingServerConfig || bridgeUnavailable || deltaCapabilityUnknown;
-          const needsReconnect = connectedPlatforms[platform.id]?.status === 'needs_reconnect';
+          const emailStatus = platform.id === 'email'
+            ? capability?.emailStatus?.status || connectedPlatforms[platform.id]?.status
+            : connectedPlatforms[platform.id]?.status;
+          const needsReconnect = emailStatus === 'needs_reconnect';
+          const emailPaused = platform.id === 'email' && (emailStatus === 'paused' || emailStatus === 'error');
+          const emailCooldownUntil = platform.id === 'email' ? connectedPlatforms[platform.id]?.cooldown_until : null;
+          const emailCoolingDown = Boolean(emailCooldownUntil && new Date(emailCooldownUntil).getTime() > Date.now());
+          const statusNeedsAttention = needsReconnect || emailPaused || emailCoolingDown;
+          const statusLabel = needsReconnect
+            ? 'Needs reconnect'
+            : emailPaused
+              ? 'Paused'
+              : emailCoolingDown
+                ? 'Cooling down'
+                : 'Connected';
           const disc = disconnecting === platform.id;
           const isProOnlyPlatform = platform.id === 'twitter';
           const locked = !connected && !blocked && (isStarterLimited || (!isPro && isProOnlyPlatform));
@@ -648,10 +666,10 @@ export default function ConnectedAccountsScreen() {
                   <Text style={styles.platformSub}>{platform.sub}</Text>
                 </View>
                 {connected ? (
-                  <View style={[styles.statusBadge, { backgroundColor: needsReconnect ? 'rgba(245,158,11,0.12)' : 'rgba(16,185,129,0.12)' }]}>
-                    <View style={[styles.statusDot, { backgroundColor: needsReconnect ? '#F59E0B' : '#10B981' }]} />
-                    <Text style={[styles.statusText, { color: needsReconnect ? '#F59E0B' : '#34D399' }]}>
-                      {needsReconnect ? 'Needs reconnect' : 'Connected'}
+                  <View style={[styles.statusBadge, { backgroundColor: statusNeedsAttention ? 'rgba(245,158,11,0.12)' : 'rgba(16,185,129,0.12)' }]}>
+                    <View style={[styles.statusDot, { backgroundColor: statusNeedsAttention ? '#F59E0B' : '#10B981' }]} />
+                    <Text style={[styles.statusText, { color: statusNeedsAttention ? '#F59E0B' : '#34D399' }]}>
+                      {statusLabel}
                     </Text>
                   </View>
                 ) : disabled ? (
@@ -678,20 +696,26 @@ export default function ConnectedAccountsScreen() {
                       <Text style={styles.accountName}>{getConnectedLabel(platform)}</Text>
                       <Text style={styles.accountType}>{getConnectedSub(platform)}</Text>
                     </View>
-                    <CheckCircle2 color={needsReconnect ? '#F59E0B' : '#10B981'} size={20} />
+                    <CheckCircle2 color={statusNeedsAttention ? '#F59E0B' : '#10B981'} size={20} />
                   </View>
                   {platform.id === 'email' && capability?.dnsDiagnostics && (
                     <View style={styles.activeBanner}>
                       <Text style={styles.activeBannerText}>
-                        Domain checks · SPF {String(capability.dnsDiagnostics.spf).toUpperCase()} · DKIM {String(capability.dnsDiagnostics.dkim).toUpperCase()} · DMARC {String(capability.dnsDiagnostics.dmarc).toUpperCase()}. Missing records can affect delivery; manage DNS with your domain provider.
+                        {capability.dnsDiagnostics.providerManaged
+                          ? 'Your mailbox provider manages sender authentication for this address.'
+                          : `Custom-domain sending requires valid SPF, detected DKIM, and a DMARC quarantine/reject policy. Current checks: SPF ${String(capability.dnsDiagnostics.spf).toUpperCase()} · DKIM ${String(capability.dnsDiagnostics.dkim).toUpperCase()} · DMARC ${String(capability.dnsDiagnostics.dmarc).toUpperCase()}. Configure records with your mail or DNS provider.`}
                       </Text>
                     </View>
                   )}
                   <View style={styles.activeBanner}>
-                    {needsReconnect ? <AlertCircle size={14} color="#F59E0B" /> : <ShieldCheck size={14} color="#10B981" />}
-                    <Text style={[styles.activeBannerText, needsReconnect && { color: '#F59E0B' }]}>
+                    {statusNeedsAttention ? <AlertCircle size={14} color="#F59E0B" /> : <ShieldCheck size={14} color="#10B981" />}
+                    <Text style={[styles.activeBannerText, statusNeedsAttention && { color: '#F59E0B' }]}>
                       {needsReconnect
                         ? 'Reconnect this account to resume the selected strategy.'
+                        : emailPaused
+                          ? 'Email sending is paused after repeated mailbox errors. Reconfigure the mailbox or wait for its cooldown to expire.'
+                          : emailCoolingDown
+                            ? 'Email sending is temporarily cooling down after a provider error.'
                         : bridgeUnavailable
                           ? `${platform.name} is temporarily unavailable while its bridge is offline.`
                           : disabled
@@ -706,7 +730,7 @@ export default function ConnectedAccountsScreen() {
                       onPress={() => handleConnect(platform)}
                       style={styles.reconfigureBtn}
                       activeOpacity={0.8}
-                      disabled={platform.id === 'email' && comingSoon}
+                      disabled={platform.id === 'email' && (comingSoon || disabled)}
                     >
                       <ExternalLink size={16} color="#00F0FF" /><Text style={styles.reconfigureBtnText}>Reconfigure</Text>
                     </TouchableOpacity>

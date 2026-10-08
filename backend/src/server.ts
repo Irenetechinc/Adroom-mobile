@@ -1542,7 +1542,7 @@ app.get('/api/platform-configs', async (req, res) => {
     }
     const { data: personalConnections } = await supabase
       .from('social_account_connections')
-      .select('provider, account_id, display_name, handle, status, updated_at')
+      .select('provider, account_id, display_name, handle, status, cooldown_until, updated_at')
       .eq('user_id', user.id);
     for (const c of personalConnections || []) {
       connected[c.provider] = {
@@ -1553,6 +1553,7 @@ app.get('/api/platform-configs', async (req, res) => {
         updated_at: c.updated_at,
         connected: c.status === 'connected',
         status: c.status,
+        cooldown_until: c.cooldown_until,
       };
     }
     return res.status(200).json({ configs: connected });
@@ -1598,7 +1599,17 @@ app.get('/api/platform-capabilities', async (req, res) => {
       const dnsDiagnostics = provider === 'email'
         ? await emailAccountService.diagnoseDomain(user.id)
         : undefined;
-      return { provider, enabled, comingSoon, configured, available, reason, ...(dnsDiagnostics ? { dnsDiagnostics } : {}) };
+      const emailStatus = provider === 'email' ? await emailAccountService.status(user.id) : undefined;
+      return {
+        provider,
+        enabled,
+        comingSoon,
+        configured,
+        available,
+        reason,
+        ...(dnsDiagnostics ? { dnsDiagnostics } : {}),
+        ...(emailStatus ? { emailStatus: { connected: emailStatus.connected, status: emailStatus.status } } : {}),
+      };
     }));
     return res.status(200).json({ capabilities: configs });
   } catch (e: any) {

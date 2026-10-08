@@ -66,6 +66,16 @@ const PLATFORM_COLORS: Record<string, string> = {
   whatsapp: '#25D366', news: '#64748B', forum: '#A78BFA', nairaland: '#A78BFA', quora: '#B92B27',
 };
 
+function leadContactLabel(lead: Lead): string {
+  const name = String(lead.platform_username || '').replace(/^@+/, '').trim();
+  if (lead.platform === 'email') {
+    return name && !/^(?:unknown(?:\s+person|\s+user)?|anonymous|n\/?a|null|undefined)$/i.test(name)
+      ? name
+      : 'Email contact';
+  }
+  return name || 'Public lead';
+}
+
 function timeAgo(iso: string): string {
   const diff = Date.now() - new Date(iso).getTime();
   const mins = Math.floor(diff / 60000);
@@ -243,7 +253,9 @@ export default function LeadConversationScreen() {
           </Text>
         </View>
         <View style={{ flex: 1 }}>
-          <Text style={styles.leadName} numberOfLines={1}>@{lead.platform_username}</Text>
+          <Text style={styles.leadName} numberOfLines={1}>
+            {lead.platform === 'email' ? leadContactLabel(lead) : `@${lead.platform_username || 'Public lead'}`}
+          </Text>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
             <Text style={[styles.platformTag, { color: platformColor }]}>
               {lead.platform.charAt(0).toUpperCase() + lead.platform.slice(1)}
@@ -335,7 +347,7 @@ export default function LeadConversationScreen() {
                   <>
                     <User size={10} color={platformColor} />
                     <Text style={[styles.bubbleSender, { color: platformColor }]}>
-                      @{lead.platform_username}
+                      {lead.platform === 'email' ? leadContactLabel(lead) : `@${lead.platform_username || 'Public lead'}`}
                     </Text>
                   </>
                 )}
@@ -347,6 +359,11 @@ export default function LeadConversationScreen() {
                 styles.bubbleBody,
                 msg.direction === 'outbound' ? styles.bubbleBodyOut : styles.bubbleBodyIn,
               ]}>
+                {lead.platform === 'email' && (msg as any).meta?.email_subject ? (
+                  <Text style={styles.emailSubject} numberOfLines={1}>
+                    {(msg as any).meta.email_subject}
+                  </Text>
+                ) : null}
                 <Text style={[
                   styles.bubbleText,
                   msg.direction === 'outbound' ? styles.bubbleTextOut : styles.bubbleTextIn,
@@ -495,6 +512,7 @@ const styles = StyleSheet.create({
 
   deliveredRow: { flexDirection: 'row', alignItems: 'center', gap: 3, marginTop: 2, marginRight: 2 },
   deliveredText: { fontSize: 9, color: '#10B981' },
+  emailSubject: { color: '#8FA3B8', fontSize: 11, fontWeight: '700', marginBottom: 6 },
 
   // Next message
   nextMessageSection: { marginTop: 12, marginBottom: 4 },

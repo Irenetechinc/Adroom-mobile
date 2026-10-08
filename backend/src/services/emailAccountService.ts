@@ -6,6 +6,12 @@ import { simpleParser } from 'mailparser';
 import nodemailer from 'nodemailer';
 import { getServiceSupabaseClient } from '../config/supabase';
 import { cleanReplyWithTalon } from './emailReplyCleaner';
+import {
+  hasDkimKey,
+  hasEnforcedDmarcPolicy,
+  hasValidSpf,
+  isProviderManagedSenderDomain,
+} from './emailDnsPolicy';
 
 type MailTransport = {
   provider: 'gmail' | 'yahoo' | 'icloud' | 'aol' | 'imap' | 'microsoft365';
@@ -47,8 +53,11 @@ export interface EmailDnsDiagnostics {
   spf: 'configured' | 'missing' | 'unavailable';
   dmarc: 'configured' | 'missing' | 'unavailable';
   dkim: 'detected' | 'not_detected' | 'unavailable';
+  providerManaged: boolean;
   checkedAt: string;
 }
+
+export class EmailSendPolicyError extends Error {}
 
 const GMAIL_DOMAINS = new Set(['gmail.com', 'googlemail.com']);
 const MICROSOFT_DOMAINS = new Set(['outlook.com', 'hotmail.com', 'live.com', 'msn.com', 'office365.com']);
@@ -236,6 +245,7 @@ function sleep(ms: number): Promise<void> {
 
 class EmailAccountService {
   private readonly supabase = getServiceSupabaseClient();
+  private readonly dnsDiagnosticCache = new Map<string, { result: EmailDnsDiagnostics; cachedAt: number }>();
 
   async detectProvider(rawAddress: unknown): Promise<EmailProviderDetection> {
     const address = normalizeAddress(rawAddress);
@@ -261,14 +271,42 @@ class EmailAccountService {
     return data || null;
   }
 
+  private async resumeExpiredCooldown(userId: string): Promise<any | null> {
+    const row = await this.accountRow(userId);
+    if (!row) return null;
+    const cooldownAt = row.cooldown_until ? new Date(row.cooldown_until).getTime() : NaN;
+    const cooldownExpired = Number.isFinite(cooldownAt) && cooldownAt <= Date.now();
+    const legacyTransientError = row.status === 'error'
+      && !row.cooldown_until
+      && Number(row.consecutive_errors || 0) < 3;
+    if (!((row.status === 'paused' && cooldownExpired)
+      || (row.status === 'error' && cooldownExpired)
+      || legacyTransientError)) return row;
+
+    const { error } = await this.supabase
+      .from('social_account_connections')
+      .update({
+        status: 'connected',
+        cooldown_until: null,
+        last_error: null,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('user_id', userId)
+      .eq('provider', 'email');
+    if (error) throw new Error(`Email account recovery failed: ${error.message}`);
+    return { ...row, status: 'connected', cooldown_until: null, last_error: null };
+  }
+
   async status(userId: string): Promise<EmailConnectionStatus> {
     return publicStatus(await this.accountRow(userId));
   }
 
   async diagnoseDomain(userId: string): Promise<EmailDnsDiagnostics | null> {
-    const row = await this.accountRow(userId);
+    const row = await this.resumeExpiredCooldown(userId);
     if (!row || row.status !== 'connected' || !row.account_id) return null;
     const domain = normalizeAddress(row.account_id).split('@')[1];
+    const cached = this.dnsDiagnosticCache.get(domain);
+    if (cached && Date.now() - cached.cachedAt < 5 * 60 * 1000) return cached.result;
     const readTxt = async (host: string): Promise<{ records: string[]; available: boolean }> => {
       try {
         const result = await dns.resolveTxt(host);
@@ -280,19 +318,51 @@ class EmailAccountService {
     const [root, dmarc, ...dkim] = await Promise.all([
       readTxt(domain),
       readTxt(`_dmarc.${domain}`),
-      ...['google', 'selector1', 'selector2', 'default', 's1', 's2', 'k1', 'dkim'].map((selector) =>
+      ...['google', 'selector1', 'selector2', 'default', 's1', 's2', 'k1', 'dkim', 'zoho', 'mail', 's1024', 's2048'].map((selector) =>
         readTxt(`${selector}._domainkey.${domain}`)),
     ]);
-    const spfRecords = root.records.filter((record) => /^v=spf1\b/i.test(record.trim()));
-    const dmarcRecords = dmarc.records.filter((record) => /^v=dmarc1\b/i.test(record.trim()));
-    const anyDkim = dkim.some((result) => result.records.some((record) => record.trim().length > 0));
-    return {
+    const anyDkim = dkim.some((result) => hasDkimKey(result.records));
+    const providerManaged = isProviderManagedSenderDomain(domain);
+    const result: EmailDnsDiagnostics = {
       domain,
-      spf: spfRecords.length ? 'configured' : root.available ? 'missing' : 'unavailable',
-      dmarc: dmarcRecords.length ? 'configured' : dmarc.available ? 'missing' : 'unavailable',
+      spf: hasValidSpf(root.records) ? 'configured' : root.available ? 'missing' : 'unavailable',
+      dmarc: hasEnforcedDmarcPolicy(dmarc.records) ? 'configured' : dmarc.available ? 'missing' : 'unavailable',
       dkim: anyDkim ? 'detected' : dkim.some((result) => result.available) ? 'not_detected' : 'unavailable',
+      providerManaged,
       checkedAt: new Date().toISOString(),
     };
+    this.dnsDiagnosticCache.set(domain, { result, cachedAt: Date.now() });
+    return result;
+  }
+
+  async assertSenderDomainReady(userId: string): Promise<void> {
+    const diagnostics = await this.diagnoseDomain(userId);
+    if (!diagnostics) {
+      const row = await this.accountRow(userId);
+      if (!row) throw new Error('Connect an email account before sending.');
+      if (row.status === 'needs_reconnect') throw new Error('Reconnect the email account before sending.');
+      if (row.status === 'paused') {
+        if (row.cooldown_until && new Date(row.cooldown_until).getTime() > Date.now()) {
+          throw new Error('Email sending is temporarily paused while the mailbox cools down.');
+        }
+        throw new Error('Email sending is paused. Reconfigure the mailbox before sending again.');
+      }
+      if (row.cooldown_until && new Date(row.cooldown_until).getTime() > Date.now()) {
+        throw new Error('Email sending is temporarily paused while the mailbox cools down.');
+      }
+      throw new Error('The email account is not ready to send.');
+    }
+    if (diagnostics.providerManaged) return;
+
+    const missing: string[] = [];
+    if (diagnostics.spf !== 'configured') missing.push('a valid SPF record');
+    if (diagnostics.dkim !== 'detected') missing.push('a detected DKIM key');
+    if (diagnostics.dmarc !== 'configured') missing.push('a DMARC quarantine or reject policy');
+    if (missing.length) {
+      throw new Error(
+        `Email sending is paused for ${diagnostics.domain}. Configure ${missing.join(', ')} with your mail or DNS provider, then refresh the account checks.`,
+      );
+    }
   }
 
   private async saveAccount(userId: string, address: string, provider: string, credential: any): Promise<EmailConnectionStatus> {
@@ -559,7 +629,7 @@ class EmailAccountService {
   }
 
   async pollReplies(userId: string, onReply: (reply: CleanEmailReply) => Promise<boolean>): Promise<void> {
-    const row = await this.accountRow(userId);
+    const row = await this.resumeExpiredCooldown(userId);
     if (!row || row.status !== 'connected') return;
     if (row.cooldown_until && new Date(row.cooldown_until).getTime() > Date.now()) return;
     const credential = decrypt(row);
@@ -705,7 +775,12 @@ class EmailAccountService {
     leadId?: string,
     emailSubject?: string,
   ): Promise<void> {
-    const recipient = normalizeAddress(recipientValue);
+    let recipient: string;
+    try {
+      recipient = normalizeAddress(recipientValue);
+    } catch (error: any) {
+      throw new EmailSendPolicyError(error?.message || 'Enter a valid email address.');
+    }
     let leadQuery = this.supabase
       .from('agent_leads')
       .select('id,stage')
@@ -717,9 +792,9 @@ class EmailAccountService {
       .limit(1);
     if (leadId) leadQuery = leadQuery.eq('id', leadId);
     const { data: lead, error: leadError } = await leadQuery.maybeSingle();
-    if (leadError || !lead) throw new Error('Email can only be sent to a lead in this account’s email conversation list.');
+    if (leadError || !lead) throw new EmailSendPolicyError('Email can only be sent to a lead in this account’s email conversation list.');
     if (['lost', 'won'].includes(String(lead.stage || '').toLowerCase())) {
-      throw new Error('This email conversation is closed and cannot be contacted.');
+      throw new EmailSendPolicyError('This email conversation is closed and cannot be contacted.');
     }
     const { data: history } = await this.supabase
       .from('lead_dm_messages')
@@ -734,17 +809,17 @@ class EmailAccountService {
     const recentOutbound = (history || []).filter((message: any) =>
       message.direction === 'outbound' && String(message.created_at || '') >= dayAgo,
     );
-    if (recentOutbound.length >= 1) throw new Error('The daily limit for this email recipient has been reached.');
+    if (recentOutbound.length >= 1) throw new EmailSendPolicyError('The daily limit for this email recipient has been reached.');
 
     let text = String(bodyValue || '').replace(/\r\n?/g, '\n').trim();
-    if (!text) throw new Error('Email message is empty.');
+    if (!text) throw new EmailSendPolicyError('Email message is empty.');
     const words = text.split(/\s+/);
     if (words.length > 80) text = `${words.slice(0, 79).join(' ')}…`;
     const linkScanText = text.replace(/\b[\w.+-]+@[\w.-]+\.[a-z]{2,}\b/gi, ' ');
     const links = linkScanText.match(/(?:https?:\/\/|www\.)\S+|\b(?:[\da-z-]+\.)+[a-z]{2,}(?:\/\S*)?/gi) || [];
-    if (links.length > 1) throw new Error('Email messages may contain no more than one link.');
+    if (links.length > 1) throw new EmailSendPolicyError('Email messages may contain no more than one link.');
     const firstOutbound = recentOutbound.length === 0;
-    if (firstOutbound && links.length > 0) throw new Error('The first email to a new contact cannot include a link.');
+    if (firstOutbound && links.length > 0) throw new EmailSendPolicyError('The first email to a new contact cannot include a link.');
     const lastInboundMeta = latestInbound?.meta || {};
     const safePreviousSubject = String(lastInboundMeta.email_subject || 'A quick question')
       .replace(/[\r\n]+/g, ' ')
