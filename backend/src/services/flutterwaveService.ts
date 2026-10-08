@@ -1,5 +1,5 @@
 import dotenv from 'dotenv';
-import forge from 'node-forge';
+import { createCipheriv } from 'crypto';
 dotenv.config();
 
 const FLW_SECRET_KEY = process.env.FLW_SECRET_KEY || process.env.FLUTTERWAVE_SECRET_KEY || '';
@@ -51,15 +51,10 @@ export class FlutterwaveService {
 
   /**
    * Encrypt card payload using 3DES-ECB — exactly matching the official Flutterwave Node.js SDK.
-   * Uses node-forge to ensure byte-perfect compatibility with Flutterwave's decryption.
    */
   private encrypt3DES(data: string, encryptionKey: string): string {
-    const key = forge.util.createBuffer(encryptionKey);
-    const cipher = forge.cipher.createCipher('3DES-ECB', key);
-    cipher.start({ iv: '' });
-    cipher.update(forge.util.createBuffer(data, 'utf8'));
-    cipher.finish();
-    return forge.util.encode64(cipher.output.getBytes());
+    const cipher = createCipheriv('des-ede3-ecb', Buffer.from(encryptionKey, 'latin1'), null);
+    return Buffer.concat([cipher.update(data, 'utf8'), cipher.final()]).toString('base64');
   }
 
   /**
