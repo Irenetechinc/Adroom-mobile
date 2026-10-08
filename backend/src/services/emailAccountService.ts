@@ -13,6 +13,7 @@ type MailTransport = {
   smtpHost?: string;
   imapPort?: number;
   smtpPort?: number;
+  imapSecure?: boolean;
   secure?: boolean;
 };
 
@@ -34,6 +35,11 @@ export interface EmailConnectionStatus {
   displayName?: string;
   provider?: string;
   lastError?: string;
+}
+
+export interface EmailProviderDetection {
+  provider: string;
+  authMethod: 'oauth' | 'app_password' | 'password';
 }
 
 export interface EmailDnsDiagnostics {
@@ -131,6 +137,34 @@ async function settingsForAddress(address: string): Promise<MailTransport> {
     // standard hostnames before credentials are persisted.
   }
 
+  const resolveSrv = async (name: string) => {
+    try {
+      return (await dns.resolveSrv(name)).sort((a, b) => a.priority - b.priority);
+    } catch {
+      return [];
+    }
+  };
+  const [imaps, imap, submissions, submission, smtps] = await Promise.all([
+    resolveSrv(`_imaps._tcp.${domain}`),
+    resolveSrv(`_imap._tcp.${domain}`),
+    resolveSrv(`_submissions._tcp.${domain}`),
+    resolveSrv(`_submission._tcp.${domain}`),
+    resolveSrv(`_smtps._tcp.${domain}`),
+  ]);
+  const imapRecord = imaps[0] || imap[0];
+  const smtpRecord = submissions[0] || smtps[0] || submission[0];
+  if (imapRecord && smtpRecord && imapRecord.name !== '.' && smtpRecord.name !== '.') {
+    return {
+      provider: 'imap',
+      imapHost: imapRecord.name.replace(/\.$/, ''),
+      imapPort: imapRecord.port,
+      imapSecure: Boolean(imaps[0]),
+      smtpHost: smtpRecord.name.replace(/\.$/, ''),
+      smtpPort: smtpRecord.port,
+      secure: Boolean(submissions[0] || smtps[0]),
+    };
+  }
+
   return {
     provider: 'imap',
     imapHost: `imap.${domain}`,
@@ -203,6 +237,19 @@ function sleep(ms: number): Promise<void> {
 class EmailAccountService {
   private readonly supabase = getServiceSupabaseClient();
 
+  async detectProvider(rawAddress: unknown): Promise<EmailProviderDetection> {
+    const address = normalizeAddress(rawAddress);
+    const settings = await settingsForAddress(address);
+    return {
+      provider: settings.provider,
+      authMethod: settings.provider === 'microsoft365'
+        ? 'oauth'
+        : settings.provider === 'gmail'
+          ? 'app_password'
+          : 'password',
+    };
+  }
+
   private async accountRow(userId: string): Promise<any | null> {
     const { data, error } = await this.supabase
       .from('social_account_connections')
@@ -251,6 +298,16 @@ class EmailAccountService {
   private async saveAccount(userId: string, address: string, provider: string, credential: any): Promise<EmailConnectionStatus> {
     const encrypted = encrypt(credential);
     const now = new Date().toISOString();
+    const { data: previousConnection, error: previousConnectionError } = await this.supabase
+      .from('social_account_connections')
+      .select('account_id,warmup_started_at')
+      .eq('user_id', userId)
+      .eq('provider', 'email')
+      .maybeSingle();
+    if (previousConnectionError) throw new Error(previousConnectionError.message);
+    const warmupStartedAt = previousConnection?.account_id === address
+      ? previousConnection.warmup_started_at || now
+      : now;
     const { error } = await this.supabase.from('social_account_connections').upsert({
       user_id: userId,
       provider: 'email',
@@ -262,12 +319,15 @@ class EmailAccountService {
       credential_iv: encrypted.iv,
       credential_tag: encrypted.tag,
       metadata: { mail_provider: provider },
-      daily_limit: 5,
+      // `reserve_social_action` applies the progressive email warm-up below.
+      // Keep the mature per-mailbox ceiling here so the counter can grow after
+      // the six-week ramp without changing this row again.
+      daily_limit: 45,
       actions_today: 0,
       action_day: new Date().toISOString().slice(0, 10),
       consecutive_errors: 0,
       cooldown_until: null,
-      warmup_started_at: now,
+      warmup_started_at: warmupStartedAt,
       last_error: null,
       updated_at: now,
     }, { onConflict: 'user_id,provider' });
@@ -309,7 +369,8 @@ class EmailAccountService {
     const imap = new ImapFlow({
       host: settings.imapHost!,
       port: settings.imapPort!,
-      secure: true,
+      secure: settings.imapSecure ?? true,
+      doSTARTTLS: !(settings.imapSecure ?? true),
       auth: { user: address, pass: password },
       logger: false,
       connectionTimeout: 12000,
@@ -322,6 +383,7 @@ class EmailAccountService {
         host: settings.smtpHost,
         port: settings.smtpPort,
         secure: settings.secure,
+        requireTLS: !settings.secure,
         auth: { user: address, pass: password },
         connectionTimeout: 12000,
         greetingTimeout: 12000,
@@ -433,8 +495,13 @@ class EmailAccountService {
     if (!row || row.status !== 'connected') return;
     const started = new Date(row.warmup_started_at || row.connected_at).getTime();
     const days = Math.max(0, Math.floor((Date.now() - started) / 86400000));
-    const limits = [5, 5, 7, 7, 9, 9, 12, 12, 12, 15];
-    const limit = limits[Math.min(days, limits.length - 1)];
+    const limit = days < 7 ? 5
+      : days < 14 ? 10
+        : days < 21 ? 15
+          : days < 28 ? 20
+            : days < 35 ? 25
+              : days < 42 ? 35
+                : 45;
     if (Number(row.daily_limit) !== limit) {
       await this.supabase.from('social_account_connections').update({ daily_limit: limit })
         .eq('user_id', userId).eq('provider', 'email');
@@ -544,7 +611,8 @@ class EmailAccountService {
     const client = new ImapFlow({
       host: settings.imapHost!,
       port: settings.imapPort!,
-      secure: true,
+      secure: settings.imapSecure ?? true,
+      doSTARTTLS: !(settings.imapSecure ?? true),
       auth: { user: credential.address, pass: credential.password },
       logger: false,
       connectionTimeout: 12000,
@@ -629,15 +697,26 @@ class EmailAccountService {
     }
   }
 
-  async sendForLead(userId: string, recipientValue: string, bodyValue: string, credential: any): Promise<void> {
+  async sendForLead(
+    userId: string,
+    recipientValue: string,
+    bodyValue: string,
+    credential: any,
+    leadId?: string,
+    emailSubject?: string,
+  ): Promise<void> {
     const recipient = normalizeAddress(recipientValue);
-    const { data: lead, error: leadError } = await this.supabase
+    let leadQuery = this.supabase
       .from('agent_leads')
       .select('id,stage')
       .eq('user_id', userId)
       .eq('platform', 'email')
       .eq('platform_user_id', recipient)
-      .maybeSingle();
+      .order('last_contacted_at', { ascending: false })
+      .order('created_at', { ascending: false })
+      .limit(1);
+    if (leadId) leadQuery = leadQuery.eq('id', leadId);
+    const { data: lead, error: leadError } = await leadQuery.maybeSingle();
     if (leadError || !lead) throw new Error('Email can only be sent to a lead in this account’s email conversation list.');
     if (['lost', 'won'].includes(String(lead.stage || '').toLowerCase())) {
       throw new Error('This email conversation is closed and cannot be contacted.');
@@ -661,7 +740,8 @@ class EmailAccountService {
     if (!text) throw new Error('Email message is empty.');
     const words = text.split(/\s+/);
     if (words.length > 80) text = `${words.slice(0, 79).join(' ')}…`;
-    const links = text.match(/(?:https?:\/\/|www\.)\S+/gi) || [];
+    const linkScanText = text.replace(/\b[\w.+-]+@[\w.-]+\.[a-z]{2,}\b/gi, ' ');
+    const links = linkScanText.match(/(?:https?:\/\/|www\.)\S+|\b(?:[\da-z-]+\.)+[a-z]{2,}(?:\/\S*)?/gi) || [];
     if (links.length > 1) throw new Error('Email messages may contain no more than one link.');
     const firstOutbound = recentOutbound.length === 0;
     if (firstOutbound && links.length > 0) throw new Error('The first email to a new contact cannot include a link.');
@@ -669,11 +749,18 @@ class EmailAccountService {
     const safePreviousSubject = String(lastInboundMeta.email_subject || 'A quick question')
       .replace(/[\r\n]+/g, ' ')
       .slice(0, 140);
+    const generatedSubject = String(emailSubject || '')
+      .replace(/[\r\n]+/g, ' ')
+      .trim()
+      .split(/\s+/)
+      .slice(0, 8)
+      .join(' ')
+      .slice(0, 100);
     const subject = latestInbound
       ? (safePreviousSubject.toLowerCase().startsWith('re:')
         ? safePreviousSubject
         : `Re: ${safePreviousSubject}`)
-      : 'A quick question';
+      : generatedSubject || this.subjectFromMessage(text);
 
     if (credential.type === 'microsoft_graph') {
       if (lastInboundMeta.microsoft_message_id) {
@@ -702,17 +789,20 @@ class EmailAccountService {
       host: settings.smtpHost,
       port: settings.smtpPort,
       secure: settings.secure,
+      requireTLS: !settings.secure,
       auth: { user: credential.address, pass: credential.password },
       connectionTimeout: 12000,
       greetingTimeout: 12000,
       socketTimeout: 20000,
     });
     try {
-      await transport.sendMail({
+      const messageId = `<${crypto.randomUUID()}@${credential.address.split('@')[1]}>`;
+      const sent = await transport.sendMail({
         from: credential.address,
         to: recipient,
         subject,
         text,
+        messageId,
         ...(lastInboundMeta.internet_message_id ? {
           inReplyTo: String(lastInboundMeta.internet_message_id),
           references: String(lastInboundMeta.internet_message_id),
@@ -722,8 +812,90 @@ class EmailAccountService {
           'List-Unsubscribe': `<mailto:${credential.address}?subject=unsubscribe>`,
         },
       });
+      if (settings.provider === 'imap') {
+        await this.saveSmtpCopyToSent(
+          credential,
+          String(sent?.messageId || messageId),
+          recipient,
+          subject,
+          text,
+          lastInboundMeta.internet_message_id ? String(lastInboundMeta.internet_message_id) : undefined,
+        );
+      }
     } finally {
       transport.close();
+    }
+  }
+
+  private subjectFromMessage(body: string): string {
+    const firstLine = String(body || '').split(/\r?\n/).map((line) => line.trim()).find(Boolean) || '';
+    const withoutGreeting = firstLine.replace(/^(?:hi|hello|dear)\s+[^,!]+[,!]?\s*/i, '').trim();
+    const sentenceEnd = withoutGreeting.search(/[.!?](?:\s|$)/);
+    const sentence = sentenceEnd >= 0 ? withoutGreeting.slice(0, sentenceEnd) : withoutGreeting;
+    const subject = sentence.split(/\s+/).filter(Boolean).slice(0, 9).join(' ').replace(/[.!?]+$/g, '').trim();
+    return (subject || 'A quick question').slice(0, 100);
+  }
+
+  private async saveSmtpCopyToSent(
+    credential: any,
+    messageId: string,
+    recipient: string,
+    subject: string,
+    text: string,
+    inReplyTo?: string,
+  ): Promise<void> {
+    const settings = credential.settings as MailTransport;
+    const client = new ImapFlow({
+      host: settings.imapHost!,
+      port: settings.imapPort!,
+      secure: settings.imapSecure ?? true,
+      doSTARTTLS: !(settings.imapSecure ?? true),
+      auth: { user: credential.address, pass: credential.password },
+      logger: false,
+      connectionTimeout: 12000,
+      greetingTimeout: 12000,
+      socketTimeout: 20000,
+    });
+    try {
+      await client.connect();
+      const folders = await client.list();
+      const sentFolder = folders.find((folder: any) => String(folder.specialUse || '').toLowerCase() === '\\sent')
+        || folders.find((folder: any) => /(?:^|[./ ])sent(?: items)?$/i.test(String(folder.path || '')));
+      if (!sentFolder?.path) return;
+
+      const lock = await client.getMailboxLock(sentFolder.path);
+      try {
+        const alreadyStored = await client.search({ header: { 'message-id': messageId } }, { uid: true });
+        if (Array.isArray(alreadyStored) && alreadyStored.length > 0) return;
+
+        const encodedSubject = `=?UTF-8?B?${Buffer.from(subject, 'utf8').toString('base64')}?=`;
+        const encodedBody = Buffer.from(text, 'utf8').toString('base64').match(/.{1,76}/g)?.join('\r\n') || '';
+        const headers = [
+          `From: <${credential.address}>`,
+          `To: <${recipient}>`,
+          `Subject: ${encodedSubject}`,
+          `Date: ${new Date().toUTCString()}`,
+          `Message-ID: ${messageId}`,
+          'MIME-Version: 1.0',
+          'Content-Type: text/plain; charset=UTF-8',
+          'Content-Transfer-Encoding: base64',
+          'Auto-Submitted: auto-generated',
+          `List-Unsubscribe: <mailto:${credential.address}?subject=unsubscribe>`,
+          ...(inReplyTo ? [`In-Reply-To: ${inReplyTo}`, `References: ${inReplyTo}`] : []),
+          '',
+          encodedBody,
+          '',
+        ].join('\r\n');
+        await client.append(sentFolder.path, headers, ['\\Seen']);
+      } finally {
+        lock.release();
+      }
+    } catch {
+      // SMTP delivery has already succeeded. Some IMAP servers reject
+      // appending to Sent; do not report a delivered email as a failed send.
+      console.warn('[Email] Could not save an SMTP-sent message to the provider Sent folder.');
+    } finally {
+      await client.logout().catch(() => {});
     }
   }
 }

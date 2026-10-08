@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { supabase } from '../config/supabase';
 
 const BACKEND_URL = process.env.EXPO_PUBLIC_API_URL ?? '';
@@ -10,8 +10,8 @@ let cachedFlags: FlagMap | null = null;
 let cacheTs   = 0;
 let inflight:   Promise<FlagMap> | null = null;
 
-async function loadFlags(): Promise<FlagMap> {
-  if (cachedFlags && Date.now() - cacheTs < CACHE_TTL_MS) return cachedFlags;
+async function loadFlags(forceRefresh = false): Promise<FlagMap> {
+  if (!forceRefresh && cachedFlags && Date.now() - cacheTs < CACHE_TTL_MS) return cachedFlags;
   if (inflight) return inflight;
 
   inflight = (async () => {
@@ -60,6 +60,11 @@ export function invalidateFeatureFlagCache(): void {
 export function useFeatureFlags() {
   const [flags, setFlags] = useState<FlagMap>(cachedFlags ?? {});
   const mountedRef = useRef(true);
+  const refresh = useCallback(async () => {
+    const map = await loadFlags(true);
+    if (mountedRef.current) setFlags(map);
+    return map;
+  }, []);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -71,7 +76,7 @@ export function useFeatureFlags() {
 
   const isEnabled = (key: string, defaultValue = true): boolean => flags[key] ?? defaultValue;
 
-  return { isEnabled, flags };
+  return { isEnabled, flags, refresh };
 }
 
 export default useFeatureFlags;

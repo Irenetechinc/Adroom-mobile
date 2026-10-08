@@ -15,13 +15,17 @@ export default function AccountSelectionScreen() {
   const { connectedPlatforms, loadConnectedPlatforms } = useAgentStore();
   const { productData, setProductData } = useStrategyCreationStore();
   const [loading, setLoading] = useState(true);
-  const { isEnabled } = useFeatureFlags();
+  const { isEnabled, refresh: refreshFeatureFlags } = useFeatureFlags();
   const { capabilities } = usePlatformCapabilities();
+  const emailComingSoon = isEnabled('social_email_coming_soon', false);
+  const emailConnectionEnabled = isEnabled('social_email_connections');
+  const emailAccount = connectedPlatforms?.email;
+  const emailConnected = Boolean(emailAccount && emailAccount.connected !== false && emailAccount.status !== 'needs_reconnect');
 
   useFocusEffect(useCallback(() => {
     setLoading(true);
-    loadConnectedPlatforms().finally(() => setLoading(false));
-  }, [loadConnectedPlatforms]));
+    Promise.all([loadConnectedPlatforms(), refreshFeatureFlags()]).finally(() => setLoading(false));
+  }, [loadConnectedPlatforms, refreshFeatureFlags]));
 
   const platforms = (Object.values(connectedPlatforms || {}) as any[])
     .filter((account) => {
@@ -33,10 +37,11 @@ export default function AccountSelectionScreen() {
       return account.connected !== false
         && account.status !== 'needs_reconnect'
         && isEnabled(`social_${platform}_connections`)
-        && !(platform === 'email' && isEnabled('social_email_coming_soon', false))
         && capabilityAllowsSelection;
     });
-  const selected = productData.selectedAccounts || [];
+  const selected = (productData.selectedAccounts || []).filter((platform) =>
+    platform !== 'email' || (emailConnectionEnabled && !emailComingSoon),
+  );
   const toggle = (platform: string) => {
     setProductData({
       selectedAccounts: selected.includes(platform)
@@ -49,6 +54,7 @@ export default function AccountSelectionScreen() {
       Alert.alert('Select an account', 'Choose at least one connected account for this strategy.');
       return;
     }
+    setProductData({ selectedAccounts: selected });
     navigation.navigate('AgentChat', { strategyAccountSelection: true });
   };
 
@@ -57,20 +63,47 @@ export default function AccountSelectionScreen() {
       <View style={styles.header}><TouchableOpacity onPress={() => navigation.goBack()}><ArrowLeft color={colors.text} size={22} /></TouchableOpacity><Text style={styles.headerTitle}>Choose channels</Text><View style={{ width: 22 }} /></View>
       <ScrollView contentContainerStyle={styles.content}>
         <View style={styles.intro}><View style={styles.icon}><Link2 color={colors.cyan} size={22} /></View><Text style={styles.title}>Where should this strategy run?</Text><Text style={styles.subtitle}>Select the connected accounts Adirum AI should use for this campaign. Your choice stays specific to this strategy.</Text></View>
-         {loading ? <ActivityIndicator color={colors.cyan} style={{ marginTop: 32 }} /> : platforms.length ? platforms.map((account: any) => {
+         {loading ? <ActivityIndicator color={colors.cyan} style={{ marginTop: 32 }} /> : (
+          <>
+          {platforms.map((account: any) => {
           const platform = String(account.platform || account.provider || '').toLowerCase();
           const isSelected = selected.includes(platform);
+           const disabledForComingSoon = platform === 'email' && emailComingSoon;
           return (
-            <TouchableOpacity key={platform} style={[styles.account, isSelected && styles.accountSelected]} onPress={() => toggle(platform)}>
+             <TouchableOpacity
+               key={platform}
+               style={[styles.account, isSelected && styles.accountSelected, disabledForComingSoon && { opacity: 0.55 }]}
+               onPress={() => toggle(platform)}
+               disabled={disabledForComingSoon}
+             >
               <View style={[styles.accountMark, isSelected && styles.accountMarkSelected]}><Text style={styles.accountLetter}>{platform.charAt(0).toUpperCase()}</Text></View>
               <View style={{ flex: 1 }}>
                 <Text style={styles.accountName}>{account.page_name || account.display_name || account.handle || platform}</Text>
-                <Text style={styles.accountPlatform}>{platform.replace('_personal', '').replace('_', ' ')}</Text>
+                 <Text style={styles.accountPlatform}>{disabledForComingSoon ? 'Email · Coming soon' : platform.replace('_personal', '').replace('_', ' ')}</Text>
               </View>
-              {isSelected ? <Check color={colors.bg} size={18} /> : <Plus color={colors.muted} size={18} />}
+               {disabledForComingSoon ? <Text style={styles.accountPlatform}>SOON</Text> : isSelected ? <Check color={colors.bg} size={18} /> : <Plus color={colors.muted} size={18} />}
             </TouchableOpacity>
           );
-         }) : <TouchableOpacity style={styles.connectCard} onPress={() => navigation.navigate('ConnectedAccounts')}><Link2 color={colors.cyan} size={22} /><View style={{ flex: 1 }}><Text style={styles.connectTitle}>Connect an available account</Text><Text style={styles.connectText}>Only enabled, configured, connected accounts can be selected for a strategy. Reconnect or configure unavailable accounts first.</Text></View><ArrowRight color={colors.cyan} size={18} /></TouchableOpacity>}
+          })}
+          {emailConnectionEnabled && !emailConnected && (
+            <TouchableOpacity
+              style={[styles.account, emailComingSoon && { opacity: 0.55 }]}
+              onPress={() => navigation.navigate('ConnectedAccounts')}
+              disabled={emailComingSoon}
+            >
+              <View style={styles.accountMark}><Text style={styles.accountLetter}>E</Text></View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.accountName}>Email</Text>
+                <Text style={styles.accountPlatform}>{emailComingSoon ? 'Coming soon' : 'Connect an email account to use it in this strategy'}</Text>
+              </View>
+              {emailComingSoon ? <Text style={styles.accountPlatform}>SOON</Text> : <ArrowRight color={colors.cyan} size={18} />}
+            </TouchableOpacity>
+          )}
+          {platforms.length === 0 && !emailConnectionEnabled && (
+            <TouchableOpacity style={styles.connectCard} onPress={() => navigation.navigate('ConnectedAccounts')}><Link2 color={colors.cyan} size={22} /><View style={{ flex: 1 }}><Text style={styles.connectTitle}>Connect an available account</Text><Text style={styles.connectText}>Only enabled, configured, connected accounts can be selected for a strategy. Reconnect or configure unavailable accounts first.</Text></View><ArrowRight color={colors.cyan} size={18} /></TouchableOpacity>
+          )}
+          </>
+         )}
       </ScrollView>
       <View style={styles.footer}><TouchableOpacity style={styles.next} onPress={continueNext}><Text style={styles.nextText}>Choose accounts</Text><ArrowRight color={colors.bg} size={18} /></TouchableOpacity></View>
     </SafeAreaView>

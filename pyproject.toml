@@ -26,7 +26,7 @@ dependencies = [
     "requests>=2.34.2",
     "socid-extractor>=0.1.1",
     "soupsieve>=2.10",
-    "talon>=1.4.4",
+    "talon==1.4.4",
     "typing-extensions>=4.16.0",
     "xmind>=1.2.0",
     "yarl>=1.25.1",

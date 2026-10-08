@@ -280,6 +280,9 @@ export default function ConnectedAccountsScreen() {
   const [personalHandle, setPersonalHandle] = useState('');
   const [personalAddress, setPersonalAddress] = useState('');
   const [personalSecret, setPersonalSecret] = useState('');
+  const [emailAuthStep, setEmailAuthStep] = useState<'address' | 'password'>('address');
+  const [emailAuthMethod, setEmailAuthMethod] = useState<'oauth' | 'app_password' | 'password' | null>(null);
+  const [emailProvider, setEmailProvider] = useState('');
   const [telegramPassword, setTelegramPassword] = useState('');
   const [telegramNeedsPassword, setTelegramNeedsPassword] = useState(false);
   const [personalRequestId, setPersonalRequestId] = useState('');
@@ -289,7 +292,7 @@ export default function ConnectedAccountsScreen() {
 
   const { tokens, connectedPlatforms, loadConnectedPlatforms, disconnectPlatform } = useAgentStore();
   const { subscription } = useEnergyStore();
-  const { isEnabled } = useFeatureFlags();
+  const { isEnabled, refresh: refreshFeatureFlags } = useFeatureFlags();
   const { capabilities } = usePlatformCapabilities();
   const plan = subscription?.plan ?? 'none';
   const isPro = plan === 'pro' || plan === 'pro_plus';
@@ -303,10 +306,10 @@ export default function ConnectedAccountsScreen() {
 
   const refresh = useCallback(async () => {
     setLoading(true);
-    await loadConnectedPlatforms();
+    await Promise.all([loadConnectedPlatforms(), refreshFeatureFlags()]);
     setLoading(false);
     setInitialLoad(false);
-  }, [loadConnectedPlatforms]);
+  }, [loadConnectedPlatforms, refreshFeatureFlags]);
 
   useFocusEffect(
     useCallback(() => {
@@ -322,6 +325,9 @@ export default function ConnectedAccountsScreen() {
       setPersonalHandle('');
       setPersonalAddress('');
       setPersonalSecret('');
+      setEmailAuthStep('address');
+      setEmailAuthMethod(null);
+      setEmailProvider('');
       setTelegramPassword('');
       setTelegramNeedsPassword(false);
       setPersonalRequestId('');
@@ -355,6 +361,28 @@ export default function ConnectedAccountsScreen() {
     if (!personalBusy) setPersonalProvider(null);
   };
 
+  const completeEmailOAuth = async (authUrl: string, headers: Record<string, string>) => {
+    setPersonalProvider(null);
+    const redirectUri = Linking.createURL('connected-accounts', {
+      queryParams: { emailConnection: 'complete' },
+    });
+    await WebBrowser.openAuthSessionAsync(authUrl, redirectUri);
+
+    let connected = false;
+    for (let attempt = 0; attempt < 12; attempt += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+      const statusResponse = await fetch(`${process.env.EXPO_PUBLIC_API_URL || ''}/api/email-accounts`, { headers });
+      const statusResult = await statusResponse.json().catch(() => ({}));
+      if (statusResponse.ok && statusResult.connection?.connected) {
+        connected = true;
+        break;
+      }
+    }
+    await refresh();
+    if (connected) Alert.alert('Connected', 'Your Microsoft email account is now connected.');
+    else Alert.alert('Sign-in not completed', 'Finish the Microsoft sign-in in your browser, then refresh this screen.');
+  };
+
   const submitPersonalConnection = async () => {
     if (!personalProvider) return;
     setPersonalBusy(true);
@@ -365,7 +393,36 @@ export default function ConnectedAccountsScreen() {
       const base = `${process.env.EXPO_PUBLIC_API_URL || ''}/api/social-connections`;
       const headers = { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` };
       if (personalProvider.id === 'email') {
-        const response = await fetch(`${process.env.EXPO_PUBLIC_API_URL || ''}/api/email-accounts/connect`, {
+        const api = `${process.env.EXPO_PUBLIC_API_URL || ''}/api/email-accounts`;
+        if (emailAuthStep === 'address') {
+          const detectionResponse = await fetch(`${api}/detect`, {
+            method: 'POST',
+            headers,
+            body: JSON.stringify({ email: personalAddress }),
+          });
+          const detection = await detectionResponse.json().catch(() => ({}));
+          if (!detectionResponse.ok) throw new Error(detection.error || 'Could not identify this email provider.');
+          setEmailProvider(String(detection.provider || 'email'));
+          setEmailAuthMethod(detection.authMethod || 'password');
+
+          if (detection.authMethod === 'oauth') {
+            const response = await fetch(`${api}/connect`, {
+              method: 'POST',
+              headers,
+              body: JSON.stringify({ email: personalAddress }),
+            });
+            const result = await response.json().catch(() => ({}));
+            if (!response.ok) throw new Error(result.error || 'Could not start secure email sign-in.');
+            if (!result.requiresOAuth || !result.authUrl) throw new Error('Secure email sign-in could not be started.');
+            await completeEmailOAuth(result.authUrl, headers);
+            return;
+          }
+
+          setEmailAuthStep('password');
+          return;
+        }
+
+        const response = await fetch(`${api}/connect`, {
           method: 'POST',
           headers,
           body: JSON.stringify({ email: personalAddress, password: personalSecret }),
@@ -373,21 +430,7 @@ export default function ConnectedAccountsScreen() {
         const result = await response.json().catch(() => ({}));
         if (!response.ok) throw new Error(result.error || 'Email connection failed.');
         if (result.requiresOAuth && result.authUrl) {
-          setPersonalProvider(null);
-          await WebBrowser.openAuthSessionAsync(result.authUrl, Linking.createURL('connected-accounts'));
-          let connected = false;
-          for (let attempt = 0; attempt < 12; attempt += 1) {
-            await new Promise((resolve) => setTimeout(resolve, 1000));
-            const statusResponse = await fetch(`${process.env.EXPO_PUBLIC_API_URL || ''}/api/email-accounts`, { headers });
-            const statusResult = await statusResponse.json().catch(() => ({}));
-            if (statusResponse.ok && statusResult.connection?.connected) {
-              connected = true;
-              break;
-            }
-          }
-          await refresh();
-          if (connected) Alert.alert('Connected', 'Your Microsoft email account is now connected.');
-          else Alert.alert('Sign-in not completed', 'Finish the Microsoft sign-in in your browser, then refresh this screen.');
+          await completeEmailOAuth(result.authUrl, headers);
           return;
         }
         setPersonalProvider(null);
@@ -659,7 +702,12 @@ export default function ConnectedAccountsScreen() {
                     </Text>
                   </View>
                   <View style={styles.actionRow}>
-                    <TouchableOpacity onPress={() => handleConnect(platform)} style={styles.reconfigureBtn} activeOpacity={0.8}>
+                    <TouchableOpacity
+                      onPress={() => handleConnect(platform)}
+                      style={styles.reconfigureBtn}
+                      activeOpacity={0.8}
+                      disabled={platform.id === 'email' && comingSoon}
+                    >
                       <ExternalLink size={16} color="#00F0FF" /><Text style={styles.reconfigureBtnText}>Reconfigure</Text>
                     </TouchableOpacity>
                     <TouchableOpacity onPress={() => handleDisconnect(platform)} disabled={disc} style={styles.disconnectBtn} activeOpacity={0.8}>
@@ -737,7 +785,11 @@ export default function ConnectedAccountsScreen() {
               <Text style={styles.modalTitle}>Connect {personalProvider?.name}</Text>
               <Text style={styles.modalDesc}>
                 {personalProvider?.id === 'email'
-                  ? 'Enter your email address and, for Gmail or standard IMAP, its app password. Microsoft accounts continue through secure Microsoft sign-in; other providers are detected automatically.'
+                  ? emailAuthStep === 'address'
+                    ? 'Enter your email address. Adirum will identify the provider and open its secure sign-in or ask for the required mailbox password.'
+                    : emailAuthMethod === 'app_password'
+                      ? 'Google requires an app password here; your normal Google password will not work.'
+                      : `Provider detected: ${emailProvider}. Enter the mailbox password or app password required by your provider.`
                   : personalProvider?.id === 'bluesky'
                   ? 'Use your handle and a Bluesky app password. Your main password is never requested.'
                   : personalProvider?.id === 'whatsapp_personal'
@@ -748,8 +800,51 @@ export default function ConnectedAccountsScreen() {
               </Text>
                {personalProvider?.id === 'email' ? (
                 <>
-                  <TextInput value={personalAddress} onChangeText={setPersonalAddress} placeholder="Email address" placeholderTextColor="#64748B" style={styles.modalInput} autoCapitalize="none" keyboardType="email-address" autoComplete="email" />
-                  <TextInput value={personalSecret} onChangeText={setPersonalSecret} placeholder="Email password or app password" placeholderTextColor="#64748B" style={styles.modalInput} secureTextEntry autoCapitalize="none" autoComplete="password" />
+                  <TextInput
+                    value={personalAddress}
+                    onChangeText={setPersonalAddress}
+                    placeholder="Email address"
+                    placeholderTextColor="#64748B"
+                    style={styles.modalInput}
+                    autoCapitalize="none"
+                    keyboardType="email-address"
+                    autoComplete="email"
+                    editable={emailAuthStep === 'address'}
+                  />
+                  {emailAuthStep === 'password' && (
+                    <>
+                      <TouchableOpacity
+                        onPress={() => {
+                          setEmailAuthStep('address');
+                          setEmailAuthMethod(null);
+                          setEmailProvider('');
+                          setPersonalSecret('');
+                        }}
+                        style={{ paddingVertical: 6 }}
+                      >
+                        <Text style={{ color: '#00F0FF', fontSize: 12, fontWeight: '700' }}>Use a different email address</Text>
+                      </TouchableOpacity>
+                      <TextInput
+                        value={personalSecret}
+                        onChangeText={setPersonalSecret}
+                        placeholder={emailAuthMethod === 'app_password' ? 'Google app password' : 'Email password or app password'}
+                        placeholderTextColor="#64748B"
+                        style={styles.modalInput}
+                        secureTextEntry
+                        autoCapitalize="none"
+                        autoComplete="password"
+                      />
+                      {emailAuthMethod === 'app_password' && (
+                        <TouchableOpacity
+                          onPress={() => Linking.openURL('https://myaccount.google.com/apppasswords').catch(() => Alert.alert('Could not open Google', 'Open Google Account settings and create an app password under Security.'))}
+                          style={{ paddingVertical: 8 }}
+                        >
+                          <Text style={{ color: '#00F0FF', fontSize: 13, fontWeight: '700' }}>Create a Google app password</Text>
+                          <Text style={{ color: '#64748B', fontSize: 11, lineHeight: 16, marginTop: 3 }}>Google may require 2-Step Verification before this option appears.</Text>
+                        </TouchableOpacity>
+                      )}
+                    </>
+                  )}
                 </>
                ) : personalProvider?.id === 'bluesky' ? (
                 <>
@@ -787,7 +882,13 @@ export default function ConnectedAccountsScreen() {
                 <TouchableOpacity onPress={submitPersonalConnection} style={styles.modalSubmit} disabled={personalBusy}>
                   {personalBusy
                     ? <ActivityIndicator color="#0B0F19" size="small" />
-                    : <Text style={styles.modalSubmitText}>{personalProvider?.id === 'whatsapp_personal' && personalStep === 'verify' ? 'I Paired WhatsApp' : personalStep === 'verify' ? 'Verify' : 'Continue'}</Text>}
+                    : <Text style={styles.modalSubmitText}>
+                      {personalProvider?.id === 'email'
+                        ? emailAuthStep === 'address' ? 'Continue' : 'Connect email'
+                        : personalProvider?.id === 'whatsapp_personal' && personalStep === 'verify'
+                          ? 'I Paired WhatsApp'
+                          : personalStep === 'verify' ? 'Verify' : 'Continue'}
+                    </Text>}
                 </TouchableOpacity>
               </View>
             </View>

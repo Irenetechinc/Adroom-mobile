@@ -17,3 +17,4 @@
 - [Public data Railway runtime](public-data-railway-runtime.md) — resolve vendored tools across Railway layouts; keep Deepkrak3n/J.A.R.V.I.S as separate real services and repair legacy inbound timestamps.
 - [Conversation discovery and shared research](conversation-research-fallback.md) — retain bounded AgentReach evidence when strict matching or AI collection would otherwise produce zero downstream context.
 - [Deployment boundary](deployment-boundaries.md) — keep production on Railway; don't add Replit deployment/runtime dependencies or Replit npm registry URLs.
+- [Email channel requirements](email-channel-requirements.md) — users should connect mailboxes without configuring server hosts or app-owned credentials.

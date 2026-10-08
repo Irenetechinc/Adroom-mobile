@@ -799,8 +799,13 @@ export class SocialAccountService {
       console.warn(`[SocialAccountService] Blocked ${provider} action because no active strategy selected it.`);
       return false;
     }
-    const recipientKey = recipient
-      ? crypto.createHash('sha256').update(String(recipient)).digest('hex').slice(0, 24)
+    const recipientIdentity = recipient
+      ? provider === 'email'
+        ? String(recipient).trim().toLowerCase()
+        : String(recipient)
+      : null;
+    const recipientKey = recipientIdentity
+      ? crypto.createHash('sha256').update(recipientIdentity).digest('hex').slice(0, 24)
       : null;
     const { data, error } = await this.supabase.rpc('reserve_social_action', {
       p_user_id: userId,
@@ -1405,7 +1410,14 @@ export class SocialAccountService {
     }
   }
 
-  async sendMessage(provider: string, userId: string, recipient: string, text: string): Promise<void> {
+  async sendMessage(
+    provider: string,
+    userId: string,
+    recipient: string,
+    text: string,
+    leadId?: string,
+    emailSubject?: string,
+  ): Promise<void> {
     provider = normalizePlatform(provider);
     await this.assertProviderEnabled(userId, provider);
     await this.assertMessageVariation(userId, provider, recipient, text);
@@ -1423,7 +1435,7 @@ export class SocialAccountService {
     try {
       if (provider === 'email') {
         const { emailAccountService } = await import('./emailAccountService');
-        await emailAccountService.sendForLead(userId, recipient, text, credential);
+        await emailAccountService.sendForLead(userId, recipient, text, credential, leadId, emailSubject);
         await this.recordSuccess(userId, provider);
         await this.rememberEmailContentFingerprint(userId, text);
         return;

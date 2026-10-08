@@ -171,8 +171,14 @@ class InboundDmService {
   private async processEmail(userId: string, leads: LeadRow[]): Promise<void> {
     if (!(await isFeatureEnabled('social_email_connections', userId))
       || await isFeatureEnabled('social_email_coming_soon', userId)) return;
-    const leadByAddress = new Map(leads.map((lead) => [lead.platform_user_id.trim().toLowerCase(), lead]));
-          await emailAccountService.pollReplies(userId, async (reply: CleanEmailReply) => {
+    const leadByAddress = new Map<string, LeadRow>();
+    // processUser orders these by most recent contact. Keep the newest
+    // strategy-specific conversation if a prospect exists in more than one.
+    for (const lead of leads) {
+      const address = lead.platform_user_id.trim().toLowerCase();
+      if (!leadByAddress.has(address)) leadByAddress.set(address, lead);
+    }
+    await emailAccountService.pollReplies(userId, async (reply: CleanEmailReply) => {
       const lead = leadByAddress.get(reply.sender.trim().toLowerCase());
       if (!lead) return false;
       await this.storeInbound(userId, lead, {

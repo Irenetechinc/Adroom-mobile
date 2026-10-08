@@ -450,6 +450,19 @@ app.get('/api/email-accounts', async (req, res) => {
   }
 });
 
+app.post('/api/email-accounts/detect', async (req, res) => {
+  try {
+    const user = await authenticatedUser(req);
+    if (!user) return res.status(401).json({ error: 'Unauthorized.' });
+    if (!(await personalConnectionAllowed(user.id, 'email'))) {
+      return res.status(403).json({ error: 'Email connections are temporarily unavailable.' });
+    }
+    return res.json(await emailAccountService.detectProvider(req.body?.email));
+  } catch (error: any) {
+    return res.status(400).json({ error: String(error?.message || 'Could not identify this email provider.').slice(0, 240) });
+  }
+});
+
 app.post('/api/email-accounts/connect', async (req, res) => {
   try {
     const user = await authenticatedUser(req);

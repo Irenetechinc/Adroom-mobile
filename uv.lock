@@ -1790,7 +1790,7 @@ requires-dist = [
     { name = "requests", specifier = ">=2.34.2" },
     { name = "socid-extractor", specifier = ">=0.1.1" },
     { name = "soupsieve", specifier = ">=2.10" },
-    { name = "talon", specifier = ">=1.4.4" },
+    { name = "talon", specifier = "==1.4.4" },
     { name = "typing-extensions", specifier = ">=4.16.0" },
     { name = "xmind", specifier = ">=1.2.0" },
     { name = "yarl", specifier = ">=1.25.1" },

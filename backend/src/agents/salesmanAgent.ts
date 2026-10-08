@@ -12,11 +12,19 @@ export class SalesmanAgent extends AgentBase {
         super(supabase, 'SALESMAN');
     }
 
-    private async sendLeadMessage(userId: string, platform: string, recipient: string, message: string, tokens: AgentTokens): Promise<boolean> {
+    private async sendLeadMessage(
+        userId: string,
+        platform: string,
+        recipient: string,
+        message: string,
+        tokens: AgentTokens,
+        leadId?: string,
+        emailSubject?: string,
+    ): Promise<boolean> {
         const normalized = normalizePlatform(platform);
         const personalProvider = normalized === 'whatsapp' ? 'whatsapp_personal' : normalized;
         if (['telegram', 'whatsapp_personal', 'signal_personal', 'bluesky', 'delta_chat', 'email'].includes(personalProvider)) {
-            await socialAccountService.sendMessage(personalProvider, userId, recipient, message);
+            await socialAccountService.sendMessage(personalProvider, userId, recipient, message, leadId, emailSubject);
             return true;
         }
         if ((normalized === 'facebook' || normalized === 'instagram') && tokens.facebook && recipient) {
@@ -525,19 +533,24 @@ Return valid JSON only with this schema:
             void leadProfileBuilder.enqueueForLead(task.user_id, lead.id).catch((error: any) => {
                 this.log(`Lead profile queue unavailable for ${lead.id}: ${String(error?.message || error).slice(0, 240)}`);
             });
+            const emailChannel = normalizePlatform(platform) === 'email';
             const prompt = `Write the first respectful, human conversation message to a high-intent prospect.
 Goal: ${strategy?.goal || 'sales'}
 Product or service: ${JSON.stringify(product || {}).slice(0, 5000)}
 Public signal: ${String(content.text || '').slice(0, 2500)}
 Lead preparation profile: ${JSON.stringify(profile || {}).slice(0, 5000)}
 Platform: ${platform}
-Do not claim private facts or invent a relationship. Address the public signal directly, be useful, and ask at most one natural next question. No mass-message language, no hard-coded script, no emojis unless the signal uses them. Return JSON: {"message":"..."}`;
+Do not claim private facts or invent a relationship. Address the public signal directly, be useful, and ask at most one natural next question. Use the prospect's first name when available and reference one concrete, verifiable public detail; never invent a name or detail. No mass-message language, no hard-coded script, no emojis unless the signal uses them.
+${emailChannel
+    ? 'For email, include a truthful 4-8 word subject that matches the message and strategy; do not use a fake reply prefix or clickbait. Return JSON: {"subject":"...","message":"..."}'
+    : 'Return JSON: {"message":"..."}'}`;
             const response = await this.ai.generateStrategy({}, prompt);
             const message = String(response.parsedJson?.message || '').trim();
+            const emailSubject = emailChannel ? String(response.parsedJson?.subject || '').trim() : undefined;
             if (!message) throw new Error('AI could not generate a conversation message.');
 
             const tokens = await this.getTokens(task.user_id);
-            const sent = await this.sendLeadMessage(task.user_id, platform, recipient, message, tokens);
+            const sent = await this.sendLeadMessage(task.user_id, platform, recipient, message, tokens, lead.id, emailSubject);
             await this.supabase.from('lead_dm_messages').insert({
                 lead_id: lead.id,
                 user_id: task.user_id,
@@ -548,6 +561,7 @@ Do not claim private facts or invent a relationship. Address the public signal d
                 meta: {
                     triggered_by: task.task_type,
                     action_type: content.action_type || 'public_engagement',
+                    ...(emailSubject ? { email_subject: emailSubject } : {}),
                     signal_id: content.signal_id || null,
                     sent,
                 },
@@ -807,6 +821,7 @@ HISTORY: ${conversationThread}`);
                         platform_user_id || lead.platform_user_id,
                         guard.dynamicRedirect,
                         tok,
+                        lead_id,
                     );
                 } catch {}
                 try {
@@ -952,6 +967,7 @@ Return JSON: { "message": "the reply text", "reasoning": "why this reply" }`;
                 platform_user_id || lead.platform_user_id,
                 reply,
                 tokens,
+                lead_id,
             );
             // Additional platforms as they gain DM API support
         } catch (e: any) {
@@ -1153,7 +1169,7 @@ Return JSON: { "message": "the reply" }`;
 
         let sent = false;
         try {
-            sent = await this.sendLeadMessage(task.user_id, lead.platform, lead.platform_user_id, reply, tokens);
+            sent = await this.sendLeadMessage(task.user_id, lead.platform, lead.platform_user_id, reply, tokens, lead.id);
         } catch (e: any) { this.log(`Payment response send failed: ${e.message}`); }
 
         await this.supabase.from('lead_dm_messages').insert({
@@ -1389,7 +1405,7 @@ Return JSON: { "message": "string" }
                 const message = response.parsedJson?.message;
                 if (!message) continue;
 
-                const sent = await this.sendLeadMessage(userId, lead.platform, lead.platform_user_id, message, tokens);
+                const sent = await this.sendLeadMessage(userId, lead.platform, lead.platform_user_id, message, tokens, lead.id);
                 if (!sent) {
                     this.log(`Follow-up skipped — no connected ${lead.platform} account for ${lead.platform_username}`);
                     continue;
@@ -1566,7 +1582,7 @@ Return JSON:
         // Send the closing DM via platform
         let dmSent = false;
         try {
-            dmSent = await this.sendLeadMessage(userId, lead.platform, lead.platform_user_id, closing.message, tokens);
+            dmSent = await this.sendLeadMessage(userId, lead.platform, lead.platform_user_id, closing.message, tokens, lead.id);
         } catch (e: any) {
             this.log(`Closing DM send failed: ${e.message}`);
         }
