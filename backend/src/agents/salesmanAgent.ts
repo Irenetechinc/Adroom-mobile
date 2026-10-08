@@ -3,7 +3,6 @@ import { AgentBase, AgentTokens } from './agentBase';
 import { AIEngine } from '../config/ai-models';
 import { pushService } from '../services/pushService';
 import { discoverBusinesses, buildOutreachMessage, buildOutreachMessageAI, type PlaceBusiness } from '../services/googleMapsService';
-import { sendEmailViaResend } from '../services/resendEmailService';
 import { socialAccountService } from '../services/socialAccountService';
 import { isPersonalProvider, normalizePlatform, normalizeSelectedPlatforms } from '../services/platformIdentity';
 
@@ -542,7 +541,7 @@ Lead preparation profile: ${JSON.stringify(profile || {}).slice(0, 5000)}
 Platform: ${platform}
 Do not claim private facts or invent a relationship. Address the public signal directly, be useful, and ask at most one natural next question. Use the prospect's first name when available and reference one concrete, verifiable public detail; never invent a name or detail. No mass-message language, no hard-coded script, no emojis unless the signal uses them.
 ${emailChannel
-    ? 'For email, include a truthful 4-8 word subject that matches the message and strategy; do not use a fake reply prefix or clickbait. Return JSON: {"subject":"...","message":"..."}'
+    ? 'For email, write plain text under 80 words, use no more than one link, and include no link in this first email. Include a truthful 4-8 word subject that matches the message and strategy; do not use a fake reply prefix or clickbait. Return JSON: {"subject":"...","message":"..."}'
     : 'Return JSON: {"message":"..."}'}`;
             const response = await this.ai.generateStrategy({}, prompt);
             const message = String(response.parsedJson?.message || '').trim();
@@ -701,10 +700,11 @@ ${emailChannel
      * Nothing is hard-coded — AI Brain reads the entire thread and writes its own reply.
      */
     private async executeInboundReply(taskId: string, task: any): Promise<void> {
-        const { lead_id, inbound_message, platform_user_id } = task.content || {};
+        const { lead_id, platform_user_id, inbound_external_id } = task.content || {};
+        let inbound_message = String(task.content?.inbound_message || task.content?.inbound_text || '').trim();
 
         if (!lead_id || !inbound_message) {
-            await this.failTask(taskId, 'INBOUND_REPLY task missing lead_id or inbound_message');
+            await this.failTask(taskId, 'INBOUND_REPLY task missing lead_id or inbound text');
             return;
         }
 
@@ -712,7 +712,7 @@ ${emailChannel
         const [historyRes, leadRes, strategyRes] = await Promise.all([
             this.supabase
                 .from('lead_dm_messages')
-                .select('direction, message, persona_name, created_at')
+                .select('direction, message, persona_name, created_at, meta')
                 .eq('lead_id', lead_id)
                 .order('created_at', { ascending: true })
                 .limit(30),
@@ -740,17 +740,40 @@ ${emailChannel
             : null;
         const tokens = await this.getTokens(task.user_id);
 
-        // Log the inbound message first (so the thread is complete before AI reads it)
-        try {
-            await this.supabase.from('lead_dm_messages').insert({
-                lead_id,
-                user_id: task.user_id,
-                direction: 'inbound',
-                message: inbound_message,
-                platform: lead.platform,
-                meta: { auto_detected: true, task_id: taskId },
-            });
-        } catch { /* best-effort log */ }
+        // InboundDMService stores the cleaned inbound event before scheduling
+        // this task. Reuse that row (and its Talon-cleaned text) instead of
+        // inserting a second copy into the conversation.
+        const storedInbound = [...history].reverse().find((message: any) =>
+            message.direction === 'inbound'
+            && (inbound_external_id
+              ? String(message.meta?.external_message_id || '') === String(inbound_external_id)
+              : String(message.message || '').trim() === inbound_message),
+        );
+        if (storedInbound?.message) {
+            inbound_message = String(storedInbound.message);
+        } else {
+            try {
+                const { error: inboundInsertError } = await this.supabase.from('lead_dm_messages').insert({
+                    lead_id,
+                    user_id: task.user_id,
+                    direction: 'inbound',
+                    message: inbound_message,
+                    platform: lead.platform,
+                    meta: {
+                        auto_detected: true,
+                        task_id: taskId,
+                        ...(inbound_external_id ? { external_message_id: inbound_external_id } : {}),
+                    },
+                });
+                if (!inboundInsertError) {
+                    history.push({
+                        direction: 'inbound',
+                        message: inbound_message,
+                        created_at: new Date().toISOString(),
+                    });
+                }
+            } catch { /* best-effort fallback for legacy tasks */ }
+        }
 
         const conversationThread = history
             .map(m => `[${m.direction === 'outbound' ? 'Agent' : 'Lead'}]: ${m.message}`)
@@ -1349,6 +1372,7 @@ Return JSON: { "intent_score": 0.0 }
         for (const lead of leads) {
             try {
                 const leadProfile = profileByLead.get(String(lead.id)) || null;
+                const emailLead = normalizePlatform(lead.platform) === 'email';
                 // High-intent leads (>= 0.85): attempt deal closing
                 if (lead.intent_score >= 0.85 && lead.stage !== 'closed') {
                     lead.leadProfile = leadProfile;
@@ -1358,7 +1382,9 @@ Return JSON: { "intent_score": 0.0 }
 
                 // Generate a dynamic, context-aware persona using the AI Brain
                 let persona = { name: 'Alex', tone: 'casual and friendly', opener: 'Hey' };
-                try {
+                if (emailLead) {
+                    persona = { name: '', tone: 'helpful and concise', opener: '' };
+                } else try {
                     const personaPrompt = `Generate a unique human persona to write a DM on ${lead.platform}.
 Lead context: intent score ${lead.intent_score}, first interaction: "${(lead.first_interaction || '').slice(0, 120)}"
 Platform tone norms: ${lead.platform === 'linkedin' ? 'professional, warm' : lead.platform === 'twitter' ? 'concise, witty' : 'friendly, conversational'}
@@ -1377,10 +1403,17 @@ Return JSON only: { "name": "common first name", "tone": "one short phrase", "op
                     `This is your SECOND touchpoint — they haven't replied yet. Reference your first message briefly, then add one compelling detail or story about the product. End with a soft question.`,
                     `This is your THIRD and final message — be real with them. Acknowledge it might not be the right fit right now, but briefly share one thing that might change their mind. Keep it low pressure.`,
                 ];
-                const stepCtx = stepContexts[Math.min(lead.dm_sequence_step, 2)];
+                const emailStepContexts = [
+                    'This is the first email. Explain briefly why this specific business is relevant; do not imply a prior relationship.',
+                    'This is one polite follow-up to the earlier email. Add one useful detail and make it easy to decline.',
+                    'This is the final follow-up. Keep it low-pressure and make clear there will be no further follow-up.',
+                ];
+                const stepCtx = (emailLead ? emailStepContexts : stepContexts)[Math.min(lead.dm_sequence_step, 2)];
 
                 const dmPrompt = `
-You are ${persona.name}, a real person (not a bot) who works with ${lead.platform} creators and businesses.
+${emailLead
+    ? 'Write on behalf of the connected mailbox owner. Do not invent the sender’s identity or claim a personal relationship.'
+    : `You are ${persona.name}, a real person (not a bot) who works with ${lead.platform} creators and businesses.`}
 Your tone is ${persona.tone}. You're reaching out to a potential customer.
 
 Context about them: "${lead.first_interaction}"
@@ -1392,20 +1425,21 @@ ${JSON.stringify(leadProfile)}
 ${stepCtx}
 
 Rules:
-- Write like a real person texting — contractions, natural rhythm, occasional warmth
+- ${emailLead ? 'Write a plain-text email under 80 words.' : 'Write like a real person texting — contractions, natural rhythm, occasional warmth'}
 - NEVER use emojis unless mirroring the lead's style
 - NEVER say "I noticed you commented" — that sounds like a bot
 - Keep it under 3 short sentences
-- End with ONE question or ONE soft call-to-action — never both
-- DO NOT mention being an AI, agent, or automated system
+- ${emailLead ? 'Use no more than one link; the first email must contain no links. Do not include HTML.' : 'End with ONE question or ONE soft call-to-action — never both'}
+- Do not imply a prior relationship or invent facts about the recipient.
 
-Return JSON: { "message": "string" }
+Return JSON: ${emailLead ? '{ "subject": "truthful 4-8 word subject", "message": "plain text body" }' : '{ "message": "string" }'}
 `;
                 const response = await this.ai.generateStrategy({}, dmPrompt);
                 const message = response.parsedJson?.message;
+                const emailSubject = emailLead ? String(response.parsedJson?.subject || '').trim() : undefined;
                 if (!message) continue;
 
-                const sent = await this.sendLeadMessage(userId, lead.platform, lead.platform_user_id, message, tokens, lead.id);
+                const sent = await this.sendLeadMessage(userId, lead.platform, lead.platform_user_id, message, tokens, lead.id, emailSubject);
                 if (!sent) {
                     this.log(`Follow-up skipped — no connected ${lead.platform} account for ${lead.platform_username}`);
                     continue;
@@ -1511,7 +1545,11 @@ Return JSON: { "interval_ms": 86400000, "experiment": "describe the experiment o
                             persona_name: persona.name,
                             sequence_step: lead.dm_sequence_step,
                             platform: lead.platform,
-                            meta: { tone: persona.tone, step_context: stepCtx.slice(0, 100) },
+                            meta: {
+                                tone: persona.tone,
+                                step_context: stepCtx.slice(0, 100),
+                                ...(emailSubject ? { email_subject: emailSubject } : {}),
+                            },
                         });
                     } catch { /* silent — DM log failure must not block the follow-up */ }
                 })();

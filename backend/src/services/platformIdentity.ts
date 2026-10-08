@@ -9,6 +9,7 @@ export const PERSONAL_PROVIDERS = [
   'signal_personal',
   'bluesky',
   'delta_chat',
+  'email',
 ] as const;
 
 export type CanonicalPlatform = string;

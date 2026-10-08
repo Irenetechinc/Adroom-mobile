@@ -12,6 +12,7 @@ const requiredTables = [
   'feature_flags',
   'user_feature_overrides',
   'social_account_connections',
+  'social_action_log',
   'email_oauth_states',
   'personal_inbound_messages',
   'device_push_tokens',
@@ -32,6 +33,11 @@ const requiredTables = [
 ];
 
 const requiredColumns: Record<string, string[]> = {
+  social_account_connections: [
+    'provider', 'status', 'credential_ciphertext', 'credential_iv', 'credential_tag',
+    'warmup_started_at', 'consecutive_errors', 'cooldown_until',
+    'recipient_action_day', 'recipient_actions',
+  ],
   agent_leads: ['call_consent', 'call_consent_at', 'call_consent_source'],
   call_logs: ['user_id', 'lead_id', 'status', 'consent_confirmed', 'summary'],
   shipments: ['user_id', 'product_type', 'pickup_address', 'delivery_address', 'status', 'pickup_details', 'tracking_events'],
@@ -71,6 +77,15 @@ async function main(): Promise<void> {
        WHERE routine_schema = 'public' AND routine_name = 'reserve_social_action'`,
     );
     const missingFunctions = functionResult.rows.length ? [] : ['reserve_social_action'];
+    const requiredEmailFlags = ['social_email_connections', 'social_email_coming_soon'];
+    const featureFlagResult = foundTables.has('feature_flags')
+      ? await pool.query(
+        `SELECT flag_key FROM public.feature_flags WHERE flag_key = ANY($1)`,
+        [requiredEmailFlags],
+      )
+      : { rows: [] };
+    const foundEmailFlags = new Set(featureFlagResult.rows.map((row: { flag_key: string }) => row.flag_key));
+    const missingFeatureFlags = requiredEmailFlags.filter((flag) => !foundEmailFlags.has(flag));
 
     const publicationResult = await pool.query(
       `SELECT DISTINCT c.relname AS table_name
@@ -87,11 +102,12 @@ async function main(): Promise<void> {
     const missingRealtimeTables = realtimeRequired.filter((table) => !realtimeTables.has(table));
 
     const result = {
-      ok: missingTables.length === 0 && missingColumns.length === 0 && missingFunctions.length === 0 && missingRealtimeTables.length === 0,
+      ok: missingTables.length === 0 && missingColumns.length === 0 && missingFunctions.length === 0 && missingRealtimeTables.length === 0 && missingFeatureFlags.length === 0,
       missingTables,
       missingColumns,
       missingFunctions,
       missingRealtimeTables,
+      missingFeatureFlags,
       checkedAt: new Date().toISOString(),
     };
     console.log(JSON.stringify(result, null, 2));

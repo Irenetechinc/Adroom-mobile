@@ -1,0 +1,102 @@
+
+You are implementing a new autonomous email marketing capability into the existing Adirum AI codebase. 
+This is an additive feature. Do not disrupt, break, or replace any existing feature. 
+Do not change the existing social account connection flow. Do not change the existing agent pipeline. 
+This new capability must work in perfect sync with everything already implemented.
+
+The goal is to allow users to connect their email addresses seamlessly, and then Adirum AI agents can 
+send and receive emails on their behalf, matching the user's active strategy product, brand, or service, 
+and engaging potential leads in marketing conversations.
+
+Seamless Connection Requirements
+The user experience must be as simple as entering an email address and password. 
+The user must never see or interact with IMAP hostnames, SMTP ports, OAuth client IDs, or any technical configuration. 
+The backend must detect the email provider from the domain and route to the correct authentication method automatically.
+
+When a user enters their email address, the backend must identify the provider. For Gmail, 
+the backend must use an app password flow, guiding the user to generate an app password 
+from their Google account settings if they have not already done so. For Outlook or Microsoft 365, 
+the backend must use OAuth2 via Microsoft Graph. For generic IMAP providers, the backend must accept
+the password directly and connect using standard IMAP/SMTP. For providers that require OAuth, the backend 
+must handle the authorization flow transparently and return the user to the connection screen.
+
+The backend must embed provider-specific defaults (IMAP host, IMAP port, SMTP host, SMTP port, TLS settings) 
+so the user never sees them. The user must be able to disconnect the email account at any time. 
+The connection status must be visible in the connect accounts screen.
+
+The email connection option must appear in the select account modal during strategy creation flow, 
+alongside Telegram, WhatsApp, Signal, and Bluesky. When the user selects email, 
+the Profile Builder Agent must prioritize finding the client's email address. 
+The Communication Agent must use email as one of the engagement channels. 
+All email conversations must be visible in the conversation screen, threaded correctly, 
+with the same real-time visibility as other channels.
+
+Direct Integration (No Third-Party Unified APIs)
+You must implement direct integration with email providers. Do not use Nylas, AgentMail, or any other unified email API service. 
+The integration must be built directly into the Adirum AI backend and deployed on the existing Railway infrastructure. 
+The backend must manage IMAP connections, SMTP connections, OAuth token refresh, and session persistence directly.
+
+For sending, the backend must use Nodemailer or an equivalent SMTP library to send emails through the user's own 
+mail server. This ensures emails arrive from the user's address and are stored in their Sent folder. 
+For receiving, the backend must use node-imap or an equivalent IMAP library to monitor the user's inbox for new messages. 
+The backend must implement IDLE or polling with appropriate intervals, and must trigger webhooks or internal events when 
+new mail arrives.
+
+The backend must store connection credentials and session state securely, encrypted at rest, with the same level of 
+security already applied to other social account sessions. Credentials must never be exposed to the agent's reasoning context. 
+Session data must never be logged.
+
+Talon Integration for Reply Parsing
+Talon is the email reply extraction library that must be used to parse incoming email replies. 
+When a new email arrives, the backend must fetch the full message body (HTML or plain text) 
+and pass it through Talon to extract the clean reply content, stripping quoted text, signatures, and reply chains.
+
+Talon supports both plain text and HTML processing, with a 93.8 percent success rate across real-world test 
+cases and multi-language support including English, Japanese, Swedish, Polish, Dutch, and German. It handles Gmail, 
+Outlook, Apple Mail, and Thunderbird HTML structures. 
+The extracted clean reply is what gets routed to the Communication Agent for processing.
+
+The backend must apply Talon before any reply content is passed to the agent. 
+Raw email bodies must never be passed to the agent without cleaning. 
+The cleaned reply must be stored in the conversation record for visibility in the conversation screen.
+
+Integration With Existing Pipeline
+The email service must wire into the existing Adirum AI pipeline without disrupting any existing agent. 
+The flow is as follows. The Conversation Agent identifies high-potential clients. The Profile Builder 
+Agent enriches each client record with publicly available data. The Psychology Agent builds a psychological profile. 
+The Communication Agent generates strategy-aligned content and sends it through the connected channel. 
+Email becomes an additional channel for the Communication Agent.
+
+When the Communication Agent decides to engage a lead via email, 
+it must retrieve the lead's email address from the Profile Builder Agent's data, 
+retrieve the active strategy context, generate the email content dynamically (subject line, body, personalization), 
+and send it through the user's connected email account. The email content must match the active strategy product, brand, or service, and must use the psychological profile to build high-conversion conversations.
+
+When a reply is received, the backend must detect the reply, parse it with Talon, 
+route it to the correct conversation thread, and pass the clean content to the Communication Agent. The Communication Agent must decide how to respond based on the strategy and the conversation stage, and must generate the response dynamically. The user must see the full email conversation in the conversation screen in real time, without manual reload.
+
+Anti-Ban and Human-Like Behavior
+Email providers detect spammy patterns. The email service must implement randomized delays between sends. 
+Never send identical messages to multiple recipients. Introduce variation in content and timing. 
+Personalize every message with the client's name, their specific pain point, and a reference to something verifiable. Keep emails short, under 80 words. Plain text, not HTML templates. One link maximum. These are the patterns that real humans use and that inbox providers trust.
+
+Mark incoming replies as read after a natural delay. Simulate typing indicators before sending. Avoid sending links in the first message to a new contact. Implement daily sending limits per account and per recipient. Track these limits and enforce them. Implement exponential backoff on rate limit errors. Implement a circuit breaker that pauses an account after repeated failures. Warm up new accounts gradually. These same human-like patterns already implemented for WhatsApp and Telegram must apply to email.
+
+Deliverability Foundation
+If emails land in spam, the feature is worthless. Gmail, Microsoft, and Yahoo enforce strict authentication requirements. The backend must configure and enforce SPF, DKIM, and DMARC for every domain used for sending. For domains that are not already established, the backend must implement a warmup schedule. Start with 5 to 10 emails per day to engaged recipients, then gradually increase over 4 to 8 weeks. Never blast high volumes from a new domain.
+
+Daily sending limits must be enforced automatically. For new domains, 15 to 25 sends per inbox per day. For established domains, 40 to 50 per mailbox per day. Run 4 to 6 inboxes per domain to distribute volume. Keep spam complaint rate below 0.1 percent. The backend must track sends per account per day, per recipient, and per domain, and must enforce these limits without user intervention.
+
+Admin Controls
+The admin must be able to disable email connection for individual users or all users. The admin must be able to enable a coming soon mode for email. When coming soon mode is active, the email connection option appears in the connect account screen but is disabled with a coming soon message. When it is turned off, email connection becomes available immediately without requiring an app update. These controls must take effect across the app, especially in the connect social account screen and the strategy creation select account modal.
+
+Data Separation and Privacy
+The backend must separate data into two categories. Publicly available non-sensitive data from email headers and content may be shown to the user in the lead and conversation screens. Sensitive or personal data that the backend may encounter during email processing is used only in the backend by the required agent and is never shown to the user in the frontend. Credentials, session tokens, and API keys must never be exposed to the agent or to the user.
+
+Real-Time Visibility
+When the email service sends an email, the conversation screen must update in real time without manual reload. When a reply is received, the conversation screen must update in real time. When the Communication Agent decides to respond, the conversation screen must show the decision and the generated response as it happens. All milestones must be visible in real time as they are achieved. The same real-time update mechanisms already implemented for other channels must be used for email.
+
+Success Criteria
+The implementation is successful when users can connect their email addresses by entering only their email and password, when the backend handles all provider detection and authentication automatically, when Adirum AI agents can send strategy-aligned emails through the user's connected account, when incoming replies are parsed with Talon and routed correctly, when all email conversations are visible in the conversation screen in real time, when anti-ban and deliverability guardrails are enforced, when admin controls work correctly, and when all existing features continue to work without disruption.
+
+Proceed with implementation. Work in sync with what already exists. Enhance without disruption.

@@ -3,7 +3,7 @@ import { AIEngine } from '../config/ai-models';
 import { getServiceSupabaseClient } from '../config/supabase';
 import { pushService } from './pushService';
 import { agentReachAdapter, normalizePublicAuthorName, ReachResult } from './agentReachAdapter';
-import { normalizeSelectedPlatforms } from './platformIdentity';
+import { isPersonalProvider, normalizeSelectedPlatforms } from './platformIdentity';
 import { mapWithConcurrency } from '../utils/asyncConcurrency';
 
 export type StrategyGoal = 'SALESMAN' | 'AWARENESS' | 'PROMOTION' | 'LAUNCH';
@@ -17,12 +17,16 @@ export const GOAL_OUTCOMES: Record<StrategyGoal, { target: string; signal: strin
 
 type Signal = ReachResult & { strategyId: string; userId: string; goal: StrategyGoal; intentScore: number; status: 'identified' | 'high_potential' | 'engaged' };
 type WorkflowState = { strategy: any; product: OfferContext; signals: Signal[]; identified: number; highPotential: number; engaged: number; routed: number };
-const PERSONAL_PLATFORMS = new Set(['telegram', 'whatsapp_personal', 'signal_personal', 'bluesky', 'delta_chat']);
-
 function signalRecipient(signal: Signal): string | undefined {
   const recipient = signal.metadata?.recipient || signal.authorId;
   if (!recipient || recipient === signal.externalId || recipient === signal.url) return undefined;
-  return String(recipient).trim() || undefined;
+  const normalized = String(recipient).trim();
+  if (signal.platform === 'email') {
+    return /^[a-z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-z0-9.-]+\.[a-z]{2,}$/i.test(normalized)
+      ? normalized.toLowerCase()
+      : undefined;
+  }
+  return normalized || undefined;
 }
 
 export interface OfferContext {
@@ -323,7 +327,10 @@ export class ConversationAgent {
          // identity and the public interaction preview are persisted here.
          // Personal channels are never treated as reachable unless discovery
          // produced a real platform recipient, not a search-result URL.
-         const leadPayloads = state.signals.map((signal) => {
+          const leadSignals = state.signals.filter((signal) =>
+            signal.platform !== 'email' || Boolean(signalRecipient(signal)),
+          );
+          const leadPayloads = leadSignals.map((signal) => {
            const recipient = signalRecipient(signal);
            return {
            strategy_id: signal.strategyId,
@@ -333,7 +340,7 @@ export class ConversationAgent {
             platform_username: normalizePublicAuthorName(signal.authorName) || null,
            first_interaction: signal.text.slice(0, 1000),
            intent_score: signal.intentScore,
-           intent_signals: [{ source: signal.kind, url: signal.url || null, recipient: recipient || null, contact_ready: !PERSONAL_PLATFORMS.has(signal.platform) || Boolean(recipient) }],
+            intent_signals: [{ source: signal.kind, url: signal.url || null, recipient: recipient || null, contact_ready: !isPersonalProvider(signal.platform) || Boolean(recipient) }],
            stage: signal.status === 'high_potential' ? 'identified' : 'identified',
            };
          });
@@ -350,7 +357,7 @@ export class ConversationAgent {
           // write is deliberately fast: tool execution belongs to the
           // backend worker and must never block conversation discovery.
           const { leadProfileBuilder } = await import('./leadProfileBuilder');
-          await Promise.all(state.signals.map(async (signal) => {
+          await Promise.all(leadSignals.map(async (signal) => {
            const recipient = signalRecipient(signal);
            const platformUserId = recipient || `discovery:${signal.externalId}`;
            const lead = (leadRows || []).find((row: any) =>
@@ -381,7 +388,7 @@ export class ConversationAgent {
       const topSignals = state.signals
         .filter((signal) => signal.status === 'high_potential')
         .filter((signal) => !selectedPlatforms.length || selectedPlatforms.includes(signal.platform))
-         .filter((signal) => !PERSONAL_PLATFORMS.has(signal.platform) || Boolean(signalRecipient(signal)))
+          .filter((signal) => !isPersonalProvider(signal.platform) || Boolean(signalRecipient(signal)))
         .slice(0, 5);
       for (const signal of topSignals) {
          const recipient = signalRecipient(signal);
@@ -396,7 +403,7 @@ export class ConversationAgent {
          const { data: sharedProfile } = lead?.id
            ? await this.supabase.from('lead_sales_profiles').select('profile').eq('user_id', signal.userId).eq('lead_id', lead.id).maybeSingle()
            : { data: null };
-         const isPersonal = PERSONAL_PLATFORMS.has(signal.platform);
+          const isPersonal = isPersonalProvider(signal.platform);
          await this.supabase.from('agent_tasks').insert({
           strategy_id: signal.strategyId,
           user_id: signal.userId,

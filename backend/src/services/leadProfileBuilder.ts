@@ -1,6 +1,6 @@
 import { AIEngine } from '../config/ai-models';
 import { getServiceSupabaseClient } from '../config/supabase';
-import { agentReachAdapter, type ReachResult } from './agentReachAdapter';
+import { agentReachAdapter, extractPublicBusinessEmail, type ReachResult } from './agentReachAdapter';
 import { normalizePlatform, normalizeSelectedPlatforms } from './platformIdentity';
 import * as featureFlags from './featureFlagService';
 import { pushService } from './pushService';
@@ -87,11 +87,6 @@ const TOOL_NAMES = [
 ] as const;
 
 const PERSONAL_DATA_PATTERN = /(?:\b(?:email|e-mail|phone|telephone|mobile|address|dob|date of birth|income|salary|religion|race|ethnicity|sexuality|political|health|diagnos|password|token|secret|api key)\b|[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}|\+?\d[\d\s().-]{7,}\d)/i;
-const PUBLIC_BUSINESS_EMAIL_LOCALS = new Set([
-  'admin', 'bookings', 'business', 'contact', 'enquiries', 'hello', 'info',
-  'inquiry', 'marketing', 'office', 'partnerships', 'sales', 'support', 'team',
-]);
-
 function safeText(value: unknown, max = 1200): string {
   return String(value || '')
     .replace(/\s+/g, ' ')
@@ -913,29 +908,11 @@ allowedTools=${JSON.stringify(remainingTools)}`);
   }
 
   private findPublicBusinessEmail(results: ReachResult[]): { email: string; sourceUrl: string } | null {
-    const excludedHosts = [
-      'facebook.com', 'instagram.com', 'linkedin.com', 'reddit.com', 'tiktok.com',
-      'twitter.com', 'x.com', 'youtube.com', 'quora.com',
-    ];
-    const emailPattern = /\b([a-z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-z0-9.-]+\.[a-z]{2,})\b/gi;
     for (const result of results) {
       const sourceUrl = safePublicUrl(result.url);
       if (!sourceUrl) continue;
-      let host = '';
-      try {
-        host = new URL(sourceUrl).hostname.toLowerCase().replace(/^www\./, '');
-      } catch {
-        continue;
-      }
-      if (!host.includes('.') || excludedHosts.some((blocked) => host === blocked || host.endsWith(`.${blocked}`))) continue;
-      const candidates = String(result.text || '').match(emailPattern) || [];
-      for (const candidate of candidates) {
-        const email = candidate.trim().toLowerCase();
-        const [local, emailDomain] = email.split('@');
-        if (!PUBLIC_BUSINESS_EMAIL_LOCALS.has(local)) continue;
-        if (emailDomain !== host && !host.endsWith(`.${emailDomain}`) && !emailDomain.endsWith(`.${host}`)) continue;
-        return { email, sourceUrl };
-      }
+      const match = extractPublicBusinessEmail(result.text, sourceUrl);
+      if (match) return match;
     }
     return null;
   }

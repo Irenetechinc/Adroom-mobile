@@ -526,7 +526,7 @@ Rules:
         user_id: userId,
         strategy_id: lead.strategy_id,
         task_type: 'INBOUND_REPLY',
-        action_type: ['telegram', 'whatsapp_personal', 'signal_personal', 'bluesky', 'delta_chat'].includes(String(lead.platform))
+        action_type: ['telegram', 'whatsapp_personal', 'signal_personal', 'bluesky', 'delta_chat', 'email'].includes(String(lead.platform))
           ? 'send_personal_message'
           : 'public_engagement',
         selected_account_id: lead.platform,
@@ -540,6 +540,7 @@ Rules:
           lead_username: lead.platform_username,
           lead_psid: lead.platform_user_id,
           inbound_text: replyText,
+          inbound_external_id: msg.externalId,
           classification: classification.classification,
           reasoning: classification.reasoning,
           current_step: lead.dm_sequence_step,

@@ -70,7 +70,71 @@ function normalizePlatform(platform: string): string {
   return aliases[value] || value;
 }
 
-function extractRecipient(platform: string, url?: string, authorId?: string): string | undefined {
+const PUBLIC_BUSINESS_EMAIL_LOCALS = new Set([
+  'admin', 'bookings', 'business', 'contact', 'enquiries', 'hello', 'info',
+  'inquiry', 'marketing', 'office', 'partnerships', 'sales', 'support', 'team',
+]);
+const EXCLUDED_EMAIL_SOURCE_HOSTS = [
+  'facebook.com', 'instagram.com', 'linkedin.com', 'reddit.com', 'tiktok.com',
+  'twitter.com', 'x.com', 'youtube.com', 'quora.com',
+];
+const PUBLIC_SUFFIX_ONLY_DOMAINS = new Set([
+  'co.uk', 'org.uk', 'ac.uk', 'gov.uk', 'com.au', 'net.au', 'org.au',
+  'co.nz', 'com.ng', 'org.ng', 'net.ng', 'com.br', 'com.mx', 'co.in',
+  'com.sg', 'co.za',
+]);
+const PUBLIC_EMAIL_PATTERN = /\b([a-z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-z0-9.-]+\.[a-z]{2,})\b/gi;
+
+function hostname(value?: string): string {
+  if (!value) return '';
+  try {
+    const parsed = new URL(value);
+    if (!['http:', 'https:'].includes(parsed.protocol) || parsed.username || parsed.password) return '';
+    return parsed.hostname.toLowerCase().replace(/^www\./, '');
+  } catch {
+    return '';
+  }
+}
+
+function sameBusinessDomain(first: string, second: string): boolean {
+  return Boolean(first && second && (
+    first === second
+    || first.endsWith(`.${second}`)
+    || second.endsWith(`.${first}`)
+  ));
+}
+
+export function extractPublicBusinessEmail(
+  text: string,
+  sourceUrl?: string,
+  expectedBusinessUrl?: string,
+): { email: string; sourceUrl: string } | undefined {
+  const sourceHost = hostname(sourceUrl);
+  const expectedHost = expectedBusinessUrl ? hostname(expectedBusinessUrl) : '';
+  if (!sourceHost || (expectedBusinessUrl && !expectedHost)) return undefined;
+  if (EXCLUDED_EMAIL_SOURCE_HOSTS.some((blocked) => sourceHost === blocked || sourceHost.endsWith(`.${blocked}`))) {
+    return undefined;
+  }
+
+  const source = new URL(sourceUrl as string);
+  source.search = '';
+  source.hash = '';
+  for (const candidate of String(text || '').match(PUBLIC_EMAIL_PATTERN) || []) {
+    const email = candidate.trim().toLowerCase();
+    const [local, emailDomain] = email.split('@');
+    if (!PUBLIC_BUSINESS_EMAIL_LOCALS.has(local)) continue;
+    if (PUBLIC_SUFFIX_ONLY_DOMAINS.has(emailDomain)) continue;
+    if (!sameBusinessDomain(sourceHost, emailDomain)) continue;
+    if (expectedHost && !sameBusinessDomain(expectedHost, emailDomain)) continue;
+    return { email, sourceUrl: source.toString() };
+  }
+  return undefined;
+}
+
+function extractRecipient(platform: string, url?: string, authorId?: string, text?: string): string | undefined {
+  if (platform === 'email') {
+    return extractPublicBusinessEmail(text || '', url)?.email;
+  }
   if (authorId) return String(authorId);
   if (!url) return undefined;
   try {
@@ -95,22 +159,30 @@ function extractRecipient(platform: string, url?: string, authorId?: string): st
 export class AgentReachAdapter {
   private mapItem(platform: string, item: any, index: number, query: string): ReachResult {
     const kind = (item.kind || item.type || item.category || '').toString().toLowerCase();
-    const text = String(item.text || item.content || item.title || item.snippet || item.body || item.message || '');
+    const rawText = String(item.text || item.content || item.title || item.snippet || item.body || item.message || '');
 
     const url = item.url || item.link || item.permalink || item.href || undefined;
-    const authorId = item.author_id || item.user?.id || item.user_id || undefined;
-    const recipient = extractRecipient(platform, url, authorId);
+    const publicEmail = platform === 'email' ? extractPublicBusinessEmail(rawText, url) : undefined;
+    const text = platform === 'email'
+      ? rawText.replace(PUBLIC_EMAIL_PATTERN, '[public business contact]')
+      : rawText;
+    const rawAuthorId = item.author_id || item.user?.id || item.user_id || undefined;
+    const authorId = platform === 'email' ? undefined : rawAuthorId;
+    const recipient = platform === 'email'
+      ? publicEmail?.email
+      : extractRecipient(platform, url, authorId, rawText);
+    const rawAuthorName = normalizePublicAuthorName(
+      item.author_name
+      || item.author
+      || item.username
+      || item.user?.display_name
+      || item.user?.name
+      || item.person,
+    );
     return {
       platform,
       externalId: String(item.id || item.post_id || item.review_id || item.url || `${platform}:${query}:${index}`),
-      authorName: normalizePublicAuthorName(
-        item.author_name
-        || item.author
-        || item.username
-        || item.user?.display_name
-        || item.user?.name
-        || item.person,
-      ),
+      authorName: platform === 'email' && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(rawAuthorName) ? '' : rawAuthorName,
       authorId,
       text,
       url,
@@ -121,7 +193,7 @@ export class AgentReachAdapter {
         discovery_mode: 'live_web_search',
         provider: item.source,
         captured_live: true,
-        raw: item,
+        ...(platform !== 'email' ? { raw: item } : {}),
         ...(recipient ? { recipient } : {}),
       },
     };

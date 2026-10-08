@@ -1621,12 +1621,12 @@ app.delete('/api/platform-configs/:platform', async (req, res) => {
     // Personal accounts live in the encrypted connection store rather than
     // ad_configs. Keep the legacy endpoint used by the mobile store working
     // for both connection families.
-    if (isPersonalProvider(platform)) {
-      await socialAccountService.remove(user.id, platform);
-      return res.status(200).json({ success: true });
-    }
     if (platform === 'email') {
       await emailAccountService.disconnect(user.id);
+      return res.status(200).json({ success: true });
+    }
+    if (isPersonalProvider(platform)) {
+      await socialAccountService.remove(user.id, platform);
       return res.status(200).json({ success: true });
     }
 
