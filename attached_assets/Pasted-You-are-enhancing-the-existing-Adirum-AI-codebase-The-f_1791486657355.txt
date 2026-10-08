@@ -1,0 +1,76 @@
+You are enhancing the existing Adirum AI codebase. The free mode and universal free mode provider routing is already implemented and working. Do not rebuild it. Do not break it. Enhance it by adding Cloudflare Workers AI as an additional provider within the existing routing architecture.
+
+You have access to the entire codebase. I do not. Figure out where the existing free mode provider configuration lives, how the multi-account routing works, how the credit management agent intercepts and routes calls, and how the admin toggle between free mode for free users and universal free mode for paid and free tier users is wired. Follow the existing patterns. Do not invent new ones. Do not ask me for file paths or data structures.
+
+What You Are Adding
+Cloudflare Workers AI is a new provider that fits into the existing free mode system. It uses REST API calls. It does not use an SDK. It does not require a Worker binding. It is called directly over HTTPS.
+
+The free tier provides 10,000 Neurons per day. All AI inference consumes Neurons. The platform resets daily at 00:00 UTC. When the daily allocation is exhausted, the API returns a 429 error. The existing routing logic must treat that 429 as a signal to fail over to the next available provider in the rotation, exactly as it does with other free providers.
+
+Two Separate API Credentials
+You must configure two separate Cloudflare Workers AI accounts. Each has its own Account ID and its own API Token. They are separated by task type.
+
+The first account is dedicated to text generation. It handles all language model inference: content writing, replies, summaries, strategy logic, and reasoning.
+
+The second account is dedicated to image generation. It handles all image model inference: post graphics, social visuals, and product imagery.
+
+This separation exists for two reasons. First, each account gets its own independent 10,000 Neuron daily allocation, which doubles the total free capacity. Second, it prevents image generation from starving text generation on a busy day, and vice versa. The two workloads do not compete for the same quota.
+
+Both accounts must be treated the same way the existing free mode accounts are treated. They are part of the rotation pool. They are consumed, monitored, and failed over from exactly like every other account already in the system.
+
+Model Selection Within Each Account
+The text account should use models that minimize Neuron cost while preserving quality. The primary model is @cf/meta/llama-3.2-1b-instruct. It is the most efficient model on the platform and is suitable for high-volume tasks. For tasks that genuinely require more reasoning power, the agent may dynamically route to @cf/mistral/mistral-7b-instruct-v0.2. For the most complex tasks only, the agent may route to @cf/meta/llama-3.1-70b-instruct, but this should be rare because it consumes Neurons far faster than the smaller models.
+
+The image account should use @cf/black-forest-labs/flux-1-schnell as the default. It is the most cost-effective image model and produces social-media-quality visuals. For higher-priority assets, the agent may dynamically route to @cf/black-forest-labs/flux-2-klein-4b.
+
+The agent decides which model to use dynamically based on the task. No hard-coded rules for model selection. The decision is made the same way every other decision in Adirum AI is made: by the AI Brain evaluating the task, the current Neuron consumption, and the quality requirement in real time.
+
+How It Plugs Into Free Mode and Universal Free Mode
+The existing free mode has a defined behavior. It routes free users to free providers. The universal free mode routes both free and paid users to free providers, and the admin can switch between the two modes. Both modes already handle multiple accounts, quota exhaustion, and failover.
+
+Cloudflare Workers AI is added as a new provider type inside that existing system. It does not replace anything. It is another source the router can select from when it is deciding where to send a call.
+
+When the AI Brain or the credit management agent needs to route a text call in free mode or universal free mode, Cloudflare Workers AI is now one of the candidates. When it needs to route an image call, the image account is one of the candidates.
+
+The existing logic that picks a provider, checks quota, sends the request, handles errors, and fails over to the next account remains exactly as it is. You are only adding a new provider definition and registering it with the existing router.
+
+Error Handling and Failover
+The Cloudflare API returns specific errors that the router must understand.
+
+A 429 with an error code indicating rate limiting or daily allocation exhaustion means the account is out of Neurons for the day. The router must mark that account as exhausted and move to the next account in the pool, exactly as it does for any other provider that hits a limit.
+
+A 401 or 403 means the account credentials are invalid or revoked. The router must mark that account as unhealthy and alert the admin, then move to the next account.
+
+A 400 with a model error means the requested model is not available on the free plan or is misspelled. The router must log this and fall back to the default model for that task type.
+
+Any other error must be handled by the existing error handling and dynamic problem solving logic already implemented in Adirum AI. Do not hard-code new error handlers. Route the errors through the existing pipeline.
+
+Environment Configuration
+Two sets of credentials are added to the railway environment configuration as API_TOKEN_1 and API_TOKEN_2, following the same naming and structure as the existing free mode provider credentials.
+
+One set is for the text account. One set is for the image account. Each set includes the Cloudflare API Token for that account.
+
+The credentials must be stored the same way every other provider credential is stored. They must be encrypted at rest. They must never be exposed to the agent's reasoning context. They must never be logged. They must never appear in any user-facing interface.
+
+Admin Controls
+The existing admin controls for free mode and universal free mode must now include Cloudflare Workers AI. The admin must be able to see the current Neuron consumption for each Cloudflare account, just as the admin can see usage for other providers. The admin must be able to enable or disable the Cloudflare provider for free mode and for universal free mode independently, without affecting the main paid provider configuration.
+
+The dashboard must show, in real time, the remaining daily Neurons for each Cloudflare account, the number of calls routed to Cloudflare, and whether either account has been marked as exhausted. This is admin-only information and must not be visible to users.
+
+Behavior in Sync With Existing Systems
+Cloudflare Workers AI must work in sync with every other agent, engine, and tool in Adirum AI. When the Conversation Agent needs text inference in free mode, Cloudflare is available. When the Awareness Agent needs an image in free mode, Cloudflare is available. When the Communication Agent needs to generate a reply in free mode, Cloudflare is available. When the Credit Management Agent evaluates a call and decides to route to economy, Cloudflare is one of the economy options.
+
+The existing multi-account rotation logic applies to Cloudflare just as it applies to every other provider. The existing prompt generation, dynamic decision making, and zero hard-coded rules apply to every call routed through Cloudflare, exactly as they apply everywhere else.
+
+The current routing rule that a user is redirected to economy models when they exceed a threshold, and that the entire system is redirected when the system exceeds a threshold, remains intact. Cloudflare is simply another economy destination.
+
+Constraints
+Do not touch the existing social account connection implementation. Do not touch the existing agent pipeline. Do not touch the existing scheduler, orchestrator, credit management agent, or any other service. Do not change the existing free mode behavior for providers that are already configured. Do not introduce hard-coded rules for Cloudflare model selection. Do not expose credentials to the agent or the user. Do not specify model names in user-facing text.
+
+You are adding a new provider to an existing routing system. The system already knows how to handle multiple providers, multiple accounts, quota exhaustion, failover, and admin toggles. You are giving it one more provider with one more set of accounts. The behavior must be indistinguishable from how the system already handles every other provider.
+
+Success Criteria
+The implementation is successful when text calls in free mode and universal free mode can route to Cloudflare Workers AI using the text account and its API key. Image calls can route to Cloudflare Workers AI using the image account and its API key. Quota exhaustion on either account triggers failover to the next available provider exactly as it does for every other provider. The admin dashboard shows live Neuron usage per account. The admin can enable or disable Cloudflare for free mode and universal free mode independently. No existing behavior is changed. No credentials are exposed. No hard-coded rules are introduced.
+
+Proceed with implementation. Find the existing free mode provider configuration in the codebase. Add Cloudflare Workers AI there. Register it with the router. Add the two credential sets. Wire the admin controls. Test against the existing free mode behavior. Work in sync. Enhance without disruption.
+
