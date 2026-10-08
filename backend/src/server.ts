@@ -6019,9 +6019,10 @@ app.post('/api/sales/discover-businesses', async (req, res) => {
 
 /**
  * POST /api/sales/outreach
- * Sends personalised outreach to a discovered business via email (Resend)
+ * Sends personalised outreach to a discovered business through the selected
+ * connected email account
  * or records a WhatsApp outreach task for manual/automation follow-up.
- * Body: { business, channel, senderName, productOrService, userId?, customMessage? }
+ * Body: { business, channel, senderName, productOrService, strategyId?, customMessage? }
  */
 app.post('/api/sales/outreach', async (req, res) => {
   try {
@@ -6029,7 +6030,7 @@ app.post('/api/sales/outreach', async (req, res) => {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return res.status(401).json({ error: 'Unauthorized.' });
 
-    const { business, channel, senderName, productOrService, customMessage } = req.body;
+    const { business, channel, senderName, productOrService, strategyId, customMessage } = req.body;
     if (!business || !channel || !senderName || !productOrService) {
       return res.status(400).json({ error: 'business, channel, senderName, and productOrService are required.' });
     }
@@ -6038,34 +6039,119 @@ app.post('/api/sales/outreach', async (req, res) => {
     const message = customMessage || buildOutreachMessage(business, senderName, productOrService);
 
     if (channel === 'email') {
-      if (!business.website && !business.email) {
-        return res.status(400).json({ error: 'Business has no email or website on record.' });
+      if (!business.website || !business.email) {
+        return res.status(400).json({ error: 'A publicly listed business email and official website are required.' });
       }
-      const toEmail = business.email || `contact@${new URL(business.website!).hostname}`;
-      const result = await (await import('./services/resendEmailService')).sendEmailViaResend({
-        to: toEmail,
-        subject: `Quick question about ${business.name}`,
-        html: `<div style="font-family:sans-serif;max-width:480px;margin:0 auto;color:#1a1a1a;padding:24px;">
-          <p style="font-size:15px;line-height:1.6;">${message.replace(/\n/g, '<br/>')}</p>
-          <p style="color:#888;font-size:12px;margin-top:24px;">Sent via Adirum AI Sales Agent</p>
-        </div>`,
-        text: message,
-      });
-      if (!result.ok) {
-        return res.status(500).json({ error: result.error || 'Email send failed.' });
+      const { extractPublicBusinessEmail } = await import('./services/agentReachAdapter');
+      const publicContact = extractPublicBusinessEmail(
+        String(business.email),
+        String(business.website),
+        String(business.website),
+      );
+      if (!publicContact) {
+        return res.status(400).json({
+          error: 'Use a public role-based business address (for example, sales@ or contact@) listed on the official website.',
+        });
       }
-      await supabase.from('agent_leads').insert({
+
+      const { data: strategies, error: strategiesError } = await supabase
+        .from('strategies')
+        .select('id, selected_accounts, platforms, is_active, status')
+        .eq('user_id', user.id)
+        .eq('is_active', true)
+        .eq('status', 'active');
+      if (strategiesError) return res.status(500).json({ error: 'Could not verify the active email strategy.' });
+      const activeEmailStrategies = (strategies || []).filter((strategy: any) =>
+        normalizeSelectedPlatforms(strategy.selected_accounts || strategy.platforms || []).includes('email'),
+      );
+      const activeStrategy = strategyId
+        ? activeEmailStrategies.find((strategy: any) => strategy.id === strategyId)
+        : activeEmailStrategies[0];
+      if (!activeStrategy) {
+        return res.status(400).json({ error: 'Select email in an active strategy before sending outreach.' });
+      }
+
+      const { data: existingLead, error: leadLookupError } = await supabase
+        .from('agent_leads')
+        .select('id, strategy_id, stage, dm_sequence_step, next_followup_at, last_contacted_at')
+        .eq('user_id', user.id)
+        .eq('platform', 'email')
+        .eq('platform_user_id', publicContact.email)
+        .maybeSingle();
+      if (leadLookupError) return res.status(500).json({ error: 'Could not check the existing email conversation.' });
+      if (existingLead?.strategy_id && existingLead.strategy_id !== activeStrategy.id) {
+        return res.status(409).json({ error: 'This email contact is already assigned to another strategy.' });
+      }
+      if (existingLead && (
+        ['lost', 'won'].includes(String(existingLead.stage || '').toLowerCase())
+        || Number(existingLead.dm_sequence_step || 0) > 0
+        || Boolean(existingLead.next_followup_at)
+        || Boolean(existingLead.last_contacted_at)
+      )) {
+        return res.status(409).json({ error: 'This email contact is already closed or has been messaged.' });
+      }
+
+      let leadId = existingLead?.id;
+      if (leadId && !existingLead?.strategy_id) {
+        const { error: strategyAttachError } = await supabase.from('agent_leads')
+          .update({ strategy_id: activeStrategy.id })
+          .eq('id', leadId)
+          .eq('user_id', user.id);
+        if (strategyAttachError) return res.status(500).json({ error: 'Could not attach the email conversation to this strategy.' });
+      }
+      if (!leadId) {
+        const { data: newLead, error: leadInsertError } = await supabase.from('agent_leads').insert({
+          strategy_id: activeStrategy.id,
+          user_id: user.id,
+          platform: 'email',
+          platform_username: business.name,
+          platform_user_id: publicContact.email,
+          first_interaction: `Public business contact for ${business.name} listed on its official website.`,
+          intent_score: business.outreach_score || 0.5,
+          intent_signals: [{
+            source: 'google_maps_discovery',
+            place_id: business.place_id,
+            source_url: publicContact.sourceUrl,
+            rating: business.rating,
+          }],
+          stage: 'identified',
+          dm_sequence_step: 0,
+          next_followup_at: null,
+          discovery_source: 'google_maps_discovery',
+          source_url: publicContact.sourceUrl,
+        }).select('id').single();
+        if (leadInsertError) return res.status(500).json({ error: 'Could not create the email conversation.' });
+        leadId = newLead?.id;
+      }
+      if (!leadId) return res.status(500).json({ error: 'Could not create the email conversation.' });
+
+      const emailSubject = `A question about ${business.name}`;
+      try {
+        await socialAccountService.sendMessage('email', user.id, publicContact.email, String(message), leadId, emailSubject);
+      } catch (error: any) {
+        return res.status(400).json({ error: error?.message || 'Email send failed.' });
+      }
+      const sentAt = new Date().toISOString();
+      await supabase.from('lead_dm_messages').insert({
+        lead_id: leadId,
         user_id: user.id,
+        direction: 'outbound',
+        message: String(message),
         platform: 'email',
-        platform_username: business.name,
-        platform_user_id: toEmail,
-        first_interaction: message,
-        intent_score: business.outreach_score || 0.5,
-        intent_signals: [{ source: 'google_maps_discovery', place_id: business.place_id, rating: business.rating }],
-        stage: 'identified',
-        next_followup_at: new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString(),
+        sequence_step: 1,
+        meta: {
+          triggered_by: 'google_maps_discovery',
+          email_subject: emailSubject,
+          source_url: publicContact.sourceUrl,
+        },
       });
-      return res.status(200).json({ success: true, channel: 'email', messageId: result.id });
+      await supabase.from('agent_leads').update({
+        stage: 'engaged',
+        dm_sequence_step: 1,
+        last_contacted_at: sentAt,
+        next_followup_at: new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString(),
+      }).eq('id', leadId).eq('user_id', user.id);
+      return res.status(200).json({ success: true, channel: 'email', lead_id: leadId });
     }
 
     if (channel === 'whatsapp') {

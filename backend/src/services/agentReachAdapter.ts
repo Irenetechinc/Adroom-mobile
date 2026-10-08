@@ -96,6 +96,18 @@ function hostname(value?: string): string {
   }
 }
 
+function safeEmailSourceUrl(value?: string): string | undefined {
+  if (!hostname(value)) return undefined;
+  try {
+    const parsed = new URL(value as string);
+    parsed.search = '';
+    parsed.hash = '';
+    return parsed.toString();
+  } catch {
+    return undefined;
+  }
+}
+
 function sameBusinessDomain(first: string, second: string): boolean {
   return Boolean(first && second && (
     first === second
@@ -161,7 +173,8 @@ export class AgentReachAdapter {
     const kind = (item.kind || item.type || item.category || '').toString().toLowerCase();
     const rawText = String(item.text || item.content || item.title || item.snippet || item.body || item.message || '');
 
-    const url = item.url || item.link || item.permalink || item.href || undefined;
+    const rawUrl = item.url || item.link || item.permalink || item.href || undefined;
+    const url = platform === 'email' ? safeEmailSourceUrl(rawUrl) : rawUrl;
     const publicEmail = platform === 'email' ? extractPublicBusinessEmail(rawText, url) : undefined;
     const text = platform === 'email'
       ? rawText.replace(PUBLIC_EMAIL_PATTERN, '[public business contact]')
@@ -179,10 +192,16 @@ export class AgentReachAdapter {
       || item.user?.name
       || item.person,
     );
+    const authorName = platform === 'email'
+      ? rawAuthorName.replace(PUBLIC_EMAIL_PATTERN, '[public business contact]')
+      : rawAuthorName;
+    const rawExternalId = item.id || item.post_id || item.review_id || url || `${platform}:${query}:${index}`;
     return {
       platform,
-      externalId: String(item.id || item.post_id || item.review_id || item.url || `${platform}:${query}:${index}`),
-      authorName: platform === 'email' && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(rawAuthorName) ? '' : rawAuthorName,
+      externalId: platform === 'email'
+        ? String(rawExternalId).replace(PUBLIC_EMAIL_PATTERN, '[public business contact]')
+        : String(rawExternalId),
+      authorName,
       authorId,
       text,
       url,
@@ -191,7 +210,9 @@ export class AgentReachAdapter {
       metadata: {
         adapter: 'agent-reach',
         discovery_mode: 'live_web_search',
-        provider: item.source,
+        provider: platform === 'email' && item.source
+          ? String(item.source).replace(PUBLIC_EMAIL_PATTERN, '[public business contact]')
+          : item.source,
         captured_live: true,
         ...(platform !== 'email' ? { raw: item } : {}),
         ...(recipient ? { recipient } : {}),
@@ -205,6 +226,21 @@ export class AgentReachAdapter {
       const toolResult = await publicProfileToolAdapters.search(tool, normalized, query);
       if (toolResult.warning) console.warn(`[AgentReachAdapter] ${toolResult.warning}`);
       if (toolResult.hits.length) {
+        if (normalized === 'email') {
+          return toolResult.hits.map((hit, index) => {
+            const sanitized = this.mapItem('email', {
+              id: hit.externalId,
+              author_name: hit.authorName,
+              author_id: hit.authorId,
+              text: hit.text,
+              url: hit.url,
+              kind: hit.kind,
+              captured_at: hit.capturedAt,
+              source: hit.metadata?.provider,
+            }, index, query);
+            return { ...hit, ...sanitized, platform: 'email' };
+          });
+        }
         return toolResult.hits.map((hit) => ({
           ...hit,
           platform: normalizePlatform(hit.platform || normalized),

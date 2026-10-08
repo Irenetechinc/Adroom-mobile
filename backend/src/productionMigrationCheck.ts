@@ -36,8 +36,9 @@ const requiredColumns: Record<string, string[]> = {
   social_account_connections: [
     'provider', 'status', 'credential_ciphertext', 'credential_iv', 'credential_tag',
     'warmup_started_at', 'consecutive_errors', 'cooldown_until',
-    'recipient_action_day', 'recipient_actions',
+    'recipient_action_day', 'recipient_actions', 'last_inbound_at',
   ],
+  social_action_log: ['user_id', 'provider', 'action_type', 'status', 'recipient_hash', 'created_at'],
   agent_leads: ['call_consent', 'call_consent_at', 'call_consent_source'],
   call_logs: ['user_id', 'lead_id', 'status', 'consent_confirmed', 'summary'],
   shipments: ['user_id', 'product_type', 'pickup_address', 'delivery_address', 'status', 'pickup_details', 'tracking_events'],
@@ -47,7 +48,7 @@ const requiredColumns: Record<string, string[]> = {
   device_push_tokens: ['user_id', 'token', 'project_id', 'is_active'],
   agent_tasks: ['action_type', 'selected_account_id', 'recipient_id', 'conversation_id', 'media'],
   scheduler_cursors: ['cursor_name', 'cursor_value', 'updated_at'],
-  email_oauth_states: ['user_id', 'email', 'expires_at'],
+  email_oauth_states: ['state', 'user_id', 'email', 'expires_at'],
 };
 
 async function main(): Promise<void> {

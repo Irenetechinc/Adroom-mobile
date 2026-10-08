@@ -283,6 +283,7 @@ export async function buildOutreachMessageAI(
     brand?: string;
     targetAudience?: string;
     uniqueValue?: string;
+    channel?: 'whatsapp' | 'email';
   },
 ): Promise<string> {
   try {
@@ -299,7 +300,8 @@ export async function buildOutreachMessageAI(
     if ((biz.total_ratings ?? 0) < 20) painSignals.push('very few reviews — hungry for visibility');
     if (reviewSamples.some(r => r.rating <= 2)) painSignals.push('has recent negative reviews — may need marketing help');
 
-    const prompt = `You are a professional consultant named ${senderName} reaching out to a local business owner for the first time via WhatsApp or email. Your goal is NOT to sell — it is to start a genuine, human conversation that builds trust.
+    const isEmail = campaignContext?.channel === 'email';
+    const prompt = `You are ${senderName}, reaching out to a local business using ${isEmail ? 'email' : 'WhatsApp'}. Your goal is to start a relevant, respectful conversation.
 
 ABOUT YOU:
 - Name: ${senderName}
@@ -320,8 +322,8 @@ RULES FOR THIS FIRST MESSAGE:
 4. Do NOT mention your product or service in this first message. Do NOT pitch.
 5. Sound like a real person — casual, direct, and warm. 2-3 short sentences maximum.
 6. No bullet points. No emojis. No "I hope this message finds you well." Nothing corporate.
-7. This is a WhatsApp message, not an email. Write like a human texting another human.
-8. NEVER reference AI, automation, or software tools. You are a human consultant.
+7. ${isEmail ? 'This is a plain-text email under 80 words. Do not include links in the first email.' : 'This is a WhatsApp message, not an email. Keep it natural and brief.'}
+8. Do not imply a prior relationship or invent facts. Use the sender identity supplied by the connected account; do not claim to be human if that would be misleading.
 
 Return ONLY the message text — no quotes, no labels, no explanation.`;
 

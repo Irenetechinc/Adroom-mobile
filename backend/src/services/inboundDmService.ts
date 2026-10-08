@@ -436,10 +436,15 @@ class InboundDmService {
     }
 
     // ── AI: classify the reply and decide next action ─────────────────────────
-    await this.scoreAndActOnReply(userId, lead, msg.text);
+    await this.scoreAndActOnReply(userId, lead, msg.text, msg.externalId);
   }
 
-  private async scoreAndActOnReply(userId: string, lead: LeadRow, replyText: string): Promise<void> {
+  private async scoreAndActOnReply(
+    userId: string,
+    lead: LeadRow,
+    replyText: string,
+    externalMessageId?: string,
+  ): Promise<void> {
     const classifyPrompt = `A lead has replied to an outbound sales DM. Classify this reply and decide the next action.
 
 LEAD CONTEXT:
@@ -540,7 +545,7 @@ Rules:
           lead_username: lead.platform_username,
           lead_psid: lead.platform_user_id,
           inbound_text: replyText,
-          inbound_external_id: msg.externalId,
+          inbound_external_id: externalMessageId,
           classification: classification.classification,
           reasoning: classification.reasoning,
           current_step: lead.dm_sequence_step,

@@ -2,7 +2,8 @@ import { SupabaseClient } from '@supabase/supabase-js';
 import { AgentBase, AgentTokens } from './agentBase';
 import { AIEngine } from '../config/ai-models';
 import { pushService } from '../services/pushService';
-import { discoverBusinesses, buildOutreachMessage, buildOutreachMessageAI, type PlaceBusiness } from '../services/googleMapsService';
+import { discoverBusinesses, buildOutreachMessageAI, type PlaceBusiness } from '../services/googleMapsService';
+import { agentReachAdapter, extractPublicBusinessEmail } from '../services/agentReachAdapter';
 import { socialAccountService } from '../services/socialAccountService';
 import { isPersonalProvider, normalizePlatform, normalizeSelectedPlatforms } from '../services/platformIdentity';
 
@@ -743,12 +744,26 @@ ${emailChannel
         // InboundDMService stores the cleaned inbound event before scheduling
         // this task. Reuse that row (and its Talon-cleaned text) instead of
         // inserting a second copy into the conversation.
-        const storedInbound = [...history].reverse().find((message: any) =>
+        let storedInbound = [...history].reverse().find((message: any) =>
             message.direction === 'inbound'
             && (inbound_external_id
               ? String(message.meta?.external_message_id || '') === String(inbound_external_id)
               : String(message.message || '').trim() === inbound_message),
         );
+        if (!storedInbound && inbound_external_id) {
+            const { data: exactStoredInbound } = await this.supabase
+                .from('lead_dm_messages')
+                .select('direction, message, persona_name, created_at, meta')
+                .eq('lead_id', lead_id)
+                .eq('user_id', task.user_id)
+                .eq('direction', 'inbound')
+                .filter('meta->>external_message_id', 'eq', String(inbound_external_id))
+                .maybeSingle();
+            if (exactStoredInbound) {
+                storedInbound = exactStoredInbound;
+                history.push(exactStoredInbound);
+            }
+        }
         if (storedInbound?.message) {
             inbound_message = String(storedInbound.message);
         } else {
@@ -769,7 +784,9 @@ ${emailChannel
                     history.push({
                         direction: 'inbound',
                         message: inbound_message,
+                        persona_name: null,
                         created_at: new Date().toISOString(),
+                        meta: { external_message_id: inbound_external_id || null },
                     });
                 }
             } catch { /* best-effort fallback for legacy tasks */ }
@@ -1704,6 +1721,24 @@ Return JSON:
     }): Promise<{ reached: number; leads: any[] }> {
         this.log(`Discovering ${params.targetCategory} businesses near "${params.location}" for ${params.outreachChannel} outreach`);
 
+        if (params.outreachChannel === 'email') {
+            const connection = await socialAccountService.get(params.userId, 'email');
+            if (connection?.status !== 'connected') {
+                throw new Error('Connect an email account before starting email business outreach.');
+            }
+            const { data: strategy, error: strategyError } = await this.supabase
+                .from('strategies')
+                .select('selected_accounts, platforms, is_active, status')
+                .eq('id', params.strategyId)
+                .eq('user_id', params.userId)
+                .maybeSingle();
+            if (strategyError) throw strategyError;
+            const selected = normalizeSelectedPlatforms(strategy?.selected_accounts || strategy?.platforms || []);
+            if (!strategy || strategy.is_active !== true || strategy.status !== 'active' || !selected.includes('email')) {
+                throw new Error('Email outreach requires an active strategy with email selected.');
+            }
+        }
+
         const result = await discoverBusinesses({
             location: params.location,
             keyword: params.targetCategory,
@@ -1725,9 +1760,11 @@ Return JSON:
                 const message = await buildOutreachMessageAI(biz, params.senderName, params.productOrService, {
                 goal: params.targetCategory,
                 product: params.productOrService,
+                channel: params.outreachChannel,
             });
 
                 let outreachSent = false;
+                let emailLeadId: string | undefined;
 
                 if (params.outreachChannel === 'whatsapp' && biz.phone) {
                     const phone = biz.phone.replace(/\D/g, '');
@@ -1773,24 +1810,127 @@ Return JSON:
                         outreachSent = true;
                     }
                 } else if (params.outreachChannel === 'email' && biz.website) {
-                    const domain = new URL(biz.website).hostname;
-                    const toEmail = `contact@${domain}`;
-                    const emailResult = await sendEmailViaResend({
-                        to: toEmail,
-                        subject: `Quick question about ${biz.name}`,
-                        html: `<div style="font-family:sans-serif;max-width:480px;margin:0 auto;color:#1a1a1a;padding:24px;">
-                          <p style="font-size:15px;line-height:1.6;">${message.replace(/\n/g, '<br/>')}</p>
-                          <p style="color:#888;font-size:12px;margin-top:24px;">Sent via Adirum AI Sales Agent</p>
-                        </div>`,
-                        text: message,
-                    });
-                    outreachSent = emailResult.ok;
-                    if (!outreachSent) {
-                        this.log(`Email to ${biz.name} failed: ${emailResult.error}`);
+                    let publicContact = extractPublicBusinessEmail(
+                        String((biz as any).email || ''),
+                        biz.website,
+                        biz.website,
+                    );
+                    if (!publicContact) {
+                        const websiteHost = new URL(biz.website).hostname;
+                        const results = await agentReachAdapter.search(
+                            'web',
+                            `"${biz.name}" ${websiteHost} official contact email`,
+                        );
+                        publicContact = results
+                            .map((item) => extractPublicBusinessEmail(item.text, item.url, biz.website))
+                            .find((item) => Boolean(item));
                     }
+                    if (!publicContact) {
+                        this.log(`Email outreach skipped for ${biz.name}: no matching public role-based address was found.`);
+                        continue;
+                    }
+
+                    const { data: existingLead, error: lookupError } = await this.supabase
+                        .from('agent_leads')
+                        .select('id, strategy_id, stage, dm_sequence_step, next_followup_at, last_contacted_at')
+                        .eq('user_id', params.userId)
+                        .eq('platform', 'email')
+                        .eq('platform_user_id', publicContact.email)
+                        .maybeSingle();
+                    if (lookupError) throw lookupError;
+                    if (existingLead?.strategy_id && existingLead.strategy_id !== params.strategyId) {
+                        this.log(`Email outreach skipped for ${biz.name}: contact is already assigned to another strategy.`);
+                        continue;
+                    }
+                    if (existingLead && (
+                        ['lost', 'won'].includes(String(existingLead.stage || '').toLowerCase())
+                        || Number(existingLead.dm_sequence_step || 0) > 0
+                        || Boolean(existingLead.next_followup_at)
+                        || Boolean(existingLead.last_contacted_at)
+                    )) {
+                        this.log(`Email outreach skipped for ${biz.name}: this contact is already closed or has been messaged.`);
+                        continue;
+                    }
+                    if (existingLead?.id) {
+                        emailLeadId = existingLead.id;
+                        if (!existingLead.strategy_id) {
+                            const { error: strategyAttachError } = await this.supabase
+                                .from('agent_leads')
+                                .update({ strategy_id: params.strategyId })
+                                .eq('id', existingLead.id)
+                                .eq('user_id', params.userId);
+                            if (strategyAttachError) throw strategyAttachError;
+                        }
+                    } else {
+                        const { data: newLead, error: insertLeadError } = await this.supabase
+                            .from('agent_leads')
+                            .insert({
+                                strategy_id: params.strategyId,
+                                user_id: params.userId,
+                                platform: 'email',
+                                platform_username: biz.name,
+                                platform_user_id: publicContact.email,
+                                first_interaction: `Public business contact for ${biz.name} listed on its website.`,
+                                intent_score: biz.outreach_score ?? 0.5,
+                                intent_signals: [{
+                                    source: 'google_maps_discovery',
+                                    place_id: biz.place_id,
+                                    source_url: publicContact.sourceUrl,
+                                    rating: biz.rating,
+                                    total_ratings: biz.total_ratings,
+                                    outreach_reason: biz.outreach_reason,
+                                }],
+                                stage: 'identified',
+                                dm_sequence_step: 0,
+                                next_followup_at: null,
+                                discovery_source: 'google_maps_discovery',
+                                source_url: publicContact.sourceUrl,
+                            })
+                            .select('id')
+                            .single();
+                        if (insertLeadError) throw insertLeadError;
+                        emailLeadId = newLead?.id;
+                    }
+                    if (!emailLeadId) throw new Error('Could not create an email lead for this business.');
+
+                    const emailSubject = `A question about ${biz.name}`;
+                    await socialAccountService.sendMessage(
+                        'email',
+                        params.userId,
+                        publicContact.email,
+                        message,
+                        emailLeadId,
+                        emailSubject,
+                    );
+                    outreachSent = true;
+                    const contactedAt = new Date().toISOString();
+                    await this.supabase.from('lead_dm_messages').insert({
+                        lead_id: emailLeadId,
+                        user_id: params.userId,
+                        direction: 'outbound',
+                        message,
+                        platform: 'email',
+                        sequence_step: 1,
+                        meta: {
+                            triggered_by: 'google_maps_discovery',
+                            email_subject: emailSubject,
+                            source_url: publicContact.sourceUrl,
+                        },
+                    });
+                    await this.supabase.from('agent_leads').update({
+                        stage: 'engaged',
+                        dm_sequence_step: 1,
+                        last_contacted_at: contactedAt,
+                        next_followup_at: new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString(),
+                    }).eq('id', emailLeadId).eq('user_id', params.userId);
                 }
 
                 if (outreachSent) {
+                    if (params.outreachChannel === 'email') {
+                        leads.push({ business: biz.name, channel: params.outreachChannel, lead_id: emailLeadId });
+                        this.log(`Email outreach sent to ${biz.name} through the connected account (score: ${biz.outreach_score?.toFixed(2)})`);
+                        continue;
+                    }
                     const { data: lead } = await this.supabase.from('agent_leads').insert({
                         strategy_id: params.strategyId,
                         user_id: params.userId,

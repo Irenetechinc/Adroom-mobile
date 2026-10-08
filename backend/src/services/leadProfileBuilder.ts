@@ -87,6 +87,18 @@ const TOOL_NAMES = [
 ] as const;
 
 const PERSONAL_DATA_PATTERN = /(?:\b(?:email|e-mail|phone|telephone|mobile|address|dob|date of birth|income|salary|religion|race|ethnicity|sexuality|political|health|diagnos|password|token|secret|api key)\b|[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}|\+?\d[\d\s().-]{7,}\d)/i;
+const EMAIL_ADDRESS_PATTERN = /\b[A-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi;
+
+function removeOperationalEmailData(value: unknown): any {
+  if (typeof value === 'string') return value.replace(EMAIL_ADDRESS_PATTERN, '[public business contact]');
+  if (Array.isArray(value)) return value.map(removeOperationalEmailData);
+  if (!value || typeof value !== 'object') return value;
+  const contactKeys = new Set(['email', 'email_address', 'emailaddress', 'recipient', 'platform_user_id', 'platformuserid']);
+  return Object.fromEntries(Object.entries(value as Record<string, unknown>)
+    .filter(([key]) => !contactKeys.has(key.toLowerCase()))
+    .map(([key, item]) => [key, removeOperationalEmailData(item)]));
+}
+
 function safeText(value: unknown, max = 1200): string {
   return String(value || '')
     .replace(/\s+/g, ' ')
@@ -620,19 +632,32 @@ export class LeadProfileBuilder {
       selectedPlatforms = normalizeSelectedPlatforms(strategy?.selected_accounts || strategy?.platforms || []);
     }
     if (!selectedPlatforms.length && lead.platform) selectedPlatforms = [normalizePlatform(lead.platform)];
+    const emailLead = normalizePlatform(lead.platform) === 'email';
+    const platformUsername = safeText(
+      emailLead ? removeOperationalEmailData(lead.platform_username) : lead.platform_username,
+      180,
+    );
+    const firstInteraction = safeText(
+      emailLead ? removeOperationalEmailData(lead.first_interaction) : lead.first_interaction,
+      1400,
+    );
+    const intentSignals = emailLead
+      ? removeOperationalEmailData(lead.intent_signals || [])
+      : lead.intent_signals || [];
+    const platformUserId = emailLead ? '' : safeText(lead.platform_user_id, 180);
     return {
       userId,
       id: lead.id,
       strategyId: lead.strategy_id || null,
       platform: normalizePlatform(lead.platform),
-      platformUserId: safeText(lead.platform_user_id, 180),
-      platformUsername: safeText(lead.platform_username, 180),
-      firstInteraction: safeText(lead.first_interaction, 1400),
-      intentSignals: lead.intent_signals || [],
+      platformUserId,
+      platformUsername,
+      firstInteraction,
+      intentSignals,
       identifiers: extractIdentifiers({
-        platformUsername: lead.platform_username,
-        platformUserId: lead.platform_user_id,
-        intentSignals: lead.intent_signals || [],
+        platformUsername,
+        platformUserId,
+        intentSignals,
       }),
       selectedPlatforms,
     };
