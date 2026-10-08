@@ -36,6 +36,7 @@ export interface PublicLeadIdentity {
 export interface LeadProfile {
   leadId: string;
   publicIdentity: PublicLeadIdentity;
+  emailContactStatus: 'not_requested' | 'found' | 'not_found' | 'unavailable';
   selectedPlatformMatches: PublicSocialHandle[];
   evidence: Array<{ source: string; url: string; excerpt: string; capturedAt: string }>;
   toolsAttempted: string[];
@@ -86,6 +87,10 @@ const TOOL_NAMES = [
 ] as const;
 
 const PERSONAL_DATA_PATTERN = /(?:\b(?:email|e-mail|phone|telephone|mobile|address|dob|date of birth|income|salary|religion|race|ethnicity|sexuality|political|health|diagnos|password|token|secret|api key)\b|[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}|\+?\d[\d\s().-]{7,}\d)/i;
+const PUBLIC_BUSINESS_EMAIL_LOCALS = new Set([
+  'admin', 'bookings', 'business', 'contact', 'enquiries', 'hello', 'info',
+  'inquiry', 'marketing', 'office', 'partnerships', 'sales', 'support', 'team',
+]);
 
 function safeText(value: unknown, max = 1200): string {
   return String(value || '')
@@ -406,6 +411,22 @@ export class LeadProfileBuilder {
       });
       const publicIdentity = await this.buildPublicIdentity(context, publicEvidence);
       const evidence = this.buildEvidence(context, publicEvidence);
+      let emailContactStatus: LeadProfile['emailContactStatus'] = 'not_requested';
+      if (context.selectedPlatforms.includes('email')) {
+        const publicEmail = this.findPublicBusinessEmail(results);
+        if (!publicEmail) {
+          emailContactStatus = 'not_found';
+        } else {
+          try {
+            emailContactStatus = await this.addPublicEmailLead(context, publicEmail.email, publicEmail.sourceUrl)
+              ? 'found'
+              : 'unavailable';
+          } catch {
+            emailContactStatus = 'unavailable';
+            console.warn(`[LeadProfileBuilder] Could not attach public email channel lead lead=${leadId}.`);
+          }
+        }
+      }
       if (!evidence.length && !context.firstInteraction) {
         // A missing public hit is not a reason to skip the psychology handoff.
         // The psychologist must still produce a neutral, evidence-limited
@@ -421,6 +442,7 @@ export class LeadProfileBuilder {
       const result: LeadProfile = {
         leadId,
         publicIdentity,
+        emailContactStatus,
         selectedPlatformMatches: publicIdentity.socialHandles.filter((handle) =>
           context.selectedPlatforms.includes(normalizePlatform(handle.platform))),
         evidence: publicEvidence.slice(0, 20),
@@ -888,6 +910,85 @@ allowedTools=${JSON.stringify(remainingTools)}`);
       !PERSONAL_DATA_PATTERN.test(item.excerpt) &&
       !PERSONAL_DATA_PATTERN.test(item.source),
     );
+  }
+
+  private findPublicBusinessEmail(results: ReachResult[]): { email: string; sourceUrl: string } | null {
+    const excludedHosts = [
+      'facebook.com', 'instagram.com', 'linkedin.com', 'reddit.com', 'tiktok.com',
+      'twitter.com', 'x.com', 'youtube.com', 'quora.com',
+    ];
+    const emailPattern = /\b([a-z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-z0-9.-]+\.[a-z]{2,})\b/gi;
+    for (const result of results) {
+      const sourceUrl = safePublicUrl(result.url);
+      if (!sourceUrl) continue;
+      let host = '';
+      try {
+        host = new URL(sourceUrl).hostname.toLowerCase().replace(/^www\./, '');
+      } catch {
+        continue;
+      }
+      if (!host.includes('.') || excludedHosts.some((blocked) => host === blocked || host.endsWith(`.${blocked}`))) continue;
+      const candidates = String(result.text || '').match(emailPattern) || [];
+      for (const candidate of candidates) {
+        const email = candidate.trim().toLowerCase();
+        const [local, emailDomain] = email.split('@');
+        if (!PUBLIC_BUSINESS_EMAIL_LOCALS.has(local)) continue;
+        if (emailDomain !== host && !host.endsWith(`.${emailDomain}`) && !emailDomain.endsWith(`.${host}`)) continue;
+        return { email, sourceUrl };
+      }
+    }
+    return null;
+  }
+
+  private async addPublicEmailLead(context: LeadContext, email: string, sourceUrl: string): Promise<boolean> {
+    if (!context.strategyId || !context.selectedPlatforms.includes('email')) return false;
+    const { data: existing, error: existingError } = await this.supabase
+      .from('agent_leads')
+      .select('id,strategy_id')
+      .eq('user_id', context.userId)
+      .eq('platform', 'email')
+      .eq('platform_user_id', email)
+      .maybeSingle();
+    if (existingError) throw existingError;
+    if (existing?.id) return existing.strategy_id === context.strategyId;
+
+    const { data: sourceLead, error: sourceError } = await this.supabase
+      .from('agent_leads')
+      .select('intent_score')
+      .eq('id', context.id)
+      .eq('user_id', context.userId)
+      .maybeSingle();
+    if (sourceError || !sourceLead) return false;
+    const { data: inserted, error: insertError } = await this.supabase.from('agent_leads').insert({
+      user_id: context.userId,
+      strategy_id: context.strategyId,
+      platform: 'email',
+      platform_user_id: email,
+      platform_username: context.platformUsername || 'Public business contact',
+      first_interaction: context.firstInteraction.slice(0, 1000),
+      intent_score: Math.max(0, Math.min(1, Number(sourceLead.intent_score) || 0.5)),
+      intent_signals: [{ source: 'public_business_email', url: sourceUrl }],
+      stage: 'identified',
+      dm_sequence_step: 0,
+      next_followup_at: new Date(Date.now() + 30 * 60 * 1000).toISOString(),
+      discovery_source: 'public_business_email',
+      source_url: sourceUrl,
+      discovery_raw: 'Public role-based business contact listed on the linked company domain.',
+    }).select('id').single();
+    if (insertError) {
+      if (/duplicate key|unique constraint/i.test(insertError.message)) return true;
+      throw insertError;
+    }
+    if (!inserted?.id) return false;
+    await this.supabase.from('lead_discovery_log').insert({
+      lead_id: inserted.id,
+      user_id: context.userId,
+      source: 'public_business_email',
+      source_url: sourceUrl,
+      raw_content: 'Public role-based business contact listed on the linked company domain.',
+      confidence: Math.max(0, Math.min(1, Number(sourceLead.intent_score) || 0.5)),
+    });
+    return true;
   }
 
   private buildEvidence(context: LeadContext, publicEvidence: Array<{ source: string; url: string; excerpt: string; capturedAt: string }>) {

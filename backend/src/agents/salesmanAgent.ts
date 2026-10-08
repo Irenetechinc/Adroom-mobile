@@ -15,7 +15,7 @@ export class SalesmanAgent extends AgentBase {
     private async sendLeadMessage(userId: string, platform: string, recipient: string, message: string, tokens: AgentTokens): Promise<boolean> {
         const normalized = normalizePlatform(platform);
         const personalProvider = normalized === 'whatsapp' ? 'whatsapp_personal' : normalized;
-        if (['telegram', 'whatsapp_personal', 'signal_personal', 'bluesky', 'delta_chat'].includes(personalProvider)) {
+        if (['telegram', 'whatsapp_personal', 'signal_personal', 'bluesky', 'delta_chat', 'email'].includes(personalProvider)) {
             await socialAccountService.sendMessage(personalProvider, userId, recipient, message);
             return true;
         }

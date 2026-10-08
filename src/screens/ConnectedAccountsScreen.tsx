@@ -10,9 +10,11 @@ import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { KeyboardAvoidingView, Platform as RNPlatform, ScrollView as RNScrollView } from 'react-native';
 import { RootStackParamList } from '../types';
 import { runWhatsAppPairingAction } from '../services/whatsappPairingAction';
+import * as Linking from 'expo-linking';
+import * as WebBrowser from 'expo-web-browser';
 import {
   ChevronLeft, Link2, Link2Off, CheckCircle2,
-  ShieldCheck, RefreshCw, AlertCircle, ExternalLink, Lock, Zap,
+  ShieldCheck, RefreshCw, AlertCircle, ExternalLink, Lock, Zap, Mail,
 } from 'lucide-react-native';
 import Animated, { FadeInDown } from 'react-native-reanimated';
 import Svg, {
@@ -162,6 +164,7 @@ function SocialIcon({ platform, size = 26 }: { platform: string; size?: number }
     case 'signal_personal': return <SignalIcon size={size} />;
     case 'bluesky':   return <BlueskyIcon size={size} />;
     case 'delta_chat': return <DeltaChatIcon size={size} />;
+    case 'email': return <Mail color="#FFFFFF" size={size} />;
     default:          return null;
   }
 }
@@ -207,6 +210,7 @@ const PLATFORMS: Platform[] = [
   { id: 'signal_personal', name: 'Signal',       sub: 'Personal account · phone verification', bg: '#3A76F0' },
   { id: 'bluesky',   name: 'Bluesky',            sub: 'Personal account · app password', bg: '#1185FE' },
   { id: 'delta_chat', name: 'Delta Chat',        sub: 'Personal account · managed bridge', bg: '#5B5BEA' },
+  { id: 'email', name: 'Email', sub: 'Gmail, Microsoft 365, or IMAP mailbox', bg: '#176B87' },
   { id: 'google',    name: 'Google Ads',         sub: 'Google Marketing Platform',   bg: '#FFFFFF',  comingSoon: true },
   { id: 'linkedin',  name: 'LinkedIn',           sub: 'LinkedIn Marketing',          bg: '#0A66C2' },
 ];
@@ -311,7 +315,7 @@ export default function ConnectedAccountsScreen() {
   );
 
   const handleConnect = (platform: Platform) => {
-    if (['telegram', 'whatsapp_personal', 'signal_personal', 'bluesky', 'delta_chat'].includes(platform.id)) {
+    if (['telegram', 'whatsapp_personal', 'signal_personal', 'bluesky', 'delta_chat', 'email'].includes(platform.id)) {
       setPersonalProvider(platform);
       setPersonalStep('start');
       setPersonalPhone('');
@@ -360,6 +364,37 @@ export default function ConnectedAccountsScreen() {
       if (!session?.access_token) throw new Error('Please sign in again.');
       const base = `${process.env.EXPO_PUBLIC_API_URL || ''}/api/social-connections`;
       const headers = { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` };
+      if (personalProvider.id === 'email') {
+        const response = await fetch(`${process.env.EXPO_PUBLIC_API_URL || ''}/api/email-accounts/connect`, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({ email: personalAddress, password: personalSecret }),
+        });
+        const result = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(result.error || 'Email connection failed.');
+        if (result.requiresOAuth && result.authUrl) {
+          setPersonalProvider(null);
+          await WebBrowser.openAuthSessionAsync(result.authUrl, Linking.createURL('connected-accounts'));
+          let connected = false;
+          for (let attempt = 0; attempt < 12; attempt += 1) {
+            await new Promise((resolve) => setTimeout(resolve, 1000));
+            const statusResponse = await fetch(`${process.env.EXPO_PUBLIC_API_URL || ''}/api/email-accounts`, { headers });
+            const statusResult = await statusResponse.json().catch(() => ({}));
+            if (statusResponse.ok && statusResult.connection?.connected) {
+              connected = true;
+              break;
+            }
+          }
+          await refresh();
+          if (connected) Alert.alert('Connected', 'Your Microsoft email account is now connected.');
+          else Alert.alert('Sign-in not completed', 'Finish the Microsoft sign-in in your browser, then refresh this screen.');
+          return;
+        }
+        setPersonalProvider(null);
+        await refresh();
+        Alert.alert('Connected', 'Your email account is now connected.');
+        return;
+      }
       if (personalProvider.id === 'whatsapp_personal') {
         const result = await runWhatsAppPairingAction({
           step: personalStep === 'start' ? 'start' : 'verify',
@@ -522,7 +557,7 @@ export default function ConnectedAccountsScreen() {
         contentContainerStyle={[styles.scroll, { paddingBottom: Math.max(40, insets.bottom + 20) }]}
       >
         <Text style={styles.pageDesc}>
-          Connect your social accounts so Adirum AI can autonomously publish, reply, and engage on your behalf — across every platform.
+          Connect social or email accounts so Adirum AI can publish, reply, and manage conversations on your behalf.
         </Text>
 
         {!isPro && (
@@ -602,6 +637,13 @@ export default function ConnectedAccountsScreen() {
                     </View>
                     <CheckCircle2 color={needsReconnect ? '#F59E0B' : '#10B981'} size={20} />
                   </View>
+                  {platform.id === 'email' && capability?.dnsDiagnostics && (
+                    <View style={styles.activeBanner}>
+                      <Text style={styles.activeBannerText}>
+                        Domain checks · SPF {String(capability.dnsDiagnostics.spf).toUpperCase()} · DKIM {String(capability.dnsDiagnostics.dkim).toUpperCase()} · DMARC {String(capability.dnsDiagnostics.dmarc).toUpperCase()}. Missing records can affect delivery; manage DNS with your domain provider.
+                      </Text>
+                    </View>
+                  )}
                   <View style={styles.activeBanner}>
                     {needsReconnect ? <AlertCircle size={14} color="#F59E0B" /> : <ShieldCheck size={14} color="#10B981" />}
                     <Text style={[styles.activeBannerText, needsReconnect && { color: '#F59E0B' }]}>
@@ -691,10 +733,12 @@ export default function ConnectedAccountsScreen() {
             showsVerticalScrollIndicator={false}
           >
             <View style={styles.modalCard}>
-              <Text style={styles.modalEyebrow}>PERSONAL ACCOUNT</Text>
+              <Text style={styles.modalEyebrow}>{personalProvider?.id === 'email' ? 'EMAIL ACCOUNT' : 'PERSONAL ACCOUNT'}</Text>
               <Text style={styles.modalTitle}>Connect {personalProvider?.name}</Text>
               <Text style={styles.modalDesc}>
-                {personalProvider?.id === 'bluesky'
+                {personalProvider?.id === 'email'
+                  ? 'Enter your email address and, for Gmail or standard IMAP, its app password. Microsoft accounts continue through secure Microsoft sign-in; other providers are detected automatically.'
+                  : personalProvider?.id === 'bluesky'
                   ? 'Use your handle and a Bluesky app password. Your main password is never requested.'
                   : personalProvider?.id === 'whatsapp_personal'
                     ? 'Pair WhatsApp from the app using the code below. No QR code is used.'
@@ -702,7 +746,12 @@ export default function ConnectedAccountsScreen() {
                       ? 'Enter the Telegram two-step verification password to finish signing in.'
                     : 'Your verification details stay encrypted and are never shown to the agent.'}
               </Text>
-               {personalProvider?.id === 'bluesky' ? (
+               {personalProvider?.id === 'email' ? (
+                <>
+                  <TextInput value={personalAddress} onChangeText={setPersonalAddress} placeholder="Email address" placeholderTextColor="#64748B" style={styles.modalInput} autoCapitalize="none" keyboardType="email-address" autoComplete="email" />
+                  <TextInput value={personalSecret} onChangeText={setPersonalSecret} placeholder="Email password or app password" placeholderTextColor="#64748B" style={styles.modalInput} secureTextEntry autoCapitalize="none" autoComplete="password" />
+                </>
+               ) : personalProvider?.id === 'bluesky' ? (
                 <>
                   <TextInput value={personalHandle} onChangeText={setPersonalHandle} placeholder="Handle (name.bsky.social)" placeholderTextColor="#64748B" style={styles.modalInput} autoCapitalize="none" />
                   <TextInput value={personalSecret} onChangeText={setPersonalSecret} placeholder="App password" placeholderTextColor="#64748B" style={styles.modalInput} secureTextEntry autoCapitalize="none" />

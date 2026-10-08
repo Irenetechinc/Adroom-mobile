@@ -53,7 +53,9 @@ INSERT INTO feature_flags (flag_key, label, description, enabled) VALUES
   ('social_whatsapp_personal_connections','Personal WhatsApp Connections','Allow personal WhatsApp account connections and execution',true),
   ('social_signal_personal_connections','Signal Connections','Allow Signal account connections and execution',true),
   ('social_bluesky_connections','Bluesky Connections','Allow Bluesky account connections and execution',true),
-  ('social_delta_chat_connections','Delta Chat Connections','Allow Delta Chat account connections and execution',true)
+  ('social_delta_chat_connections','Delta Chat Connections','Allow Delta Chat account connections and execution',true),
+  ('social_email_connections','Email Connections','Allow users to connect email accounts and use email conversations',true),
+  ('social_email_coming_soon','Email Coming Soon','Show email connections as unavailable while the feature is being prepared',false)
 ON CONFLICT (flag_key) DO NOTHING;
 
 NOTIFY pgrst, 'reload schema';

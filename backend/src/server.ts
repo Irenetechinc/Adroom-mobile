@@ -38,6 +38,7 @@ import { apmaOAuthRouter } from './apma/apmaOAuthRouter';
 import { TelephonyService, telephonyService } from './services/telephonyService';
 import { ShipmentService, shipmentService } from './services/shipmentService';
 import { socialAccountService, type PersonalProvider } from './services/socialAccountService';
+import { emailAccountService } from './services/emailAccountService';
 import { deltaChatBridgeToken, deltaChatCore, type DeltaChatCredential } from './services/deltaChatCore';
 import { getTelegramAppConfigStatus } from './services/telegramConfig';
 import { normalizePlatform, normalizeSelectedPlatforms, isPersonalProvider } from './services/platformIdentity';
@@ -144,6 +145,9 @@ const REQUIRED_RUNTIME_CONFIG = [
   { key: 'OPENAI_API_KEY', required: false },
   { key: 'GEMINI_API_KEY', required: false },
   { key: 'RESEND_API_KEY', required: false },
+  { key: 'EMAIL_MICROSOFT_CLIENT_ID', required: false },
+  { key: 'EMAIL_MICROSOFT_CLIENT_SECRET', required: false },
+  { key: 'EMAIL_MICROSOFT_REDIRECT_URI', required: false },
   { key: 'FB_APP_ID', required: false },
   { key: 'FB_APP_SECRET', required: false },
   { key: 'LINKEDIN_CLIENT_ID', required: false },
@@ -433,6 +437,66 @@ app.get('/api/social-connections', async (req, res) => {
     return res.json({ connections: await socialAccountService.list(user.id) });
   } catch (error: any) {
     return res.status(500).json({ error: error.message });
+  }
+});
+
+app.get('/api/email-accounts', async (req, res) => {
+  try {
+    const user = await authenticatedUser(req);
+    if (!user) return res.status(401).json({ error: 'Unauthorized.' });
+    return res.json({ connection: await emailAccountService.status(user.id) });
+  } catch {
+    return res.status(500).json({ error: 'Could not load email connection status.' });
+  }
+});
+
+app.post('/api/email-accounts/connect', async (req, res) => {
+  try {
+    const user = await authenticatedUser(req);
+    if (!user) return res.status(401).json({ error: 'Unauthorized.' });
+    if (!(await personalConnectionAllowed(user.id, 'email'))) {
+      return res.status(403).json({ error: 'Email connections are temporarily unavailable.' });
+    }
+    const result = await emailAccountService.connectWithPassword(user.id, req.body?.email, req.body?.password);
+    if (result.requiresOAuth) {
+      const redirectUri = String(process.env.EMAIL_MICROSOFT_REDIRECT_URI || `${getPublicBaseUrl(req)}/api/email-accounts/oauth/microsoft/callback`);
+      const authUrl = await emailAccountService.createMicrosoftOAuthUrl(user.id, req.body?.email, redirectUri);
+      return res.json({ requiresOAuth: true, authUrl });
+    }
+    return res.status(201).json({ connection: result.connection });
+  } catch (error: any) {
+    const status = /not configured on this server/i.test(String(error?.message || '')) ? 503 : 400;
+    return res.status(status).json({ error: String(error?.message || 'Email connection failed.').slice(0, 240) });
+  }
+});
+
+app.get('/api/email-accounts/oauth/microsoft/callback', async (req, res) => {
+  const appReturn = 'adroom://connected-accounts?emailConnection=complete';
+  try {
+    if (req.query.error) throw new Error('Microsoft sign-in was cancelled or denied.');
+    const state = String(req.query.state || '');
+    const code = String(req.query.code || '');
+    if (!state || !code) throw new Error('Microsoft sign-in did not return a valid authorization code.');
+    const redirectUri = String(process.env.EMAIL_MICROSOFT_REDIRECT_URI || `${getPublicBaseUrl(req)}/api/email-accounts/oauth/microsoft/callback`);
+    await emailAccountService.finishMicrosoftOAuth(state, code, redirectUri);
+    return res.redirect(302, appReturn);
+  } catch (error: any) {
+    const message = String(error?.message || 'Email sign-in failed.').replace(/[<>]/g, '').slice(0, 200);
+    return res.status(400).type('html').send(
+      `<!doctype html><meta name="viewport" content="width=device-width, initial-scale=1"><title>Email connection</title>`
+      + `<p>${message}</p><a href="${appReturn}">Return to Adirum AI</a>`,
+    );
+  }
+});
+
+app.delete('/api/email-accounts', async (req, res) => {
+  try {
+    const user = await authenticatedUser(req);
+    if (!user) return res.status(401).json({ error: 'Unauthorized.' });
+    await emailAccountService.disconnect(user.id);
+    return res.json({ success: true });
+  } catch {
+    return res.status(500).json({ error: 'Could not disconnect email account.' });
   }
 });
 
@@ -1495,7 +1559,7 @@ app.get('/api/platform-capabilities', async (req, res) => {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return res.status(401).json({ error: 'Unauthorized.' });
 
-    const providers = ['facebook', 'instagram', 'tiktok', 'twitter', 'whatsapp', 'linkedin', 'google', 'telegram', 'whatsapp_personal', 'signal_personal', 'bluesky', 'delta_chat'];
+    const providers = ['facebook', 'instagram', 'tiktok', 'twitter', 'whatsapp', 'linkedin', 'google', 'telegram', 'whatsapp_personal', 'signal_personal', 'bluesky', 'delta_chat', 'email'];
     const configs = await Promise.all(providers.map(async (provider) => {
       if (provider === 'delta_chat') {
         return { provider, ...(await getDeltaChatCapability(user.id)) };
@@ -1518,7 +1582,10 @@ app.get('/api/platform-capabilities', async (req, res) => {
           : !configured
             ? 'missing_server_configuration'
             : 'available';
-      return { provider, enabled, comingSoon, configured, available, reason };
+      const dnsDiagnostics = provider === 'email'
+        ? await emailAccountService.diagnoseDomain(user.id)
+        : undefined;
+      return { provider, enabled, comingSoon, configured, available, reason, ...(dnsDiagnostics ? { dnsDiagnostics } : {}) };
     }));
     return res.status(200).json({ capabilities: configs });
   } catch (e: any) {
@@ -1543,6 +1610,10 @@ app.delete('/api/platform-configs/:platform', async (req, res) => {
     // for both connection families.
     if (isPersonalProvider(platform)) {
       await socialAccountService.remove(user.id, platform);
+      return res.status(200).json({ success: true });
+    }
+    if (platform === 'email') {
+      await emailAccountService.disconnect(user.id);
       return res.status(200).json({ success: true });
     }
 

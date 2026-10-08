@@ -1,5 +1,5 @@
 # Use official Node.js image
-FROM node:18-bookworm-slim
+FROM node:20-bookworm-slim
 
 # Required by the deterministic uploaded-video editing pipeline.
 RUN apt-get update \
@@ -32,6 +32,10 @@ RUN python3 -c "import maigret; print('Maigret runtime ready')" \
     && cd ./tools/vendor/helix \
     && python3 helix.py --help >/dev/null \
     && echo "Helix runtime ready"
+
+# Talon cleans incoming email replies before they reach the lead conversation
+# classifier or any agent prompt.
+RUN python3 -m pip install --no-cache-dir --break-system-packages talon==1.4.4
 
 # Osintgraph has a larger, pinned dependency set. Keep it isolated from the
 # Maigret/Helix runtime and point PROFILE_BUILDER_OSINTGRAPH_PYTHON at it only

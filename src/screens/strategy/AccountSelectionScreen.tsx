@@ -33,6 +33,7 @@ export default function AccountSelectionScreen() {
       return account.connected !== false
         && account.status !== 'needs_reconnect'
         && isEnabled(`social_${platform}_connections`)
+        && !(platform === 'email' && isEnabled('social_email_coming_soon', false))
         && capabilityAllowsSelection;
     });
   const selected = productData.selectedAccounts || [];

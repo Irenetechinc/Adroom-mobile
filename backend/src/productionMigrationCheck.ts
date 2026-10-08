@@ -12,6 +12,7 @@ const requiredTables = [
   'feature_flags',
   'user_feature_overrides',
   'social_account_connections',
+  'email_oauth_states',
   'personal_inbound_messages',
   'device_push_tokens',
   'agent_tasks',
@@ -40,6 +41,7 @@ const requiredColumns: Record<string, string[]> = {
   device_push_tokens: ['user_id', 'token', 'project_id', 'is_active'],
   agent_tasks: ['action_type', 'selected_account_id', 'recipient_id', 'conversation_id', 'media'],
   scheduler_cursors: ['cursor_name', 'cursor_value', 'updated_at'],
+  email_oauth_states: ['user_id', 'email', 'expires_at'],
 };
 
 async function main(): Promise<void> {

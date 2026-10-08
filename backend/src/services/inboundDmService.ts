@@ -24,7 +24,9 @@ import { getServiceSupabaseClient } from '../config/supabase';
 import { AIEngine } from '../config/ai-models';
 import { pushService } from './pushService';
 import { socialAccountService } from './socialAccountService';
+import { emailAccountService, isEmailOptOut, type CleanEmailReply } from './emailAccountService';
 import { isPersonalProvider, normalizePlatform } from './platformIdentity';
+import { isEnabled as isFeatureEnabled } from './featureFlagService';
 
 const FB_GRAPH = 'https://graph.facebook.com/v25.0';
 
@@ -33,6 +35,10 @@ interface InboundMsg {
   senderPsid: string;
   text: string;
   timestamp: string;
+  emailSubject?: string;
+  emailMessageId?: string;
+  microsoftMessageId?: string;
+  inReplyTo?: string;
 }
 
 interface LeadRow {
@@ -124,6 +130,14 @@ class InboundDmService {
     // Process each platform
     for (const [platform, platformLeads] of Object.entries(byPlatform)) {
       const normalizedPlatform = normalizePlatform(platform);
+      if (normalizedPlatform === 'email') {
+        try {
+          await this.processEmail(userId, platformLeads);
+        } catch (e: any) {
+          console.error(`[InboundDM] Email inbox check failed for user ${userId}.`);
+        }
+        continue;
+      }
       if (isPersonalProvider(normalizedPlatform)) {
         try {
           await this.processPersonal(userId, normalizedPlatform, platformLeads);
@@ -152,6 +166,27 @@ class InboundDmService {
         console.error(`[InboundDM] ${platform} check failed for user ${userId}:`, e.message);
       }
     }
+  }
+
+  private async processEmail(userId: string, leads: LeadRow[]): Promise<void> {
+    if (!(await isFeatureEnabled('social_email_connections', userId))
+      || await isFeatureEnabled('social_email_coming_soon', userId)) return;
+    const leadByAddress = new Map(leads.map((lead) => [lead.platform_user_id.trim().toLowerCase(), lead]));
+          await emailAccountService.pollReplies(userId, async (reply: CleanEmailReply) => {
+      const lead = leadByAddress.get(reply.sender.trim().toLowerCase());
+      if (!lead) return false;
+      await this.storeInbound(userId, lead, {
+        externalId: reply.externalId,
+        senderPsid: reply.sender,
+        text: reply.text,
+        timestamp: reply.receivedAt,
+        emailSubject: reply.subject,
+        emailMessageId: reply.internetMessageId,
+        microsoftMessageId: reply.providerMessageId,
+        inReplyTo: reply.inReplyTo,
+      });
+      return true;
+    });
   }
 
   private async processPersonal(userId: string, provider: string, leads: LeadRow[]): Promise<void> {
@@ -345,14 +380,18 @@ class InboundDmService {
 
     if (existing?.length) return; // Already processed
 
-    console.log(`[InboundDM] New reply from @${lead.platform_username} (${lead.platform}): "${msg.text.slice(0, 60)}..."`);
+    if (lead.platform === 'email') {
+      console.log(`[InboundDM] New email reply stored for lead ${lead.id}.`);
+    } else {
+      console.log(`[InboundDM] New reply from @${lead.platform_username} (${lead.platform}): "${msg.text.slice(0, 60)}..."`);
+    }
 
     // ── Push notification: lead replied ───────────────────────────────────────
     pushService.notifyLeadReplied(userId, {
       leadId: lead.id,
       leadName: lead.platform_username || 'A lead',
       platform: lead.platform,
-      replyPreview: msg.text,
+      replyPreview: lead.platform === 'email' ? 'Your email lead replied. Tap to read the conversation.' : msg.text,
       strategyId: lead.strategy_id,
     }).catch(() => { /* best-effort */ });
 
@@ -367,6 +406,10 @@ class InboundDmService {
       meta: {
         external_message_id: msg.externalId,
         sender_psid: msg.senderPsid,
+        ...(msg.emailSubject ? { email_subject: msg.emailSubject } : {}),
+        ...(msg.emailMessageId ? { internet_message_id: msg.emailMessageId } : {}),
+        ...(msg.microsoftMessageId ? { microsoft_message_id: msg.microsoftMessageId } : {}),
+        ...(msg.inReplyTo ? { in_reply_to: msg.inReplyTo } : {}),
       },
     });
     if (insertError) {
@@ -375,6 +418,15 @@ class InboundDmService {
       if (/duplicate key|unique constraint/i.test(insertError.message)) return;
       console.error(`[InboundDM] Inbound message persistence failed for ${msg.externalId}: ${insertError.message}`);
       throw new Error(`Inbound message persistence failed: ${insertError.message}`);
+    }
+
+    if (lead.platform === 'email' && isEmailOptOut(msg.text)) {
+      const { error: optOutError } = await this.supabase.from('agent_leads')
+        .update({ stage: 'lost', updated_at: new Date().toISOString() })
+        .eq('id', lead.id)
+        .eq('user_id', userId);
+      if (optOutError) console.warn(`[InboundDM] Could not apply email opt-out for lead ${lead.id}.`);
+      return;
     }
 
     // ── AI: classify the reply and decide next action ─────────────────────────

@@ -127,6 +127,7 @@ function LeadCard({ lead, index, onPress }: { lead: Lead; index: number; onPress
   const dmStep = lead.dm_sequence_step || 0;
   const profileMeta = profileStatusMeta(lead.profile_status);
   const publicIdentity = lead.profile?.publicIdentity;
+  const emailContactStatus = lead.profile?.emailContactStatus;
   const selectedPlatformMatches = Array.isArray(lead.profile?.selectedPlatformMatches)
     ? lead.profile.selectedPlatformMatches
     : [];
@@ -310,6 +311,15 @@ function LeadCard({ lead, index, onPress }: { lead: Lead; index: number; onPress
                   <Text style={styles.profileDetail}>
                     {publicIdentity.socialHandles.map((handle: any) => `${handle.platform}: ${handle.handle}`).join(' · ')}
                   </Text>
+                )}
+                {emailContactStatus === 'found' && (
+                  <Text style={styles.profileDetail}>Public business email found and added for email outreach.</Text>
+                )}
+                {emailContactStatus === 'not_found' && (
+                  <Text style={styles.profileDetail}>No public business email was found; email outreach is unavailable for this lead.</Text>
+                )}
+                {emailContactStatus === 'unavailable' && (
+                  <Text style={styles.profileDetail}>A public email could not be attached to this strategy; email outreach is unavailable.</Text>
                 )}
                 {psychology?.recommendedTone && (
                   <Text style={styles.profileDetail}>Suggested tone: {psychology.recommendedTone}</Text>

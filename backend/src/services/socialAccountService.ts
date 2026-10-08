@@ -305,6 +305,37 @@ export class SocialAccountService {
     }
   }
 
+  private async assertEmailContentVariation(userId: string, text: string): Promise<void> {
+    const row = await this.get(userId, 'email');
+    const fingerprints = Array.isArray(row?.metadata?.recent_email_body_fingerprints)
+      ? row.metadata.recent_email_body_fingerprints
+      : [];
+    const fingerprint = crypto.createHash('sha256').update(String(text).trim().toLowerCase()).digest('hex');
+    if (fingerprints.some((item: any) => item?.fingerprint === fingerprint
+      && Date.now() - new Date(item.createdAt || 0).getTime() < 30 * 24 * 60 * 60 * 1000)) {
+      throw new Error('This account recently sent the same email wording to another recipient. Create a natural variation before sending again.');
+    }
+  }
+
+  private async rememberEmailContentFingerprint(userId: string, text: string): Promise<void> {
+    const row = await this.get(userId, 'email');
+    if (!row) return;
+    const existing = Array.isArray(row.metadata?.recent_email_body_fingerprints)
+      ? row.metadata.recent_email_body_fingerprints
+      : [];
+    const fingerprint = crypto.createHash('sha256').update(String(text).trim().toLowerCase()).digest('hex');
+    await this.supabase.from('social_account_connections').update({
+      metadata: {
+        ...(row.metadata || {}),
+        recent_email_body_fingerprints: [
+          ...existing,
+          { fingerprint, createdAt: new Date().toISOString() },
+        ].slice(-100),
+      },
+      updated_at: new Date().toISOString(),
+    }).eq('id', row.id);
+  }
+
   private async rememberMessageFingerprint(userId: string, provider: string, recipient: string, text: string): Promise<void> {
     const row = await this.get(userId, provider);
     if (!row) return;
@@ -605,6 +636,9 @@ export class SocialAccountService {
     if (!(await isFeatureEnabled(`social_${normalized}_connections`, userId))) {
       throw new Error(`${normalized} connections are temporarily unavailable.`);
     }
+    if (normalized === 'email' && await isFeatureEnabled('social_email_coming_soon', userId)) {
+      throw new Error('Email connections are temporarily unavailable.');
+    }
   }
 
   async list(userId: string): Promise<SocialConnectionPublic[]> {
@@ -834,6 +868,10 @@ export class SocialAccountService {
 
   private async safetyDelay(provider: string): Promise<void> {
     const normalized = normalizePlatform(provider);
+    if (normalized === 'email') {
+      await new Promise((resolve) => setTimeout(resolve, 6000 + Math.floor(Math.random() * 9001)));
+      return;
+    }
     const min = normalized === 'signal_personal' ? 5000 : normalized === 'telegram' ? 1200 : 800;
     const max = normalized === 'signal_personal' ? 12000 : normalized === 'telegram' ? 5000 : 3500;
     await new Promise((resolve) => setTimeout(resolve, min + Math.floor(Math.random() * (max - min + 1))));
@@ -1371,6 +1409,11 @@ export class SocialAccountService {
     provider = normalizePlatform(provider);
     await this.assertProviderEnabled(userId, provider);
     await this.assertMessageVariation(userId, provider, recipient, text);
+    if (provider === 'email') {
+      const { emailAccountService } = await import('./emailAccountService');
+      await this.assertEmailContentVariation(userId, text);
+      await emailAccountService.setWarmupLimit(userId);
+    }
     if (!(await this.reserveAction(userId, provider, recipient))) throw new Error(`${provider} daily safety limit reached or account is not ready.`);
     await this.safetyDelay(provider);
     const credential = await this.credentials(userId, provider);
@@ -1378,6 +1421,14 @@ export class SocialAccountService {
     const exec = promisify(execFile);
 
     try {
+      if (provider === 'email') {
+        const { emailAccountService } = await import('./emailAccountService');
+        await emailAccountService.sendForLead(userId, recipient, text, credential);
+        await this.recordSuccess(userId, provider);
+        await this.rememberEmailContentFingerprint(userId, text);
+        return;
+      }
+
       if (provider === 'delta_chat') {
         await this.deltaChatRequest(userId, 'send', { recipient, text });
         await this.recordSuccess(userId, provider);
@@ -1472,7 +1523,7 @@ export class SocialAccountService {
         return;
       }
     } catch (error: any) {
-      await this.recordError(userId, provider, error.message);
+      await this.recordError(userId, provider, provider === 'email' ? 'Email delivery failed. Recheck the connected provider and retry later.' : error.message);
       throw error;
     }
 
