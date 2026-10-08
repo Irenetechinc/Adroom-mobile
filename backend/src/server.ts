@@ -45,6 +45,7 @@ import { normalizePlatform, normalizeSelectedPlatforms, isPersonalProvider } fro
 import { conversationAgent } from './services/conversationAgent';
 import { leadProfileBuilder } from './services/leadProfileBuilder';
 import { publicProfileToolAdapters } from './services/publicProfileToolAdapters';
+import { logCloudflareStartupDiagnostics } from './services/cloudflareWorkersAi';
 
 dotenv.config();
 
@@ -6431,6 +6432,7 @@ app.listen(PORT, async () => {
   console.log(`[AdRoom Server] Features: Autonomous Execution | Lead Capture | Performance Monitoring | Self-Optimization`);
   await publicProfileToolAdapters.runStartupDiagnostics();
   console.log(`[AdRoom Server] Public profile runtime: ${JSON.stringify(getRuntimeConfigStatus().publicProfileTools)}`);
+  void logCloudflareStartupDiagnostics();
 
   // Ensure required Supabase Storage buckets exist (fixes "Bucket not found" on
   // fresh deployments where the bucket was never manually created).

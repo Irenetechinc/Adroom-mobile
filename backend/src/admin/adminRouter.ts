@@ -1013,6 +1013,38 @@ router.get('/api/models/status', auth, async (_req, res) => {
   }
 });
 
+router.get('/api/models/cloudflare', auth, async (_req, res) => {
+  try {
+    const { getCloudflareAdminStatus } = await import('../services/cloudflareWorkersAi');
+    res.json(await getCloudflareAdminStatus());
+  } catch (err: any) {
+    res.status(503).json({
+      error: 'Cloudflare provider status is unavailable. Apply the Cloudflare Workers AI Supabase migration and check server configuration.',
+    });
+  }
+});
+
+router.put('/api/models/cloudflare', auth, async (req, res) => {
+  const { freeModeEnabled, universalFreeModeEnabled } = req.body || {};
+  if (typeof freeModeEnabled !== 'boolean' || typeof universalFreeModeEnabled !== 'boolean') {
+    return res.status(400).json({ error: 'freeModeEnabled and universalFreeModeEnabled must be booleans' });
+  }
+  try {
+    const { updateCloudflareProviderSettings } = await import('../services/cloudflareWorkersAi');
+    const settings = await updateCloudflareProviderSettings(
+      { freeModeEnabled, universalFreeModeEnabled },
+      ADMIN_EMAIL,
+    );
+    await logAction('cloudflare_provider_toggles_updated', null, null, { ...settings });
+    broadcast('cloudflare_provider_config_updated', { settings, updatedAt: new Date().toISOString() });
+    res.json({ ok: true, settings });
+  } catch (err: any) {
+    res.status(503).json({
+      error: 'Cloudflare provider settings could not be saved. Apply the Cloudflare Workers AI Supabase migration.',
+    });
+  }
+});
+
 // ─── MODEL OVERRIDE: SET ───────────────────────────────────────────────────────
 router.post('/api/models/override', auth, async (req, res) => {
   try {
@@ -2401,6 +2433,36 @@ label{font-size:11px;color:var(--text2);font-weight:600}
             <button class="btn btn-primary btn-sm" onclick="saveModelPolicy()">Apply Policy</button>
           </div>
           <div id="model-policy-quota" style="font-size:11px;color:#94A3B8;margin-top:10px">Free quota: loading…</div>
+          <div style="margin-top:18px;padding-top:16px;border-top:1px solid #1E293B">
+            <div style="font-size:14px;font-weight:700;color:#E2E8F0">Cloudflare Workers AI</div>
+            <div style="font-size:11px;color:#64748B;margin:4px 0 12px">Admin-only provider controls and estimated daily usage. Account usage resets at 00:00 UTC.</div>
+            <div style="display:flex;gap:18px;flex-wrap:wrap;margin-bottom:14px">
+              <label style="display:flex;gap:8px;align-items:center;font-size:12px;color:#CBD5E1">
+                <input id="cf-free-enabled" type="checkbox" onchange="saveCloudflareSettings()" />
+                Enable for tiered free users
+              </label>
+              <label style="display:flex;gap:8px;align-items:center;font-size:12px;color:#CBD5E1">
+                <input id="cf-universal-enabled" type="checkbox" onchange="saveCloudflareSettings()" />
+                Enable for universal free mode
+              </label>
+            </div>
+            <div id="cf-settings-status" style="font-size:11px;color:#94A3B8;margin-bottom:12px">Loading provider status…</div>
+            <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px">
+              <div class="card" style="padding:12px;background:#0B1120">
+                <div style="font-size:12px;font-weight:700;color:#E2E8F0;margin-bottom:6px">Text generation account</div>
+                <div id="cf-text-health" style="font-size:11px;color:#94A3B8">Loading…</div>
+                <div id="cf-text-usage" style="font-size:11px;color:#94A3B8;margin-top:6px">—</div>
+                <div id="cf-text-calls" style="font-size:11px;color:#64748B;margin-top:3px">—</div>
+              </div>
+              <div class="card" style="padding:12px;background:#0B1120">
+                <div style="font-size:12px;font-weight:700;color:#E2E8F0;margin-bottom:6px">Image generation account</div>
+                <div id="cf-image-health" style="font-size:11px;color:#94A3B8">Loading…</div>
+                <div id="cf-image-usage" style="font-size:11px;color:#94A3B8;margin-top:6px">—</div>
+                <div id="cf-image-calls" style="font-size:11px;color:#64748B;margin-top:3px">—</div>
+              </div>
+            </div>
+            <div style="font-size:10px;color:#64748B;margin-top:8px">Neuron totals are estimates from returned model usage. Cloudflare’s account dashboard remains authoritative for billing.</div>
+          </div>
         </div>
         <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:16px">
           <div class="stat-card">
@@ -2881,6 +2943,7 @@ document.getElementById('login-pwd').addEventListener('keydown', e => { if (e.ke
 function doLogout() {
   localStorage.removeItem('admin_token');
   TOKEN = '';
+  stopCloudflarePolling();
   document.getElementById('app').style.display = 'none';
   document.getElementById('login').style.display = 'flex';
   if (evtSource) { evtSource.close(); evtSource = null; }
@@ -2931,7 +2994,13 @@ function showSection(name) {
   });
   document.getElementById('page-title').textContent = TITLES[name] || name;
   if (name === 'cma') { loadCMAStats(); loadModelCredits(); }
-  if (name === 'cma') { loadModelPolicy(); }
+  if (name === 'cma') {
+    loadModelPolicy();
+    loadCloudflareStatus();
+    startCloudflarePolling();
+  } else {
+    stopCloudflarePolling();
+  }
   if (name === 'trials') { loadTrials(); }
   if (name === 'apma') { loadAPMASection(); startAPMAMonitor(); } else { stopAPMAMonitor(); }
   if (name === 'agentnet') { startAgentNetPolling(); } else { stopAgentNetPolling(); }
@@ -3674,6 +3743,102 @@ async function loadModelPolicy() {
   }
 }
 
+let cloudflarePoller = null;
+let cloudflareStatusLoading = false;
+
+function setCloudflareAccountStatus(kind, account) {
+  const health = document.getElementById('cf-' + kind + '-health');
+  const usage = document.getElementById('cf-' + kind + '-usage');
+  const calls = document.getElementById('cf-' + kind + '-calls');
+  if (!health || !usage || !calls) return;
+
+  if (account.statusUnavailable) {
+    health.textContent = 'Status unavailable; check the Supabase migration and database';
+    health.style.color = '#F59E0B';
+    usage.textContent = 'Neuron estimate unavailable';
+    calls.textContent = 'Usage status unavailable';
+    return;
+  } else if (!account.configured) {
+    health.textContent = 'Credentials missing from server environment';
+    health.style.color = '#F59E0B';
+  } else if (account.exhausted) {
+    health.textContent = 'Daily allocation exhausted; retries resume at 00:00 UTC';
+    health.style.color = '#EF4444';
+  } else if (account.healthStatus === 'unhealthy') {
+    health.textContent = 'Credentials rejected' + (account.lastStatusCode ? ' (HTTP ' + account.lastStatusCode + ')' : '');
+    health.style.color = '#EF4444';
+  } else if (account.healthStatus === 'degraded') {
+    health.textContent = 'Last request failed; provider failover is active';
+    health.style.color = '#F59E0B';
+  } else {
+    health.textContent = 'Configured · ' + (account.healthStatus || 'ready');
+    health.style.color = '#10B981';
+  }
+
+  usage.textContent = 'Estimated neurons: ' +
+    Number(account.neuronsUsed || 0).toLocaleString() + ' / ' +
+    Number(account.dailyLimit || 10000).toLocaleString() + ' · remaining ' +
+    Number(account.neuronsRemaining || 0).toLocaleString();
+  calls.textContent = Number(account.calls || 0).toLocaleString() + ' routed calls' +
+    (account.updatedAt ? ' · updated ' + new Date(account.updatedAt).toLocaleTimeString() : '');
+}
+
+async function loadCloudflareStatus() {
+  if (cloudflareStatusLoading) return;
+  cloudflareStatusLoading = true;
+  const status = document.getElementById('cf-settings-status');
+  try {
+    const data = await api('GET', '/api/models/cloudflare');
+    const freeToggle = document.getElementById('cf-free-enabled');
+    const universalToggle = document.getElementById('cf-universal-enabled');
+    if (freeToggle) freeToggle.checked = !!data.settings?.freeModeEnabled;
+    if (universalToggle) universalToggle.checked = !!data.settings?.universalFreeModeEnabled;
+    setCloudflareAccountStatus('text', data.accounts?.text || {});
+    setCloudflareAccountStatus('image', data.accounts?.image || {});
+    if (status) {
+      status.textContent = 'Tiered free mode: ' + (data.settings?.freeModeEnabled ? 'enabled' : 'disabled') +
+        ' · Universal free mode: ' + (data.settings?.universalFreeModeEnabled ? 'enabled' : 'disabled');
+      status.style.color = '#94A3B8';
+    }
+  } catch (e) {
+    if (status) {
+      status.textContent = e.message || 'Cloudflare status unavailable; apply the Supabase migration.';
+      status.style.color = '#F59E0B';
+    }
+    setCloudflareAccountStatus('text', { statusUnavailable: true });
+    setCloudflareAccountStatus('image', { statusUnavailable: true });
+  } finally {
+    cloudflareStatusLoading = false;
+  }
+}
+
+async function saveCloudflareSettings() {
+  const freeToggle = document.getElementById('cf-free-enabled');
+  const universalToggle = document.getElementById('cf-universal-enabled');
+  const freeModeEnabled = !!freeToggle?.checked;
+  const universalFreeModeEnabled = !!universalToggle?.checked;
+  try {
+    await api('PUT', '/api/models/cloudflare', { freeModeEnabled, universalFreeModeEnabled });
+    toast('Cloudflare provider settings saved', 'success');
+    await loadCloudflareStatus();
+  } catch (e) {
+    toast('Could not save Cloudflare settings: ' + e.message, 'error');
+    await loadCloudflareStatus();
+  }
+}
+
+function startCloudflarePolling() {
+  stopCloudflarePolling();
+  cloudflarePoller = setInterval(loadCloudflareStatus, 10000);
+}
+
+function stopCloudflarePolling() {
+  if (cloudflarePoller) {
+    clearInterval(cloudflarePoller);
+    cloudflarePoller = null;
+  }
+}
+
 async function saveModelPolicy() {
   const mode = document.getElementById('model-policy-select')?.value || 'tiered';
   const reason = document.getElementById('model-policy-reason')?.value || '';
@@ -3827,6 +3992,21 @@ function scheduleSSERetry() {
 
 function attachSSEListeners() {
   if (!evtSource) return;
+
+  evtSource.addEventListener('cloudflare_usage_updated', () => {
+    if (document.getElementById('section-cma')?.classList.contains('active')) loadCloudflareStatus();
+  });
+
+  evtSource.addEventListener('cloudflare_provider_config_updated', () => {
+    if (document.getElementById('section-cma')?.classList.contains('active')) loadCloudflareStatus();
+  });
+
+  evtSource.addEventListener('cloudflare_provider_alert', e => {
+    const data = JSON.parse(e.data);
+    const account = data.accountType === 'image' ? 'image generation' : 'text generation';
+    showToast('Cloudflare Workers AI ' + account + ' credentials were rejected. Check the server environment.', 'error');
+    if (document.getElementById('section-cma')?.classList.contains('active')) loadCloudflareStatus();
+  });
 
   evtSource.addEventListener('activity', e => {
     const events = JSON.parse(e.data);

@@ -3,6 +3,12 @@ import OpenAI from 'openai';
 import dotenv from 'dotenv';
 import { AsyncLocalStorage } from 'async_hooks';
 import { getServiceSupabaseClient } from './supabase';
+import {
+  cloudflarePolicyAllows,
+  generateCloudflareImage,
+  generateCloudflareText,
+  getCloudflareProviderSettings,
+} from '../services/cloudflareWorkersAi';
 
 dotenv.config();
 
@@ -27,11 +33,18 @@ const FREE_SMALL_MODEL = 'gpt-4.1-nano-free';
 const FREE_VISION_MODEL = 'gemini-3.1-flash-image-preview-free';
 const FREE_IMAGE_MODEL = 'gemini-3.7-flash-free';
 
-export type AIRequestContext = { userId: string; plan: string; status: string };
+export type AIRequestContext = {
+  userId: string;
+  plan: string;
+  status: string;
+  cloudflareTextModel?: string;
+  cloudflareImageModel?: string;
+};
 const aiRequestContext = new AsyncLocalStorage<AIRequestContext>();
 let persistedModeCache: { mode: 'tiered' | 'free' | 'paid'; expiresAt: number } | null = null;
 const freeRequestTimes: number[] = [];
 const freeDailyRequestTimes: number[] = [];
+let cloudflareSettingsWarningLogged = false;
 
 export function getAIRequestContext() {
   return aiRequestContext.getStore();
@@ -84,6 +97,44 @@ async function useFreeModels(userId?: string) {
   return !context || context.status === 'trialing' || context.plan === 'none' || context.plan === 'trial';
 }
 
+async function shouldRouteToCloudflare(userId?: string): Promise<boolean> {
+  try {
+    const mode = await getPersistedPolicyMode();
+    if (mode === 'paid') return false;
+
+    let context = getAIRequestContext();
+    if (!context && userId) {
+      try {
+        const { data } = await getServiceSupabaseClient()
+          .from('subscriptions')
+          .select('plan, status')
+          .eq('user_id', userId)
+          .order('updated_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        if (data) context = { userId, plan: String(data.plan || 'none'), status: String(data.status || 'none') };
+      } catch {
+        // The existing free-model policy remains authoritative if subscription
+        // lookup is unavailable; Cloudflare stays opted out for this request.
+        return false;
+      }
+    }
+
+    const isFreeTierUser = !context ||
+      context.status === 'trialing' ||
+      context.plan === 'none' ||
+      context.plan === 'trial';
+    const settings = await getCloudflareProviderSettings();
+    return cloudflarePolicyAllows(mode, isFreeTierUser, settings);
+  } catch {
+    if (!cloudflareSettingsWarningLogged) {
+      cloudflareSettingsWarningLogged = true;
+      console.warn('[AI:CLOUDFLARE] Provider settings are unavailable; keeping Cloudflare routing disabled until its Supabase migration is applied.');
+    }
+    return false;
+  }
+}
+
 export async function isFreeAIRequest() {
   return useFreeModels();
 }
@@ -132,15 +183,39 @@ async function freeChat(params: any) {
     process.env.FREE_MODELS_BASE_URL || 'https://aihubmix.com/v1',
     process.env.FREE_MODELS_FALLBACK_BASE_URL || 'https://api.inferera.com',
   ]));
+  const existingProviderParams = { ...params };
+  delete existingProviderParams.cloudflare_model;
+  delete existingProviderParams.cloudflareModel;
   let lastError: any;
 
-  if (!keys.length) throw new Error('Free AI providers are not configured.');
+  if (await shouldRouteToCloudflare()) {
+    try {
+      const response = await generateCloudflareText(params);
+      const usage = Number((response as any).usage?.total_tokens || 0);
+      await getServiceSupabaseClient().from('ai_usage_logs').insert({
+        user_id: getAIRequestContext()?.userId || null,
+        model: params.model,
+        operation: 'free_ai_request',
+        actual_cost_usd: 0,
+        energy_debited: 0,
+        metadata: { tokens: usage, quota: reservation, provider: 'cloudflare_workers_ai', neuronUsageEstimated: true },
+      });
+      return response;
+    } catch (error: any) {
+      lastError = error;
+      console.warn(`[AI:CLOUDFLARE] Text provider failed; rotating to existing free providers status=${error?.statusCode || error?.status || 'unknown'}`);
+    }
+  }
+
+  if (!keys.length) {
+    throw lastError || new Error('Free AI providers are not configured.');
+  }
   for (let keyIndex = 0; keyIndex < keys.length; keyIndex += 1) {
     const apiKey = keys[keyIndex];
     for (const baseURL of baseUrls) {
       try {
         const client = new OpenAI({ apiKey, baseURL });
-        const response = await client.chat.completions.create(params);
+        const response = await client.chat.completions.create(existingProviderParams);
         const usage = Number((response as any).usage?.total_tokens || 0);
         await getServiceSupabaseClient().from('ai_usage_logs').insert({
           user_id: getAIRequestContext()?.userId || null,
@@ -354,6 +429,7 @@ export class AIEngine {
     try {
       const completion = await freeChat({
         model: FREE_TEXT_MODEL,
+        cloudflare_model: context?.cloudflareTextModel,
         messages: [
           { role: 'system', content: 'You are Adirum AI Core Brain. Return valid JSON only, without markdown.' },
           { role: 'user', content: `Context: ${JSON.stringify(context)}\n\nTask: ${prompt}` },
@@ -453,8 +529,10 @@ export class AIEngine {
     }
   }
 
-  async generateJson(prompt: string): Promise<any> {
-    if (await useFreeModels()) return (await this.generateStrategyFree({}, prompt)).parsedJson ?? null;
+  async generateJson(prompt: string, options?: { cloudflareModel?: string }): Promise<any> {
+    if (await useFreeModels()) {
+      return (await this.generateStrategyFree({ cloudflareTextModel: options?.cloudflareModel }, prompt)).parsedJson ?? null;
+    }
     aiLog('GEMINI-FLASH', `generateJson START — model: ${GEMINI_FLASH_MODEL}`);
     try {
       const model = genAI.getGenerativeModel({ model: GEMINI_FLASH_MODEL });
@@ -471,10 +549,14 @@ export class AIEngine {
     }
   }
 
-  async generateText(prompt: string): Promise<string> {
+  async generateText(prompt: string, options?: { cloudflareModel?: string }): Promise<string> {
     if (await useFreeModels()) {
       try {
-        const result = await freeChat({ model: FREE_SMALL_MODEL, messages: [{ role: 'user', content: prompt }] });
+        const result = await freeChat({
+          model: FREE_SMALL_MODEL,
+          cloudflare_model: options?.cloudflareModel || getAIRequestContext()?.cloudflareTextModel,
+          messages: [{ role: 'user', content: prompt }],
+        });
         return result.choices[0]?.message?.content || '';
       } catch (error: any) { throw providerError(error); }
     }
@@ -492,11 +574,38 @@ export class AIEngine {
     }
   }
 
-  async generateImage(imagePrompt: string, userId?: string): Promise<{ base64: string; mimeType: string } | null> {
+  async generateImage(
+    imagePrompt: string,
+    userId?: string,
+    options?: { cloudflareModel?: string },
+  ): Promise<{ base64: string; mimeType: string } | null> {
     if (await useFreeModels(userId)) {
-      aiLog('AIHUBMIX-IMAGE', `generateImage FREE START — model: ${FREE_IMAGE_MODEL}`);
       try {
         await reserveFreeQuota(0);
+
+        if (await shouldRouteToCloudflare(userId)) {
+          try {
+            const image = await generateCloudflareImage(
+              imagePrompt,
+              options?.cloudflareModel || getAIRequestContext()?.cloudflareImageModel,
+            );
+            await getServiceSupabaseClient().from('ai_usage_logs').insert({
+              user_id: getAIRequestContext()?.userId || userId || null,
+              model: 'cloudflare_workers_ai',
+              operation: 'free_ai_request',
+              actual_cost_usd: 0,
+              energy_debited: 0,
+              metadata: { tokens: 0, provider: 'cloudflare_workers_ai', neuronUsageEstimated: true },
+            });
+            return image;
+          } catch (error: any) {
+            aiLog('CLOUDFLARE-IMAGE', 'generateImage FAILED — rotating to existing free providers', {
+              status: error?.statusCode || error?.status || 'unknown',
+            });
+          }
+        }
+
+        aiLog('AIHUBMIX-IMAGE', `generateImage FREE START — model: ${FREE_IMAGE_MODEL}`);
         const mediaUrls = [
           `${(process.env.FREE_MODELS_MEDIA_BASE_URL || 'https://aihubmix.com/ai/v1').replace(/\/$/, '')}/images/generations`,
           `${(process.env.FREE_MODELS_FALLBACK_MEDIA_BASE_URL || 'https://api.inferera.com/ai/v1').replace(/\/$/, '')}/images/generations`,

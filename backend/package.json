@@ -11,6 +11,7 @@
     "test:email-cleaner": "npm run build && node dist/services/emailReplyCleaner.test.js",
     "test:email-dns-policy": "npm run build && node dist/services/emailDnsPolicy.test.js",
     "test:flutterwave-encryption": "npm run build && node dist/services/flutterwaveService.test.js",
+    "test:cloudflare": "npm run build && node dist/services/cloudflareWorkersAi.test.js",
     "test:public-profile": "npm run build && node dist/services/publicProfileToolAdapters.test.js && node dist/leadProfileBuilderMigration.test.js",
     "smoke:production": "npm run build && node dist/productionSmoke.js",
     "check:migrations": "npm run build && node dist/productionMigrationCheck.js",
