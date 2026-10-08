@@ -30,9 +30,16 @@ const requiredTables = [
   'lead_profile_builder_runs',
   'lead_sales_profiles',
   'scheduler_cursors',
+  'cloudflare_ai_provider_settings',
+  'cloudflare_ai_daily_usage',
 ];
 
 const requiredColumns: Record<string, string[]> = {
+  cloudflare_ai_provider_settings: ['id', 'free_mode_enabled', 'universal_free_mode_enabled', 'updated_at'],
+  cloudflare_ai_daily_usage: [
+    'usage_date', 'account_type', 'neurons_used', 'call_count', 'is_exhausted',
+    'health_status', 'last_status_code', 'last_error', 'updated_at',
+  ],
   social_account_connections: [
     'provider', 'status', 'credential_ciphertext', 'credential_iv', 'credential_tag',
     'warmup_started_at', 'consecutive_errors', 'cooldown_until',
@@ -73,11 +80,14 @@ async function main(): Promise<void> {
       names.filter((name) => !foundColumns.has(`${table}.${name}`)).map((name) => `${table}.${name}`),
     );
 
+    const requiredFunctions = ['reserve_social_action', 'record_cloudflare_ai_usage'];
     const functionResult = await pool.query(
       `SELECT routine_name FROM information_schema.routines
-       WHERE routine_schema = 'public' AND routine_name = 'reserve_social_action'`,
+       WHERE routine_schema = 'public' AND routine_name = ANY($1)`,
+      [requiredFunctions],
     );
-    const missingFunctions = functionResult.rows.length ? [] : ['reserve_social_action'];
+    const foundFunctions = new Set(functionResult.rows.map((row: { routine_name: string }) => row.routine_name));
+    const missingFunctions = requiredFunctions.filter((name) => !foundFunctions.has(name));
     const requiredEmailFlags = ['social_email_connections', 'social_email_coming_soon'];
     const featureFlagResult = foundTables.has('feature_flags')
       ? await pool.query(
