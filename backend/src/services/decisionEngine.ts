@@ -11,6 +11,16 @@ export interface AIStrategy {
   schedule: any[];
   estimated_outcomes: any;
   risk_assessment?: any;
+  autonomous_calls: {
+    enabled: boolean;
+    objective: string;
+    audience: string;
+    opening_line: string;
+    discovery_questions: string[];
+    follow_up_days: number;
+    follow_up_plan: string[];
+    max_attempts: number;
+  };
 }
 
 export class DecisionEngine {
@@ -58,6 +68,8 @@ export class DecisionEngine {
       - Use Emotional Intelligence to "own" the category conversation.
       - Use Social Listening to "hijack" trending topics with high-relevance replies.
       - Autonomous execution capabilities include outreach, calling, fulfillment, and delivery coordination. Decide dynamically when any capability is warranted from live evidence and the strategy context; do not recommend a manual task list when Adirum can execute the action.
+       - For a dedicated call campaign, produce a consent-first autonomous_calls plan grounded in the actual product, goal, and evidence. Do not invent consent, and never include pressure, deception, or instructions to hide AI or recording.
+       - For other strategies, set autonomous_calls.enabled only when the strategy itself warrants calling; otherwise set it to false.
 
       OUTPUT JSON (Selected Strategy):
       {
@@ -77,6 +89,16 @@ export class DecisionEngine {
         "schedule": [
            { "day": 1, "platform": "...", "content_type": "...", "topic": "...", "time": "HH:MM", "reason": "why this time/format is best for organic reach" }
         ],
+         "autonomous_calls": {
+           "enabled": boolean,
+           "objective": "specific call outcome",
+           "audience": "who may be contacted, subject to explicit opt-in",
+           "opening_line": "truthful opener that does not claim a prior relationship",
+           "discovery_questions": ["short, relevant questions"],
+           "follow_up_days": number,
+           "follow_up_plan": ["bounded follow-up steps"],
+           "max_attempts": number
+         },
         "estimated_outcomes": { "reach": number, "engagement": number, "paid_equivalent_value_usd": number },
         "weights_applied": ${JSON.stringify(weights)}
       }
@@ -88,6 +110,9 @@ export class DecisionEngine {
 
     const rawStrategy = response.parsedJson ?? parseStructuredJson(response.text) ?? {};
     const strategy: AIStrategy = this.normalizeStrategy(rawStrategy, memory, goal, duration, weights);
+    if (executionContext?.callCampaign === true && !strategy.autonomous_calls.enabled) {
+      throw new Error('The AI strategy response did not include a usable autonomous call plan. Please regenerate the campaign strategy.');
+    }
 
     await this.storeDecision(memory, strategy, goal, weights);
 
@@ -139,6 +164,20 @@ export class DecisionEngine {
       risk_assessment: strategy.risk_assessment || {
         overall_risk: 'medium',
         notes: 'Fallback strategy generated from live signals and current product context because the model response was not fully structured.',
+      },
+      autonomous_calls: {
+        enabled: strategy.autonomous_calls?.enabled === true,
+        objective: String(strategy.autonomous_calls?.objective || goal).slice(0, 500),
+        audience: String(strategy.autonomous_calls?.audience || '').slice(0, 500),
+        opening_line: String(strategy.autonomous_calls?.opening_line || '').slice(0, 700),
+        discovery_questions: Array.isArray(strategy.autonomous_calls?.discovery_questions)
+          ? strategy.autonomous_calls.discovery_questions.map((item: any) => String(item).slice(0, 300)).slice(0, 5)
+          : [],
+        follow_up_days: Math.min(90, Math.max(1, Number(strategy.autonomous_calls?.follow_up_days) || duration || 7)),
+        follow_up_plan: Array.isArray(strategy.autonomous_calls?.follow_up_plan)
+          ? strategy.autonomous_calls.follow_up_plan.map((item: any) => String(item).slice(0, 300)).slice(0, 3)
+          : [],
+        max_attempts: Math.min(3, Math.max(1, Number(strategy.autonomous_calls?.max_attempts) || 3)),
       },
     };
   }
