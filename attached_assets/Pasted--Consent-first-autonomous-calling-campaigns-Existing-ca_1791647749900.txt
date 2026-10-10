@@ -237,16 +237,6 @@ $$;
 REVOKE ALL ON FUNCTION public.charge_call_credits(uuid, uuid, numeric) FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.charge_call_credits(uuid, uuid, numeric) TO service_role;
 
--- Application writes are service-side only. Authenticated clients can read
--- their own campaign rows through RLS but cannot bypass consent or billing checks.
-REVOKE ALL ON TABLE public.call_campaigns, public.call_campaign_contacts
-  FROM PUBLIC, anon, authenticated;
-GRANT SELECT ON TABLE public.call_campaigns, public.call_campaign_contacts TO authenticated;
-GRANT ALL ON TABLE public.call_campaigns, public.call_campaign_contacts TO service_role;
-REVOKE ALL ON TABLE public.call_suppressions, public.call_credit_charges
-  FROM PUBLIC, anon, authenticated;
-GRANT ALL ON TABLE public.call_suppressions, public.call_credit_charges TO service_role;
-
 DO $$
 BEGIN
   IF EXISTS (SELECT 1 FROM pg_publication WHERE pubname = 'supabase_realtime') THEN

@@ -14,3 +14,9 @@ The environment-level npm registry can differ from the `resolved` origins embedd
 **Why:** Environment configuration can shadow project defaults, even when the repository itself contains only public registry URLs.
 
 **How to apply:** Compare `npm config get registry` with the lockfile's `resolved` origins when checking package provenance. When a command must use public npm, explicitly override the effective setting with `npm_config_registry=https://registry.npmjs.org/` for that command.
+
+When using the workspace package helper, pass package specs as separately shell-quoted arguments instead of composing an unquoted shell string.
+
+**Why:** A package setup attempt split the requested arguments and resolved the install against the wrong package root.
+
+**How to apply:** Quote package specs and options passed through shell-like helpers, then inspect the intended package manifest and lockfile before accepting the install.

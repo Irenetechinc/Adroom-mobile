@@ -36,6 +36,8 @@ import { validateEmailAsync } from './utils/emailValidator';
 import { apmaClientRouter } from './apma/apmaRouter';
 import { apmaOAuthRouter } from './apma/apmaOAuthRouter';
 import { TelephonyService, telephonyService } from './services/telephonyService';
+import { callCampaignService, CallCampaignError } from './services/callCampaignService';
+import { normalizePhoneE164 } from './services/callCampaignRules';
 import { ShipmentService, shipmentService } from './services/shipmentService';
 import { socialAccountService, type PersonalProvider } from './services/socialAccountService';
 import { emailAccountService } from './services/emailAccountService';
@@ -748,6 +750,52 @@ app.patch('/api/outreach/preferences', async (req, res) => {
   } catch (error: any) { return res.status(500).json({ error: error.message }); }
 });
 
+async function callCampaignRoute(req: Request, res: any, action: (userId: string) => Promise<any>, status = 200) {
+  try {
+    const authClient = getSupabaseClient(req as any);
+    const { data: { user } } = await authClient.auth.getUser();
+    if (!user) return res.status(401).json({ error: 'Unauthorized.' });
+    if (!(await isFeatureEnabled('calling_ui', user.id))) {
+      return res.status(403).json({ error: 'CALLING_DISABLED', message: 'Calling is currently unavailable.' });
+    }
+    const result = await action(user.id);
+    return res.status(status).json(result);
+  } catch (error: any) {
+    if (error instanceof CallCampaignError) {
+      return res.status(error.statusCode).json({ error: error.code, message: error.message });
+    }
+    console.error('[CallCampaign] Request failed:', error?.message || 'unknown error');
+    return res.status(500).json({ error: 'CALL_CAMPAIGN_ERROR', message: 'The call campaign request failed.' });
+  }
+}
+
+app.get('/api/call-campaigns/options', (req, res) =>
+  callCampaignRoute(req, res, (userId) => callCampaignService.options(userId)));
+
+app.get('/api/call-campaigns', (req, res) =>
+  callCampaignRoute(req, res, (userId) => callCampaignService.list(userId)));
+
+app.post('/api/call-campaigns', (req, res) =>
+  callCampaignRoute(req, res, (userId) => callCampaignService.create(userId, req.body), 201));
+
+app.get('/api/call-campaigns/:id/contacts', (req, res) =>
+  callCampaignRoute(req, res, (userId) => callCampaignService.contacts(userId, req.params.id)));
+
+app.post('/api/call-campaigns/:id/contacts', (req, res) =>
+  callCampaignRoute(req, res, (userId) => callCampaignService.addContacts(userId, req.params.id, req.body), 201));
+
+app.post('/api/call-campaigns/:id/approve', (req, res) =>
+  callCampaignRoute(req, res, (userId) => callCampaignService.approve(userId, req.params.id, req.body?.explicit_confirmation === true)));
+
+app.post('/api/call-campaigns/:id/start', (req, res) =>
+  callCampaignRoute(req, res, (userId) => callCampaignService.start(userId, req.params.id)));
+
+app.post('/api/call-campaigns/:id/pause', (req, res) =>
+  callCampaignRoute(req, res, (userId) => callCampaignService.pause(userId, req.params.id)));
+
+app.post('/api/call-campaigns/:id/stop', (req, res) =>
+  callCampaignRoute(req, res, (userId) => callCampaignService.pause(userId, req.params.id, true)));
+
 app.patch('/api/leads/:id/call-consent', async (req, res) => {
   try {
     const authClient = getSupabaseClient(req as any);
@@ -761,7 +809,25 @@ app.patch('/api/leads/:id/call-consent', async (req, res) => {
     }
 
     const consented = req.body.consented === true;
-    const { data: lead, error } = await getServiceSupabaseClient()
+    const serviceClient = getServiceSupabaseClient();
+    if (consented) {
+      const { data: currentLead, error: currentLeadError } = await serviceClient.from('agent_leads')
+        .select('phone,phone_number,contact_phone')
+        .eq('id', req.params.id).eq('user_id', user.id).maybeSingle();
+      if (currentLeadError) return res.status(500).json({ error: currentLeadError.message });
+      if (!currentLead) return res.status(404).json({ error: 'Lead not found.' });
+      const phone = normalizePhoneE164(currentLead.phone || currentLead.phone_number || currentLead.contact_phone);
+      if (phone) {
+        const { data: suppression, error: suppressionError } = await serviceClient.from('call_suppressions')
+          .select('id').eq('user_id', user.id).eq('phone_e164', phone).maybeSingle();
+        if (suppressionError) return res.status(500).json({ error: 'Could not verify the call suppression list.' });
+        if (suppression) return res.status(409).json({
+          error: 'CALL_SUPPRESSED',
+          message: 'This phone number requested no further calls and cannot be re-enabled from this screen.',
+        });
+      }
+    }
+    const { data: lead, error } = await serviceClient
       .from('agent_leads')
       .update({
         call_consent: consented,
@@ -774,6 +840,7 @@ app.patch('/api/leads/:id/call-consent', async (req, res) => {
       .maybeSingle();
     if (error) return res.status(500).json({ error: error.message });
     if (!lead) return res.status(404).json({ error: 'Lead not found.' });
+    if (!consented) await callCampaignService.recordLeadConsentRevoked(user.id, lead.id);
     return res.json({ lead });
   } catch (error: any) { return res.status(500).json({ error: error.message }); }
 });
@@ -803,6 +870,10 @@ app.post('/api/calls/queue', async (req, res) => {
     if (!/^\+[1-9]\d{7,14}$/.test(destination)) {
       return res.status(400).json({ error: 'LEAD_PHONE_E164_REQUIRED', message: 'The lead needs a phone number in international E.164 format, such as +2348012345678.' });
     }
+    const { data: suppression, error: suppressionError } = await getServiceSupabaseClient().from('call_suppressions')
+      .select('id').eq('user_id', user.id).eq('phone_e164', destination).maybeSingle();
+    if (suppressionError) return res.status(500).json({ error: 'Could not verify the call suppression list.' });
+    if (suppression) return res.status(403).json({ error: 'CALL_SUPPRESSED', message: 'This phone number requested no further calls.' });
     const { data: preferences, error: preferencesError } = await supabase.from('outreach_preferences').select('do_not_call').eq('user_id', user.id).maybeSingle();
     if (preferencesError) return res.status(500).json({ error: preferencesError.message });
     if (preferences?.do_not_call) return res.status(403).json({ error: 'DO_NOT_CALL', message: 'Calling is disabled in your outreach preferences.' });

@@ -15,6 +15,7 @@ import { RadarAgent } from '../agents/radarAgent';
 import { apmaOrchestrator } from '../apma/apmaOrchestrator';
 import { tokenRefreshService } from './tokenRefreshService';
 import { telephonyService } from './telephonyService';
+import { callCampaignService } from './callCampaignService';
 import { DeepProductBrandAnalysisAgent } from './deepProductBrandAnalysisAgent';
 import { dataCollectionAgent } from './dataCollectionAgent';
 import { conversationAgent } from './conversationAgent';
@@ -615,8 +616,16 @@ export class SchedulerService {
         });
 
         cron.schedule(SCHED_CALLS_CRON, async () => {
-            try { await telephonyService.processQueuedCalls(10); }
-            catch (e: any) { console.error('[Scheduler] Call queue error:', e.message); }
+            try {
+                await callCampaignService.queueDueContacts(10);
+            } catch (e: any) {
+                console.error('[Scheduler] Call campaign scheduling error:', e.message);
+            }
+            try {
+                await telephonyService.processQueuedCalls(10);
+            } catch (e: any) {
+                console.error('[Scheduler] Call queue error:', e.message);
+            }
         });
 
         // APMA — Autonomous Political Marketing Agent cycle every 15 minutes

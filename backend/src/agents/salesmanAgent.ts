@@ -814,37 +814,10 @@ ${emailChannel
             this.log(`Lead profile queue unavailable for ${lead_id}: ${String(error?.message || error).slice(0, 240)}`);
         });
 
-        try {
-            const { data: prefs, error: preferencesError } = await this.supabase.from('outreach_preferences').select('do_not_call').eq('user_id', task.user_id).maybeSingle();
-            if (preferencesError) throw preferencesError;
-            const callDecision = await this.ai.generateJson(`Decide whether a phone call is warranted for this current sales conversation. Return only {"should_call": boolean, "reason": string}. Use only the supplied evidence. Never call merely to increase contact volume.
-LEAD: ${JSON.stringify({ platform: lead.platform, intent_score: lead.intent_score, phone_present: Boolean(lead.phone || lead.phone_number || lead.contact_phone) })}
-PROFILE: ${JSON.stringify(leadProfile)}
-MESSAGE: ${inbound_message}
-HISTORY: ${conversationThread}`);
-            const rawPhone = String(lead.phone || lead.phone_number || lead.contact_phone || '').trim().replace(/[()\s-]/g, '');
-            if (callDecision?.should_call && lead.call_consent === true && !prefs?.do_not_call && /^\+[1-9]\d{7,14}$/.test(rawPhone)) {
-                const { data: existingCall, error: existingCallError } = await this.supabase
-                    .from('call_logs')
-                    .select('id')
-                    .eq('user_id', task.user_id)
-                    .eq('lead_id', lead_id)
-                    .in('status', ['queued', 'processing', 'provider_started', 'ringing', 'in_progress'])
-                    .maybeSingle();
-                if (existingCallError) throw existingCallError;
-                if (!existingCall) {
-                    const { error: insertCallError } = await this.supabase.from('call_logs').insert({
-                        user_id: task.user_id,
-                        lead_id,
-                        strategy_id: task.strategy_id,
-                        consent_confirmed: true,
-                        status: 'queued',
-                        summary: { requested_goal: callDecision.reason, source: 'salesman_ai_decision', contact_source: lead.contact_source || lead.source || null, country_code: lead.country_code || lead.country || null },
-                    });
-                    if (insertCallError) throw insertCallError;
-                }
-            }
-        } catch (error: any) { this.log(`Call recommendation skipped: ${error.message}`); }
+        // Autonomous outbound calls are queued by the approved campaign scheduler,
+        // which enforces contact consent, opt-out suppression, local calling hours,
+        // per-campaign attempt limits, and daily caps. Do not create unlinked calls
+        // from this inbound-message worker.
 
         // ── Guardrail check before anything else ──────────────────────────────
         const { analyzeIncomingMessage } = await import('../services/guardrailService');

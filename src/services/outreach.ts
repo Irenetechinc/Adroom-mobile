@@ -28,6 +28,24 @@ export const OutreachService = {
       body: JSON.stringify({ consented, explicit_confirmation: consented }),
     }),
   getCalls: () => request('/api/calls'),
+  getCallCampaignOptions: () => request('/api/call-campaigns/options'),
+  getCallCampaigns: () => request('/api/call-campaigns'),
+  createCallCampaign: (payload: Record<string, unknown>) =>
+    request('/api/call-campaigns', { method: 'POST', body: JSON.stringify(payload) }),
+  getCallCampaignContacts: (id: string) => request(`/api/call-campaigns/${id}/contacts`),
+  addCallCampaignContacts: (id: string, leadIds: string[], consentConfirmed: boolean) =>
+    request(`/api/call-campaigns/${id}/contacts`, {
+      method: 'POST',
+      body: JSON.stringify({ lead_ids: leadIds, consent_confirmed: consentConfirmed }),
+    }),
+  approveCallCampaign: (id: string, explicitConfirmation: boolean) =>
+    request(`/api/call-campaigns/${id}/approve`, {
+      method: 'POST',
+      body: JSON.stringify({ explicit_confirmation: explicitConfirmation }),
+    }),
+  startCallCampaign: (id: string) => request(`/api/call-campaigns/${id}/start`, { method: 'POST', body: '{}' }),
+  pauseCallCampaign: (id: string) => request(`/api/call-campaigns/${id}/pause`, { method: 'POST', body: '{}' }),
+  stopCallCampaign: (id: string) => request(`/api/call-campaigns/${id}/stop`, { method: 'POST', body: '{}' }),
   provisionCallingNumber: () => request('/api/calls/number', { method: 'POST', body: '{}' }),
   getShipments: () => request('/api/logistics/shipments'),
   setShipmentDeliveryAddress: (id: string, deliveryAddress: string) =>

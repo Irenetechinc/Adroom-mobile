@@ -1,7 +1,7 @@
 import React, { useCallback, useState } from 'react';
 import { ActivityIndicator, RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
-import { ArrowLeft, Phone, CheckCircle2, Clock3, XCircle } from 'lucide-react-native';
+import { ArrowLeft, Phone, CheckCircle2, Clock3, XCircle, Megaphone } from 'lucide-react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { OutreachService } from '../services/outreach';
 import FeatureGate from '../components/FeatureGate';
@@ -17,7 +17,7 @@ export default function CallLogsScreen() {
   const load = useCallback(async () => { try { setCalls((await OutreachService.getCalls()).calls || []); } finally { setLoading(false); } }, []);
   useFocusEffect(useCallback(() => { load(); }, [load]));
   return <FeatureGate flag="calling_ui" message="This area is currently unavailable."><SafeAreaView style={styles.safe} edges={['top']}>
-    <View style={styles.header}><TouchableOpacity onPress={() => navigation.goBack()}><ArrowLeft color={colors.text} size={22} /></TouchableOpacity><Text style={styles.title}>Call Activity</Text><Phone color={colors.cyan} size={20} /></View>
+    <View style={styles.header}><TouchableOpacity onPress={() => navigation.goBack()}><ArrowLeft color={colors.text} size={22} /></TouchableOpacity><Text style={styles.title}>Call Activity</Text><TouchableOpacity onPress={() => navigation.navigate('CallCampaigns')}><Megaphone color={colors.cyan} size={21} /></TouchableOpacity></View>
     {loading ? <ActivityIndicator color={colors.cyan} style={{ marginTop: 40 }} /> : <ScrollView refreshControl={<RefreshControl refreshing={loading} onRefresh={load} tintColor={colors.cyan} />} contentContainerStyle={styles.content}>
       <Text style={styles.subtitle}>Call activity and outcomes.</Text>
       {calls.length === 0 ? <View style={styles.empty}><Phone color={colors.muted} size={30} /><Text style={styles.emptyText}>No calls yet</Text></View> : calls.map(call => <View key={call.id} style={styles.card}>
