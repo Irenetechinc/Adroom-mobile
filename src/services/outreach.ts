@@ -18,6 +18,19 @@ async function request(path: string, options: RequestInit = {}) {
   return data;
 }
 
+async function requestMultipart(path: string, body: FormData) {
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session?.access_token) throw new Error('Not authenticated.');
+  const response = await fetch(`${BACKEND_URL}${path}`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${session.access_token}` },
+    body,
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(data.message || data.error || 'Import failed.');
+  return data;
+}
+
 export const OutreachService = {
   getPreferences: () => request('/api/outreach/preferences'),
   updatePreferences: (payload: { do_not_call?: boolean; public_data_collection?: boolean }) =>
@@ -38,6 +51,29 @@ export const OutreachService = {
       method: 'POST',
       body: JSON.stringify({ lead_ids: leadIds, consent_confirmed: consentConfirmed }),
     }),
+  importCallCampaignContacts: (id: string, contacts: any[], consentConfirmed: boolean, defaultCountryCode: string) =>
+    request(`/api/call-campaigns/${id}/contacts/import`, {
+      method: 'POST',
+      body: JSON.stringify({
+        contacts,
+        consent_confirmed: consentConfirmed,
+        default_country_code: defaultCountryCode,
+      }),
+    }),
+  importCallCampaignFile: (id: string, file: { uri: string; name: string; type?: string }, consentConfirmed: boolean, defaultCountryCode: string) => {
+    const formData = new FormData();
+    formData.append('file', { uri: file.uri, name: file.name, type: file.type || 'application/octet-stream' } as any);
+    formData.append('consent_confirmed', String(consentConfirmed));
+    formData.append('default_country_code', defaultCountryCode);
+    return requestMultipart(`/api/call-campaigns/${id}/contacts/import`, formData);
+  },
+  updateCallCampaignContact: (id: string, contactId: string, patch: Record<string, unknown>) =>
+    request(`/api/call-campaigns/${id}/contacts/${contactId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(patch),
+    }),
+  removeCallCampaignContact: (id: string, contactId: string) =>
+    request(`/api/call-campaigns/${id}/contacts/${contactId}`, { method: 'DELETE' }),
   approveCallCampaign: (id: string, explicitConfirmation: boolean) =>
     request(`/api/call-campaigns/${id}/approve`, {
       method: 'POST',

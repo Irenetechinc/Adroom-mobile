@@ -1,0 +1,81 @@
+Adirum AI – Autonomous Calls Feature: Gap Audit, Configuration Verification, and Cold Call Listing Implementation
+You are working on the existing Adirum AI codebase. The autonomous calls feature has already been implemented. Your job is to audit it, fix anything broken, verify the Railway environment configuration, and add a new cold call listing capability that integrates with the existing system.
+
+You have full access to the codebase. I do not. Do not ask me for file paths, data structures, or existing patterns. Find them yourself. Follow the existing implementation patterns in the codebase. Do not invent new ones.
+
+PART ONE: GAP AUDIT AND BROKEN IMPLEMENTATION CHECK
+Before making any changes, you must audit the entire autonomous calls feature end to end. Do not assume anything works. Verify everything.
+
+Check whether the call initiation flow works from the moment a user triggers a cold call to the moment the call ends. Verify that the ElevenLabs text to speech integration is actually being invoked and that the audio is being streamed to the recipient. Verify that the speech to text is capturing the recipient's responses in real time. Verify that the conversation logic is receiving the transcribed speech and generating appropriate responses dynamically without hard coded scripts.
+
+Check whether the call recording is being saved and whether the transcript is being stored. Verify that the call logs, call transcripts, and call summary reports are being written to the database and are visible in the app's dashboard. Verify that the call outcome is being classified correctly (answered, no answer, busy, voicemail, hung up, converted) and that the classification is stored with the call record.
+
+Check whether the credit consumption logic for calls is working. Each autonomous call should deduct the correct number of credits from the user's balance. Verify that the Credit Management Agent is intercepting the call-related AI requests and routing them correctly.
+
+Check whether the call is respecting the do not call list, opt-out preferences, and call time restrictions. Verify that the system checks for these before initiating any call.
+
+Check whether the existing implementation handles failures gracefully. If ElevenLabs fails, if the telephony provider fails, if the AI brain fails mid call, the system must not crash. It must log the failure, notify the admin if it is a code level issue, and continue operating.
+
+Report every gap, every broken implementation, and every missing piece you find. Fix each one. Do not leave any part of the feature incomplete.
+
+PART TWO: RAILWAY ENVIRONMENT CONFIGURATION VERIFICATION
+The ElevenLabs environment variables have already been added to the Railway variable environment. Verify that they are correctly referenced in the code. Verify that the code is reading them from the environment and not from any hard coded value or fallback.
+
+Check for any other environment variables required by the autonomous calls feature and confirm they are present in Railway. This includes telephony provider credentials, speech to text credentials if a separate provider is used, call recording storage credentials, and any API keys required by the calling pipeline.
+
+If any environment variable is missing, add it to the Railway configuration and document it clearly for the admin. If any variable is present but misnamed, correct the reference in the code.
+
+Verify that the code fails loudly and clearly if an environment variable is missing, so that the admin knows immediately what to fix.
+
+PART THREE: NEW COLD CALL LISTING FEATURE
+Add a new capability to the autonomous calls screen that allows users to create a cold call strategy from a list of contacts. This is a new feature. It must work in sync with the existing autonomous calls system and the existing strategy pipeline.
+
+User Flow
+The user opens the autonomous calls screen. The user selects the option to create a new cold call strategy. The user is presented with options to add contacts. The user can add contacts from their phone contact list by granting permission to the app to access contacts. The user can also upload a file containing contacts. The supported upload formats should include CSV and Excel. Each contact record should contain at minimum a phone number and a name, with optional fields for email, company, and notes.
+
+After adding contacts, the user selects a goal for the cold call strategy. The goal could be sales, lead qualification, appointment booking, follow up, or any other objective the existing system supports. The user then provides the product, brand, or service name, a description, an image, and a price. The user also specifies the number of days required for follow up after the initial call.
+
+Once all inputs are provided, the AI generates a complete cold call strategy. The strategy must use the same dynamic generation logic as every other strategy in Adirum AI. No hard coded scripts. No fixed templates. The strategy must include the call sequence, the follow up schedule, the messaging approach, and the expected outcome.
+
+The user reviews and approves the strategy. Once approved, the autonomous calls proceed. The system dials the contacts, conducts the conversations, handles objections, and books follow ups or closes deals as appropriate.
+
+Integration With Existing Systems
+The cold call strategy must integrate with the existing autonomous calls system. It must use the same telephony pipeline, the same ElevenLabs integration, the same speech to text pipeline, and the same conversation logic.
+
+The cold call strategy must also integrate with the existing Credit Management Agent. Every call must consume the correct credits. The user must see the credit consumption in real time.
+
+The cold call strategy must integrate with the existing dashboard and lead screen. As calls are made, the contacts must appear as leads in the lead screen. The status of each contact (pending, called, answered, not answered, converted, follow up scheduled, opted out) must be visible in real time without manual refresh.
+
+The cold call strategy must integrate with the existing reporting system. Call logs, transcripts, summaries, and outcomes must be visible in the same dashboard where other call activity is visible.
+
+Contact List Management
+Users must be able to add, edit, and remove contacts from a cold call strategy before the strategy begins. Users must be able to pause and resume a cold call strategy. Users must be able to stop a cold call strategy at any time.
+
+The system must respect opt-out requests. If a contact asks not to be called again, the system must immediately add them to the do not call list and never call them again.
+
+The system must respect call time restrictions. Calls must only be placed during acceptable hours in the contact's time zone. The agent must determine the time zone dynamically and place calls accordingly.
+
+Anti-Ban and Compliance
+The cold call feature must implement the same anti-ban and human like behavior patterns already implemented for other autonomous activities in the app. Randomized delays between calls. Daily limits per account and per contact. Circuit breaker that pauses the campaign after repeated failures. Warm up for new accounts. No mass dialing. No aggressive patterns.
+
+All calls must comply with applicable regulations for cold calling in the contact's jurisdiction. If the jurisdiction prohibits cold calling without prior consent, the system must respect that and not place the call.
+
+PART FOUR: AUTONOMOUS CALLS AS A TOOL INSIDE THE MAIN STRATEGY
+The autonomous calls feature must also be available as a tool inside the main strategy created in the agent chat screen. This means that when a user creates a strategy through the agent chat, the strategy can include autonomous calls as one of its actions.
+
+When the main strategy decides that a call is the appropriate next step, it must be able to trigger an autonomous call through the same calling pipeline. The call must use the same contact enrichment, the same psychological profile, the same dynamic conversation logic, and the same follow up handling as the standalone cold call feature.
+
+The user must not have to do anything extra to enable this. If the strategy includes calls, the calls happen. If the strategy does not include calls, no calls happen.
+
+The main strategy and the standalone cold call feature must use the same infrastructure. Do not build two parallel systems. Build one system that supports both entry points.
+
+PART FIVE: SUCCESS CRITERIA
+The autonomous calls feature works end to end when a user can create a cold call strategy from a list of contacts, set the goal and product details, approve the strategy, and watch the system dial contacts, conduct natural conversations, handle objections, book follow ups or close deals, and record every call with a transcript and summary.
+
+The Railway environment configuration is correct when the code reads all required variables from the environment with no hard coded fallbacks and fails clearly if any are missing.
+
+The integration with the main strategy works when the main strategy can trigger an autonomous call as one of its actions without requiring a separate setup.
+
+No existing feature is broken. No hard coded rules are introduced. No credentials are exposed. No internal methods are revealed in user facing text. All existing patterns in the codebase are respected.
+
+Proceed with the audit first. Fix what is broken. Verify configuration. Then implement the new cold call listing feature. Then wire it into the main strategy as a tool. Test everything end to end. Work in sync with what already exists. Enhance without disruption.

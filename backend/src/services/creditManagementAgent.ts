@@ -43,6 +43,7 @@ interface EconomyRoute {
 
 const BASE_ECONOMY_ROUTING: Record<string, EconomyRoute> = {
   generate_strategy:    { economyModel: 'gemini-flash', economyCredits: 3,  economyUsd: 0.010, minTierForPremium: 'pro' },
+  generate_call_strategy: { economyModel: 'gemini-flash', economyCredits: 2, economyUsd: 0.008, minTierForPremium: 'pro', blockedBelow: 'pro' },
   generate_copy:        { economyModel: 'gemini-flash', economyCredits: 1,  economyUsd: 0.004, minTierForPremium: 'starter' },
   generate_reply:       { economyModel: 'gemini-flash', economyCredits: 1,  economyUsd: 0.004, minTierForPremium: 'starter' },
   agent_task:           { economyModel: 'gemini-flash', economyCredits: 1,  economyUsd: 0.003, minTierForPremium: 'pro' },
@@ -66,6 +67,7 @@ const DAILY_CAPS: Record<string, number> = {
 // ─── Per-user operation cooldowns (seconds) ────────────────────────
 const USER_COOLDOWNS_SEC: Record<string, number> = {
   generate_strategy:    5 * 60,   // 5 min
+  generate_call_strategy: 60,
   generate_image:       3 * 60,   // 3 min
   generate_video_asset: 5 * 60,   // 5 min
   activate_agents:      10 * 60,  // 10 min

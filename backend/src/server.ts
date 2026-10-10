@@ -38,6 +38,7 @@ import { apmaOAuthRouter } from './apma/apmaOAuthRouter';
 import { TelephonyService, telephonyService } from './services/telephonyService';
 import { callCampaignService, CallCampaignError } from './services/callCampaignService';
 import { normalizePhoneE164 } from './services/callCampaignRules';
+import { parseContactFile } from './services/contactFileParser';
 import { ShipmentService, shipmentService } from './services/shipmentService';
 import { socialAccountService, type PersonalProvider } from './services/socialAccountService';
 import { emailAccountService } from './services/emailAccountService';
@@ -783,6 +784,36 @@ app.get('/api/call-campaigns/:id/contacts', (req, res) =>
 
 app.post('/api/call-campaigns/:id/contacts', (req, res) =>
   callCampaignRoute(req, res, (userId) => callCampaignService.addContacts(userId, req.params.id, req.body), 201));
+
+const callContactUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 5 * 1024 * 1024 },
+  fileFilter: (_req, file, cb) => {
+    const extension = file.originalname.toLowerCase().split('.').pop();
+    if (extension === 'csv' || extension === 'xlsx') cb(null, true);
+    else cb(new Error('Choose a .csv or .xlsx contact file.'));
+  },
+});
+
+app.post('/api/call-campaigns/:id/contacts/import', callContactUpload.single('file'), (req: any, res) =>
+  callCampaignRoute(req, res, (userId) => {
+    const contacts = req.file
+      ? parseContactFile(req.file.buffer, req.file.originalname)
+      : req.body?.contacts;
+    return callCampaignService.importContacts(userId, req.params.id, {
+      contacts,
+      consent_confirmed: req.body?.consent_confirmed,
+      default_country_code: req.body?.default_country_code,
+    });
+  }, 201));
+
+app.patch('/api/call-campaigns/:id/contacts/:contactId', (req, res) =>
+  callCampaignRoute(req, res, (userId) =>
+    callCampaignService.updateContact(userId, req.params.id, req.params.contactId, req.body)));
+
+app.delete('/api/call-campaigns/:id/contacts/:contactId', (req, res) =>
+  callCampaignRoute(req, res, (userId) =>
+    callCampaignService.removeContact(userId, req.params.id, req.params.contactId)));
 
 app.post('/api/call-campaigns/:id/approve', (req, res) =>
   callCampaignRoute(req, res, (userId) => callCampaignService.approve(userId, req.params.id, req.body?.explicit_confirmation === true)));

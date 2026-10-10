@@ -21,6 +21,7 @@ export const ENERGY_RATE = {
 export const OPERATION_COST: Record<string, { credits: number; model: string; actual_usd: number }> = {
   scan_product:        { credits: 2,  model: 'gemini-vision',  actual_usd: 0.018 },
   generate_strategy:   { credits: 8,  model: 'gpt-4o',         actual_usd: 0.072 },
+  generate_call_strategy: { credits: 4, model: 'gpt-4o', actual_usd: 0.036 },
   generate_image:      { credits: 4,  model: 'imagen-3',        actual_usd: 0.036 },
   generate_video_asset:{ credits: 6,  model: 'imagen-3',        actual_usd: 0.054 },
   generate_copy:       { credits: 3,  model: 'gpt-4o',         actual_usd: 0.027 },

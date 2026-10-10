@@ -1,5 +1,10 @@
-export function normalizePhoneE164(value: unknown): string | null {
-  const phone = String(value || '').trim().replace(/[()\s.-]/g, '');
+export function normalizePhoneE164(value: unknown, defaultCountryCallingCode?: unknown): string | null {
+  let phone = String(value || '').trim().replace(/[^\d+]/g, '');
+  if (!phone.startsWith('+') && defaultCountryCallingCode) {
+    const countryCode = String(defaultCountryCallingCode).trim().replace(/[^\d+]/g, '');
+    if (!/^\+[1-9]\d{0,2}$/.test(countryCode)) return null;
+    phone = countryCode + phone.replace(/^0+/, '');
+  }
   return /^\+[1-9]\d{7,14}$/.test(phone) ? phone : null;
 }
 

@@ -1,6 +1,12 @@
 import { getServiceSupabaseClient } from '../config/supabase';
 import { getSubscriptionGuard } from './subscriptionGuard';
 import { isEnabled as isFeatureEnabled } from './featureFlagService';
+import { inferPhoneTimeZone, MAX_CAMPAIGN_CONTACTS, MAX_CAMPAIGN_DAILY_CALLS, MIN_CALL_GAP_MS, phoneCountryCode } from './callCompliance';
+import { MemoryRetriever } from './memoryRetriever';
+import { DecisionEngine } from './decisionEngine';
+import { energyService } from './energyService';
+import { creditManagementAgent } from './creditManagementAgent';
+import { isFreeAIRequest } from '../config/ai-models';
 import {
   isValidTimezone,
   isWithinCallWindow,
@@ -11,7 +17,8 @@ import {
 const ACTIVE_CALL_STATUSES = ['queued', 'processing', 'provider_started', 'provider_queued', 'ringing', 'in_progress'];
 const OPEN_CONTACT_STATUSES = ['pending', 'scheduling', 'queued', 'calling'];
 const TERMINAL_CONTACT_STATUSES = ['completed', 'no_answer', 'failed', 'converted', 'opted_out', 'blocked', 'stopped'];
-const MAX_CONTACT_IMPORT = 200;
+const MAX_CONTACT_IMPORT = Math.min(200, MAX_CAMPAIGN_CONTACTS);
+const CAMPAIGN_FAILURE_PAUSE_THRESHOLD = 3;
 
 export class CallCampaignError extends Error {
   constructor(public statusCode: number, public code: string, message: string) {
@@ -173,16 +180,62 @@ class CallCampaignService {
       .select('id,goal,current_execution_plan').eq('id', strategyId).eq('user_id', userId).maybeSingle();
     if (strategyError) throw toError(strategyError, 'Could not validate the selected strategy.');
     if (!strategy) throw new CallCampaignError(404, 'STRATEGY_NOT_FOUND', 'Select one of your existing strategies.');
-    const callPlan = strategy.current_execution_plan?.autonomous_calls || {};
+    const cma = await creditManagementAgent.evaluate(userId, 'generate_call_strategy');
+    if (cma.decision === 'deny_tier') throw new CallCampaignError(403, 'PLAN_REQUIRED', cma.reason);
+    if (cma.decision === 'deny_cap') throw new CallCampaignError(429, 'DAILY_CAP_REACHED', cma.reason);
+    if (cma.decision === 'deny_cooldown') throw new CallCampaignError(429, 'COOLDOWN_ACTIVE', cma.reason);
+    const energy = await energyService.checkEnergy(userId, 'generate_call_strategy');
+    if (energy.balance < cma.credits) {
+      throw new CallCampaignError(402, 'INSUFFICIENT_ENERGY', `Generating the call strategy requires ${cma.credits} credits; the current balance is ${energy.balance.toFixed(2)}.`);
+    }
+
+    const retriever = new MemoryRetriever(this.db as any);
+    const context = await retriever.getAllContext(userId, strategy.product_id, 'product');
+    const { data: savedProduct, error: productError } = strategy.product_id
+      ? await this.db.from('product_memory').select('*')
+        .eq('product_id', strategy.product_id).eq('user_id', userId).maybeSingle()
+      : { data: null, error: null };
+    if (productError) throw toError(productError, 'Could not load the campaign product context.');
+    context.product = {
+      ...(savedProduct || context.product || {}),
+      product_name: productName,
+      name: productName,
+      description: productDescription,
+      product_price: text(input?.product_price, 100) || null,
+      product_image_url: validOptionalUrl(input?.product_image_url),
+    };
+    const economyMode = cma.decision === 'allow_economy';
+    const strategyGenerator = new DecisionEngine();
+    let generated;
+    try {
+      generated = await strategyGenerator.generateStrategy(
+        context,
+        goal,
+        followUpDays,
+        economyMode,
+        await isFreeAIRequest(),
+        { callCampaign: true, selectedAccounts: strategy.selected_accounts || [], strategyId: strategy.id },
+      );
+    } catch (error: any) {
+      throw new CallCampaignError(502, 'CALL_STRATEGY_GENERATION_FAILED', error?.message || 'The call strategy could not be generated.');
+    }
+    if (!generated.autonomous_calls?.enabled || !generated.autonomous_calls?.objective) {
+      throw new CallCampaignError(502, 'CALL_STRATEGY_GENERATION_FAILED', 'The AI did not return a usable call plan. Regenerate the campaign strategy before adding contacts.');
+    }
     const generatedStrategy = {
-      source: 'existing_strategy_snapshot',
+      source: 'dedicated_ai_call_strategy',
       strategy_id: strategy.id,
       strategy_goal: text(strategy.goal, 500),
-      autonomous_calls: callPlan,
+      title: generated.title,
+      rationale: generated.rationale,
+      autonomous_calls: generated.autonomous_calls,
       campaign_objective: goal,
       product_name: productName,
       product_description: productDescription,
       product_price: text(input?.product_price, 100) || null,
+      generated_at: new Date().toISOString(),
+      cma_model: cma.model,
+      cma_credits: cma.credits,
     };
     const { data, error } = await this.db.from('call_campaigns').insert({
       user_id: userId,
@@ -203,6 +256,19 @@ class CallCampaignService {
       generated_strategy: generatedStrategy,
     }).select('*').single();
     if (error) throw toError(error, 'Could not create the call campaign.');
+    try {
+      await energyService.deductEnergyWithRouting(userId, 'generate_call_strategy', {
+        campaign_id: data.id,
+        strategy_id: strategy.id,
+      }, cma);
+    } catch (chargeError: any) {
+      await this.db.from('call_campaigns').delete().eq('id', data.id).eq('user_id', userId);
+      throw new CallCampaignError(
+        chargeError?.message?.includes('INSUFFICIENT_ENERGY') ? 402 : 409,
+        chargeError?.message?.split(':')[0] || 'CALL_STRATEGY_CREDIT_CHARGE_FAILED',
+        chargeError?.message || 'Could not charge credits for the generated call strategy.',
+      );
+    }
     return data;
   }
 
@@ -225,7 +291,9 @@ class CallCampaignService {
       const phone = normalizePhoneE164(lead.phone || lead.phone_number || lead.contact_phone);
       if (!phone) throw invalid('Every selected lead must have a valid E.164 phone number.', 'LEAD_PHONE_E164_REQUIRED');
       if (lead.call_consent !== true) throw invalid('Every selected lead needs recorded call consent.', 'CALL_CONSENT_REQUIRED');
-      const timezone = isValidTimezone(lead.contact_timezone) ? lead.contact_timezone : campaign.default_timezone;
+      const timezone = isValidTimezone(lead.contact_timezone)
+        ? lead.contact_timezone
+        : inferPhoneTimeZone(phone) || campaign.default_timezone;
       return {
         user_id: userId,
         campaign_id: campaignId,
@@ -255,6 +323,180 @@ class CallCampaignService {
       .upsert(rows, { onConflict: 'campaign_id,phone_e164', ignoreDuplicates: true }).select('id');
     if (error) throw toError(error, 'Could not add contacts to the campaign.');
     return { added: inserted?.length || 0 };
+  }
+
+  async importContacts(userId: string, campaignId: string, input: any) {
+    const campaign = await this.campaignForUser(userId, campaignId);
+    if (campaign.status !== 'draft') throw invalid('Contacts can only be changed while the campaign is a draft.', 'CAMPAIGN_NOT_DRAFT');
+    if (input?.consent_confirmed !== true) {
+      throw invalid('Confirm that every imported person explicitly agreed to automated AI calls that may be recorded.', 'CALL_CONSENT_REQUIRED');
+    }
+    const supplied = Array.isArray(input?.contacts) ? input.contacts : [];
+    if (!supplied.length) throw invalid('Select at least one contact to import.');
+    if (supplied.length > MAX_CONTACT_IMPORT) throw invalid(`Import no more than ${MAX_CONTACT_IMPORT} contacts at a time.`);
+
+    const countryCallingCode = text(input?.default_country_code, 5);
+    const normalized = supplied.map((item: any, index: number) => {
+      const name = text(item?.name, 160);
+      const phone = normalizePhoneE164(item?.phone, countryCallingCode);
+      const timezone = text(item?.time_zone || item?.contact_timezone, 80);
+      if (!name) throw invalid(`Contact ${index + 1} needs a name.`, 'CONTACT_NAME_REQUIRED');
+      if (!phone) throw invalid(`Contact ${index + 1} needs a valid international number, such as +2348012345678.`, 'LEAD_PHONE_E164_REQUIRED');
+      if (timezone && !isValidTimezone(timezone)) throw invalid(`Contact ${index + 1} has an invalid IANA time zone.`, 'CONTACT_TIMEZONE_INVALID');
+      return {
+        name,
+        phone,
+        email: text(item?.email, 320) || null,
+        company: text(item?.company, 160) || null,
+        notes: text(item?.notes, 2000) || null,
+        time_zone: timezone || inferPhoneTimeZone(phone) || campaign.default_timezone,
+      };
+    });
+    const byPhone = new Map<string, typeof normalized[number]>();
+    for (const contact of normalized) {
+      if (!isValidTimezone(contact.time_zone)) throw invalid(`Set a valid time zone for ${contact.name} before importing.`, 'CONTACT_TIMEZONE_INVALID');
+      byPhone.set(contact.phone, contact);
+    }
+    const rows = [...byPhone.values()];
+    const phones = rows.map((row) => row.phone);
+    const { data: suppressed, error: suppressionError } = await this.db.from('call_suppressions')
+      .select('phone_e164').eq('user_id', userId).in('phone_e164', phones);
+    if (suppressionError) throw toError(suppressionError, 'Could not check the do-not-call suppression list.');
+    if ((suppressed || []).length) {
+      throw new CallCampaignError(409, 'CONTACT_SUPPRESSED', 'One or more imported numbers are on the do-not-call suppression list and were not imported.');
+    }
+
+    const [byPhoneField, byPhoneNumberField, byContactPhoneField] = await Promise.all([
+      this.db.from('agent_leads').select('id,platform_username,phone,phone_number,contact_phone,call_consent,contact_timezone')
+        .eq('user_id', userId).in('phone', phones),
+      this.db.from('agent_leads').select('id,platform_username,phone,phone_number,contact_phone,call_consent,contact_timezone')
+        .eq('user_id', userId).in('phone_number', phones),
+      this.db.from('agent_leads').select('id,platform_username,phone,phone_number,contact_phone,call_consent,contact_timezone')
+        .eq('user_id', userId).in('contact_phone', phones),
+    ]);
+    const lookupError = byPhoneField.error || byPhoneNumberField.error || byContactPhoneField.error;
+    if (lookupError) throw toError(lookupError, 'Could not check for existing contacts.');
+    const existingByPhone = new Map<string, any>();
+    for (const lead of [
+      ...(byPhoneField.data || []),
+      ...(byPhoneNumberField.data || []),
+      ...(byContactPhoneField.data || []),
+    ]) {
+      const phone = normalizePhoneE164(lead.phone || lead.phone_number || lead.contact_phone);
+      if (phone && !existingByPhone.has(phone)) existingByPhone.set(phone, lead);
+    }
+
+    const contactRows: any[] = [];
+    for (const contact of rows) {
+      let lead = existingByPhone.get(contact.phone);
+      if (lead) {
+        const { data: updatedLead, error } = await this.db.from('agent_leads').update({
+          phone: contact.phone,
+          contact_email: contact.email,
+          company: contact.company,
+          contact_timezone: contact.time_zone,
+          call_consent: true,
+          call_consent_at: new Date().toISOString(),
+          call_consent_source: 'owner_attested_import',
+        }).eq('id', lead.id).eq('user_id', userId).select('id').single();
+        if (error || !updatedLead) throw toError(error || new Error('Could not save consent for an existing contact.'), 'Could not save consent for an existing contact.');
+      } else {
+        const { data: insertedLead, error } = await this.db.from('agent_leads').insert({
+          strategy_id: campaign.strategy_id,
+          user_id: userId,
+          platform: 'call_campaign',
+          platform_user_id: contact.phone,
+          platform_username: contact.name,
+          first_interaction: 'User-imported contact. Automated calling requires explicit consent.',
+          intent_score: 0,
+          intent_signals: [],
+          stage: 'identified',
+          dm_sequence_step: 0,
+          notes: contact.notes,
+          phone: contact.phone,
+          contact_email: contact.email,
+          company: contact.company,
+          contact_timezone: contact.time_zone,
+          country_code: phoneCountryCode(contact.phone),
+          call_consent: true,
+          call_consent_at: new Date().toISOString(),
+          call_consent_source: 'owner_attested_import',
+        }).select('id').single();
+        if (error || !insertedLead) throw toError(error || new Error('Could not create an imported contact.'), 'Could not create an imported contact.');
+        lead = insertedLead;
+      }
+      const leadId = lead.id;
+      contactRows.push({
+        user_id: userId,
+        campaign_id: campaignId,
+        lead_id: leadId,
+        name: contact.name,
+        phone_e164: contact.phone,
+        email: contact.email,
+        company: contact.company,
+        notes: contact.notes,
+        time_zone: contact.time_zone,
+        call_consent: true,
+        consent_confirmed: true,
+        consent_source: 'owner_attested_import',
+        consent_at: new Date().toISOString(),
+        status: 'pending',
+        next_attempt_at: new Date().toISOString(),
+      });
+    }
+    const { data: inserted, error } = await this.db.from('call_campaign_contacts')
+      .upsert(contactRows, { onConflict: 'campaign_id,phone_e164', ignoreDuplicates: true }).select('id');
+    if (error) throw toError(error, 'Could not add imported contacts to the campaign.');
+    return { added: inserted?.length || 0, duplicates_skipped: rows.length - (inserted?.length || 0) };
+  }
+
+  async updateContact(userId: string, campaignId: string, contactId: string, input: any) {
+    const campaign = await this.campaignForUser(userId, campaignId);
+    if (campaign.status !== 'draft') throw invalid('Contacts can only be edited while the campaign is a draft.', 'CAMPAIGN_NOT_DRAFT');
+    const patch: Record<string, any> = { updated_at: new Date().toISOString() };
+    if (input?.name !== undefined) {
+      patch.name = text(input.name, 160);
+      if (!patch.name) throw invalid('Contact name cannot be empty.', 'CONTACT_NAME_REQUIRED');
+    }
+    if (input?.email !== undefined) patch.email = text(input.email, 320) || null;
+    if (input?.company !== undefined) patch.company = text(input.company, 160) || null;
+    if (input?.notes !== undefined) patch.notes = text(input.notes, 2000) || null;
+    if (input?.time_zone !== undefined) {
+      patch.time_zone = text(input.time_zone, 80);
+      if (!isValidTimezone(patch.time_zone)) throw invalid('Enter a valid IANA time zone.', 'CONTACT_TIMEZONE_INVALID');
+    }
+    if (Object.keys(patch).length === 1) throw invalid('Provide at least one contact field to update.');
+    const { data: current, error: lookupError } = await this.db.from('call_campaign_contacts').select('id,lead_id')
+      .eq('id', contactId).eq('campaign_id', campaignId).eq('user_id', userId).maybeSingle();
+    if (lookupError) throw toError(lookupError, 'Could not load the campaign contact.');
+    if (!current) throw new CallCampaignError(404, 'CAMPAIGN_CONTACT_NOT_FOUND', 'Campaign contact not found.');
+    const { data, error } = await this.db.from('call_campaign_contacts').update(patch)
+      .eq('id', contactId).eq('campaign_id', campaignId).eq('user_id', userId).select('*').single();
+    if (error) throw toError(error, 'Could not update the campaign contact.');
+    if (current.lead_id) {
+      const leadPatch: Record<string, any> = {};
+      if (patch.name !== undefined) leadPatch.platform_username = patch.name;
+      if (patch.email !== undefined) leadPatch.contact_email = patch.email;
+      if (patch.company !== undefined) leadPatch.company = patch.company;
+      if (patch.notes !== undefined) leadPatch.notes = patch.notes;
+      if (patch.time_zone !== undefined) leadPatch.contact_timezone = patch.time_zone;
+      if (Object.keys(leadPatch).length) {
+        const { error: leadUpdateError } = await this.db.from('agent_leads').update(leadPatch)
+          .eq('id', current.lead_id).eq('user_id', userId);
+        if (leadUpdateError) throw toError(leadUpdateError, 'The campaign contact changed but its lead record could not be synchronized.');
+      }
+    }
+    return data;
+  }
+
+  async removeContact(userId: string, campaignId: string, contactId: string) {
+    const campaign = await this.campaignForUser(userId, campaignId);
+    if (campaign.status !== 'draft') throw invalid('Contacts can only be removed while the campaign is a draft.', 'CAMPAIGN_NOT_DRAFT');
+    const { data, error } = await this.db.from('call_campaign_contacts').delete()
+      .eq('id', contactId).eq('campaign_id', campaignId).eq('user_id', userId).select('id').maybeSingle();
+    if (error) throw toError(error, 'Could not remove the campaign contact.');
+    if (!data) throw new CallCampaignError(404, 'CAMPAIGN_CONTACT_NOT_FOUND', 'Campaign contact not found.');
+    return { removed: true };
   }
 
   async approve(userId: string, campaignId: string, confirmed: boolean) {
