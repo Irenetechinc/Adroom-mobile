@@ -2,13 +2,15 @@ import crypto from 'crypto';
 import fetch from 'node-fetch';
 import { getServiceSupabaseClient } from '../config/supabase';
 import { getSubscriptionGuard } from './subscriptionGuard';
-import { AIEngine, runWithAIRequestContext } from '../config/ai-models';
+import { AIEngine, isFreeAIRequest, runWithAIRequestContext } from '../config/ai-models';
+import { creditManagementAgent } from './creditManagementAgent';
 import { callCampaignService } from './callCampaignService';
-import { normalizePhoneE164 } from './callCampaignRules';
+import { isWithinCallWindow, isValidTimezone, nextCallWindowStart, normalizePhoneE164 } from './callCampaignRules';
+import { AUTONOMOUS_CALL_CREDITS, MAX_CAMPAIGN_DAILY_CALLS, MIN_CALL_GAP_MS, classifyCallOutcome, inferPhoneTimeZone, phoneCountryCode, warmupDailyCallLimit } from './callCompliance';
 
 const ACCOUNT_SID = process.env.TWILIO_ACCOUNT_SID || '';
 const AUTH_TOKEN = process.env.TWILIO_AUTH_TOKEN || '';
-const TWILIO_FROM_COUNTRY = process.env.TWILIO_FROM_COUNTRY || 'US';
+const TWILIO_FROM_COUNTRY = String(process.env.TWILIO_FROM_COUNTRY || '').trim().toUpperCase();
 const PUBLIC_BASE_URL = (process.env.PUBLIC_BASE_URL || process.env.APP_URL || 'https://backend.adroomai.com').replace(/\/$/, '');
 const TWILIO_API = ACCOUNT_SID ? `https://api.twilio.com/2010-04-01/Accounts/${ACCOUNT_SID}` : '';
 const ELEVENLABS_API_KEY = process.env.ELEVENLABS_API_KEY || '';
@@ -19,6 +21,8 @@ const MAX_VOICE_TURNS = 6;
 const MAX_VOICE_TRANSCRIPT_CHARS = 12000;
 const VOICE_GATHER_TIMEOUT_SECONDS = 7;
 const VOICE_TURN_AI_TIMEOUT_MS = 6500;
+let missingTelephonyWarningLogged = false;
+let missingElevenLabsWarningLogged = false;
 
 function escapeXml(value: string): string {
   return value
@@ -66,6 +70,7 @@ async function twilioRequest(path: string, method: 'GET' | 'POST', body?: URLSea
     method,
     headers: { Authorization: basicAuth(), ...(body ? { 'Content-Type': 'application/x-www-form-urlencoded' } : {}) },
     body: body?.toString(),
+    timeout: 15000,
   });
   const data: any = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(data?.message || `Twilio request failed (${response.status})`);
@@ -81,9 +86,27 @@ export class TelephonyService {
       !ACCOUNT_SID && 'TWILIO_ACCOUNT_SID',
       !AUTH_TOKEN && 'TWILIO_AUTH_TOKEN',
     ].filter(Boolean) as string[];
+    const elevenLabs = {
+      apiKeyConfigured: Boolean(ELEVENLABS_API_KEY),
+      defaultVoiceConfigured: Boolean(ELEVENLABS_DEFAULT_VOICE_ID),
+      countryVoiceMapConfigured: Object.keys(ELEVENLABS_VOICE_IDS_BY_COUNTRY).length > 0,
+      dynamicVoiceLookupAvailable: Boolean(ELEVENLABS_API_KEY),
+      fallback: 'Twilio Say',
+    };
+    if (!ELEVENLABS_API_KEY && !missingElevenLabsWarningLogged) {
+      missingElevenLabsWarningLogged = true;
+      console.warn('[Telephony] ELEVENLABS_API_KEY is not configured; calls will use the Twilio speech fallback.');
+    }
     return {
       ready: missingKeys.length === 0,
       missingKeys,
+      optionalMissingKeys: [
+        !TWILIO_FROM_COUNTRY && 'TWILIO_FROM_COUNTRY',
+        !ELEVENLABS_API_KEY && 'ELEVENLABS_API_KEY',
+        ELEVENLABS_API_KEY && !ELEVENLABS_DEFAULT_VOICE_ID && !Object.keys(ELEVENLABS_VOICE_IDS_BY_COUNTRY).length && 'ELEVENLABS_VOICE_ID or ELEVENLABS_VOICE_IDS_BY_COUNTRY',
+      ].filter(Boolean),
+      outboundCountryConfigured: Boolean(TWILIO_FROM_COUNTRY),
+      elevenLabs,
       publicBaseUrlSource: process.env.PUBLIC_BASE_URL ? 'PUBLIC_BASE_URL' : process.env.APP_URL ? 'APP_URL' : 'canonical_fallback',
     };
   }
@@ -94,10 +117,13 @@ export class TelephonyService {
     if (existing?.phone_number) return existing.phone_number;
     if (!configured()) throw new Error('No outbound number is available because Twilio is not configured.');
 
-    const normalizedCountry = /^[A-Z]{2}$/.test(country.toUpperCase()) ? country.toUpperCase() : TWILIO_FROM_COUNTRY;
+    const normalizedCountry = String(country || '').trim().toUpperCase();
+    if (!/^[A-Z]{2}$/.test(normalizedCountry)) {
+      throw new Error('Set TWILIO_FROM_COUNTRY to a valid two-letter country code, or provide the destination country for number provisioning.');
+    }
     const available = await twilioRequest(`/AvailablePhoneNumbers/${normalizedCountry}/Local.json?VoiceEnabled=true`, 'GET');
     const candidate = available?.available_phone_numbers?.[0]?.phone_number;
-    if (!candidate) throw new Error(`Twilio has no voice-enabled numbers available for country ${TWILIO_FROM_COUNTRY}.`);
+    if (!candidate) throw new Error(`Twilio has no voice-enabled numbers available for country ${normalizedCountry}.`);
     const purchased = await twilioRequest('/IncomingPhoneNumbers.json', 'POST', new URLSearchParams({
       PhoneNumber: candidate,
       VoiceUrl: `${PUBLIC_BASE_URL}/api/webhooks/twilio/voice`,
@@ -121,11 +147,25 @@ export class TelephonyService {
   }
 
   async processQueuedCalls(limit = 10): Promise<number> {
-    if (!configured()) return 0;
+    if (!configured()) {
+      if (!missingTelephonyWarningLogged) {
+        missingTelephonyWarningLogged = true;
+        console.error('[Telephony] Call queue is paused because Twilio credentials or the public webhook URL are missing.');
+      }
+      return 0;
+    }
     const { data: calls, error } = await this.supabase.from('call_logs').select('*').eq('status', 'queued').order('created_at', { ascending: true }).limit(limit);
     if (error) throw new Error(`Could not load queued calls: ${error.message}`);
     let processed = 0;
     for (const call of calls || []) {
+      const nextWindowAt = Date.parse(String(call.summary?.next_call_window_at || ''));
+      if (Number.isFinite(nextWindowAt) && nextWindowAt > Date.now()) continue;
+      try {
+        if (!(await this.isAccountCallEligibleNow(call.user_id, call.id))) continue;
+      } catch (eligibilityError: any) {
+        console.error(`[Telephony] Could not verify call pacing for ${call.id}: ${eligibilityError.message}`);
+        continue;
+      }
       const { data: claimed, error: claimError } = await this.supabase
         .from('call_logs')
         .update({ status: 'processing' })
@@ -143,7 +183,15 @@ export class TelephonyService {
         const rawErrorCode = String(error?.code || error?.message || 'CALL_START_FAILED');
         const errorCode = rawErrorCode.split(':')[0];
         const windowClosed = errorCode === 'CALL_WINDOW_CLOSED';
-        const terminalStatus = windowClosed || [
+        const requestedWindowAt = windowClosed ? Date.parse(rawErrorCode.slice(rawErrorCode.indexOf(':') + 1)) : NaN;
+        const summary = {
+          ...(claimed.summary || {}),
+          error: String(error?.message || errorCode),
+          ...(Number.isFinite(requestedWindowAt) ? { next_call_window_at: new Date(requestedWindowAt).toISOString() } : {}),
+        };
+        const terminalStatus = windowClosed && !call.campaign_id
+          ? 'queued'
+          : windowClosed || [
           'CAMPAIGN_NOT_RUNNING',
           'CAMPAIGN_CONTACT_NOT_QUEUED',
           'CALL_CONSENT_REQUIRED',
@@ -153,8 +201,8 @@ export class TelephonyService {
         const { data: updated, error: updateError } = await this.supabase.from('call_logs').update({
           status: terminalStatus,
           outcome: errorCode,
-          summary: { ...(claimed.summary || {}), error: String(error?.message || errorCode) },
-          ended_at: new Date().toISOString(),
+          summary,
+          ended_at: terminalStatus === 'queued' ? null : new Date().toISOString(),
         }).eq('id', call.id).eq('status', 'processing').select('id').maybeSingle();
         if (updateError) console.error(`[Telephony] Could not record call failure ${call.id}: ${updateError.message}`);
         if (updated && call.campaign_id) {
@@ -175,6 +223,37 @@ export class TelephonyService {
     return processed;
   }
 
+  private async isAccountCallEligibleNow(userId: string, callId: string): Promise<boolean> {
+    const now = new Date();
+    const since = new Date(now.getTime() - 86400000).toISOString();
+    const { count, error: countError } = await this.supabase.from('call_logs')
+      .select('id', { count: 'exact', head: true })
+      .eq('user_id', userId).gte('started_at', since);
+    if (countError) throw new Error(`Could not enforce the account call limit: ${countError.message}`);
+
+    const { data: firstCall, error: firstError } = await this.supabase.from('call_logs')
+      .select('started_at').eq('user_id', userId).not('started_at', 'is', null)
+      .order('started_at', { ascending: true }).limit(1).maybeSingle();
+    if (firstError) throw new Error(`Could not determine call warm-up status: ${firstError.message}`);
+    const daysSinceFirstCall = firstCall?.started_at
+      ? Math.max(0, Math.floor((now.getTime() - new Date(firstCall.started_at).getTime()) / 86400000))
+      : 0;
+    if (Number(count || 0) >= Math.min(MAX_CAMPAIGN_DAILY_CALLS, warmupDailyCallLimit(daysSinceFirstCall))) {
+      return false;
+    }
+
+    const { data: previous, error: previousError } = await this.supabase.from('call_logs')
+      .select('started_at,summary').eq('user_id', userId).neq('id', callId)
+      .not('started_at', 'is', null).order('started_at', { ascending: false }).limit(1).maybeSingle();
+    if (previousError) throw new Error(`Could not enforce the randomized call interval: ${previousError.message}`);
+    if (!previous?.started_at) return true;
+    const gap = Math.max(
+      MIN_CALL_GAP_MS,
+      Math.min(MIN_CALL_GAP_MS * 2, Number(previous.summary?.next_call_gap_ms) || MIN_CALL_GAP_MS),
+    );
+    return now.getTime() - new Date(previous.started_at).getTime() >= gap;
+  }
+
   private async startCall(call: any) {
     const guard = await getSubscriptionGuard(call.user_id, this.supabase as any);
     if (!['pro', 'pro_plus'].includes(guard.plan) || !['active', 'trialing'].includes(guard.status)) throw new Error('Calling requires an active Pro or Pro+ subscription.');
@@ -183,7 +262,7 @@ export class TelephonyService {
     if (prefs?.do_not_call) throw new Error('User has disabled outbound calls.');
     const { data: lead, error: leadError } = call.lead_id
       ? await this.supabase.from('agent_leads')
-        .select('phone, phone_number, contact_phone, platform_username, country, country_code, call_consent')
+        .select('phone, phone_number, contact_phone, platform_username, country, country_code, contact_timezone, call_consent')
         .eq('id', call.lead_id)
         .eq('user_id', call.user_id)
         .single()
@@ -199,12 +278,26 @@ export class TelephonyService {
     if (!/^\+[1-9]\d{7,14}$/.test(destination)) {
       throw new Error('Lead phone number must be in E.164 format, including its country code.');
     }
-    const destinationCountry = String(call.summary?.country_code || lead?.country_code || lead?.country || TWILIO_FROM_COUNTRY);
+    const destinationCountryHint = String(call.summary?.country_code || lead?.country_code || '').trim().toUpperCase();
+    const destinationCountry = /^[A-Z]{2}$/.test(destinationCountryHint)
+      ? destinationCountryHint
+      : phoneCountryCode(destination) || TWILIO_FROM_COUNTRY;
+    const callTimezone = String(call.summary?.contact_timezone || lead.contact_timezone || inferPhoneTimeZone(destination) || '');
+    if (!campaignContext) {
+      if (!isValidTimezone(callTimezone)) throw new Error('CALL_TIMEZONE_REQUIRED: The lead needs a known local time zone before a call can be placed.');
+      if (!isWithinCallWindow(callTimezone, 9, 17)) {
+        const nextAt = nextCallWindowStart(callTimezone, 9, 17, new Date());
+        throw new Error(`CALL_WINDOW_CLOSED:${nextAt.toISOString()}`);
+      }
+    }
+    if (!destinationCountry) {
+      throw new Error('DESTINATION_COUNTRY_REQUIRED: The lead country could not be inferred from its phone number. Set the lead country or configure TWILIO_FROM_COUNTRY.');
+    }
     const from = await this.ensureUserNumber(call.user_id, destinationCountry);
     const { data: charge, error: chargeError } = await this.supabase.rpc('charge_call_credits', {
       p_call_id: call.id,
       p_user_id: call.user_id,
-      p_credits: 1,
+      p_credits: AUTONOMOUS_CALL_CREDITS,
     });
     if (chargeError) throw new Error(`CALL_CREDIT_CHARGE_FAILED:${chargeError.message}`);
     if (!charge?.ok) {
@@ -214,6 +307,14 @@ export class TelephonyService {
       throw failure;
     }
     await callCampaignService.markAttemptStarted(call, campaignContext);
+    const attemptedAt = new Date();
+    const nextCallGapMs = MIN_CALL_GAP_MS + crypto.randomInt(0, MIN_CALL_GAP_MS + 1);
+    call.summary = { ...(call.summary || {}), next_call_gap_ms: nextCallGapMs };
+    const { error: attemptUpdateError } = await this.supabase.from('call_logs').update({
+      started_at: attemptedAt.toISOString(),
+      summary: call.summary,
+    }).eq('id', call.id).eq('status', 'processing');
+    if (attemptUpdateError) throw new Error(`Could not record the call attempt before dialing: ${attemptUpdateError.message}`);
     const twilioCall = await twilioRequest('/Calls.json', 'POST', new URLSearchParams({
       To: destination,
       From: from,
@@ -223,13 +324,14 @@ export class TelephonyService {
       RecordingStatusCallback: `${PUBLIC_BASE_URL}/api/webhooks/twilio/recording?call_id=${encodeURIComponent(call.id)}`,
       RecordingStatusCallbackEvent: 'completed',
       Record: 'true',
+      MachineDetection: 'Enable',
+      MachineDetectionTimeout: '6',
       TimeLimit: '180',
     }));
     const { error: updateError } = await this.supabase.from('call_logs').update({
       status: 'provider_started',
       provider: 'twilio',
       provider_call_id: twilioCall.sid,
-      started_at: new Date().toISOString(),
       summary: { ...(call.summary || {}), country_code: destinationCountry.toUpperCase(), from_number: from },
     }).eq('id', call.id).eq('status', 'processing');
     if (updateError) throw new Error(`Twilio started the call, but its call record could not be updated: ${updateError.message}`);
@@ -285,8 +387,14 @@ export class TelephonyService {
   }
 
   async handleStatus(callId: string, params: Record<string, string>) {
-    const statusMap: Record<string, string> = { queued: 'provider_queued', initiated: 'provider_started', ringing: 'ringing', in_progress: 'in_progress', completed: 'completed', busy: 'failed', no_answer: 'no_answer', failed: 'failed', canceled: 'canceled' };
-    const status = statusMap[params.CallStatus] || 'provider_started';
+    const providerStatus = String(params.CallStatus || '').toLowerCase();
+    const statusMap: Record<string, string> = {
+      queued: 'provider_queued', initiated: 'provider_started', ringing: 'ringing',
+      in_progress: 'in_progress', 'in-progress': 'in_progress', answered: 'in_progress',
+      completed: 'completed', busy: 'failed', no_answer: 'no_answer', 'no-answer': 'no_answer',
+      failed: 'failed', canceled: 'canceled', cancelled: 'canceled',
+    };
+    const status = statusMap[providerStatus] || 'provider_started';
     const { data: call, error: readError } = await this.supabase.from('call_logs')
       .select('status,summary,user_id,campaign_id,campaign_contact_id')
       .eq('id', callId).maybeSingle();
@@ -294,24 +402,30 @@ export class TelephonyService {
     if (!call) return;
     const terminalStatuses = ['completed', 'failed', 'no_answer', 'canceled', 'recorded'];
     if (terminalStatuses.includes(call.status) && !terminalStatuses.includes(status)) return;
+    const durationSeconds = Number(params.CallDuration || call.summary?.duration_seconds || 0);
+    const answeredBy = String(params.AnsweredBy || call.summary?.answered_by || '');
+    const outcome = classifyCallOutcome(providerStatus, call.summary, answeredBy, durationSeconds);
+    const callSummary = `Outcome: ${outcome.replace(/_/g, ' ')}${durationSeconds > 0 ? `; duration: ${durationSeconds}s` : ''}.`;
+    const nextSummary = {
+      ...(call.summary || {}),
+      provider_status: providerStatus,
+      answered_by: answeredBy || call.summary?.answered_by || null,
+      duration_seconds: durationSeconds || null,
+      outcome,
+      call_summary: callSummary,
+    };
     const patch: Record<string, any> = {
       status,
       provider_call_id: params.CallSid,
-      outcome: call.summary?.voice_disposition || status,
-      summary: {
-        ...(call.summary || {}),
-        provider_status: params.CallStatus,
-        duration_seconds: params.CallDuration || call.summary?.duration_seconds || null,
-      },
+      outcome,
+      summary: nextSummary,
     };
     if (terminalStatuses.includes(status)) patch.ended_at = new Date().toISOString();
     const { error } = await this.supabase.from('call_logs').update(patch).eq('id', callId);
     if (error) throw new Error(`Could not save call status: ${error.message}`);
     if (terminalStatuses.includes(status)) {
       await callCampaignService.finalizeCall(callId, status, {
-        ...(call.summary || {}),
-        provider_status: params.CallStatus,
-        duration_seconds: params.CallDuration || call.summary?.duration_seconds || null,
+        ...nextSummary,
       });
     }
   }
@@ -397,10 +511,24 @@ export class TelephonyService {
     call.transcript = transcript;
   }
 
-  async voiceInstructions(callId: string): Promise<string> {
+  async voiceInstructions(callId: string, answeredBy = ''): Promise<string> {
     try {
       const call = await this.loadVoiceCall(callId);
       if (!call || isCallTerminal(call.status)) return this.hangupXml();
+      const answerClassification = answeredBy.trim().toLowerCase();
+      if (answerClassification.startsWith('machine') || answerClassification.startsWith('fax')) {
+        const outcome = answerClassification.startsWith('fax') ? 'fax' : 'voicemail';
+        await this.saveVoiceState(call, {
+          answered_by: answeredBy,
+          voice_disposition: outcome,
+          outcome,
+          call_summary: `Outcome: ${outcome.replace(/_/g, ' ')}; no live conversation was started.`,
+        }, []);
+        return this.hangupXml();
+      }
+      if (answeredBy) {
+        await this.saveVoiceState(call, { answered_by: answeredBy }, []);
+      }
       const eligibility = await this.checkVoiceEligibility(call);
       if (!eligibility.allowed) {
         console.warn(`[Telephony] Ending call ${callId} before greeting: ${eligibility.reason}`);
@@ -416,7 +544,12 @@ export class TelephonyService {
       }
 
       const subject = safeVoiceText(call.summary?.product_name || call.summary?.requested_goal || 'the product or service you asked about', 240);
-      const greeting = `Hi, I’m an AI assistant calling about ${subject}. This call is recorded. Is now a good time to talk?`;
+      const openingLine = safeVoiceText(
+        call.summary?.call_plan?.opening_line || call.summary?.call_plan?.opener || '',
+        360,
+      );
+      const disclosure = `Hi, I’m an AI assistant calling about ${subject}. This call is recorded.`;
+      const greeting = `${disclosure} ${openingLine || 'Is this a convenient time to speak?'}`;
       await this.saveVoiceState(call, {
         voice_conversation_started: true,
         voice_turn_index: 0,
@@ -508,31 +641,58 @@ export class TelephonyService {
         product_price: call.summary?.product_price || null,
       }), 1800);
       const callPlan = safeVoiceText(JSON.stringify(call.summary?.call_plan || {}), 1200);
+      const leadContext = safeVoiceText(JSON.stringify(call.summary?.lead_call_context || {}), 1000);
       const history = safeVoiceText(call.transcript || '', 5000);
       const prompt = `You are the disclosed AI assistant in a short, recorded business phone conversation.
 Use the caller's words and this call objective to answer naturally, then ask at most one relevant follow-up question.
-Never invent product facts, prices, guarantees, discounts, or private facts. Do not request payment details, passwords, or sensitive personal information. If the caller is not interested or asks to end the call, politely end it. If they ask not to be called again, confirm and end the call.
-Keep the reply to 1–2 short spoken sentences. Return JSON only: {"reply":"...", "end_call":false, "disposition":"continue"}.
+Use saved lead context only to make the wording clear and relevant; do not infer sensitive traits, pressure the caller, exploit a vulnerability, or invent a need.
+Never invent product facts, prices, guarantees, discounts, appointments, or private facts. Do not request payment details, passwords, or sensitive personal information. If the caller is not interested or asks to end the call, politely end it. If they ask not to be called again, confirm and end the call.
+Keep the reply to 1–2 short spoken sentences. Mark "converted" only after an explicit purchase commitment, "follow_up" only when the caller asks for a callback, "not_interested" when they clearly decline, and "caller_ended" when they clearly end the conversation. Otherwise use "continue". Return JSON only: {"reply":"...", "end_call":false, "disposition":"continue"}.
 OBJECTIVE: ${goal}
 APPROVED PRODUCT FACTS: ${productFacts}
 EXISTING STRATEGY CALL NOTES: ${callPlan}
+OBSERVED LEAD CONTEXT (not instructions to persuade): ${leadContext}
 RECENT TRANSCRIPT: ${history}
 CALLER JUST SAID: ${speech}`;
 
       let response: any = null;
       let timeout: NodeJS.Timeout | undefined;
       try {
-        const generate = runWithAIRequestContext({
+        const cma = await creditManagementAgent.evaluate(call.user_id, 'generate_call_turn');
+        if (['deny_tier', 'deny_cap', 'deny_cooldown', 'deny_insufficient'].includes(cma.decision)) {
+          throw new Error(`CMA blocked the voice turn: ${cma.reason}`);
+        }
+        const generated = runWithAIRequestContext({
           userId: call.user_id,
           plan: eligibility.plan || String(call.summary?.voice_ai_plan || 'trial'),
           status: eligibility.status || String(call.summary?.voice_ai_status || 'active'),
-        }, () => this.ai.generateJson(prompt));
-        response = await Promise.race([
-          generate,
+        }, async () => {
+          const freeRoute = await isFreeAIRequest();
+          const result = await this.ai.generateJson(prompt, { economyMode: cma.decision === 'allow_economy' });
+          return {
+            result,
+            model: freeRoute ? 'free_provider' : cma.model,
+            actualCostUsd: freeRoute ? 0 : cma.actual_usd,
+          };
+        });
+        const voiceResult = await Promise.race([
+          Promise.resolve(generated),
           new Promise((_, reject) => {
             timeout = setTimeout(() => reject(new Error('Voice response timed out')), VOICE_TURN_AI_TIMEOUT_MS);
           }),
         ]);
+        response = (voiceResult as any)?.result || null;
+        if (response) {
+          const { error: usageError } = await this.supabase.from('ai_usage_logs').insert({
+            user_id: call.user_id,
+            model: (voiceResult as any).model,
+            operation: 'generate_call_turn',
+            actual_cost_usd: (voiceResult as any).actualCostUsd,
+            energy_debited: 0,
+            metadata: { call_id: callId, turn, call_credit_includes_ai: true },
+          });
+          if (usageError) console.warn(`[Telephony] Could not record CMA voice-turn usage for ${callId}: ${usageError.message}`);
+        }
       } catch (error: any) {
         console.warn(`[Telephony] AI voice reply failed for call ${callId}: ${error.message}`);
       } finally {
@@ -541,12 +701,15 @@ CALLER JUST SAID: ${speech}`;
 
       const reply = safeVoiceText(response?.reply, 500);
       const reachedTurnLimit = turn >= MAX_VOICE_TURNS;
-      const shouldEnd = response?.end_call === true || !reply || reachedTurnLimit;
+      const rawDisposition = String(response?.disposition || '').trim().toLowerCase().replace(/[\s-]+/g, '_');
+      const allowedDispositions = ['continue', 'converted', 'follow_up', 'follow_up_scheduled', 'not_interested', 'caller_ended'];
+      const candidateDisposition = allowedDispositions.includes(rawDisposition) ? rawDisposition : '';
+      const dispositionRequiresEnd = ['converted', 'follow_up', 'follow_up_scheduled', 'not_interested', 'caller_ended'].includes(candidateDisposition);
+      const shouldEnd = response?.end_call === true || dispositionRequiresEnd || !reply || reachedTurnLimit;
       const assistantReply = reply || 'I’m sorry, I can’t continue this conversation right now. Goodbye.';
-      const disposition = safeVoiceText(
-        reachedTurnLimit ? 'turn_limit' : response?.disposition || (shouldEnd ? 'ai_unavailable' : 'continue'),
-        80,
-      );
+      const disposition = candidateDisposition && candidateDisposition !== 'continue'
+        ? candidateDisposition
+        : reachedTurnLimit ? 'turn_limit' : shouldEnd ? 'ai_unavailable' : 'continue';
       await this.saveVoiceState(call, {
         voice_turn_index: turn,
         voice_turn_count: nextTurnCount,

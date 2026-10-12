@@ -4,6 +4,40 @@ export const MAX_CAMPAIGN_DAILY_CALLS = 25;
 export const MAX_CAMPAIGN_ATTEMPTS = 3;
 export const MIN_CALL_GAP_MS = 2 * 60 * 1000;
 
+export function warmupDailyCallLimit(daysSinceFirstCall: number): number {
+  if (!Number.isFinite(daysSinceFirstCall) || daysSinceFirstCall < 7) return 5;
+  if (daysSinceFirstCall < 14) return 10;
+  if (daysSinceFirstCall < 21) return 15;
+  if (daysSinceFirstCall < 28) return 20;
+  return MAX_CAMPAIGN_DAILY_CALLS;
+}
+
+export function classifyCallOutcome(providerStatus: string, summary: any, answeredBy = '', durationSeconds = 0): string {
+  const machine = answeredBy.toLowerCase();
+  if (machine.startsWith('machine')) return 'voicemail';
+  if (machine.startsWith('fax')) return 'fax';
+
+  const disposition = String(summary?.voice_disposition || summary?.outcome || '').trim().toLowerCase();
+  if (['converted', 'conversion'].includes(disposition)) return 'converted';
+  if (['follow_up', 'follow_up_scheduled', 'callback_requested'].includes(disposition)) return 'follow_up_scheduled';
+  if (['not_interested', 'rejected'].includes(disposition)) return 'not_interested';
+  if (['do_not_call', 'opted_out'].includes(disposition)) return 'opted_out';
+  if (['caller_ended', 'recipient_hung_up', 'hung_up'].includes(disposition)) return 'hung_up';
+  if (disposition === 'no_response') return 'no_response';
+  if (disposition === 'cancelled_by_policy') return 'cancelled_by_policy';
+
+  const status = providerStatus.trim().toLowerCase().replace(/-/g, '_');
+  if (status === 'busy') return 'busy';
+  if (status === 'no_answer') return 'no_answer';
+  if (status === 'canceled' || status === 'cancelled') return 'canceled';
+  if (status === 'failed') return 'provider_failed';
+  if (status === 'completed') {
+    if (machine === 'human' || durationSeconds > 0) return 'answered';
+    return 'completed';
+  }
+  return status || 'unknown';
+}
+
 const PHONE_TIME_ZONES: Array<{ prefix: string; country: string; timeZone?: string }> = [
   { prefix: '+234', country: 'NG', timeZone: 'Africa/Lagos' },
   { prefix: '+233', country: 'GH', timeZone: 'Africa/Accra' },

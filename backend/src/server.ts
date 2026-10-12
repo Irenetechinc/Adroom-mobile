@@ -1006,7 +1006,7 @@ app.post('/api/webhooks/twilio/voice', async (req, res) => {
   if (!valid) return res.status(403).type('text/plain').send('Invalid signature');
   const callId = String(req.query.call_id || '');
   if (!callId) return res.status(400).type('text/plain').send('Missing call id');
-  res.type('text/xml').send(await telephonyService.voiceInstructions(callId));
+  res.type('text/xml').send(await telephonyService.voiceInstructions(callId, params.AnsweredBy || ''));
 });
 
 app.post('/api/webhooks/twilio/voice/turn', async (req, res) => {
@@ -2547,6 +2547,10 @@ app.post('/api/ai/generate-strategy', async (req, res) => {
             platforms: strategy.platforms,
             content_pillars: strategy.content_pillars,
             schedule: strategy.schedule,
+            current_execution_plan: {
+              ...strategy,
+              updated_at: new Date().toISOString(),
+            },
             estimated_outcomes: strategy.estimated_outcomes,
             status: 'approved',
             selected_accounts: requestedAccounts,
@@ -6305,8 +6309,14 @@ app.post('/api/sales/outreach', async (req, res) => {
  * dashboard intervention on every new deployment / environment.
  */
 async function ensureStorageBuckets(): Promise<void> {
-  const REQUIRED_BUCKETS = [
+  const REQUIRED_BUCKETS: Array<{
+    name: string;
+    public: boolean;
+    allowedMimeTypes?: string[];
+    fileSizeLimit?: number;
+  }> = [
     { name: 'creative-assets', public: true },
+    { name: 'call-audio', public: false, allowedMimeTypes: ['audio/mpeg'], fileSizeLimit: 10 * 1024 * 1024 },
   ];
 
   try {
@@ -6326,8 +6336,8 @@ async function ensureStorageBuckets(): Promise<void> {
       }
       const { error: createErr } = await svc.storage.createBucket(bucket.name, {
         public: bucket.public,
-        allowedMimeTypes: undefined, // allow all types
-        fileSizeLimit: undefined,    // no server-side limit (rely on multer)
+        allowedMimeTypes: bucket.allowedMimeTypes,
+        fileSizeLimit: bucket.fileSizeLimit,
       });
       if (createErr) {
         // "already exists" is not a real error — race condition on first boot

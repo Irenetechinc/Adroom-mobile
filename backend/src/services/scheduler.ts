@@ -617,6 +617,12 @@ export class SchedulerService {
 
         cron.schedule(SCHED_CALLS_CRON, async () => {
             try {
+                const synced = await callCampaignService.syncMainStrategyCalls(50);
+                if (synced > 0) console.log(`[Scheduler] Queued ${synced} consented leads from active strategy call actions.`);
+            } catch (e: any) {
+                console.error('[Scheduler] Main-strategy call synchronization error:', e.message);
+            }
+            try {
                 await callCampaignService.queueDueContacts(10);
             } catch (e: any) {
                 console.error('[Scheduler] Call campaign scheduling error:', e.message);

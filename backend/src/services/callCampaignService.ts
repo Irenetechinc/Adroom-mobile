@@ -1,7 +1,7 @@
 import { getServiceSupabaseClient } from '../config/supabase';
 import { getSubscriptionGuard } from './subscriptionGuard';
 import { isEnabled as isFeatureEnabled } from './featureFlagService';
-import { inferPhoneTimeZone, MAX_CAMPAIGN_CONTACTS, MAX_CAMPAIGN_DAILY_CALLS, MIN_CALL_GAP_MS, phoneCountryCode } from './callCompliance';
+import { inferPhoneTimeZone, MAX_CAMPAIGN_CONTACTS, MAX_CAMPAIGN_DAILY_CALLS, MIN_CALL_GAP_MS, phoneCountryCode, warmupDailyCallLimit } from './callCompliance';
 import { MemoryRetriever } from './memoryRetriever';
 import { DecisionEngine } from './decisionEngine';
 import { energyService } from './energyService';
@@ -177,7 +177,8 @@ class CallCampaignService {
     if (!strategyId) throw invalid('Select an existing strategy for this campaign.');
 
     const { data: strategy, error: strategyError } = await this.db.from('strategies')
-      .select('id,goal,current_execution_plan').eq('id', strategyId).eq('user_id', userId).maybeSingle();
+      .select('id,goal,current_execution_plan,product_id,selected_accounts')
+      .eq('id', strategyId).eq('user_id', userId).maybeSingle();
     if (strategyError) throw toError(strategyError, 'Could not validate the selected strategy.');
     if (!strategy) throw new CallCampaignError(404, 'STRATEGY_NOT_FOUND', 'Select one of your existing strategies.');
     const cma = await creditManagementAgent.evaluate(userId, 'generate_call_strategy');
@@ -605,6 +606,16 @@ class CallCampaignService {
       .eq('id', call.campaign_id).eq('user_id', call.user_id).maybeSingle();
     if (campaignError) throw toError(campaignError, 'Could not validate the call campaign.');
     if (!campaign || campaign.status !== 'running') throw new CallCampaignError(409, 'CAMPAIGN_NOT_RUNNING', 'The campaign is not running.');
+    if (campaign.generated_strategy?.source === 'main_strategy_action') {
+      const { data: strategy, error: strategyError } = await this.db.from('strategies')
+        .select('status,is_active,current_execution_plan')
+        .eq('id', campaign.strategy_id).eq('user_id', call.user_id).maybeSingle();
+      if (strategyError) throw toError(strategyError, 'Could not confirm that the main strategy is still active.');
+      if (!strategy || strategy.status !== 'active' || strategy.is_active !== true
+        || strategy.current_execution_plan?.autonomous_calls?.enabled !== true) {
+        throw new CallCampaignError(409, 'CAMPAIGN_NOT_RUNNING', 'The main strategy no longer authorizes autonomous calls.');
+      }
+    }
     const { data: contact, error: contactError } = await this.db.from('call_campaign_contacts').select('*')
       .eq('id', call.campaign_contact_id).eq('campaign_id', campaign.id).eq('user_id', call.user_id).maybeSingle();
     if (contactError) throw toError(contactError, 'Could not validate campaign contact consent.');
@@ -695,7 +706,7 @@ class CallCampaignService {
     }
   }
 
-  async finalizeCall(callId: string, finalStatus: string, summary: any, failureReason?: string) {
+  async finalizeCall(callId: string, finalStatus: string, summary: any = {}, failureReason?: string) {
     const { data: call, error: callError } = await this.db.from('call_logs')
       .select('id,user_id,campaign_id,campaign_contact_id').eq('id', callId).maybeSingle();
     if (callError) throw toError(callError, 'Could not load the campaign call result.');
@@ -712,7 +723,7 @@ class CallCampaignService {
     if (!campaign) return;
 
     const now = new Date();
-    const outcome = text(summary?.voice_disposition || failureReason || finalStatus, 120);
+    const outcome = text(summary?.voice_disposition || summary?.outcome || failureReason || finalStatus, 120);
     if (failureReason === 'INSUFFICIENT_ENERGY' || failureReason === 'CALL_CREDIT_CHARGE_FAILED') {
       const creditFailure = failureReason === 'INSUFFICIENT_ENERGY' ? 'insufficient_energy' : 'call_credit_charge_failed';
       await this.db.from('call_campaign_contacts').update({
@@ -731,18 +742,27 @@ class CallCampaignService {
     }
 
     const policyStopped = summary?.voice_disposition === 'cancelled_by_policy';
+    const shouldFollowUp = ['follow_up', 'follow_up_scheduled'].includes(outcome);
+    const retryableAnswerOutcome = ['busy', 'no_answer', 'voicemail'].includes(outcome);
+    const providerFailure = finalStatus === 'failed'
+      && !retryableAnswerOutcome
+      && !['campaign_paused', 'campaign_stopped', 'cancelled_by_policy'].includes(outcome);
     const isSuccessful = finalStatus === 'completed' && !policyStopped && campaign.status !== 'stopped';
     const stillRunning = campaign.status === 'running';
     const attemptsRemain = Number(contact.attempt_count || 0) < Number(campaign.max_attempts || 1);
     const nextStatus = campaign.status === 'stopped'
       ? 'stopped'
       : isSuccessful
-        ? (outcome === 'converted' ? 'converted' : 'completed')
+        ? (outcome === 'converted'
+          ? 'converted'
+          : (shouldFollowUp || retryableAnswerOutcome) && stillRunning && attemptsRemain
+            ? 'pending'
+            : 'completed')
         : finalStatus === 'canceled' && campaign.status === 'paused'
           ? 'pending'
         : policyStopped && campaign.status === 'paused'
           ? 'pending'
-        : stillRunning && attemptsRemain
+        : (retryableAnswerOutcome || stillRunning) && attemptsRemain
           ? 'pending'
           : finalStatus === 'no_answer' ? 'no_answer' : 'failed';
     const patch: Record<string, any> = {
@@ -761,7 +781,165 @@ class CallCampaignService {
     const { data: finalized, error: finalizeError } = await update.select('id').maybeSingle();
     if (finalizeError) throw toError(finalizeError, 'Could not finalize the campaign contact.');
     if (!finalized) return;
+    if (providerFailure) {
+      const failures = Number(campaign.consecutive_failures || 0) + 1;
+      const pause = failures >= CAMPAIGN_FAILURE_PAUSE_THRESHOLD;
+      await this.db.from('call_campaigns').update({
+        consecutive_failures: failures,
+        ...(pause ? { status: 'paused', failure_reason: 'repeated_provider_failures' } : {}),
+        updated_at: now.toISOString(),
+      }).eq('id', campaign.id).eq('user_id', call.user_id).eq('status', 'running');
+      if (pause) {
+        await this.db.from('call_campaign_contacts').update({
+          status: 'pending',
+          last_outcome: 'campaign_paused_after_repeated_failures',
+          updated_at: now.toISOString(),
+        }).eq('campaign_id', campaign.id).eq('user_id', call.user_id).in('status', ['queued', 'scheduling']);
+        await this.db.from('call_logs').update({
+          status: 'canceled',
+          outcome: 'campaign_paused_after_repeated_failures',
+          ended_at: now.toISOString(),
+        }).eq('campaign_id', campaign.id).eq('user_id', call.user_id).eq('status', 'queued');
+      }
+    } else if (Number(campaign.consecutive_failures || 0) > 0) {
+      await this.db.from('call_campaigns').update({
+        consecutive_failures: 0,
+        failure_reason: null,
+        updated_at: now.toISOString(),
+      }).eq('id', campaign.id).eq('user_id', call.user_id).eq('status', 'running');
+    }
     await this.maybeComplete(campaign.id, call.user_id);
+  }
+
+  async syncMainStrategyCalls(limit = 50): Promise<number> {
+    if (!(await isFeatureEnabled('calling_ui'))) return 0;
+    const { data: strategies, error } = await this.db.from('strategies')
+      .select('id,user_id,title,goal,product_id,current_execution_plan,is_active,status')
+      .eq('is_active', true).eq('status', 'active').order('updated_at', { ascending: false }).limit(limit);
+    if (error) throw toError(error, 'Could not load active strategies for call actions.');
+
+    let added = 0;
+    for (const strategy of strategies || []) {
+      if (!(await isFeatureEnabled('calling_ui', strategy.user_id))) continue;
+      const { data: existingCampaigns, error: campaignError } = await this.db.from('call_campaigns')
+        .select('*').eq('user_id', strategy.user_id).eq('strategy_id', strategy.id)
+        .order('created_at', { ascending: false }).limit(20);
+      if (campaignError) throw toError(campaignError, 'Could not load strategy call campaigns.');
+      const campaign = (existingCampaigns || []).find((item: any) =>
+        item.generated_strategy?.source === 'main_strategy_action') || null;
+      const callPlan = strategy.current_execution_plan?.autonomous_calls || {};
+
+      if (campaign && !callPlan.enabled && campaign.status === 'running') {
+        const now = new Date().toISOString();
+        await this.db.from('call_campaigns').update({
+          status: 'paused',
+          failure_reason: 'strategy_calls_disabled',
+          updated_at: now,
+        }).eq('id', campaign.id).eq('user_id', strategy.user_id).eq('status', 'running');
+        await this.db.from('call_campaign_contacts').update({
+          status: 'pending',
+          last_outcome: 'strategy_calls_disabled',
+          updated_at: now,
+        }).eq('campaign_id', campaign.id).eq('user_id', strategy.user_id).in('status', ['queued', 'scheduling']);
+        await this.db.from('call_logs').update({
+          status: 'canceled',
+          outcome: 'strategy_calls_disabled',
+          ended_at: now,
+        }).eq('campaign_id', campaign.id).eq('user_id', strategy.user_id).eq('status', 'queued');
+        continue;
+      }
+      if (campaign && campaign.status === 'paused' && callPlan.enabled
+        && ['strategy_paused', 'strategy_calls_disabled', 'strategy_status_unavailable'].includes(String(campaign.failure_reason || ''))) {
+        const { error: resumeError } = await this.db.from('call_campaigns').update({
+          status: 'running',
+          failure_reason: null,
+          updated_at: new Date().toISOString(),
+        }).eq('id', campaign.id).eq('user_id', strategy.user_id).eq('status', 'paused')
+          .in('failure_reason', ['strategy_paused', 'strategy_calls_disabled', 'strategy_status_unavailable']);
+        if (resumeError) throw toError(resumeError, 'Could not resume the active strategy call action.');
+        campaign.status = 'running';
+        campaign.failure_reason = null;
+      }
+      if (!callPlan.enabled || (campaign && campaign.status !== 'running')) continue;
+
+      const { data: leads, error: leadError } = await this.db.from('agent_leads')
+        .select('id,platform_username,platform_user_id,phone,phone_number,contact_phone,contact_email,company,country,country_code,contact_timezone,call_consent,call_consent_at')
+        .eq('user_id', strategy.user_id).eq('strategy_id', strategy.id).eq('call_consent', true)
+        .limit(MAX_CONTACT_IMPORT);
+      if (leadError) throw toError(leadError, 'Could not load consented strategy call leads.');
+      const rows = (leads || []).flatMap((lead: any) => {
+        const phone = normalizePhoneE164(lead.phone || lead.phone_number || lead.contact_phone);
+        if (!phone) return [];
+        const timezone = isValidTimezone(lead.contact_timezone) ? lead.contact_timezone : inferPhoneTimeZone(phone);
+        if (!timezone) return [];
+        return [{
+          user_id: strategy.user_id,
+          campaign_id: campaign?.id,
+          lead_id: lead.id,
+          name: text(lead.platform_username || lead.platform_user_id || 'Lead', 160),
+          phone_e164: phone,
+          email: text(lead.contact_email, 320) || null,
+          company: text(lead.company, 160) || null,
+          time_zone: timezone,
+          call_consent: true,
+          consent_confirmed: true,
+          consent_source: 'recorded_lead_consent',
+          consent_at: lead.call_consent_at || new Date().toISOString(),
+          status: 'pending',
+          next_attempt_at: new Date().toISOString(),
+        }];
+      });
+      if (!rows.length) continue;
+
+      let activeCampaign = campaign;
+      if (!activeCampaign) {
+        let product: any = null;
+        if (strategy.product_id) {
+          const { data, error: productError } = await this.db.from('product_memory').select('*')
+            .eq('product_id', strategy.product_id).eq('user_id', strategy.user_id).maybeSingle();
+          if (productError) throw toError(productError, 'Could not load the strategy product for its call action.');
+          product = data;
+        }
+        const productName = text(product?.product_name || product?.name || strategy.title, 160);
+        const productDescription = text(product?.description || strategy.goal, 2000);
+        const generatedStrategy = {
+          source: 'main_strategy_action',
+          strategy_id: strategy.id,
+          autonomous_calls: callPlan,
+          campaign_objective: text(callPlan.objective || strategy.goal, 500),
+          product_name: productName,
+          product_description: productDescription,
+        };
+        const { data, error: insertError } = await this.db.from('call_campaigns').insert({
+          user_id: strategy.user_id,
+          strategy_id: strategy.id,
+          name: text(strategy.title || callPlan.objective || 'Strategy calls', 120),
+          goal: text(callPlan.objective || strategy.goal, 500),
+          product_name: productName,
+          product_description: productDescription,
+          product_image_url: product?.product_image_url || null,
+          product_price: product?.product_price || null,
+          follow_up_days: Math.min(90, Math.max(1, Number(callPlan.follow_up_days) || 7)),
+          default_timezone: 'UTC',
+          calling_start_hour: 9,
+          calling_end_hour: 17,
+          daily_limit: MAX_CAMPAIGN_DAILY_CALLS,
+          max_attempts: Math.min(3, Math.max(1, Number(callPlan.max_attempts) || 3)),
+          status: 'running',
+          approved_at: new Date().toISOString(),
+          started_at: new Date().toISOString(),
+          generated_strategy: generatedStrategy,
+        }).select('*').single();
+        if (insertError) throw toError(insertError, 'Could not create the main-strategy call campaign.');
+        activeCampaign = data;
+        rows.forEach((row: any) => { row.campaign_id = activeCampaign.id; });
+      }
+      const { data: inserted, error: insertContactsError } = await this.db.from('call_campaign_contacts')
+        .upsert(rows, { onConflict: 'campaign_id,phone_e164', ignoreDuplicates: true }).select('id');
+      if (insertContactsError) throw toError(insertContactsError, 'Could not queue consented strategy call contacts.');
+      added += inserted?.length || 0;
+    }
+    return added;
   }
 
   async queueDueContacts(limit = 10): Promise<number> {
@@ -775,6 +953,38 @@ class CallCampaignService {
     for (const campaign of campaigns || []) {
       if (queued >= limit) break;
       if (!(await isFeatureEnabled('calling_ui', campaign.user_id))) continue;
+      if (campaign.generated_strategy?.source === 'main_strategy_action') {
+        const { data: strategy, error: strategyError } = await this.db.from('strategies')
+          .select('status,is_active,current_execution_plan')
+          .eq('id', campaign.strategy_id).eq('user_id', campaign.user_id).maybeSingle();
+        const strategyIsActive = !strategyError && strategy?.is_active === true
+          && strategy.status === 'active'
+          && strategy.current_execution_plan?.autonomous_calls?.enabled === true;
+        if (!strategyIsActive) {
+          const now = new Date().toISOString();
+          const reason = strategyError
+            ? 'strategy_status_unavailable'
+            : !strategy || strategy.status !== 'active' || strategy.is_active !== true
+              ? 'strategy_paused'
+              : 'strategy_calls_disabled';
+          await this.db.from('call_campaigns').update({
+            status: 'paused',
+            failure_reason: reason,
+            updated_at: now,
+          }).eq('id', campaign.id).eq('user_id', campaign.user_id).eq('status', 'running');
+          await this.db.from('call_campaign_contacts').update({
+            status: 'pending',
+            last_outcome: reason,
+            updated_at: now,
+          }).eq('campaign_id', campaign.id).eq('user_id', campaign.user_id).in('status', ['queued', 'scheduling']);
+          await this.db.from('call_logs').update({
+            status: 'canceled',
+            ended_at: now,
+            outcome: reason,
+          }).eq('campaign_id', campaign.id).eq('user_id', campaign.user_id).eq('status', 'queued');
+          continue;
+        }
+      }
       const [guard, preferences] = await Promise.all([
         getSubscriptionGuard(campaign.user_id, this.db as any),
         this.db.from('outreach_preferences').select('do_not_call').eq('user_id', campaign.user_id).maybeSingle(),
@@ -788,13 +998,22 @@ class CallCampaignService {
         continue;
       }
 
+      const since = new Date(now.getTime() - 86400000).toISOString();
       const { count: dailyCount, error: dailyError } = await this.db.from('call_logs')
         .select('id', { count: 'exact', head: true })
-        .eq('user_id', campaign.user_id).eq('campaign_id', campaign.id)
-        .gte('created_at', new Date(now.getTime() - 86400000).toISOString())
+        .eq('user_id', campaign.user_id)
+        .gte('created_at', since)
         .neq('status', 'canceled');
       if (dailyError) throw toError(dailyError, 'Could not enforce the campaign daily limit.');
-      const remaining = Number(campaign.daily_limit || 1) - Number(dailyCount || 0);
+      const { data: firstCall, error: firstCallError } = await this.db.from('call_logs')
+        .select('started_at').eq('user_id', campaign.user_id).not('started_at', 'is', null)
+        .order('started_at', { ascending: true }).limit(1).maybeSingle();
+      if (firstCallError) throw toError(firstCallError, 'Could not determine the account call warm-up period.');
+      const daysSinceFirstCall = firstCall?.started_at
+        ? Math.max(0, Math.floor((now.getTime() - new Date(firstCall.started_at).getTime()) / 86400000))
+        : 0;
+      const accountLimit = Math.min(MAX_CAMPAIGN_DAILY_CALLS, warmupDailyCallLimit(daysSinceFirstCall));
+      const remaining = Math.min(Number(campaign.daily_limit || 1), accountLimit) - Number(dailyCount || 0);
       if (remaining <= 0) continue;
 
       const { data: contacts, error: contactsError } = await this.db.from('call_campaign_contacts').select('*')
@@ -856,7 +1075,7 @@ class CallCampaignService {
     }
 
     const { data: lead, error: leadError } = await this.db.from('agent_leads')
-      .select('id,phone,phone_number,contact_phone,call_consent,country,country_code')
+      .select('id,phone,phone_number,contact_phone,call_consent,country,country_code,contact_timezone')
       .eq('id', contact.lead_id).eq('user_id', campaign.user_id).maybeSingle();
     if (leadError) throw leadError;
     const leadPhone = normalizePhoneE164(lead?.phone || lead?.phone_number || lead?.contact_phone);
@@ -879,6 +1098,23 @@ class CallCampaignService {
       }).eq('id', contact.id);
       return false;
     }
+
+    const { data: leadProfileRow, error: leadProfileError } = await this.db.from('lead_sales_profiles')
+      .select('profile').eq('user_id', campaign.user_id).eq('lead_id', lead.id).maybeSingle();
+    if (leadProfileError) throw leadProfileError;
+    const profile = leadProfileRow?.profile || {};
+    const profileList = (value: unknown) => Array.isArray(value)
+      ? value.slice(0, 5).map((item) => text(item, 180)).filter(Boolean)
+      : [];
+    const leadCallContext = {
+      communication_style: text(profile.communicationStyle, 240),
+      stated_needs: profileList(profile.statedNeeds),
+      observed_pain_points: profileList(profile.observedPainPoints),
+      buying_signals: profileList(profile.buyingSignals),
+      decision_blockers: profileList(profile.decisionBlockers),
+      preferred_topics: profileList(profile.preferredTopics),
+      recommended_tone: text(profile.recommendedTone, 180),
+    };
 
     const { data: activeCall, error: activeError } = await this.db.from('call_logs').select('id')
       .eq('user_id', campaign.user_id).eq('campaign_contact_id', contact.id)
@@ -910,6 +1146,8 @@ class CallCampaignService {
         product_price: campaign.product_price,
         call_plan: campaign.generated_strategy?.autonomous_calls || {},
         country_code: lead.country_code || lead.country || null,
+        contact_timezone: contact.time_zone,
+        lead_call_context: leadCallContext,
       },
     }).select('id').single();
     if (callError) throw callError;
