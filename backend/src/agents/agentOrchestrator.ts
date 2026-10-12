@@ -14,6 +14,7 @@ import {
     platformAliases,
     selectedPlatformsForStrategy,
     isPersonalProvider,
+    supportsPublicPosts,
 } from '../services/platformIdentity';
 import { CLAIMABLE_AGENT_TASK_STATUSES } from '../services/agentTaskQueue';
 import { socialAccountService } from '../services/socialAccountService';
@@ -173,10 +174,10 @@ export class AgentOrchestrator {
         let executableTasks = await fetchExecutableTasks();
         const validPublicTasks = (executableTasks || []).filter((task: any) =>
             allowedPlatforms.has(normalizePlatform(task.platform))
-            && !isPersonalProvider(task.platform)
+            && supportsPublicPosts(task.platform)
             && !['CONVERSATION_ENGAGE', 'SEND_PERSONAL_MESSAGE', 'INBOUND_REPLY'].includes(String(task.task_type || '')),
         );
-        const selectedPublicPlatforms = Array.from(allowedPlatforms).filter((platform) => !isPersonalProvider(platform));
+        const selectedPublicPlatforms = Array.from(allowedPlatforms).filter((platform) => supportsPublicPosts(platform));
         if (validPublicTasks.length === 0 && selectedPublicPlatforms.length > 0) {
             const productName = String(
                 params.strategy?.product_name
@@ -218,7 +219,8 @@ export class AgentOrchestrator {
         const executableCount = (executableTasks || []).filter((task: any) => {
             const platform = normalizePlatform(task.platform);
             if (!allowedPlatforms.has(platform)) return false;
-            if (!isPersonalProvider(platform)) return true;
+            if (supportsPublicPosts(platform)) return true;
+            if (!isPersonalProvider(platform)) return false;
             const type = String(task.task_type || '');
             const content = task.content && typeof task.content === 'object' ? task.content : {};
             return ['SEND_PERSONAL_MESSAGE', 'CONVERSATION_ENGAGE', 'INBOUND_REPLY'].includes(type)
@@ -345,10 +347,9 @@ export class AgentOrchestrator {
                     }).eq('id', task.id);
                     continue;
                 }
-                if (
-                    isPersonalProvider(taskPlatform)
-                    && !['SEND_PERSONAL_MESSAGE', 'CONVERSATION_ENGAGE', 'INBOUND_REPLY'].includes(String(task.task_type))
-                ) {
+                const taskType = String(task.task_type || '').toUpperCase();
+                const isPersonalMessageTask = ['SEND_PERSONAL_MESSAGE', 'CONVERSATION_ENGAGE', 'INBOUND_REPLY'].includes(taskType);
+                if (isPersonalProvider(taskPlatform) && !supportsPublicPosts(taskPlatform) && !isPersonalMessageTask) {
                     const reason = 'Personal platforms require an explicit recipient message task; public publishing is not allowed.';
                     console.info(`[Orchestrator] Task ${task.id} blocked — ${reason}`);
                     await this.supabase.from('agent_tasks').update({
@@ -357,7 +358,7 @@ export class AgentOrchestrator {
                     }).eq('id', task.id);
                     continue;
                 }
-                if (isPersonalProvider(taskPlatform)) {
+                if (isPersonalProvider(taskPlatform) && isPersonalMessageTask) {
                     const taskContent = task.content && typeof task.content === 'object' ? task.content : {};
                     const actionType = String((task as any).action_type || taskContent.action_type || '').toLowerCase();
                     const recipient = String(
@@ -534,7 +535,7 @@ export class AgentOrchestrator {
 
             try {
                 const specialPlatform = normalizePlatform(task.platform);
-                if (isPersonalProvider(specialPlatform)) {
+                if (isPersonalProvider(specialPlatform) && !supportsPublicPosts(specialPlatform)) {
                     const content = task.content && typeof task.content === 'object' ? task.content : {};
                     const recipient = String(
                         task.recipient_id || content.recipient_id || content.recipient || content.platform_user_id

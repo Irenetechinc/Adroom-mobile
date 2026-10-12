@@ -152,6 +152,12 @@ export class AgentBase {
         }
     }
 
+    protected normalizeTaskPlatform(task: any): void {
+        if (task && typeof task.platform === 'string') {
+            task.platform = normalizePlatform(task.platform);
+        }
+    }
+
     // ─── TOKEN MANAGEMENT ────────────────────────────────────────────────────────
 
     async getTokens(userId: string): Promise<AgentTokens> {

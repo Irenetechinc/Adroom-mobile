@@ -189,6 +189,7 @@ Return valid JSON only with this schema:
 
         if (!task) return;
 
+        this.normalizeTaskPlatform(task);
         this.log(`Executing AWARENESS task ${taskId} — ${task.task_type} on ${task.platform}`);
         await this.supabase.from('agent_tasks').update({ status: 'executing' }).eq('id', taskId);
 
@@ -275,6 +276,8 @@ Return valid JSON only with this schema:
                 result = await this.publishToplatform(task.platform, tokens, body.slice(0, 280));
             } else if (task.platform === 'linkedin' && tokens.linkedin) {
                 result = await this.publishToplatform(task.platform, tokens, body);
+            } else if (task.platform === 'bluesky' && tokens.bluesky) {
+                result = await this.publishToplatform(task.platform, tokens, body, task.content?.video_url || postImageUrl);
             } else if (task.platform === 'tiktok' && tokens.tiktok) {
                 let tiktokVideoUrl: string | undefined = task.content?.video_url;
 

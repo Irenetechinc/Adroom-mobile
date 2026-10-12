@@ -41,6 +41,23 @@ export function isPersonalProvider(value: unknown): boolean {
   return (PERSONAL_PROVIDERS as readonly string[]).includes(normalizePlatform(value));
 }
 
+/**
+ * Public-feed support is separate from where credentials are stored. Bluesky
+ * is managed as a social-account connection, but it supports public posts.
+ */
+const PUBLIC_POST_PLATFORMS = [
+  'facebook',
+  'instagram',
+  'twitter',
+  'linkedin',
+  'tiktok',
+  'bluesky',
+] as const;
+
+export function supportsPublicPosts(value: unknown): boolean {
+  return (PUBLIC_POST_PLATFORMS as readonly string[]).includes(normalizePlatform(value));
+}
+
 export function platformAliases(value: unknown): string[] {
   const canonical = normalizePlatform(value);
   const aliases = Object.entries(ALIASES)

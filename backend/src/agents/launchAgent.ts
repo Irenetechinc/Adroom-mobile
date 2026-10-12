@@ -200,6 +200,7 @@ Return valid JSON only with this schema:
 
         if (!task) return;
 
+        this.normalizeTaskPlatform(task);
         this.log(`Executing LAUNCH task ${taskId} — ${task.task_type} (${task.content.launch_phase})`);
         await this.supabase.from('agent_tasks').update({ status: 'executing' }).eq('id', taskId);
 
@@ -297,6 +298,8 @@ Return valid JSON only with this schema:
                 result = await this.publishToplatform(task.platform, tokens, body.slice(0, 280));
             } else if (task.platform === 'linkedin' && tokens.linkedin) {
                 result = await this.publishToplatform(task.platform, tokens, body);
+            } else if (task.platform === 'bluesky' && tokens.bluesky) {
+                result = await this.publishToplatform(task.platform, tokens, body, task.content?.video_url || postImageUrl);
             } else {
                 throw new Error(`No token for platform: ${task.platform}`);
             }

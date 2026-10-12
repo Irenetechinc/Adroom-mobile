@@ -1,15 +1,23 @@
 import assert from 'node:assert/strict';
 import {
   hasPublishCredentials,
+  isPersonalProvider,
   normalizePlatform,
   platformAliases,
   selectedPlatformsForStrategy,
+  supportsPublicPosts,
 } from './platformIdentity';
 import { CLAIMABLE_AGENT_TASK_STATUSES } from './agentTaskQueue';
 
 assert.deepEqual(CLAIMABLE_AGENT_TASK_STATUSES, ['pending', 'scheduled']);
 assert.deepEqual(platformAliases('twitter'), ['twitter', 'x']);
 assert.equal(normalizePlatform('x'), 'twitter');
+assert.equal(isPersonalProvider('bluesky'), true, 'Bluesky credentials remain in the managed social-account store');
+assert.equal(supportsPublicPosts('bluesky'), true, 'Bluesky supports public-feed strategy posts');
+assert.equal(supportsPublicPosts('bluesky_personal'), true, 'Bluesky aliases retain public-feed support');
+assert.equal(supportsPublicPosts('x'), true, 'X aliases retain public-feed support');
+assert.equal(supportsPublicPosts('telegram'), false, 'Messaging-only accounts must not be treated as public feeds');
+assert.equal(supportsPublicPosts('email'), false, 'Email must not be treated as a public social feed');
 assert.deepEqual(
   selectedPlatformsForStrategy({ selected_accounts: [], platforms: ['instagram'] }),
   ['instagram'],
