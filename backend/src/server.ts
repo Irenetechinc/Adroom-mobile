@@ -44,7 +44,13 @@ import { socialAccountService, type PersonalProvider } from './services/socialAc
 import { emailAccountService } from './services/emailAccountService';
 import { deltaChatBridgeToken, deltaChatCore, type DeltaChatCredential } from './services/deltaChatCore';
 import { getTelegramAppConfigStatus } from './services/telegramConfig';
-import { normalizePlatform, normalizeSelectedPlatforms, isPersonalProvider } from './services/platformIdentity';
+import {
+  hasPublishCredentials,
+  normalizePlatform,
+  normalizeSelectedPlatforms,
+  platformAliases,
+  isPersonalProvider,
+} from './services/platformIdentity';
 import { conversationAgent } from './services/conversationAgent';
 import { leadProfileBuilder } from './services/leadProfileBuilder';
 import { publicProfileToolAdapters } from './services/publicProfileToolAdapters';
@@ -2854,12 +2860,22 @@ app.post('/api/ai/activate-agents', async (req, res) => {
         if (activePlatforms.length === 0) {
             return res.status(409).json({ error: 'SOCIAL_ACCOUNTS_REQUIRED', message: 'This strategy has no selected social accounts. Generate it again and select a connected account.' });
         }
-        const { data: activeConfigs } = await supabase
-          .from('ad_configs')
-          .select('platform, access_token')
-          .eq('user_id', user.id)
-          .in('platform', activePlatforms);
-        const connectedPlatforms = new Set((activeConfigs || []).filter((config: any) => config.access_token).map((config: any) => normalizePlatform(config.platform)));
+        const publicPlatformAliases = Array.from(new Set(
+          activePlatforms
+            .filter((platform) => !isPersonalProvider(platform))
+            .flatMap((platform) => platformAliases(platform)),
+        ));
+        const { data: activeConfigs, error: configError } = publicPlatformAliases.length
+          ? await supabase
+            .from('ad_configs')
+            .select('platform, access_token, page_id, instagram_account_id, person_urn, org_urn, open_id')
+            .eq('user_id', user.id)
+            .in('platform', publicPlatformAliases)
+          : { data: [], error: null };
+        if (configError) throw new Error(`Could not verify selected social accounts: ${configError.message}`);
+        const connectedPlatforms = new Set((activeConfigs || [])
+          .filter((config: any) => hasPublishCredentials(config.platform, config))
+          .map((config: any) => normalizePlatform(config.platform)));
         const personalPlatforms = activePlatforms.filter((platform) => isPersonalProvider(platform));
         if (personalPlatforms.length) {
           const { data: personalConnections } = await supabase

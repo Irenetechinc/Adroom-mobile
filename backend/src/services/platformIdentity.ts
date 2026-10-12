@@ -68,6 +68,30 @@ export function normalizeSelectedPlatforms(value: unknown): string[] {
     .filter(Boolean)));
 }
 
+export function selectedPlatformsForStrategy(strategy: any): string[] {
+  const selected = normalizeSelectedPlatforms(strategy?.selected_accounts);
+  return selected.length > 0 ? selected : normalizeSelectedPlatforms(strategy?.platforms);
+}
+
+export function hasPublishCredentials(platformValue: unknown, config: any): boolean {
+  if (!config?.access_token) return false;
+
+  switch (normalizePlatform(platformValue)) {
+    case 'facebook':
+      return Boolean(config.page_id);
+    case 'instagram':
+      return Boolean(config.instagram_account_id);
+    case 'linkedin':
+      return Boolean(config.person_urn || config.org_urn);
+    case 'tiktok':
+      return Boolean(config.open_id);
+    case 'twitter':
+      return true;
+    default:
+      return true;
+  }
+}
+
 export function connectionFlagForPlatform(value: unknown): string {
   return `social_${normalizePlatform(value)}_connections`;
 }
