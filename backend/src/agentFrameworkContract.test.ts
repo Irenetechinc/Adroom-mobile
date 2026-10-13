@@ -40,6 +40,8 @@ assert.ok(graphicsDesigner.includes('freshness'), 'Graphics must record intellig
 assert.ok(smartVideoEditor.includes('intelligenceFreshness'), 'Video decisions must persist intelligence freshness');
 assert.ok(platformIdentity.includes('supportsPublicPosts'), 'Public-feed support must be distinct from credential storage type');
 assert.ok(orchestrator.includes('supportsPublicPosts'), 'Activation and task execution must recognize Bluesky as a public feed');
+assert.ok(orchestrator.includes('recoverLegacyBlueskyPosts'), 'Active strategies must recover posts stranded by the legacy Bluesky guard');
+assert.ok(orchestrator.includes('LEGACY_PERSONAL_PUBLIC_POST_BLOCK_REASON'), 'Legacy recovery must be limited to the exact old public-post blocker');
 for (const agent of campaignAgents) {
   assert.ok(agent.includes("task.platform === 'bluesky'"), 'Every campaign agent must dispatch Bluesky posts');
 }

@@ -41,6 +41,8 @@ const GOAL_MAP: Record<string, 'SALESMAN' | 'AWARENESS' | 'PROMOTION' | 'LAUNCH'
 };
 
 const CONTENT_TASK_TYPES = ['POST', 'URGENCY_POST', 'TEASER', 'HASHTAG_CAMPAIGN'];
+const LEGACY_PERSONAL_PUBLIC_POST_BLOCK_REASON =
+    'Personal platforms require an explicit recipient message task; public publishing is not allowed.';
 
 function boundedIntegerEnv(name: string, fallback: number, min: number, max: number): number {
     const parsed = Number.parseInt(process.env[name] || '', 10);
@@ -86,6 +88,62 @@ export class AgentOrchestrator {
             return false;
         }
         return Boolean(data?.id);
+    }
+
+    /**
+     * Requeue Bluesky content tasks that the old personal-provider guard
+     * skipped before any publisher ran. Restrict this to active strategies,
+     * selected Bluesky accounts, and the exact legacy guard reason.
+     */
+    private async recoverLegacyBlueskyPosts(scheduledAt: string): Promise<number> {
+        const { data, error } = await this.supabase
+            .from('agent_tasks')
+            .select('id, platform, strategies!inner(status, is_active, selected_accounts, platforms)')
+            .eq('status', 'skipped')
+            .eq('error_message', LEGACY_PERSONAL_PUBLIC_POST_BLOCK_REASON)
+            .in('task_type', CONTENT_TASK_TYPES)
+            .in('platform', platformAliases('bluesky'))
+            .eq('strategies.status', 'active')
+            .eq('strategies.is_active', true)
+            .order('scheduled_at', { ascending: true })
+            .limit(100);
+
+        if (error) {
+            console.error('[Orchestrator] Could not inspect legacy Bluesky tasks:', error.message);
+            return 0;
+        }
+
+        const recoverableIds = (data || [])
+            .filter((task: any) =>
+                supportsPublicPosts(task.platform)
+                && selectedPlatformsForStrategy(task.strategies).includes('bluesky'),
+            )
+            .map((task: any) => task.id)
+            .filter(Boolean);
+        if (recoverableIds.length === 0) return 0;
+
+        const { data: recovered, error: recoveryError } = await this.supabase
+            .from('agent_tasks')
+            .update({
+                status: 'pending',
+                scheduled_at: scheduledAt,
+                error_message: 'Recovered: Bluesky supports public strategy posts.',
+            })
+            .in('id', recoverableIds)
+            .eq('status', 'skipped')
+            .eq('error_message', LEGACY_PERSONAL_PUBLIC_POST_BLOCK_REASON)
+            .select('id');
+
+        if (recoveryError) {
+            console.error('[Orchestrator] Could not requeue legacy Bluesky tasks:', recoveryError.message);
+            return 0;
+        }
+
+        const recoveredCount = recovered?.length || 0;
+        if (recoveredCount > 0) {
+            console.info(`[Orchestrator] Requeued ${recoveredCount} legacy Bluesky post task(s) for active strategies.`);
+        }
+        return recoveredCount;
     }
 
     /**
@@ -280,6 +338,7 @@ export class AgentOrchestrator {
         const now = new Date().toISOString();
 
         await this.expireDueStrategies(now);
+        await this.recoverLegacyBlueskyPosts(now);
 
         const taskLimit = boundedIntegerEnv('AGENT_TASKS_PER_CYCLE', 20, 1, 100);
         const contentLimit = Math.max(1, Math.ceil(taskLimit * 0.6));
@@ -350,7 +409,7 @@ export class AgentOrchestrator {
                 const taskType = String(task.task_type || '').toUpperCase();
                 const isPersonalMessageTask = ['SEND_PERSONAL_MESSAGE', 'CONVERSATION_ENGAGE', 'INBOUND_REPLY'].includes(taskType);
                 if (isPersonalProvider(taskPlatform) && !supportsPublicPosts(taskPlatform) && !isPersonalMessageTask) {
-                    const reason = 'Personal platforms require an explicit recipient message task; public publishing is not allowed.';
+                    const reason = LEGACY_PERSONAL_PUBLIC_POST_BLOCK_REASON;
                     console.info(`[Orchestrator] Task ${task.id} blocked — ${reason}`);
                     await this.supabase.from('agent_tasks').update({
                         status: 'skipped',
