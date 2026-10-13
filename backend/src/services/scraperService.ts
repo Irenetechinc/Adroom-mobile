@@ -451,17 +451,25 @@ Return ONLY JSON (no markdown):
         const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
 
         // Only refresh products belonging to users with an active running strategy
-        const { data: activeUserIds } = await this.supabase
-            .from('strategy_memory')
+        const { data: activeStrategies, error: activeStrategiesError } = await this.supabase
+            .from('strategies')
             .select('user_id')
+            .eq('is_active', true)
             .eq('status', 'active');
 
-        if (!activeUserIds || activeUserIds.length === 0) {
+        if (activeStrategiesError) {
+            throw new Error(`Could not load active strategy users for product refresh: ${activeStrategiesError.message}`);
+        }
+        if (!activeStrategies || activeStrategies.length === 0) {
             scraperLog('No active strategies found — skipping autonomous refresh');
             return;
         }
 
-        const userIds = [...new Set(activeUserIds.map((r: any) => r.user_id))];
+        const userIds = [...new Set(activeStrategies.map((r: any) => r.user_id).filter(Boolean))];
+        if (userIds.length === 0) {
+            scraperLog('Active strategies have no owner IDs — skipping autonomous refresh');
+            return;
+        }
 
         const { data: stale } = await this.supabase
             .from('product_memory')

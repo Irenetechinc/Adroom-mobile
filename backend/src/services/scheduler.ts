@@ -24,11 +24,12 @@ import { randomUUID } from 'crypto';
 
 async function hasActiveStrategies(): Promise<boolean> {
     const supabase = getServiceSupabaseClient();
-    const { count } = await supabase
+    const { count, error } = await supabase
         .from('strategies')
         .select('id', { count: 'exact', head: true })
         .eq('is_active', true)
         .eq('status', 'active');
+    if (error) throw new Error(`Active strategy lookup failed: ${error.message}`);
     return (count ?? 0) > 0;
 }
 

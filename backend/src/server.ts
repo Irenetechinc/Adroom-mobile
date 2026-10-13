@@ -5999,13 +5999,14 @@ app.post('/api/strategy/:id/daily-summary', async (req, res) => {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return res.status(401).json({ error: 'Unauthorized.' });
 
-    const { data: strategy } = await supabase
-      .from('strategy_memory')
-      .select('*')
-      .eq('strategy_id', req.params.id)
+    const { data: strategy, error: strategyError } = await supabase
+      .from('strategies')
+      .select('id, user_id, title, goal, selected_accounts, platforms, created_at')
+      .eq('id', req.params.id)
       .eq('user_id', user.id)
-      .single();
+      .maybeSingle();
 
+    if (strategyError) return res.status(500).json({ error: strategyError.message });
     if (!strategy) return res.status(404).json({ error: 'Strategy not found.' });
 
     const { DailySummaryService } = await import('./services/dailySummaryService');

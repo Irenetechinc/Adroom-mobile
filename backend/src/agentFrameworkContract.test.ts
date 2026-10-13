@@ -13,6 +13,9 @@ const coordinator = read('services/strategyCoordinator.js');
 const graphicsDesigner = read('agents/graphicsDesignerAgent.js');
 const smartVideoEditor = read('services/smartVideoEditor.js');
 const platformIdentity = read('services/platformIdentity.js');
+const dailySummary = read('services/dailySummaryService.js');
+const scheduler = read('services/scheduler.js');
+const scraper = read('services/scraperService.js');
 const campaignAgents = [
   read('agents/awarenessAgent.js'),
   read('agents/promotionAgent.js'),
@@ -42,8 +45,14 @@ assert.ok(platformIdentity.includes('supportsPublicPosts'), 'Public-feed support
 assert.ok(orchestrator.includes('supportsPublicPosts'), 'Activation and task execution must recognize Bluesky as a public feed');
 assert.ok(orchestrator.includes('recoverLegacyBlueskyPosts'), 'Active strategies must recover posts stranded by the legacy Bluesky guard');
 assert.ok(orchestrator.includes('LEGACY_PERSONAL_PUBLIC_POST_BLOCK_REASON'), 'Legacy recovery must be limited to the exact old public-post blocker');
+assert.ok(dailySummary.includes(".from('strategies')"), 'Daily summaries must read the canonical strategy table');
+assert.ok(dailySummary.includes(".eq('is_active', true)") && dailySummary.includes(".eq('status', 'active')"), 'Daily summaries must use the same active-state contract as the scheduler');
+assert.ok(scheduler.includes('Active strategy lookup failed'), 'Scheduler database errors must not be mislabeled as no active strategies');
+assert.ok(scraper.includes(".from('strategies')"), 'Product refresh must use the canonical strategy table');
 for (const agent of campaignAgents) {
-  assert.ok(agent.includes("task.platform === 'bluesky'"), 'Every campaign agent must dispatch Bluesky posts');
+  for (const platform of ['facebook', 'instagram', 'twitter', 'linkedin', 'tiktok', 'bluesky']) {
+    assert.ok(agent.includes(`task.platform === '${platform}'`), `Every campaign agent must dispatch ${platform} posts`);
+  }
 }
 
 console.log('Agent framework contract checks passed.');
