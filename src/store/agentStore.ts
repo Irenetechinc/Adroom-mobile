@@ -947,6 +947,7 @@ export const useAgentStore = create<AgentState>()(
                 : Array.isArray(strategy.platforms) && strategy.platforms.length > 0
                   ? strategy.platforms
                   : (useStrategyCreationStore.getState().productData.selectedAccounts || []);
+              const creationData = useStrategyCreationStore.getState().productData;
 
               const response = await fetch(`${BACKEND_URL}/api/ai/activate-agents`, {
                   method: 'POST',
@@ -957,6 +958,10 @@ export const useAgentStore = create<AgentState>()(
                       platforms: strategy.platforms,
                       selectedAccounts: requestedAccounts,
                       videoUrl: get().productDetails.videoUrl,
+                      telegramPublicChannel: requestedAccounts
+                        .some((account: any) => String(typeof account === 'string' ? account : account?.platform || account?.provider || account?.id).toLowerCase() === 'telegram')
+                        ? creationData.telegramPublicChannel
+                        : undefined,
                   }),
               });
 

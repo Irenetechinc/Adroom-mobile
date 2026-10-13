@@ -1205,19 +1205,22 @@ export class SocialAccountService {
       try {
         if (provider === 'telegram') {
           const client = this.telegramClient(credential.session);
-          await client.connect();
-          const recipient = requestedRecipient;
-          const result = mediaUrl
-             ? await client.sendFile(recipient, { file: mediaUrl, caption: text.slice(0, 4000) })
-             : await client.sendMessage(recipient, { message: text.slice(0, 4000) });
-          await client.disconnect();
-           if (!result?.id) throw new Error('Telegram did not confirm the message with a message ID.');
-          await this.recordSuccess(userId, provider);
-           const publicUsername = recipient.match(/^@([A-Za-z0-9_]{5,32})$/)?.[1];
-           return {
-             id: String(result.id),
-             url: publicUsername ? `https://t.me/${publicUsername}/${String(result.id)}` : undefined,
-           };
+          try {
+            await client.connect();
+            const recipient = requestedRecipient;
+            const result = mediaUrl
+              ? await client.sendFile(recipient, { file: mediaUrl, caption: text.slice(0, 4000) })
+              : await client.sendMessage(recipient, { message: text.slice(0, 4000) });
+            if (!result?.id) throw new Error('Telegram did not confirm the message with a message ID.');
+            await this.recordSuccess(userId, provider);
+            const publicUsername = recipient.match(/^@([A-Za-z0-9_]{5,32})$/)?.[1];
+            return {
+              id: String(result.id),
+              url: publicUsername ? `https://t.me/${publicUsername}/${String(result.id)}` : undefined,
+            };
+          } finally {
+            await client.disconnect().catch(() => {});
+          }
         }
 
         if (provider === 'whatsapp_personal') {

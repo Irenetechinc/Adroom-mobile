@@ -221,7 +221,7 @@ export const AgentChatSkeleton = () => {
 const splashStyles = StyleSheet.create({
   root: {
     flex: 1,
-    backgroundColor: '#07111C',
+    backgroundColor: '#01020A',
     alignItems: 'center',
     justifyContent: 'center',
     overflow: 'hidden',

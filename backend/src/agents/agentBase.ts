@@ -2,7 +2,12 @@ import { SupabaseClient } from '@supabase/supabase-js';
 import { AIEngine, parseStructuredJson } from '../config/ai-models';
 import fetch from 'node-fetch';
 import { socialAccountService } from '../services/socialAccountService';
-import { normalizePlatform } from '../services/platformIdentity';
+import {
+    isPersonalProvider,
+    normalizePlatform,
+    normalizePublicTelegramChannel,
+    supportsPublicPostsForDestination,
+} from '../services/platformIdentity';
 
 export interface AgentTokens {
     facebook?: { access_token: string; page_id: string };
@@ -135,6 +140,9 @@ export class AgentBase {
                         image_prompt: `Create a polished ${platform} social creative for ${productName} using the live product context and current audience signals.`,
                         hashtags: [productName.toLowerCase().replace(/\s+/g, ''), platform, 'adiramai'],
                         cta: 'Learn more',
+                        ...(platform === 'telegram' && normalizePublicTelegramChannel(params.strategy?.telegram_public_channel)
+                            ? { publication_destination: normalizePublicTelegramChannel(params.strategy?.telegram_public_channel) }
+                            : {}),
                     }
                 });
             }
@@ -888,10 +896,11 @@ Return STRICT JSON only (no markdown, no explanation):
 
     // ─── UNIFIED PUBLISH DISPATCHER ──────────────────────────────────────────────
 
-    async publishToplatform(platform: string, tokens: AgentTokens, body: string, mediaUrl?: string): Promise<PublishResult> {
+    async publishToplatform(platform: string, tokens: AgentTokens, body: string, mediaUrl?: string, destination?: string): Promise<PublishResult> {
         const normalizedPlatform = normalizePlatform(platform);
-        if (['telegram', 'whatsapp_personal', 'signal_personal', 'delta_chat', 'email'].includes(normalizedPlatform)) {
-            throw new Error(`${normalizedPlatform} is recipient-only. Use a conversation task with an explicit recipient; it cannot publish a public post.`);
+        if (isPersonalProvider(normalizedPlatform)
+            && !supportsPublicPostsForDestination(normalizedPlatform, destination)) {
+            throw new Error(`${normalizedPlatform} is a messaging channel. Use an explicit conversation recipient; public posting is only enabled for supported destinations.`);
         }
         const { criticAgentService } = await import('../services/criticAgentService');
         const review = await criticAgentService.validateBeforePublish({
@@ -911,6 +920,19 @@ Return STRICT JSON only (no markdown, no explanation):
             case 'twitter': case 'x': return this.publishToTwitter(tokens.twitter, body);
             case 'linkedin': return this.publishToLinkedIn(tokens.linkedin, body);
             case 'tiktok': return this.publishToTikTok(tokens.tiktok, body, mediaUrl);
+            case 'telegram': {
+                const channel = normalizePublicTelegramChannel(destination);
+                if (!channel) throw new Error('Telegram public posts require a public channel username such as @MyBrandChannel.');
+                const userId = String((tokens as any).__userId || '');
+                if (!userId) throw new Error('Telegram account context is unavailable.');
+                const published = await socialAccountService.publish('telegram', userId, body, mediaUrl, channel);
+                return {
+                    platform: 'telegram',
+                    platform_post_id: published.id,
+                    published_at: new Date().toISOString(),
+                    url: published.url,
+                };
+            }
             case 'bluesky': {
                 const published = await socialAccountService.publish('bluesky', (tokens as any).__userId || '', body, mediaUrl);
                 return { platform: 'bluesky', platform_post_id: published.id, published_at: new Date().toISOString(), url: published.url };

@@ -12,9 +12,11 @@ import {
     normalizePlatform,
     normalizeSelectedPlatforms,
     platformAliases,
+    normalizePublicTelegramChannel,
     selectedPlatformsForStrategy,
     isPersonalProvider,
     supportsPublicPosts,
+    supportsPublicPostsForDestination,
 } from '../services/platformIdentity';
 import { CLAIMABLE_AGENT_TASK_STATUSES } from '../services/agentTaskQueue';
 import { socialAccountService } from '../services/socialAccountService';
@@ -192,10 +194,19 @@ export class AgentOrchestrator {
 
         const durationDays = params.strategy?.duration || 30;
 
+        const publicTelegramChannel = normalizePublicTelegramChannel(
+            params.strategy?.telegram_public_channel
+            || params.strategy?.current_execution_plan?.telegram_public_channel,
+        );
+        const strategyForPlanning = {
+            ...(params.strategy || {}),
+            telegram_public_channel: publicTelegramChannel,
+        };
+
         await agent.plan({
             strategyId: params.strategyId,
             userId: params.userId,
-            strategy: params.strategy,
+            strategy: strategyForPlanning,
             product,
             platforms: params.platforms,
             durationDays
@@ -215,6 +226,27 @@ export class AgentOrchestrator {
             console.warn(`[Orchestrator] Removed ${invalidTaskIds.length} task(s) outside the user's selected platforms.`);
         }
 
+        if (publicTelegramChannel && normalizeSelectedPlatforms(params.platforms).includes('telegram')) {
+            const { data: telegramTasks, error: telegramTaskError } = await this.supabase
+                .from('agent_tasks')
+                .select('id, task_type, content')
+                .eq('strategy_id', params.strategyId)
+                .in('platform', platformAliases('telegram'))
+                .in('status', CLAIMABLE_AGENT_TASK_STATUSES);
+            if (telegramTaskError) throw new Error(`Could not attach the selected Telegram channel to scheduled posts: ${telegramTaskError.message}`);
+            const messageTaskTypes = new Set(['SEND_PERSONAL_MESSAGE', 'CONVERSATION_ENGAGE', 'INBOUND_REPLY']);
+            for (const task of telegramTasks || []) {
+                if (messageTaskTypes.has(String((task as any).task_type || '').toUpperCase())) continue;
+                const content = task.content && typeof task.content === 'object' ? task.content : {};
+                const { error } = await this.supabase
+                    .from('agent_tasks')
+                    .update({ content: { ...content, publication_destination: publicTelegramChannel } })
+                    .eq('id', task.id)
+                    .in('status', CLAIMABLE_AGENT_TASK_STATUSES);
+                if (error) throw new Error(`Could not attach the selected Telegram channel to task ${task.id}: ${error.message}`);
+            }
+        }
+
         // A model can return a non-empty plan containing placeholder platforms
         // or generic POST tasks for personal accounts. Those rows are not
         // executable, even though they used to make activation look successful.
@@ -232,10 +264,12 @@ export class AgentOrchestrator {
         let executableTasks = await fetchExecutableTasks();
         const validPublicTasks = (executableTasks || []).filter((task: any) =>
             allowedPlatforms.has(normalizePlatform(task.platform))
-            && supportsPublicPosts(task.platform)
-            && !['CONVERSATION_ENGAGE', 'SEND_PERSONAL_MESSAGE', 'INBOUND_REPLY'].includes(String(task.task_type || '')),
+            && supportsPublicPostsForDestination(task.platform, task.content?.publication_destination)
+            && !['CONVERSATION_ENGAGE', 'SEND_PERSONAL_MESSAGE', 'INBOUND_REPLY'].includes(String(task.task_type || '').toUpperCase()),
         );
-        const selectedPublicPlatforms = Array.from(allowedPlatforms).filter((platform) => supportsPublicPosts(platform));
+        const selectedPublicPlatforms = Array.from(allowedPlatforms).filter((platform) =>
+            supportsPublicPostsForDestination(platform, platform === 'telegram' ? publicTelegramChannel : undefined),
+        );
         if (validPublicTasks.length === 0 && selectedPublicPlatforms.length > 0) {
             const productName = String(
                 params.strategy?.product_name
@@ -263,6 +297,9 @@ export class AgentOrchestrator {
                         cta: 'Learn more',
                         recovery_schedule: true,
                         recovery_duration_days: durationDays,
+                        ...(platform === 'telegram' && publicTelegramChannel
+                            ? { publication_destination: publicTelegramChannel }
+                            : {}),
                     },
                 };
             });
@@ -277,12 +314,13 @@ export class AgentOrchestrator {
         const executableCount = (executableTasks || []).filter((task: any) => {
             const platform = normalizePlatform(task.platform);
             if (!allowedPlatforms.has(platform)) return false;
-            if (supportsPublicPosts(platform)) return true;
-            if (!isPersonalProvider(platform)) return false;
             const type = String(task.task_type || '');
             const content = task.content && typeof task.content === 'object' ? task.content : {};
-            return ['SEND_PERSONAL_MESSAGE', 'CONVERSATION_ENGAGE', 'INBOUND_REPLY'].includes(type)
-                && Boolean(task.recipient_id || task.conversation_id || content.recipient_id || content.conversation_id);
+            if (['SEND_PERSONAL_MESSAGE', 'CONVERSATION_ENGAGE', 'INBOUND_REPLY'].includes(type.toUpperCase())) {
+                return isPersonalProvider(platform)
+                    && Boolean(task.recipient_id || task.conversation_id || content.recipient_id || content.conversation_id);
+            }
+            return supportsPublicPostsForDestination(platform, content.publication_destination);
         }).length;
         const tasksScheduled = executableCount || 0;
         if (selectedPublicPlatforms.length > 0 && tasksScheduled === 0) {
@@ -408,7 +446,10 @@ export class AgentOrchestrator {
                 }
                 const taskType = String(task.task_type || '').toUpperCase();
                 const isPersonalMessageTask = ['SEND_PERSONAL_MESSAGE', 'CONVERSATION_ENGAGE', 'INBOUND_REPLY'].includes(taskType);
-                if (isPersonalProvider(taskPlatform) && !supportsPublicPosts(taskPlatform) && !isPersonalMessageTask) {
+                const taskContent = task.content && typeof task.content === 'object' ? task.content : {};
+                if (isPersonalProvider(taskPlatform)
+                    && !supportsPublicPostsForDestination(taskPlatform, taskContent.publication_destination)
+                    && !isPersonalMessageTask) {
                     const reason = LEGACY_PERSONAL_PUBLIC_POST_BLOCK_REASON;
                     console.info(`[Orchestrator] Task ${task.id} blocked — ${reason}`);
                     await this.supabase.from('agent_tasks').update({
@@ -418,7 +459,6 @@ export class AgentOrchestrator {
                     continue;
                 }
                 if (isPersonalProvider(taskPlatform) && isPersonalMessageTask) {
-                    const taskContent = task.content && typeof task.content === 'object' ? task.content : {};
                     const actionType = String((task as any).action_type || taskContent.action_type || '').toLowerCase();
                     const recipient = String(
                         (task as any).recipient_id

@@ -3,9 +3,11 @@ import {
   hasPublishCredentials,
   isPersonalProvider,
   normalizePlatform,
+  normalizePublicTelegramChannel,
   platformAliases,
   selectedPlatformsForStrategy,
   supportsPublicPosts,
+  supportsPublicPostsForDestination,
 } from './platformIdentity';
 import { CLAIMABLE_AGENT_TASK_STATUSES } from './agentTaskQueue';
 
@@ -17,6 +19,9 @@ assert.equal(supportsPublicPosts('bluesky'), true, 'Bluesky supports public-feed
 assert.equal(supportsPublicPosts('bluesky_personal'), true, 'Bluesky aliases retain public-feed support');
 assert.equal(supportsPublicPosts('x'), true, 'X aliases retain public-feed support');
 assert.equal(supportsPublicPosts('telegram'), false, 'Messaging-only accounts must not be treated as public feeds');
+assert.equal(supportsPublicPostsForDestination('telegram', '@MyBrandChannel'), true, 'Telegram public-channel publishing requires an explicit channel');
+assert.equal(supportsPublicPostsForDestination('telegram', 'private-recipient'), false, 'A private Telegram recipient is not a public channel');
+assert.equal(normalizePublicTelegramChannel('MyBrandChannel'), '@MyBrandChannel');
 assert.equal(supportsPublicPosts('email'), false, 'Email must not be treated as a public social feed');
 assert.equal(supportsPublicPosts('whatsapp_personal'), false, 'WhatsApp accounts are recipient-only');
 assert.equal(supportsPublicPosts('signal_personal'), false, 'Signal accounts are recipient-only');

@@ -6,13 +6,14 @@ import {
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import { useFocusEffect } from '@react-navigation/native';
-import { ArrowLeft, Bell, BellOff, CheckCheck, X, Zap, CreditCard, AlertTriangle, Sparkles, Rocket, DollarSign, Tag, CheckCircle2 } from 'lucide-react-native';
+import { ArrowLeft, Bell, BellOff, CheckCheck, Send, X, Zap, CreditCard, AlertTriangle, Sparkles, Rocket, DollarSign, Tag, CheckCircle2 } from 'lucide-react-native';
 import Animated, { FadeInDown, FadeIn } from 'react-native-reanimated';
 import { supabase } from '../services/supabase';
 import { useNotificationStore } from '../store/notificationStore';
 import { useAuthStore } from '../store/authStore';
 import Constants from 'expo-constants';
 import { Skeleton } from '../components/Skeleton';
+import { forcePushReregistration } from '../services/notificationService';
 
 function NotificationsSkeleton() {
   return (
@@ -106,6 +107,7 @@ export default function NotificationsScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [markingRead, setMarkingRead] = useState(false);
+  const [testingPush, setTestingPush] = useState(false);
   const [selected, setSelected] = useState<UserNotification | null>(null);
   const [actionTaking, setActionTaking] = useState<string | null>(null);
   const [actedMap, setActedMap] = useState<Record<string, string>>({});
@@ -129,6 +131,47 @@ export default function NotificationsScreen() {
       setRefreshing(false);
     }
   }, []);
+
+  const testPush = useCallback(async () => {
+    if (testingPush) return;
+    setTestingPush(true);
+    try {
+      const sendTest = async () => {
+        const headers = await getAuthHeaders();
+        if (!headers) throw new Error('Sign in again before testing notifications.');
+        if (!BACKEND_URL) throw new Error('The notification service is not configured.');
+        const response = await fetch(`${BACKEND_URL}/api/push/test`, {
+          method: 'POST',
+          headers,
+        });
+        const result = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(result.message || result.error || `Push test failed (${response.status}).`);
+        return result;
+      };
+
+      let result = await sendTest();
+      if (result.tokensFound === 0) {
+        await forcePushReregistration();
+        result = await sendTest();
+      }
+
+      if (result.success) {
+        Alert.alert(
+          'Test push accepted',
+          `Expo accepted a notification for ${result.tokensFound} device(s). Put Adirum AI in the background to confirm it appears outside the app.`,
+        );
+      } else {
+        Alert.alert(
+          result.diagnosis || 'Push notification setup needs attention',
+          [result.actionable, result.expo?.errorSummary].filter(Boolean).join('\n\n') || 'No more details were returned.',
+        );
+      }
+    } catch (error: any) {
+      Alert.alert('Push test failed', error?.message || 'Could not reach the push notification service.');
+    } finally {
+      setTestingPush(false);
+    }
+  }, [testingPush]);
 
   const { user } = useAuthStore();
 
@@ -325,6 +368,20 @@ export default function NotificationsScreen() {
             )}
           </View>
         </View>
+        <TouchableOpacity
+          onPress={testPush}
+          disabled={testingPush}
+          style={[styles.markReadBtn, { marginRight: 8 }]}
+          activeOpacity={0.7}
+          accessibilityRole="button"
+          accessibilityLabel="Send a test push notification"
+        >
+          {testingPush ? (
+            <ActivityIndicator size="small" color="#00F0FF" />
+          ) : (
+            <Send size={18} color="#00F0FF" />
+          )}
+        </TouchableOpacity>
         {unread > 0 && (
           <TouchableOpacity onPress={markAllRead} disabled={markingRead} style={styles.markReadBtn} activeOpacity={0.7}>
             {markingRead ? (

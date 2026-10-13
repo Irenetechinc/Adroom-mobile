@@ -15,10 +15,10 @@ export const LinkedInService = {
       if (!LINKEDIN_CLIENT_ID) throw new Error('EXPO_PUBLIC_LINKEDIN_CLIENT_ID is not configured');
 
       const callbackUrl = `${BACKEND_URL}/auth/linkedin/callback`;
-      // Request only the profile and publishing permissions this integration
-      // actually uses. Email and ad-account scopes are not required and can
-      // be unavailable to apps that have not been approved for those products.
-      const scopes = encodeURIComponent('r_liteprofile w_member_social');
+      // Use LinkedIn's current OpenID Connect profile permission instead of
+      // legacy r_liteprofile / r_emailaddress scopes. Email is not needed for
+      // account connection; w_member_social is the only publishing permission.
+      const scopes = encodeURIComponent('openid profile w_member_social');
       const state = Math.random().toString(36).substring(2) + Date.now().toString(36);
 
       const authUrl =
@@ -55,10 +55,9 @@ export const LinkedInService = {
 
   async getAdAccounts(accessToken: string): Promise<any[]> {
     try {
-      const response = await fetch('https://api.linkedin.com/v2/me', {
+      const response = await fetch('https://api.linkedin.com/v2/userinfo', {
         headers: {
           Authorization: `Bearer ${accessToken}`,
-          'X-Restli-Protocol-Version': '2.0.0',
         },
       });
       if (!response.ok) {
@@ -66,8 +65,8 @@ export const LinkedInService = {
         throw new Error(`LinkedIn API Error: ${response.status} ${err}`);
       }
       const data: any = await response.json();
-      const id = data.id;
-      const name = [data.localizedFirstName, data.localizedLastName].filter(Boolean).join(' ').trim();
+      const id = data.sub || data.id;
+      const name = [data.given_name, data.family_name].filter(Boolean).join(' ').trim() || data.name;
       if (!id) throw new Error('LinkedIn did not return a user id');
       return [{ id: `urn:li:person:${id}`, name: name || String(id) }];
     } catch (e) {

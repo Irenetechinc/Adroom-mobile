@@ -58,6 +58,17 @@ export function supportsPublicPosts(value: unknown): boolean {
   return (PUBLIC_POST_PLATFORMS as readonly string[]).includes(normalizePlatform(value));
 }
 
+export function normalizePublicTelegramChannel(value: unknown): string | null {
+  const raw = String(value ?? '').trim().replace(/^@/, '');
+  return /^[A-Za-z0-9_]{5,32}$/.test(raw) ? `@${raw}` : null;
+}
+
+export function supportsPublicPostsForDestination(value: unknown, destination?: unknown): boolean {
+  const platform = normalizePlatform(value);
+  return supportsPublicPosts(platform)
+    || (platform === 'telegram' && normalizePublicTelegramChannel(destination) !== null);
+}
+
 /**
  * Telegram's client API can post into a public channel, but a connected
  * personal account alone is not a public-feed destination. Require an

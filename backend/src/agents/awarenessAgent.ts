@@ -241,7 +241,7 @@ Return valid JSON only with this schema:
 
             // Generate a unique, platform-optimized graphic via GraphicsDesignerAgent
             let postImageUrl: string | undefined;
-            if (task.platform !== 'twitter' && task.platform !== 'x' && task.platform !== 'tiktok') {
+            if (task.platform !== 'twitter' && task.platform !== 'x' && task.platform !== 'tiktok' && task.platform !== 'telegram') {
                 try {
                     const { graphicsDesignerAgent } = await import('./graphicsDesignerAgent');
                     postImageUrl = await graphicsDesignerAgent.getImageForPost({
@@ -266,7 +266,15 @@ Return valid JSON only with this schema:
             }
 
             let result;
-            if (task.platform === 'facebook' && tokens.facebook) {
+            if (task.platform === 'telegram' && task.content?.publication_destination) {
+                result = await this.publishToplatform(
+                    task.platform,
+                    tokens,
+                    body,
+                    task.content?.video_url || task.content?.image_url || task.content?.media_url,
+                    task.content.publication_destination,
+                );
+            } else if (task.platform === 'facebook' && tokens.facebook) {
                 result = await this.publishToplatform(task.platform, tokens, body, task.content?.video_url || postImageUrl);
             } else if (task.platform === 'instagram' && tokens.instagram) {
                 const instagramMediaUrl = task.content?.video_url || postImageUrl;
@@ -380,7 +388,9 @@ Return valid JSON only with this schema:
         this.log(`Executing CROSS-POST BLITZ for strategy ${params.strategyId}`);
 
         const tokens = await this.getTokens(params.userId);
-        const platforms = Object.keys(tokens).filter(p => tokens[p as keyof typeof tokens]);
+        const platforms = Object.keys(tokens).filter(
+            (p) => p !== '__userId' && Boolean(tokens[p as keyof typeof tokens]),
+        );
 
         for (const platform of platforms) {
             const adapted = await this.generatePlatformContent({
@@ -399,7 +409,19 @@ Return valid JSON only with this schema:
                 if (platform === 'facebook' && tokens.facebook) {
                     await this.publishToplatform(platform, tokens, body);
                 } else if (platform === 'instagram' && tokens.instagram) {
-                    await this.publishToplatform(platform, tokens, body);
+                    const { graphicsDesignerAgent } = await import('./graphicsDesignerAgent');
+                    const imageUrl = await graphicsDesignerAgent.getImageForPost({
+                        userId: params.userId,
+                        strategyId: params.strategyId,
+                        platform: 'instagram',
+                        goal: 'AWARENESS BLITZ',
+                        agentType: 'AWARENESS',
+                        headline: adapted.headline,
+                        body: adapted.body,
+                        taskType: 'BLITZ_POST',
+                    });
+                    if (!imageUrl) throw new Error('Instagram blitz requires a generated or uploaded image.');
+                    await this.publishToplatform(platform, tokens, body, imageUrl);
                 } else if (platform === 'twitter' && tokens.twitter) {
                     await this.publishToplatform(platform, tokens, body.slice(0, 280));
                 } else if (platform === 'linkedin' && tokens.linkedin) {
@@ -407,6 +429,7 @@ Return valid JSON only with this schema:
                 } else if (platform === 'tiktok' && tokens.tiktok) {
                     // TikTok requires video — blitz text posts are skipped, log for awareness
                     this.log(`TikTok blitz skipped: no video asset available for blitz post`);
+                    continue;
                 }
                 this.log(`Blitz published to ${platform}`);
             } catch (err: any) {

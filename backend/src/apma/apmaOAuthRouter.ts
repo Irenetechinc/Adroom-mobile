@@ -214,17 +214,20 @@ apmaOAuthRouter.get('/callback/:platform', async (req, res) => {
         const tokenData = await tokenRes.json() as any;
         if (!tokenRes.ok || !tokenData.access_token) throw new Error(tokenData.error_description ?? 'Failed to get LinkedIn token');
 
-        const profileRes = await fetch('https://api.linkedin.com/v2/me?projection=(id,localizedFirstName,localizedLastName)', {
+        const profileRes = await fetch('https://api.linkedin.com/v2/userinfo', {
           headers: { Authorization: `Bearer ${tokenData.access_token}` },
         });
         const profile = await profileRes.json() as any;
-        const fullName = [profile.localizedFirstName, profile.localizedLastName].filter(Boolean).join(' ') || profile.id || 'LinkedIn Account';
+        if (!profileRes.ok || !(profile.sub || profile.id)) {
+          throw new Error(profile.message || 'LinkedIn did not return a member profile.');
+        }
+        const fullName = [profile.given_name, profile.family_name].filter(Boolean).join(' ') || profile.name || profile.sub || 'LinkedIn Account';
 
         const acctId = await upsertAccount(sb, {
           client_id: st.clientId,
           platform: 'linkedin',
           account_type: 'persona',
-          account_id: profile.id || 'unknown',
+          account_id: profile.sub || profile.id,
           account_name: fullName,
           access_token: tokenData.access_token,
           refresh_token: tokenData.refresh_token ?? null,

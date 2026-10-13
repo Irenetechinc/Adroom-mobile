@@ -1,5 +1,5 @@
 import React, { useCallback, useState } from 'react';
-import { Alert, ActivityIndicator, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Alert, ActivityIndicator, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { ArrowLeft, ArrowRight, Check, Link2, Plus } from 'lucide-react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -109,6 +109,24 @@ export default function AccountSelectionScreen() {
             </TouchableOpacity>
           );
           })}
+          {selected.includes('telegram') && (
+            <View style={styles.telegramChannelCard}>
+              <Text style={styles.telegramChannelTitle}>Public Telegram channel (optional)</Text>
+              <Text style={styles.telegramChannelHelp}>
+                Enter a public channel username where your connected Telegram account can post, such as @MyBrandChannel. Leave blank to use Telegram for direct conversation engagement only.
+              </Text>
+              <TextInput
+                value={productData.telegramPublicChannel || ''}
+                onChangeText={(telegramPublicChannel) => setProductData({ telegramPublicChannel })}
+                placeholder="@MyBrandChannel"
+                placeholderTextColor="#64748B"
+                autoCapitalize="none"
+                autoCorrect={false}
+                style={styles.telegramChannelInput}
+                accessibilityLabel="Public Telegram channel username"
+              />
+            </View>
+          )}
           {!emailAccount && (
             <TouchableOpacity
               style={[styles.account, (!emailConnectionEnabled || emailComingSoon) && { opacity: 0.55 }]}

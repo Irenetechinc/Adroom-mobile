@@ -1,5 +1,6 @@
 import express, { type Request } from 'express';
 import path from 'path';
+import { normalizePublicTelegramChannel } from './services/platformIdentity';
 import bodyParser from 'body-parser';
 import multer from 'multer';
 import dotenv from 'dotenv';
@@ -2764,7 +2765,11 @@ app.post('/api/ai/generate-preview-assets', async (req, res) => {
  * Activate Goal Agents — full autonomous campaign execution begins after user approves strategy
  */
 app.post('/api/ai/activate-agents', async (req, res) => {
-    const { strategyId, goal, platforms, selectedAccounts, videoUrl } = req.body;
+    const { strategyId, goal, platforms, selectedAccounts, videoUrl, telegramPublicChannel } = req.body;
+    const telegramChannelInput = String(telegramPublicChannel ?? '').trim();
+    const requestedTelegramChannel = telegramChannelInput
+      ? normalizePublicTelegramChannel(telegramChannelInput)
+      : null;
     const ts = () => new Date().toISOString();
     console.log(`\n[AgentActivation] ═══════════════════════════════════════`);
     console.log(`[AgentActivation] [${ts()}] ACTIVATING AUTONOMOUS AGENT`);
@@ -2772,6 +2777,12 @@ app.post('/api/ai/activate-agents', async (req, res) => {
 
     if (!strategyId || !goal) {
         return res.status(400).json({ error: 'strategyId and goal are required' });
+    }
+    if (telegramChannelInput && !requestedTelegramChannel) {
+        return res.status(400).json({
+          error: 'Invalid Telegram public channel username.',
+          message: 'Enter a public Telegram channel username such as @MyBrandChannel.',
+        });
     }
 
     try {
@@ -2860,6 +2871,15 @@ app.post('/api/ai/activate-agents', async (req, res) => {
         if (activePlatforms.length === 0) {
             return res.status(409).json({ error: 'SOCIAL_ACCOUNTS_REQUIRED', message: 'This strategy has no selected social accounts. Generate it again and select a connected account.' });
         }
+        if (requestedTelegramChannel && !activePlatforms.includes('telegram')) {
+            return res.status(400).json({ error: 'TELEGRAM_NOT_SELECTED', message: 'Select a connected Telegram account before setting a public channel.' });
+        }
+        const activeTelegramChannel = activePlatforms.includes('telegram') ? requestedTelegramChannel : null;
+        const currentExecutionPlan = {
+          ...(strategy?.current_execution_plan || {}),
+          telegram_public_channel: activeTelegramChannel,
+          ...(videoUrl ? { user_video_url: videoUrl } : {}),
+        };
         const publicPlatformAliases = Array.from(new Set(
           activePlatforms
             .filter((platform) => !isPersonalProvider(platform))
@@ -2891,24 +2911,25 @@ app.post('/api/ai/activate-agents', async (req, res) => {
         if (missingPlatforms.length > 0) {
             return res.status(409).json({ error: 'SOCIAL_ACCOUNTS_REQUIRED', missing: missingPlatforms, message: `Reconnect these selected accounts before launching: ${missingPlatforms.join(', ')}.` });
         }
-        const activeStrategy = { ...strategy, selected_accounts: activePlatforms, platforms: activePlatforms };
+        const activeStrategy = {
+          ...strategy,
+          telegram_public_channel: activeTelegramChannel,
+          current_execution_plan: currentExecutionPlan,
+          selected_accounts: activePlatforms,
+          platforms: activePlatforms,
+        };
 
         if (activePlatforms.length > 0) {
             await supabase.from('strategies').update({
                 selected_accounts: activePlatforms,
                 platforms: activePlatforms,
+                current_execution_plan: currentExecutionPlan,
                 updated_at: new Date().toISOString(),
             }).eq('id', strategyId).eq('user_id', user.id);
         }
 
         // Store user-supplied video URL in strategy so agents can retrieve it at execution time
         if (videoUrl) {
-            await supabase.from('strategies').update({
-                current_execution_plan: {
-                    ...(strategy?.current_execution_plan || {}),
-                    user_video_url: videoUrl,
-                }
-            }).eq('id', strategyId);
             console.log(`[AgentActivation] User video URL stored for strategy ${strategyId}`);
         }
 

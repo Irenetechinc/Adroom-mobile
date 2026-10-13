@@ -313,7 +313,7 @@ Return valid JSON only with this schema:
 
             // Generate a unique, conversion-optimized graphic via GraphicsDesignerAgent
             let postImageUrl: string | undefined;
-            if (task.platform !== 'twitter' && task.platform !== 'x' && task.platform !== 'tiktok') {
+            if (task.platform !== 'twitter' && task.platform !== 'x' && task.platform !== 'tiktok' && task.platform !== 'telegram') {
                 try {
                     const { graphicsDesignerAgent } = await import('./graphicsDesignerAgent');
                     postImageUrl = await graphicsDesignerAgent.getImageForPost({
@@ -338,7 +338,15 @@ Return valid JSON only with this schema:
             }
 
             let result;
-            if (task.platform === 'facebook' && tokens.facebook) {
+            if (task.platform === 'telegram' && task.content?.publication_destination) {
+                result = await this.publishToplatform(
+                    task.platform,
+                    tokens,
+                    publishBody,
+                    task.content?.video_url || task.content?.image_url || task.content?.media_url,
+                    task.content.publication_destination,
+                );
+            } else if (task.platform === 'facebook' && tokens.facebook) {
                 result = await this.publishToplatform(task.platform, tokens, publishBody, task.content?.video_url || postImageUrl);
             } else if (task.platform === 'instagram' && tokens.instagram) {
                 const instagramMediaUrl = task.content?.video_url || postImageUrl;
