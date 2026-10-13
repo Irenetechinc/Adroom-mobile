@@ -18,6 +18,9 @@ assert.equal(supportsPublicPosts('bluesky_personal'), true, 'Bluesky aliases ret
 assert.equal(supportsPublicPosts('x'), true, 'X aliases retain public-feed support');
 assert.equal(supportsPublicPosts('telegram'), false, 'Messaging-only accounts must not be treated as public feeds');
 assert.equal(supportsPublicPosts('email'), false, 'Email must not be treated as a public social feed');
+assert.equal(supportsPublicPosts('whatsapp_personal'), false, 'WhatsApp accounts are recipient-only');
+assert.equal(supportsPublicPosts('signal_personal'), false, 'Signal accounts are recipient-only');
+assert.equal(supportsPublicPosts('delta_chat'), false, 'Delta Chat accounts are recipient-only');
 assert.deepEqual(
   selectedPlatformsForStrategy({ selected_accounts: [], platforms: ['instagram'] }),
   ['instagram'],

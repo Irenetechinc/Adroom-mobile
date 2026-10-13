@@ -1311,11 +1311,11 @@ app.get('/auth/poll', (req, res) => {
 function buildOAuthClosePage(platform: string, success: boolean, message?: string): string {
   const title = success ? 'Connected!' : 'Connection Failed';
   const body = success
-    ? `Your ${platform} account has been authorized. Return to the AdRoom app to continue.`
-    : (message || `There was a problem connecting your ${platform} account. Please return to the app and try again.`);
+    ? `Your ${platform} account has been authorized. Return to Adirum AI to continue.`
+    : (message || `There was a problem connecting your ${platform} account. Please return to Adirum AI and try again.`);
   const icon = success ? '✅' : '❌';
   return `<!DOCTYPE html><html><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>${title} — AdRoom</title>
+<title>${title} — Adirum AI</title>
 <style>
   :root{color-scheme:dark}*{box-sizing:border-box}
   body{margin:0;padding:24px;min-height:100vh;display:flex;align-items:center;justify-content:center;
@@ -1331,7 +1331,7 @@ function buildOAuthClosePage(platform: string, success: boolean, message?: strin
   p{color:#94A3B8;font-size:14px;line-height:1.6;margin:0}
   .hint{margin-top:24px;font-size:12px;color:#475569}
 </style></head><body><div class="card">
-  <div class="logo">AdRoom</div>
+  <div class="logo">Adirum AI</div>
   <div class="tag">AI Marketing Platform</div>
   <div class="icon">${icon}</div>
   <h1>${title}</h1>
@@ -3687,8 +3687,8 @@ app.post('/api/billing/payment-link', async (req, res) => {
         customer: { email, name: email },
         customizations: {
           title: type === 'subscription'
-            ? `AdRoom ${PLANS[id as keyof typeof PLANS]?.name ?? id} Plan`
-            : 'AdRoom Energy Top-Up',
+            ? `Adirum AI ${PLANS[id as keyof typeof PLANS]?.name ?? id} Plan`
+            : 'Adirum AI Energy Top-Up',
           description: type === 'subscription'
             ? `Monthly subscription — ${id}`
             : `Energy top-up pack — ${id}`,
@@ -3900,9 +3900,9 @@ app.get('/api/billing/flw-callback', async (req, res) => {
     res.send(`
       <html><body style="font-family:sans-serif;text-align:center;padding:40px;background:#0B0F19;color:#E2E8F0">
         <h2 style="color:#00F0FF">Payment Successful!</h2>
-        <p>Your AdRoom Energy has been credited.</p>
+        <p>Your Adirum AI Energy has been credited.</p>
         <p style="color:#64748B">Transaction: ${transaction_id}</p>
-        <p>Return to the AdRoom app to verify and activate your credits.</p>
+        <p>Return to Adirum AI to verify and activate your credits.</p>
       </body></html>
     `);
   } else {

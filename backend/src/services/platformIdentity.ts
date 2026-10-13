@@ -58,6 +58,11 @@ export function supportsPublicPosts(value: unknown): boolean {
   return (PUBLIC_POST_PLATFORMS as readonly string[]).includes(normalizePlatform(value));
 }
 
+/**
+ * Telegram's client API can post into a public channel, but a connected
+ * personal account alone is not a public-feed destination. Require an
+ * explicit public username supplied by the user for each such strategy.
+ */
 export function platformAliases(value: unknown): string[] {
   const canonical = normalizePlatform(value);
   const aliases = Object.entries(ALIASES)

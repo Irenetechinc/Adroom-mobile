@@ -152,7 +152,7 @@ export async function requestNotificationPermissions(): Promise<boolean> {
 async function setupAndroidChannels(): Promise<void> {
   if (Platform.OS !== 'android') return;
   await Notifications.setNotificationChannelAsync('default', {
-    name: 'AdRoom Notifications',
+    name: 'Adirum AI Notifications',
     importance: Notifications.AndroidImportance.MAX,
     vibrationPattern: [0, 250, 250, 250],
     lightColor: '#00F0FF',

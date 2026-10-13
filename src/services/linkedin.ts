@@ -15,7 +15,10 @@ export const LinkedInService = {
       if (!LINKEDIN_CLIENT_ID) throw new Error('EXPO_PUBLIC_LINKEDIN_CLIENT_ID is not configured');
 
       const callbackUrl = `${BACKEND_URL}/auth/linkedin/callback`;
-      const scopes = encodeURIComponent('r_liteprofile r_emailaddress rw_ads w_member_social');
+      // Request only the profile and publishing permissions this integration
+      // actually uses. Email and ad-account scopes are not required and can
+      // be unavailable to apps that have not been approved for those products.
+      const scopes = encodeURIComponent('r_liteprofile w_member_social');
       const state = Math.random().toString(36).substring(2) + Date.now().toString(36);
 
       const authUrl =

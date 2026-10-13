@@ -817,7 +817,7 @@ apmaClientRouter.post('/oauth/start/:platform', apmaClientAuth, async (req: any,
     case 'linkedin': {
       const LINKEDIN_CLIENT_ID = process.env.LINKEDIN_CLIENT_ID;
       if (!LINKEDIN_CLIENT_ID) return res.status(500).json({ error: 'LinkedIn Client ID not configured on server. Set LINKEDIN_CLIENT_ID.' });
-      const scope = 'r_liteprofile r_emailaddress w_member_social';
+      const scope = 'r_liteprofile w_member_social';
       authUrl = `https://www.linkedin.com/oauth/v2/authorization?response_type=code&client_id=${LINKEDIN_CLIENT_ID}&redirect_uri=${encodeURIComponent(redir('linkedin'))}&scope=${encodeURIComponent(scope)}&state=${stateId}`;
       break;
     }

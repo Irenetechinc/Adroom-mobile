@@ -890,6 +890,9 @@ Return STRICT JSON only (no markdown, no explanation):
 
     async publishToplatform(platform: string, tokens: AgentTokens, body: string, mediaUrl?: string): Promise<PublishResult> {
         const normalizedPlatform = normalizePlatform(platform);
+        if (['telegram', 'whatsapp_personal', 'signal_personal', 'delta_chat', 'email'].includes(normalizedPlatform)) {
+            throw new Error(`${normalizedPlatform} is recipient-only. Use a conversation task with an explicit recipient; it cannot publish a public post.`);
+        }
         const { criticAgentService } = await import('../services/criticAgentService');
         const review = await criticAgentService.validateBeforePublish({
             output: body,
@@ -908,19 +911,9 @@ Return STRICT JSON only (no markdown, no explanation):
             case 'twitter': case 'x': return this.publishToTwitter(tokens.twitter, body);
             case 'linkedin': return this.publishToLinkedIn(tokens.linkedin, body);
             case 'tiktok': return this.publishToTikTok(tokens.tiktok, body, mediaUrl);
-            case 'telegram':
-            case 'whatsapp_personal':
-            case 'signal_personal': {
-                const published = await socialAccountService.publish(normalizedPlatform, (tokens as any).__userId || '', body, mediaUrl);
-                return { platform: normalizedPlatform, platform_post_id: published.id, published_at: new Date().toISOString(), url: published.url };
-            }
             case 'bluesky': {
                 const published = await socialAccountService.publish('bluesky', (tokens as any).__userId || '', body, mediaUrl);
                 return { platform: 'bluesky', platform_post_id: published.id, published_at: new Date().toISOString(), url: published.url };
-            }
-            case 'delta_chat': {
-                const published = await socialAccountService.publish('delta_chat', (tokens as any).__userId || '', body, mediaUrl);
-                return { platform: 'delta_chat', platform_post_id: published.id, published_at: new Date().toISOString(), url: published.url };
             }
             default: throw new Error(`Unsupported platform: ${platform}`);
         }

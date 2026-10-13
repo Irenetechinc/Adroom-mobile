@@ -1206,15 +1206,18 @@ export class SocialAccountService {
         if (provider === 'telegram') {
           const client = this.telegramClient(credential.session);
           await client.connect();
-           const recipient = requestedRecipient;
-            await this.sendTyping(provider, credential, recipient, client);
-            await new Promise((resolve) => setTimeout(resolve, 600 + Math.floor(Math.random() * 1600)));
+          const recipient = requestedRecipient;
           const result = mediaUrl
              ? await client.sendFile(recipient, { file: mediaUrl, caption: text.slice(0, 4000) })
              : await client.sendMessage(recipient, { message: text.slice(0, 4000) });
           await client.disconnect();
+           if (!result?.id) throw new Error('Telegram did not confirm the message with a message ID.');
           await this.recordSuccess(userId, provider);
-          return { id: String(result?.id || `telegram:${Date.now()}`), url: credential.handle ? `https://t.me/${String(credential.handle).replace(/^@/, '')}` : undefined };
+           const publicUsername = recipient.match(/^@([A-Za-z0-9_]{5,32})$/)?.[1];
+           return {
+             id: String(result.id),
+             url: publicUsername ? `https://t.me/${publicUsername}/${String(result.id)}` : undefined,
+           };
         }
 
         if (provider === 'whatsapp_personal') {
