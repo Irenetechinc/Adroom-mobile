@@ -23,9 +23,9 @@ assert.equal(supportsPublicPostsForDestination('telegram', '@MyBrandChannel'), t
 assert.equal(supportsPublicPostsForDestination('telegram', 'private-recipient'), false, 'A private Telegram recipient is not a public channel');
 assert.equal(normalizePublicTelegramChannel('MyBrandChannel'), '@MyBrandChannel');
 assert.equal(supportsPublicPosts('email'), false, 'Email must not be treated as a public social feed');
-assert.equal(supportsPublicPosts('whatsapp_personal'), false, 'WhatsApp accounts are recipient-only');
-assert.equal(supportsPublicPosts('signal_personal'), false, 'Signal accounts are recipient-only');
-assert.equal(supportsPublicPosts('delta_chat'), false, 'Delta Chat accounts are recipient-only');
+assert.equal(supportsPublicPosts('whatsapp_personal'), false, 'WhatsApp personal accounts do not provide a public-feed publisher');
+assert.equal(supportsPublicPosts('signal_personal'), false, 'Signal personal accounts do not provide a public-feed publisher');
+assert.equal(supportsPublicPosts('delta_chat'), false, 'Delta Chat does not provide a public-feed publisher');
 assert.deepEqual(
   selectedPlatformsForStrategy({ selected_accounts: [], platforms: ['instagram'] }),
   ['instagram'],

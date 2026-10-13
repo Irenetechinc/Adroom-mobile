@@ -313,7 +313,8 @@ Return valid JSON only with this schema:
 
             // Generate a unique, conversion-optimized graphic via GraphicsDesignerAgent
             let postImageUrl: string | undefined;
-            if (task.platform !== 'twitter' && task.platform !== 'x' && task.platform !== 'tiktok' && task.platform !== 'telegram') {
+            if (!task.content?.video_url && !task.content?.image_url && !task.content?.media_url
+                && task.platform !== 'twitter' && task.platform !== 'x' && task.platform !== 'tiktok' && task.platform !== 'telegram') {
                 try {
                     const { graphicsDesignerAgent } = await import('./graphicsDesignerAgent');
                     postImageUrl = await graphicsDesignerAgent.getImageForPost({
@@ -347,17 +348,26 @@ Return valid JSON only with this schema:
                     task.content.publication_destination,
                 );
             } else if (task.platform === 'facebook' && tokens.facebook) {
-                result = await this.publishToplatform(task.platform, tokens, publishBody, task.content?.video_url || postImageUrl);
+                result = await this.publishToplatform(task.platform, tokens, publishBody, task.content?.video_url || task.content?.image_url || task.content?.media_url || postImageUrl);
             } else if (task.platform === 'instagram' && tokens.instagram) {
-                const instagramMediaUrl = task.content?.video_url || postImageUrl;
+                const instagramMediaUrl = task.content?.video_url
+                    || task.content?.image_url
+                    || task.content?.media_url
+                    || postImageUrl;
+                const declaredMediaType = String(task.content?.media_type || task.content?.asset_type || '').toLowerCase();
+                const instagramMediaType = task.content?.video_url || declaredMediaType === 'video'
+                    ? 'video'
+                    : task.content?.image_url || declaredMediaType === 'image'
+                        ? 'image'
+                        : undefined;
                 if (!instagramMediaUrl) throw new Error('Instagram requires an image or video — media generation did not return an asset');
-                result = await this.publishToplatform(task.platform, tokens, publishBody, instagramMediaUrl);
+                result = await this.publishToplatform(task.platform, tokens, publishBody, instagramMediaUrl, undefined, instagramMediaType);
             } else if (task.platform === 'twitter' && tokens.twitter) {
                 result = await this.publishToplatform(task.platform, tokens, publishBody.slice(0, 280));
             } else if (task.platform === 'linkedin' && tokens.linkedin) {
                 result = await this.publishToplatform(task.platform, tokens, publishBody);
             } else if (task.platform === 'bluesky' && tokens.bluesky) {
-                result = await this.publishToplatform(task.platform, tokens, publishBody, task.content?.video_url || postImageUrl);
+                result = await this.publishToplatform(task.platform, tokens, publishBody, task.content?.video_url || task.content?.image_url || task.content?.media_url || postImageUrl);
             } else if (task.platform === 'tiktok' && tokens.tiktok) {
                 let tiktokVideoUrl: string | undefined = task.content?.video_url;
 
@@ -466,10 +476,11 @@ Return valid JSON only with this schema:
     private async executeConversationEngage(taskId: string, task: any): Promise<void> {
         const content = task.content || {};
         const platform = normalizePlatform(task.platform);
-            const recipient = String(
+        let recipient = String(
                 task.recipient_id
                 || content.recipient_id
                 || content.recipient
+                || content.platform_user_id
                 || content.author_id
                 || (isPersonalProvider(platform)
                   ? ''
@@ -478,12 +489,32 @@ Return valid JSON only with this schema:
                 || '',
             ).trim();
         if (!recipient) {
-                await this.failTask(
-                    taskId,
-                    isPersonalProvider(platform)
-                      ? 'Personal message task has no explicit recipient or conversation identifier.'
-                      : 'Conversation engagement has no public recipient identity.',
-                );
+            const leadId = String(
+                task.lead_id
+                || content.lead_id
+                || task.conversation_id
+                || content.conversation_id
+                || '',
+            ).trim();
+            if (leadId) {
+                const { data: relatedLead } = await this.supabase
+                    .from('agent_leads')
+                    .select('platform_user_id')
+                    .eq('id', leadId)
+                    .eq('user_id', task.user_id)
+                    .eq('platform', platform)
+                    .maybeSingle();
+                const storedRecipient = String(relatedLead?.platform_user_id || '').trim();
+                if (storedRecipient && !storedRecipient.startsWith('discovery:')) recipient = storedRecipient;
+            }
+        }
+        if (!recipient) {
+            await this.failTask(
+                taskId,
+                isPersonalProvider(platform)
+                    ? 'Personal message task has no resolvable recipient. Include recipient_id, lead_id, or conversation_id.'
+                    : 'Conversation engagement has no public recipient identity.',
+            );
             return;
         }
 

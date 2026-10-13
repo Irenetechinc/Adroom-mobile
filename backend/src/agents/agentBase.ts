@@ -55,9 +55,15 @@ const TIKTOK_API = 'https://open.tiktokapis.com/v2';
 
 function mediaKind(mediaUrl: string): 'image' | 'video' | 'unknown' {
     try {
-        const pathname = new URL(mediaUrl).pathname.toLowerCase();
+        const parsed = new URL(mediaUrl);
+        const pathname = parsed.pathname.toLowerCase();
         if (/\.(png|jpe?g|webp|gif|avif)$/.test(pathname)) return 'image';
         if (/\.(mp4|mov|m4v|webm|avi|mkv)$/.test(pathname)) return 'video';
+        const mime = ['mime_type', 'content_type', 'contentType', 'mime']
+            .map((key) => parsed.searchParams.get(key) || '')
+            .find((value) => /^(image|video)\//i.test(value));
+        if (mime?.toLowerCase().startsWith('image/')) return 'image';
+        if (mime?.toLowerCase().startsWith('video/')) return 'video';
     } catch {
         return 'unknown';
     }
@@ -501,17 +507,21 @@ Return STRICT JSON only (no markdown, no explanation):
         this.log(`Facebook DM sent to ${recipientId}`);
     }
 
-    async publishToInstagram(tokens: AgentTokens['instagram'], body: string, imageUrl?: string): Promise<PublishResult> {
+    async publishToInstagram(
+        tokens: AgentTokens['instagram'],
+        body: string,
+        imageUrl?: string,
+        mediaTypeHint?: 'image' | 'video',
+    ): Promise<PublishResult> {
         if (!tokens) throw new Error('Instagram tokens not configured');
         const { access_token, instagram_account_id } = tokens;
         this.log(`Publishing to Instagram account ${instagram_account_id}`);
 
         if (!imageUrl) {
-            // Text-only post as carousel stub (Instagram requires media — use a reel for text-only)
             throw new Error('Instagram requires an image or video URL');
         }
 
-        const kind = mediaKind(imageUrl);
+        const kind = mediaTypeHint || mediaKind(imageUrl);
         requirePublicMediaUrl(imageUrl, kind === 'video' ? 'video' : 'image');
         const containerBody = kind === 'video'
             ? { media_type: 'REELS', video_url: imageUrl, caption: body, access_token }
@@ -896,7 +906,14 @@ Return STRICT JSON only (no markdown, no explanation):
 
     // ─── UNIFIED PUBLISH DISPATCHER ──────────────────────────────────────────────
 
-    async publishToplatform(platform: string, tokens: AgentTokens, body: string, mediaUrl?: string, destination?: string): Promise<PublishResult> {
+    async publishToplatform(
+        platform: string,
+        tokens: AgentTokens,
+        body: string,
+        mediaUrl?: string,
+        destination?: string,
+        mediaTypeHint?: 'image' | 'video',
+    ): Promise<PublishResult> {
         const normalizedPlatform = normalizePlatform(platform);
         if (isPersonalProvider(normalizedPlatform)
             && !supportsPublicPostsForDestination(normalizedPlatform, destination)) {
@@ -916,7 +933,7 @@ Return STRICT JSON only (no markdown, no explanation):
         this.log(`Dispatching publish to ${normalizedPlatform}`);
         switch (normalizedPlatform) {
             case 'facebook': return this.publishToFacebook(tokens.facebook, body, mediaUrl);
-            case 'instagram': return this.publishToInstagram(tokens.instagram, body, mediaUrl);
+            case 'instagram': return this.publishToInstagram(tokens.instagram, body, mediaUrl, mediaTypeHint);
             case 'twitter': case 'x': return this.publishToTwitter(tokens.twitter, body);
             case 'linkedin': return this.publishToLinkedIn(tokens.linkedin, body);
             case 'tiktok': return this.publishToTikTok(tokens.tiktok, body, mediaUrl);

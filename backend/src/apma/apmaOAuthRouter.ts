@@ -4,6 +4,16 @@ import { apmaOAuthStates } from './apmaOAuthStore';
 
 export const apmaOAuthRouter = Router();
 
+function escapeHtml(value: string): string {
+  return value.replace(/[&<>"']/g, (character) => ({
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;',
+    "'": '&#39;',
+  })[character] || character);
+}
+
 function getBase(): string {
   return (process.env.PUBLIC_BASE_URL ?? 'https://backend.adroomai.com').replace(/\/+$/, '');
 }
@@ -13,15 +23,15 @@ function redirectUri(platform: string): string {
 }
 
 function successPage(platformLabel: string, count: number): string {
-  return `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Connected — APMA</title></head><body style="margin:0;background:#060d1a;color:#f1f5f9;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;display:flex;align-items:center;justify-content:center;min-height:100vh"><div style="text-align:center;max-width:400px;padding:0 24px"><div style="width:72px;height:72px;background:rgba(34,197,94,.12);border:1px solid rgba(34,197,94,.3);border-radius:50%;display:flex;align-items:center;justify-content:center;margin:0 auto 20px;font-size:32px">✓</div><div style="font-size:22px;font-weight:800;color:#22c55e;margin-bottom:8px">Connected!</div><div style="color:#94a3b8;font-size:14px;line-height:1.6">${platformLabel} ${count > 1 ? `(${count} accounts)` : 'account'} successfully connected to APMA.</div><div style="margin-top:28px;font-size:12px;color:#475569;background:rgba(99,102,241,.08);border:1px solid rgba(99,102,241,.15);border-radius:8px;padding:12px 16px">You can close this browser tab.<br>APMA Dashboard will update automatically.</div></div></body></html>`;
+  return `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Connected — Adirum AI</title></head><body style="margin:0;background:#060d1a;color:#f1f5f9;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;display:flex;align-items:center;justify-content:center;min-height:100vh"><div style="text-align:center;max-width:400px;padding:0 24px"><div style="width:72px;height:72px;background:rgba(34,197,94,.12);border:1px solid rgba(34,197,94,.3);border-radius:50%;display:flex;align-items:center;justify-content:center;margin:0 auto 20px;font-size:32px">✓</div><div style="font-size:22px;font-weight:800;color:#22c55e;margin-bottom:8px">Connected!</div><div style="color:#94a3b8;font-size:14px;line-height:1.6">${escapeHtml(platformLabel)} ${count > 1 ? '(' + count + ' accounts)' : 'account'} successfully connected to Adirum AI APMA.</div><div style="margin-top:28px;font-size:12px;color:#475569;background:rgba(99,102,241,.08);border:1px solid rgba(99,102,241,.15);border-radius:8px;padding:12px 16px">You can close this browser tab.<br>Adirum AI APMA will update automatically.</div></div></body></html>`;
 }
 
 function errorPage(msg: string): string {
-  return `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Error — APMA</title></head><body style="margin:0;background:#060d1a;color:#f1f5f9;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;display:flex;align-items:center;justify-content:center;min-height:100vh"><div style="text-align:center;max-width:400px;padding:0 24px"><div style="font-size:48px;margin-bottom:16px">⚠</div><div style="font-size:18px;font-weight:700;color:#ef4444;margin-bottom:8px">Connection Failed</div><div style="color:#94a3b8;font-size:14px;line-height:1.6">${msg}</div><div style="margin-top:28px;font-size:12px;color:#475569">Close this tab and try again in APMA.</div></div></body></html>`;
+  return `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Connection Failed — Adirum AI</title></head><body style="margin:0;background:#060d1a;color:#f1f5f9;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;display:flex;align-items:center;justify-content:center;min-height:100vh"><div style="text-align:center;max-width:400px;padding:0 24px"><div style="font-size:48px;margin-bottom:16px">⚠</div><div style="font-size:18px;font-weight:700;color:#ef4444;margin-bottom:8px">Connection Failed</div><div style="color:#94a3b8;font-size:14px;line-height:1.6">${escapeHtml(msg)}</div><div style="margin-top:28px;font-size:12px;color:#475569">Close this tab and try again in Adirum AI APMA.</div></div></body></html>`;
 }
 
 function deniedPage(detail: string): string {
-  return `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Cancelled — APMA</title></head><body style="margin:0;background:#060d1a;color:#f1f5f9;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;display:flex;align-items:center;justify-content:center;min-height:100vh"><div style="text-align:center;max-width:400px;padding:0 24px"><div style="font-size:48px;margin-bottom:16px">✕</div><div style="font-size:18px;font-weight:700;color:#f59e0b;margin-bottom:8px">Authorization Cancelled</div><div style="color:#94a3b8;font-size:14px">${detail || 'Access was not granted.'}</div><div style="margin-top:28px;font-size:12px;color:#475569">Close this tab and try again in APMA.</div></div></body></html>`;
+  return `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Cancelled — Adirum AI</title></head><body style="margin:0;background:#060d1a;color:#f1f5f9;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;display:flex;align-items:center;justify-content:center;min-height:100vh"><div style="text-align:center;max-width:400px;padding:0 24px"><div style="font-size:48px;margin-bottom:16px">✕</div><div style="font-size:18px;font-weight:700;color:#f59e0b;margin-bottom:8px">Authorization Cancelled</div><div style="color:#94a3b8;font-size:14px">${escapeHtml(detail || 'Access was not granted.')}</div><div style="margin-top:28px;font-size:12px;color:#475569">Close this tab and try again in Adirum AI APMA.</div></div></body></html>`;
 }
 
 async function upsertAccount(sb: any, payload: Record<string, any>): Promise<string | null> {

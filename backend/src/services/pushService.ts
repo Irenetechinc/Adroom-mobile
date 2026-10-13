@@ -206,7 +206,7 @@ export const pushService = {
   async notifyLowCredits(userId: string, balance: number, required?: number): Promise<void> {
     const tokens = await getUserTokens(userId);
     const requiredNote = required ? ` You need at least ${required} more credits to continue.` : '';
-    const title = 'AdRoom Energy Running Low';
+    const title = 'Adirum AI Energy Running Low';
     const body = `You have ${balance.toFixed(1)} energy credits remaining.${requiredNote} Top up to keep your strategy running.`;
     const data = { type: 'low_credits', balance, required };
     await Promise.all([
@@ -218,7 +218,7 @@ export const pushService = {
 
   async notifyExhausted(userId: string): Promise<void> {
     const tokens = await getUserTokens(userId);
-    const title = 'AdRoom Energy Exhausted';
+    const title = 'Adirum AI Energy Exhausted';
     const body = 'Your energy credits have run out. All AI operations and campaigns have been paused. Top up to resume.';
     const data = { type: 'credits_exhausted' };
     await Promise.all([
@@ -258,7 +258,7 @@ export const pushService = {
   ): Promise<void> {
     const tokens = await getUserTokens(userId);
     const title = 'Insufficient Credits';
-    const body = `AdRoom needs ${required} credits to run "${operation}" but you only have ${balance.toFixed(1)}. Top up to continue.`;
+    const body = `Adirum AI needs ${required} credits to run "${operation}" but you only have ${balance.toFixed(1)}. Top up to continue.`;
     const data = { type: 'insufficient_credits', operation, balance, required };
     await Promise.all([
       sendExpoPush(tokens, { title, body, data, channelId: 'alerts' }),

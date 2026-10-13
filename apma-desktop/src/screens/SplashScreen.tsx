@@ -5,9 +5,9 @@ const CSS = `
     from { opacity: 0; transform: scale(0.88) translateY(14px); }
     to   { opacity: 1; transform: scale(1)    translateY(0);    }
   }
-  @keyframes apma-ring {
-    from { transform: rotate(0deg); }
-    to   { transform: rotate(360deg); }
+  @keyframes apma-halo {
+    0%, 100% { opacity: 0.48; transform: scale(0.94); }
+    50%      { opacity: 0.9;  transform: scale(1.06); }
   }
   @keyframes apma-dot {
     0%, 100% { transform: scale(0.5); opacity: 0.18; }
@@ -62,34 +62,53 @@ export default function SplashScreen({ onDone }: { onDone: () => void }) {
         textAlign: 'center',
         animation: 'apma-logo-in 0.55s cubic-bezier(0.34,1.56,0.64,1) forwards',
       }}>
-        <div style={{ position: 'relative', display: 'inline-block', marginBottom: 28 }}>
+        <div style={{
+          position: 'relative',
+          width: 132,
+          height: 132,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          marginBottom: 24,
+        }}>
           <div style={{
-            width: 88, height: 88, borderRadius: '50%',
-            background: 'radial-gradient(circle at 35% 35%, rgba(99,102,241,.18) 0%, rgba(56,189,248,.06) 100%)',
-            border: '1px solid rgba(99,102,241,.22)',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            boxShadow: '0 0 48px rgba(99,102,241,.18), 0 0 80px rgba(99,102,241,.08)',
+            position: 'absolute',
+            inset: 0,
+            borderRadius: '50%',
+            background: 'radial-gradient(circle, rgba(99,102,241,.32) 0%, rgba(56,189,248,.12) 42%, transparent 72%)',
+            filter: 'blur(8px)',
+            animation: 'apma-halo 2.4s ease-in-out infinite',
+          }} />
+          <div style={{
+            position: 'relative',
+            width: 94,
+            height: 94,
+            borderRadius: 28,
+            background: 'linear-gradient(145deg, rgba(99,102,241,.16), rgba(56,189,248,.07))',
+            boxShadow: '0 18px 56px rgba(56,189,248,.14), 0 10px 34px rgba(99,102,241,.2)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
           }}>
-            <span style={{ fontSize: 38, lineHeight: 1 }}>🎯</span>
+            <svg width="64" height="64" viewBox="0 0 64 64" fill="none" aria-hidden="true">
+              <defs>
+                <linearGradient id="apma-mark-gradient" x1="10" y1="10" x2="55" y2="55" gradientUnits="userSpaceOnUse">
+                  <stop stopColor="#22D3EE" />
+                  <stop offset="1" stopColor="#D946EF" />
+                </linearGradient>
+              </defs>
+              <g stroke="url(#apma-mark-gradient)" strokeWidth="3.5" strokeLinecap="round">
+                <path d="M32 10 18 29M32 10l14 19M18 29 9 53M18 29l37 24M46 29 9 53M46 29l9 24" />
+              </g>
+              <g fill="url(#apma-mark-gradient)">
+                <circle cx="32" cy="10" r="5" />
+                <circle cx="18" cy="29" r="5" />
+                <circle cx="46" cy="29" r="5" />
+                <circle cx="9" cy="53" r="5" />
+                <circle cx="55" cy="53" r="5" />
+              </g>
+            </svg>
           </div>
-
-          <div style={{
-            position: 'absolute',
-            top: -10, right: -10, bottom: -10, left: -10,
-            border: '2px solid transparent',
-            borderTopColor: '#6366f1',
-            borderRightColor: 'rgba(99,102,241,.3)',
-            borderRadius: '50%',
-            animation: 'apma-ring 1.4s linear infinite',
-          }} />
-          <div style={{
-            position: 'absolute',
-            top: -18, right: -18, bottom: -18, left: -18,
-            border: '1px solid transparent',
-            borderTopColor: 'rgba(56,189,248,.4)',
-            borderRadius: '50%',
-            animation: 'apma-ring 2.2s linear infinite reverse',
-          }} />
         </div>
 
         <div style={{ fontSize: 48, fontWeight: 900, color: '#f1f5f9', letterSpacing: '-0.02em', marginBottom: 4, lineHeight: 1 }}>
