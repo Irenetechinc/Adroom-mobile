@@ -332,8 +332,8 @@ function buildPollingClosePage(isError: boolean, platform: string): string {
   const iconClass = isError ? 'error' : 'success';
   const title = isError ? `${platform} connection failed` : `${platform} connected!`;
   const body = isError
-    ? `Something went wrong. Please return to the AdRoom app and try again.`
-    : `${platform} has been authorised. The AdRoom app will close this tab automatically — please wait a moment.`;
+    ? `Something went wrong. Please return to Adirum AI and try again.`
+    : `${platform} has been authorised. Adirum AI will close this tab automatically — please wait a moment.`;
 
   return `<!doctype html>
 <html lang="en">

@@ -18,3 +18,6 @@
 - [Conversation discovery and shared research](conversation-research-fallback.md) — retain bounded AgentReach evidence when strict matching or AI collection would otherwise produce zero downstream context.
 - [Deployment boundary](deployment-boundaries.md) — keep production on Railway; use public npm only and add no Replit or development dependencies.
 - [Email channel requirements](email-channel-requirements.md) — users should connect mailboxes without configuring server hosts or app-owned credentials.
+- [Talon reply cleaning](talon-reply-cleaning.md) — use Talon's quote extraction path; its signature classifier is incompatible with the current scikit-learn runtime.
+- [Strategy lifecycle source](strategy-lifecycle-source.md) — `strategies` is the active-state authority; `strategy_memory` is optional reporting/intelligence metadata.
+- [Adirum AI brand](adirum-ai-brand.md) — use Adirum AI on customer-facing and OAuth pages; preserve legacy callback schemes and technical identifiers unless migrating them explicitly.

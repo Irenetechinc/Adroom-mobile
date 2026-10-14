@@ -27,6 +27,7 @@ export type RootStackParamList = {
   Leads: { strategyId?: string; platform?: string; leadId?: string } | undefined;
   LeadConversation: { lead: any };
   CallLogs: undefined;
+  CallCampaigns: undefined;
   Shipments: undefined;
   OutreachPreferences: undefined;
   

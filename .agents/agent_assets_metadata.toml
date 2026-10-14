@@ -23,3 +23,18 @@ id = "puxPHENNJjaZv14-QyOGl"
 uri = "file://apma-desktop/release/APMA-Desktop-Windows-Source.zip"
 type = "unspecified"
 title = "APMA Desktop — Windows Build Package"
+logical_id = "4f6767cb-5ea2-4de1-a79b-f0a9fb2ea88b"
+
+[[outputs]]
+id = "ComcezdbIGQGVlKBppLtU"
+uri = "file://attached_assets/Pasted--PRODUCT-REQUIREMENTS-DOCUMENT-Adirum-AI-Version-1-1-Da_1791581044359.txt"
+type = "text"
+title = "Adirum AI PRD — Enhanced v1.2 Addendum"
+description = "Original Version 1.1 retained; appended requirements for user flows, controls, compliance, billing, analytics, reliability, testing, and open decisions."
+logical_id = "69ff2c8d-e0e9-4159-a812-ba0a2f6431ca"
+content_hash = "sha256:530f9c25f864e4dae64bec9f4126e0a43003b1a54b52a37e8a8efae748af9b7c"
+size = 46469
+mtime_ms = 1791581263078
+storage_uri = "gcs://replit-rams-assets-picard/rams/assets/repl:e47f3eba-ebcf-4fd2-96f7-a6c2fbc723c4/69ff2c8d-e0e9-4159-a812-ba0a2f6431ca/4227c8bc-1477-4b10-a68f-83a65cedad27"
+storage_version_token = "1791581273468923"
+content_type = "text/plain"

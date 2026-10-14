@@ -154,6 +154,12 @@ export default function SettingsScreen() {
         },
         ...(isEnabled('calling_ui') ? [{
           icon: Phone,
+          label: 'Call Campaigns',
+          sublabel: 'Build and manage consent-first calls',
+          color: '#00F0FF',
+          onPress: () => navigation.navigate('CallCampaigns'),
+        }, {
+          icon: Phone,
           label: 'Call Activity',
           sublabel: 'Call activity and outcomes',
           color: '#00F0FF',

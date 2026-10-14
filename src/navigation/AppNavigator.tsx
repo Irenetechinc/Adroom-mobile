@@ -33,6 +33,7 @@ import ReferralScreen from '../screens/ReferralScreen';
 import LeadsScreen from '../screens/LeadsScreen';
 import LeadConversationScreen from '../screens/LeadConversationScreen';
 import CallLogsScreen from '../screens/CallLogsScreen';
+import CallCampaignsScreen from '../screens/CallCampaignsScreen';
 import ShipmentsScreen from '../screens/ShipmentsScreen';
 import OutreachPreferencesScreen from '../screens/OutreachPreferencesScreen';
 import AccountSelectionScreen from '../screens/strategy/AccountSelectionScreen';
@@ -73,6 +74,7 @@ const linking: LinkingOptions<RootStackParamList> = {
       StrategyApproval: 'strategy-approval',
       Leads: 'leads',
       CallLogs: 'call-logs',
+      CallCampaigns: 'call-campaigns',
       Shipments: 'shipments',
       OutreachPreferences: 'outreach-preferences',
       Notifications: 'notifications',
@@ -196,6 +198,7 @@ export default function AppNavigator() {
               options={{ headerShown: false }}
             />
             <Stack.Screen name="CallLogs" component={CallLogsScreen} options={{ headerShown: false }} />
+            <Stack.Screen name="CallCampaigns" component={CallCampaignsScreen} options={{ headerShown: false }} />
             <Stack.Screen name="Shipments" component={ShipmentsScreen} options={{ headerShown: false }} />
             <Stack.Screen name="OutreachPreferences" component={OutreachPreferencesScreen} options={{ headerShown: false }} />
             <Stack.Screen name="StrategyWizard_AccountSelection" component={AccountSelectionScreen} options={{ headerShown: false }} />

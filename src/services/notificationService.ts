@@ -134,6 +134,9 @@ export async function forcePushReregistration(): Promise<string | null> {
 export async function requestNotificationPermissions(): Promise<boolean> {
   if (Platform.OS === 'web') return false;
 
+  // Android 13+ may suppress notifications until a channel exists. Create the
+  // channels before inspecting or requesting the runtime permission.
+  await setupAndroidChannels();
   const { status: existingStatus } = await Notifications.getPermissionsAsync();
   if (existingStatus === 'granted') return true;
 
@@ -152,7 +155,7 @@ export async function requestNotificationPermissions(): Promise<boolean> {
 async function setupAndroidChannels(): Promise<void> {
   if (Platform.OS !== 'android') return;
   await Notifications.setNotificationChannelAsync('default', {
-    name: 'AdRoom Notifications',
+    name: 'Adirum AI Notifications',
     importance: Notifications.AndroidImportance.MAX,
     vibrationPattern: [0, 250, 250, 250],
     lightColor: '#00F0FF',
@@ -248,8 +251,6 @@ export async function registerPushToken(options?: { force?: boolean }): Promise<
       lastError = 'Notification permission was denied.';
       return null;
     }
-
-    await setupAndroidChannels();
 
     const projectId =
       (Constants.expoConfig?.extra as any)?.eas?.projectId ??

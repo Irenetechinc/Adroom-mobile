@@ -41,6 +41,39 @@ export function isPersonalProvider(value: unknown): boolean {
   return (PERSONAL_PROVIDERS as readonly string[]).includes(normalizePlatform(value));
 }
 
+/**
+ * Public-feed support is separate from where credentials are stored. Bluesky
+ * is managed as a social-account connection, but it supports public posts.
+ */
+const PUBLIC_POST_PLATFORMS = [
+  'facebook',
+  'instagram',
+  'twitter',
+  'linkedin',
+  'tiktok',
+  'bluesky',
+] as const;
+
+export function supportsPublicPosts(value: unknown): boolean {
+  return (PUBLIC_POST_PLATFORMS as readonly string[]).includes(normalizePlatform(value));
+}
+
+export function normalizePublicTelegramChannel(value: unknown): string | null {
+  const raw = String(value ?? '').trim().replace(/^@/, '');
+  return /^[A-Za-z0-9_]{5,32}$/.test(raw) ? `@${raw}` : null;
+}
+
+export function supportsPublicPostsForDestination(value: unknown, destination?: unknown): boolean {
+  const platform = normalizePlatform(value);
+  return supportsPublicPosts(platform)
+    || (platform === 'telegram' && normalizePublicTelegramChannel(destination) !== null);
+}
+
+/**
+ * Telegram's client API can post into a public channel, but a connected
+ * personal account alone is not a public-feed destination. Require an
+ * explicit public username supplied by the user for each such strategy.
+ */
 export function platformAliases(value: unknown): string[] {
   const canonical = normalizePlatform(value);
   const aliases = Object.entries(ALIASES)
@@ -66,6 +99,30 @@ export function normalizeSelectedPlatforms(value: unknown): string[] {
     })
     .map(normalizePlatform)
     .filter(Boolean)));
+}
+
+export function selectedPlatformsForStrategy(strategy: any): string[] {
+  const selected = normalizeSelectedPlatforms(strategy?.selected_accounts);
+  return selected.length > 0 ? selected : normalizeSelectedPlatforms(strategy?.platforms);
+}
+
+export function hasPublishCredentials(platformValue: unknown, config: any): boolean {
+  if (!config?.access_token) return false;
+
+  switch (normalizePlatform(platformValue)) {
+    case 'facebook':
+      return Boolean(config.page_id);
+    case 'instagram':
+      return Boolean(config.instagram_account_id);
+    case 'linkedin':
+      return Boolean(config.person_urn || config.org_urn);
+    case 'tiktok':
+      return Boolean(config.open_id);
+    case 'twitter':
+      return true;
+    default:
+      return true;
+  }
 }
 
 export function connectionFlagForPlatform(value: unknown): string {

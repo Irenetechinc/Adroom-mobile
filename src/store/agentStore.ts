@@ -914,7 +914,7 @@ export const useAgentStore = create<AgentState>()(
       if (!generatedStrategies) return;
       
       const strategy = generatedStrategies.strategy;
-      set({ activeStrategy: strategy, flowState: 'EXECUTION', isInputDisabled: true });
+      set({ isInputDisabled: true });
       
       addMessage(`I approve this strategy. Let's launch it.`, 'user');
       addMessage(`Strategy approved. Activating your autonomous agent now — building your full campaign execution plan...`, 'agent');
@@ -922,17 +922,32 @@ export const useAgentStore = create<AgentState>()(
       const BACKEND_URL = process.env.EXPO_PUBLIC_API_URL;
       const strategyId = generatedStrategies?.strategyId;
 
-      if (BACKEND_URL && strategyId) {
-          try {
+      if (!BACKEND_URL || !strategyId) {
+          set({ isInputDisabled: false });
+          const reason = !BACKEND_URL
+            ? 'The campaign cannot start because the backend URL is not configured.'
+            : 'The campaign cannot start because the generated strategy has no backend ID.';
+          addMessage(
+            `${reason} Please fix the configuration or regenerate the strategy, then retry activation.`,
+            'agent',
+            undefined,
+            'retry_action',
+            { action: 'ACTIVATE_AGENTS' },
+          );
+          return;
+      }
+
+      try {
               const { data: { session } } = await supabase.auth.getSession();
               const token = session?.access_token;
               if (!token) throw new Error('No session token');
 
-              const requestedAccounts = Array.isArray(strategy.selected_accounts)
+              const requestedAccounts = Array.isArray(strategy.selected_accounts) && strategy.selected_accounts.length > 0
                 ? strategy.selected_accounts
-                : Array.isArray(strategy.platforms)
+                : Array.isArray(strategy.platforms) && strategy.platforms.length > 0
                   ? strategy.platforms
                   : (useStrategyCreationStore.getState().productData.selectedAccounts || []);
+              const creationData = useStrategyCreationStore.getState().productData;
 
               const response = await fetch(`${BACKEND_URL}/api/ai/activate-agents`, {
                   method: 'POST',
@@ -943,16 +958,30 @@ export const useAgentStore = create<AgentState>()(
                       platforms: strategy.platforms,
                       selectedAccounts: requestedAccounts,
                       videoUrl: get().productDetails.videoUrl,
+                      telegramPublicChannel: requestedAccounts
+                        .some((account: any) => String(typeof account === 'string' ? account : account?.platform || account?.provider || account?.id).toLowerCase() === 'telegram')
+                        ? creationData.telegramPublicChannel
+                        : undefined,
                   }),
               });
 
               if (response.ok) {
                   const result = await response.json();
+                  if (result.activated !== true) {
+                    throw new Error(result.message || result.error || 'The backend did not confirm strategy activation.');
+                  }
+                  set({
+                    activeStrategy: { ...strategy, selected_accounts: requestedAccounts },
+                    flowState: 'EXECUTION',
+                  });
                   const agentName = result.agent_type || 'AI';
                   const tasksCount = result.tasks_scheduled || 0;
+                  const selectedAccountNames = requestedAccounts
+                    .map((account: any) => typeof account === 'string' ? account : account?.platform || account?.provider || account?.id)
+                    .filter(Boolean);
 
                   addMessage(
-                      `✓ Your ${agentName} Agent is now live.\n\n${tasksCount} tasks have been scheduled across your ${strategy.platforms?.join(', ')} accounts for the full campaign duration.\n\nThe agent will post content, monitor performance, scan for leads, and self-optimize — all without any further input from you.\n\nYou can track everything in real-time on your Dashboard.`,
+                      `✓ Your ${agentName} Agent is now live.\n\n${tasksCount} tasks have been scheduled across your ${selectedAccountNames.join(', ') || 'selected'} accounts for the full campaign duration.\n\nThe agent will publish content where the selected account supports public posts, monitor performance, scan for leads, and self-optimize — all without any further input from you.\n\nYou can track everything in real-time on your Dashboard.`,
                       'agent'
                   );
               } else {
@@ -975,9 +1004,6 @@ export const useAgentStore = create<AgentState>()(
                 'retry_action',
                 { action: 'ACTIVATE_AGENTS' },
               );
-          }
-        } else {
-          addMessage(`Your campaign is set up and running autonomously. Track its live activity from your Dashboard.`, 'agent');
       }
   },
 

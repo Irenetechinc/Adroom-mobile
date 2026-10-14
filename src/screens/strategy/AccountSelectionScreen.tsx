@@ -1,5 +1,5 @@
 import React, { useCallback, useState } from 'react';
-import { Alert, ActivityIndicator, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Alert, ActivityIndicator, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { ArrowLeft, ArrowRight, Check, Link2, Plus } from 'lucide-react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -55,11 +55,10 @@ export default function AccountSelectionScreen() {
   );
   const toggle = (platform: string) => {
     if (platform === 'email' && !emailAccountSelectable) return;
-    setProductData({
-      selectedAccounts: selected.includes(platform)
-        ? selected.filter((item) => item !== platform)
-        : [...selected, platform],
-    });
+    const next = selected.includes(platform)
+      ? selected.filter((item) => item !== platform)
+      : [...selected, platform];
+    setProductData({ selectedAccounts: next });
   };
   const continueNext = () => {
     if (!selected.length) {
@@ -110,6 +109,24 @@ export default function AccountSelectionScreen() {
             </TouchableOpacity>
           );
           })}
+          {selected.includes('telegram') && (
+            <View style={styles.telegramChannelCard}>
+              <Text style={styles.telegramChannelTitle}>Public Telegram channel (optional)</Text>
+              <Text style={styles.telegramChannelHelp}>
+                Enter a public channel username where your connected Telegram account can post, such as @MyBrandChannel. Leave blank to use Telegram for direct conversation engagement only.
+              </Text>
+              <TextInput
+                value={productData.telegramPublicChannel || ''}
+                onChangeText={(telegramPublicChannel) => setProductData({ telegramPublicChannel })}
+                placeholder="@MyBrandChannel"
+                placeholderTextColor="#64748B"
+                autoCapitalize="none"
+                autoCorrect={false}
+                style={styles.telegramChannelInput}
+                accessibilityLabel="Public Telegram channel username"
+              />
+            </View>
+          )}
           {!emailAccount && (
             <TouchableOpacity
               style={[styles.account, (!emailConnectionEnabled || emailComingSoon) && { opacity: 0.55 }]}
@@ -137,5 +154,5 @@ export default function AccountSelectionScreen() {
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: colors.bg }, header: { height: 64, paddingHorizontal: 18, flexDirection: 'row', alignItems: 'center', gap: 15 }, headerTitle: { flex: 1, color: colors.text, fontSize: 19, fontWeight: '800' }, content: { padding: 20, paddingBottom: 130 }, intro: { alignItems: 'center', marginBottom: 24 }, icon: { width: 52, height: 52, borderRadius: 17, backgroundColor: 'rgba(0,240,255,0.10)', alignItems: 'center', justifyContent: 'center', marginBottom: 15 }, title: { color: colors.text, fontSize: 24, fontWeight: '900', textAlign: 'center' }, subtitle: { color: colors.muted, lineHeight: 20, textAlign: 'center', marginTop: 8 }, account: { flexDirection: 'row', alignItems: 'center', gap: 14, backgroundColor: colors.panel, borderRadius: 18, padding: 15, marginBottom: 10 }, accountSelected: { backgroundColor: 'rgba(0,240,255,0.10)' }, accountMark: { width: 42, height: 42, borderRadius: 14, backgroundColor: '#1B2A3A', alignItems: 'center', justifyContent: 'center' }, accountMarkSelected: { backgroundColor: colors.cyan }, accountLetter: { color: colors.text, fontWeight: '900' }, accountName: { color: colors.text, fontWeight: '800' }, accountPlatform: { color: colors.muted, fontSize: 12, marginTop: 3, textTransform: 'capitalize' }, connectCard: { flexDirection: 'row', alignItems: 'center', gap: 13, backgroundColor: colors.panel, borderRadius: 18, padding: 16 }, connectTitle: { color: colors.text, fontWeight: '800' }, connectText: { color: colors.muted, fontSize: 12, lineHeight: 18, marginTop: 4 }, secondary: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7, paddingVertical: 18 }, secondaryText: { color: colors.muted, fontWeight: '700' }, footer: { position: 'absolute', left: 0, right: 0, bottom: 0, padding: 18, backgroundColor: colors.bg }, next: { height: 52, borderRadius: 16, backgroundColor: colors.cyan, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 9 }, nextDisabled: { backgroundColor: '#243447' }, nextText: { color: colors.bg, fontWeight: '900' },
+  safe: { flex: 1, backgroundColor: colors.bg }, header: { height: 64, paddingHorizontal: 18, flexDirection: 'row', alignItems: 'center', gap: 15 }, headerTitle: { flex: 1, color: colors.text, fontSize: 19, fontWeight: '800' }, content: { padding: 20, paddingBottom: 130 }, intro: { alignItems: 'center', marginBottom: 24 }, icon: { width: 52, height: 52, borderRadius: 17, backgroundColor: 'rgba(0,240,255,0.10)', alignItems: 'center', justifyContent: 'center', marginBottom: 15 }, title: { color: colors.text, fontSize: 24, fontWeight: '900', textAlign: 'center' }, subtitle: { color: colors.muted, lineHeight: 20, textAlign: 'center', marginTop: 8 }, account: { flexDirection: 'row', alignItems: 'center', gap: 14, backgroundColor: colors.panel, borderRadius: 18, padding: 15, marginBottom: 10 }, accountSelected: { backgroundColor: 'rgba(0,240,255,0.10)' }, accountMark: { width: 42, height: 42, borderRadius: 14, backgroundColor: '#1B2A3A', alignItems: 'center', justifyContent: 'center' }, accountMarkSelected: { backgroundColor: colors.cyan }, accountLetter: { color: colors.text, fontWeight: '900' }, accountName: { color: colors.text, fontWeight: '800' }, accountPlatform: { color: colors.muted, fontSize: 12, marginTop: 3, textTransform: 'capitalize' }, telegramChannelCard: { backgroundColor: colors.panel, borderRadius: 16, padding: 15, marginTop: 2, marginBottom: 14 }, telegramChannelTitle: { color: colors.text, fontWeight: '800', fontSize: 14 }, telegramChannelHelp: { color: colors.muted, fontSize: 12, lineHeight: 18, marginTop: 6 }, telegramChannelInput: { marginTop: 12, borderRadius: 12, paddingHorizontal: 13, paddingVertical: 12, backgroundColor: '#0B1420', color: colors.text, fontSize: 14 }, connectCard: { flexDirection: 'row', alignItems: 'center', gap: 13, backgroundColor: colors.panel, borderRadius: 18, padding: 16 }, connectTitle: { color: colors.text, fontWeight: '800' }, connectText: { color: colors.muted, fontSize: 12, lineHeight: 18, marginTop: 4 }, secondary: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7, paddingVertical: 18 }, secondaryText: { color: colors.muted, fontWeight: '700' }, footer: { position: 'absolute', left: 0, right: 0, bottom: 0, padding: 18, backgroundColor: colors.bg }, next: { height: 52, borderRadius: 16, backgroundColor: colors.cyan, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 9 }, nextDisabled: { backgroundColor: '#243447' }, nextText: { color: colors.bg, fontWeight: '900' },
 });

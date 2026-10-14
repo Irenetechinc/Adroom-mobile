@@ -26,3 +26,9 @@ The production backend image uses separate builder and runtime stages; TypeScrip
 **Why:** A single-stage production build intermittently omitted the compiler under Railway's production environment and also kept build tooling in the runtime image.
 
 **How to apply:** Keep build-only packages in `devDependencies`, compile in the builder stage, and copy only compiled output plus production dependencies into the final image.
+
+When invoking TypeScript 6 with explicit source-file arguments, pass `--ignoreConfig` or it rejects the invocation with TS5112.
+
+**Why:** TypeScript 6 otherwise stops before compiling the supplied files because a project config is present.
+
+**How to apply:** For targeted compile/test commands, use `tsc --ignoreConfig` with the explicit source list; normal project builds should continue using the configured `tsconfig`.

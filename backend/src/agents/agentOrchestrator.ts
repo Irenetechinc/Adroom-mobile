@@ -7,7 +7,18 @@ import { getServiceSupabaseClient } from '../config/supabase';
 import { creditManagementAgent } from '../services/creditManagementAgent';
 import { energyService } from '../services/energyService';
 import { randomUUID } from 'crypto';
-import { normalizePlatform, normalizeSelectedPlatforms, isPersonalProvider } from '../services/platformIdentity';
+import {
+    hasPublishCredentials,
+    normalizePlatform,
+    normalizeSelectedPlatforms,
+    platformAliases,
+    normalizePublicTelegramChannel,
+    selectedPlatformsForStrategy,
+    isPersonalProvider,
+    supportsPublicPosts,
+    supportsPublicPostsForDestination,
+} from '../services/platformIdentity';
+import { CLAIMABLE_AGENT_TASK_STATUSES } from '../services/agentTaskQueue';
 import { socialAccountService } from '../services/socialAccountService';
 import { canNotifyReconnect } from '../services/reconnectEligibility';
 
@@ -32,6 +43,8 @@ const GOAL_MAP: Record<string, 'SALESMAN' | 'AWARENESS' | 'PROMOTION' | 'LAUNCH'
 };
 
 const CONTENT_TASK_TYPES = ['POST', 'URGENCY_POST', 'TEASER', 'HASHTAG_CAMPAIGN'];
+const LEGACY_PERSONAL_PUBLIC_POST_BLOCK_REASON =
+    'Personal platforms require an explicit recipient message task; public publishing is not allowed.';
 
 function boundedIntegerEnv(name: string, fallback: number, min: number, max: number): number {
     const parsed = Number.parseInt(process.env[name] || '', 10);
@@ -69,7 +82,7 @@ export class AgentOrchestrator {
             .from('agent_tasks')
             .update({ status: 'executing', claim_token: claimToken, claimed_at: new Date().toISOString() })
             .eq('id', taskId)
-            .eq('status', 'pending')
+            .in('status', CLAIMABLE_AGENT_TASK_STATUSES)
             .select('id')
             .maybeSingle();
         if (error) {
@@ -77,6 +90,62 @@ export class AgentOrchestrator {
             return false;
         }
         return Boolean(data?.id);
+    }
+
+    /**
+     * Requeue Bluesky content tasks that the old personal-provider guard
+     * skipped before any publisher ran. Restrict this to active strategies,
+     * selected Bluesky accounts, and the exact legacy guard reason.
+     */
+    private async recoverLegacyBlueskyPosts(scheduledAt: string): Promise<number> {
+        const { data, error } = await this.supabase
+            .from('agent_tasks')
+            .select('id, platform, strategies!inner(status, is_active, selected_accounts, platforms)')
+            .eq('status', 'skipped')
+            .eq('error_message', LEGACY_PERSONAL_PUBLIC_POST_BLOCK_REASON)
+            .in('task_type', CONTENT_TASK_TYPES)
+            .in('platform', platformAliases('bluesky'))
+            .eq('strategies.status', 'active')
+            .eq('strategies.is_active', true)
+            .order('scheduled_at', { ascending: true })
+            .limit(100);
+
+        if (error) {
+            console.error('[Orchestrator] Could not inspect legacy Bluesky tasks:', error.message);
+            return 0;
+        }
+
+        const recoverableIds = (data || [])
+            .filter((task: any) =>
+                supportsPublicPosts(task.platform)
+                && selectedPlatformsForStrategy(task.strategies).includes('bluesky'),
+            )
+            .map((task: any) => task.id)
+            .filter(Boolean);
+        if (recoverableIds.length === 0) return 0;
+
+        const { data: recovered, error: recoveryError } = await this.supabase
+            .from('agent_tasks')
+            .update({
+                status: 'pending',
+                scheduled_at: scheduledAt,
+                error_message: 'Recovered: Bluesky supports public strategy posts.',
+            })
+            .in('id', recoverableIds)
+            .eq('status', 'skipped')
+            .eq('error_message', LEGACY_PERSONAL_PUBLIC_POST_BLOCK_REASON)
+            .select('id');
+
+        if (recoveryError) {
+            console.error('[Orchestrator] Could not requeue legacy Bluesky tasks:', recoveryError.message);
+            return 0;
+        }
+
+        const recoveredCount = recovered?.length || 0;
+        if (recoveredCount > 0) {
+            console.info(`[Orchestrator] Requeued ${recoveredCount} legacy Bluesky post task(s) for active strategies.`);
+        }
+        return recoveredCount;
     }
 
     /**
@@ -125,10 +194,19 @@ export class AgentOrchestrator {
 
         const durationDays = params.strategy?.duration || 30;
 
+        const publicTelegramChannel = normalizePublicTelegramChannel(
+            params.strategy?.telegram_public_channel
+            || params.strategy?.current_execution_plan?.telegram_public_channel,
+        );
+        const strategyForPlanning = {
+            ...(params.strategy || {}),
+            telegram_public_channel: publicTelegramChannel,
+        };
+
         await agent.plan({
             strategyId: params.strategyId,
             userId: params.userId,
-            strategy: params.strategy,
+            strategy: strategyForPlanning,
             product,
             platforms: params.platforms,
             durationDays
@@ -139,7 +217,7 @@ export class AgentOrchestrator {
             .from('agent_tasks')
             .select('id, platform')
             .eq('strategy_id', params.strategyId)
-            .in('status', ['pending', 'scheduled']);
+            .in('status', CLAIMABLE_AGENT_TASK_STATUSES);
         const invalidTaskIds = (plannedTasks || [])
             .filter((task: any) => task.platform !== 'internal' && !allowedPlatforms.has(normalizePlatform(task.platform)))
             .map((task: any) => task.id);
@@ -148,22 +226,50 @@ export class AgentOrchestrator {
             console.warn(`[Orchestrator] Removed ${invalidTaskIds.length} task(s) outside the user's selected platforms.`);
         }
 
+        if (publicTelegramChannel && normalizeSelectedPlatforms(params.platforms).includes('telegram')) {
+            const { data: telegramTasks, error: telegramTaskError } = await this.supabase
+                .from('agent_tasks')
+                .select('id, task_type, content')
+                .eq('strategy_id', params.strategyId)
+                .in('platform', platformAliases('telegram'))
+                .in('status', CLAIMABLE_AGENT_TASK_STATUSES);
+            if (telegramTaskError) throw new Error(`Could not attach the selected Telegram channel to scheduled posts: ${telegramTaskError.message}`);
+            const messageTaskTypes = new Set(['SEND_PERSONAL_MESSAGE', 'CONVERSATION_ENGAGE', 'INBOUND_REPLY']);
+            for (const task of telegramTasks || []) {
+                if (messageTaskTypes.has(String((task as any).task_type || '').toUpperCase())) continue;
+                const content = task.content && typeof task.content === 'object' ? task.content : {};
+                const { error } = await this.supabase
+                    .from('agent_tasks')
+                    .update({ content: { ...content, publication_destination: publicTelegramChannel } })
+                    .eq('id', task.id)
+                    .in('status', CLAIMABLE_AGENT_TASK_STATUSES);
+                if (error) throw new Error(`Could not attach the selected Telegram channel to task ${task.id}: ${error.message}`);
+            }
+        }
+
         // A model can return a non-empty plan containing placeholder platforms
         // or generic POST tasks for personal accounts. Those rows are not
         // executable, even though they used to make activation look successful.
         // Keep only real selected-platform work and recover with one dynamic
         // content task per selected public platform when the plan produced none.
-        const { data: executableTasks } = await this.supabase
-            .from('agent_tasks')
-            .select('id, platform, task_type, recipient_id, conversation_id, content')
-            .eq('strategy_id', params.strategyId)
-            .in('status', ['pending', 'scheduled']);
+        const fetchExecutableTasks = async () => {
+            const { data, error } = await this.supabase
+                .from('agent_tasks')
+                .select('id, platform, task_type, recipient_id, conversation_id, content')
+                .eq('strategy_id', params.strategyId)
+                .in('status', CLAIMABLE_AGENT_TASK_STATUSES);
+            if (error) throw new Error(`Could not verify scheduled agent tasks: ${error.message}`);
+            return data || [];
+        };
+        let executableTasks = await fetchExecutableTasks();
         const validPublicTasks = (executableTasks || []).filter((task: any) =>
             allowedPlatforms.has(normalizePlatform(task.platform))
-            && !isPersonalProvider(task.platform)
-            && !['CONVERSATION_ENGAGE', 'SEND_PERSONAL_MESSAGE', 'INBOUND_REPLY'].includes(String(task.task_type || '')),
+            && supportsPublicPostsForDestination(task.platform, task.content?.publication_destination)
+            && !['CONVERSATION_ENGAGE', 'SEND_PERSONAL_MESSAGE', 'INBOUND_REPLY'].includes(String(task.task_type || '').toUpperCase()),
         );
-        const selectedPublicPlatforms = Array.from(allowedPlatforms).filter((platform) => !isPersonalProvider(platform));
+        const selectedPublicPlatforms = Array.from(allowedPlatforms).filter((platform) =>
+            supportsPublicPostsForDestination(platform, platform === 'telegram' ? publicTelegramChannel : undefined),
+        );
         if (validPublicTasks.length === 0 && selectedPublicPlatforms.length > 0) {
             const productName = String(
                 params.strategy?.product_name
@@ -191,6 +297,9 @@ export class AgentOrchestrator {
                         cta: 'Learn more',
                         recovery_schedule: true,
                         recovery_duration_days: durationDays,
+                        ...(platform === 'telegram' && publicTelegramChannel
+                            ? { publication_destination: publicTelegramChannel }
+                            : {}),
                     },
                 };
             });
@@ -199,18 +308,24 @@ export class AgentOrchestrator {
                 throw new Error(`No executable content tasks were generated and recovery scheduling failed: ${recoveryError.message}`);
             }
             console.warn(`[Orchestrator] Recovered ${recoveryTasks.length} selected-platform content task(s) for strategy ${params.strategyId}.`);
+            executableTasks = await fetchExecutableTasks();
         }
 
         const executableCount = (executableTasks || []).filter((task: any) => {
             const platform = normalizePlatform(task.platform);
             if (!allowedPlatforms.has(platform)) return false;
-            if (!isPersonalProvider(platform)) return true;
             const type = String(task.task_type || '');
             const content = task.content && typeof task.content === 'object' ? task.content : {};
-            return ['SEND_PERSONAL_MESSAGE', 'CONVERSATION_ENGAGE', 'INBOUND_REPLY'].includes(type)
-                && Boolean(task.recipient_id || task.conversation_id || content.recipient_id || content.conversation_id);
+            if (['SEND_PERSONAL_MESSAGE', 'CONVERSATION_ENGAGE', 'INBOUND_REPLY'].includes(type.toUpperCase())) {
+                return isPersonalProvider(platform)
+                    && Boolean(task.recipient_id || task.conversation_id || content.recipient_id || content.conversation_id);
+            }
+            return supportsPublicPostsForDestination(platform, content.publication_destination);
         }).length;
         const tasksScheduled = executableCount || 0;
+        if (selectedPublicPlatforms.length > 0 && tasksScheduled === 0) {
+            throw new Error(`Could not queue a publishable post for any selected public platform in strategy ${params.strategyId}`);
+        }
         if (tasksScheduled === 0 && selectedPublicPlatforms.length === 0) {
             // Personal providers do not expose a public feed through the
             // unified POST path. Their conversation discovery/engagement work
@@ -261,6 +376,7 @@ export class AgentOrchestrator {
         const now = new Date().toISOString();
 
         await this.expireDueStrategies(now);
+        await this.recoverLegacyBlueskyPosts(now);
 
         const taskLimit = boundedIntegerEnv('AGENT_TASKS_PER_CYCLE', 20, 1, 100);
         const contentLimit = Math.max(1, Math.ceil(taskLimit * 0.6));
@@ -269,7 +385,7 @@ export class AgentOrchestrator {
             this.supabase
                 .from('agent_tasks')
                 .select(taskColumns)
-                .eq('status', 'pending')
+                .in('status', CLAIMABLE_AGENT_TASK_STATUSES)
                 .lte('scheduled_at', now)
                 .in('task_type', CONTENT_TASK_TYPES)
                 .order('scheduled_at', { ascending: true })
@@ -277,7 +393,7 @@ export class AgentOrchestrator {
             this.supabase
                 .from('agent_tasks')
                 .select(taskColumns)
-                .eq('status', 'pending')
+                .in('status', CLAIMABLE_AGENT_TASK_STATUSES)
                 .lte('scheduled_at', now)
                 .not('task_type', 'in', `(${CONTENT_TASK_TYPES.join(',')})`)
                 .neq('task_type', 'LEAD_SCAN')       // Lead scans handled separately
@@ -315,10 +431,7 @@ export class AgentOrchestrator {
             const task = dueTasks[taskIndex];
             if (!(await this.claimTask(task.id))) continue;
             try {
-                const strategyAccounts = Array.isArray((task as any).strategies?.selected_accounts)
-                    ? (task as any).strategies.selected_accounts
-                    : (Array.isArray((task as any).strategies?.platforms) ? (task as any).strategies.platforms : []);
-                const allowedPlatforms = new Set(normalizeSelectedPlatforms(strategyAccounts));
+                const allowedPlatforms = new Set(selectedPlatformsForStrategy((task as any).strategies));
                 const taskPlatform = normalizePlatform(task.platform);
                 if (!allowedPlatforms.has(taskPlatform)) {
                     const discoveryOnly = taskPlatform === 'web';
@@ -331,11 +444,13 @@ export class AgentOrchestrator {
                     }).eq('id', task.id);
                     continue;
                 }
-                if (
-                    isPersonalProvider(taskPlatform)
-                    && !['SEND_PERSONAL_MESSAGE', 'CONVERSATION_ENGAGE', 'INBOUND_REPLY'].includes(String(task.task_type))
-                ) {
-                    const reason = 'Personal platforms require an explicit recipient message task; public publishing is not allowed.';
+                const taskType = String(task.task_type || '').toUpperCase();
+                const isPersonalMessageTask = ['SEND_PERSONAL_MESSAGE', 'CONVERSATION_ENGAGE', 'INBOUND_REPLY'].includes(taskType);
+                const taskContent = task.content && typeof task.content === 'object' ? task.content : {};
+                if (isPersonalProvider(taskPlatform)
+                    && !supportsPublicPostsForDestination(taskPlatform, taskContent.publication_destination)
+                    && !isPersonalMessageTask) {
+                    const reason = LEGACY_PERSONAL_PUBLIC_POST_BLOCK_REASON;
                     console.info(`[Orchestrator] Task ${task.id} blocked — ${reason}`);
                     await this.supabase.from('agent_tasks').update({
                         status: 'skipped',
@@ -343,8 +458,7 @@ export class AgentOrchestrator {
                     }).eq('id', task.id);
                     continue;
                 }
-                if (isPersonalProvider(taskPlatform)) {
-                    const taskContent = task.content && typeof task.content === 'object' ? task.content : {};
+                if (isPersonalProvider(taskPlatform) && isPersonalMessageTask) {
                     const actionType = String((task as any).action_type || taskContent.action_type || '').toLowerCase();
                     const recipient = String(
                         (task as any).recipient_id
@@ -391,14 +505,13 @@ export class AgentOrchestrator {
                 } else {
                     const { data: connected } = await this.supabase
                         .from('ad_configs')
-                        .select('platform, access_token, instagram_account_id')
+                        .select('platform, access_token, page_id, instagram_account_id, person_urn, org_urn, open_id')
                         .eq('user_id', task.user_id)
-                        .eq('platform', taskPlatform)
-                        .maybeSingle() as { data: { access_token?: string | null; instagram_account_id?: string | null } | null };
-                    connectionReady = Boolean(
-                        connected?.access_token &&
-                        (taskPlatform !== 'instagram' || connected.instagram_account_id),
-                    );
+                        .in('platform', platformAliases(taskPlatform));
+                    connectionReady = Boolean((connected || []).some((config: any) =>
+                        normalizePlatform(config.platform) === taskPlatform
+                        && hasPublishCredentials(taskPlatform, config),
+                    ));
                 }
                 if (!connectionReady) {
                     console.info(`[Orchestrator] Task ${task.id} is waiting for a connected ${taskPlatform} account.`);
@@ -410,10 +523,10 @@ export class AgentOrchestrator {
                         .select('selected_accounts')
                         .eq('id', task.strategy_id)
                         .maybeSingle();
-                    const selected = normalizeSelectedPlatforms(activeStrategy?.selected_accounts || []);
+                    const selected = selectedPlatformsForStrategy(activeStrategy);
                     const wasConnected = isPersonalProvider(taskPlatform)
                       ? Boolean(await socialAccountService.get(task.user_id, taskPlatform))
-                      : Boolean((await this.supabase.from('ad_configs').select('platform').eq('user_id', task.user_id).eq('platform', taskPlatform).maybeSingle()).data);
+                      : Boolean((await this.supabase.from('ad_configs').select('platform').eq('user_id', task.user_id).in('platform', platformAliases(taskPlatform))).data?.length);
                     if (selected.includes(taskPlatform) && wasConnected && await canNotifyReconnect(task.user_id, taskPlatform, this.supabase)) try {
                         const { pushService } = await import('../services/pushService');
                         await pushService.notifyTokenRefreshFailed(task.user_id, taskPlatform);
@@ -521,7 +634,7 @@ export class AgentOrchestrator {
 
             try {
                 const specialPlatform = normalizePlatform(task.platform);
-                if (isPersonalProvider(specialPlatform)) {
+                if (isPersonalProvider(specialPlatform) && !supportsPublicPosts(specialPlatform)) {
                     const content = task.content && typeof task.content === 'object' ? task.content : {};
                     const recipient = String(
                         task.recipient_id || content.recipient_id || content.recipient || content.platform_user_id
@@ -532,7 +645,7 @@ export class AgentOrchestrator {
                         .select('selected_accounts, platforms, is_active, status')
                         .eq('id', task.strategy_id)
                         .maybeSingle();
-                    const selected = normalizeSelectedPlatforms(strategy?.selected_accounts || strategy?.platforms || []);
+                    const selected = selectedPlatformsForStrategy(strategy);
                     if (!strategy || strategy.is_active !== true || strategy.status !== 'active' || !selected.includes(specialPlatform)) {
                         await this.supabase.from('agent_tasks').update({
                             status: 'skipped',
@@ -854,7 +967,7 @@ export class AgentOrchestrator {
             agentType: strategy?.agent_type || 'UNKNOWN',
             tasksTotal: tasks.length,
             tasksDone: tasks.filter(t => t.status === 'done').length,
-            tasksPending: tasks.filter(t => t.status === 'pending').length,
+            tasksPending: tasks.filter(t => CLAIMABLE_AGENT_TASK_STATUSES.includes(t.status as any)).length,
             tasksFailed: tasks.filter(t => t.status === 'failed').length,
             totalReach: perf.reduce((sum, p) => sum + (p.reach || 0), 0),
             paidEquivalentUsd: perf.reduce((sum, p) => sum + (p.paid_equivalent_usd || 0), 0),

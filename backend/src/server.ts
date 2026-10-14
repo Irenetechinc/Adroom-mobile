@@ -1,5 +1,6 @@
 import express, { type Request } from 'express';
 import path from 'path';
+import { normalizePublicTelegramChannel } from './services/platformIdentity';
 import bodyParser from 'body-parser';
 import multer from 'multer';
 import dotenv from 'dotenv';
@@ -36,12 +37,21 @@ import { validateEmailAsync } from './utils/emailValidator';
 import { apmaClientRouter } from './apma/apmaRouter';
 import { apmaOAuthRouter } from './apma/apmaOAuthRouter';
 import { TelephonyService, telephonyService } from './services/telephonyService';
+import { callCampaignService, CallCampaignError } from './services/callCampaignService';
+import { normalizePhoneE164 } from './services/callCampaignRules';
+import { parseContactFile } from './services/contactFileParser';
 import { ShipmentService, shipmentService } from './services/shipmentService';
 import { socialAccountService, type PersonalProvider } from './services/socialAccountService';
 import { emailAccountService } from './services/emailAccountService';
 import { deltaChatBridgeToken, deltaChatCore, type DeltaChatCredential } from './services/deltaChatCore';
 import { getTelegramAppConfigStatus } from './services/telegramConfig';
-import { normalizePlatform, normalizeSelectedPlatforms, isPersonalProvider } from './services/platformIdentity';
+import {
+  hasPublishCredentials,
+  normalizePlatform,
+  normalizeSelectedPlatforms,
+  platformAliases,
+  isPersonalProvider,
+} from './services/platformIdentity';
 import { conversationAgent } from './services/conversationAgent';
 import { leadProfileBuilder } from './services/leadProfileBuilder';
 import { publicProfileToolAdapters } from './services/publicProfileToolAdapters';
@@ -748,6 +758,82 @@ app.patch('/api/outreach/preferences', async (req, res) => {
   } catch (error: any) { return res.status(500).json({ error: error.message }); }
 });
 
+async function callCampaignRoute(req: Request, res: any, action: (userId: string) => Promise<any>, status = 200) {
+  try {
+    const authClient = getSupabaseClient(req as any);
+    const { data: { user } } = await authClient.auth.getUser();
+    if (!user) return res.status(401).json({ error: 'Unauthorized.' });
+    if (!(await isFeatureEnabled('calling_ui', user.id))) {
+      return res.status(403).json({ error: 'CALLING_DISABLED', message: 'Calling is currently unavailable.' });
+    }
+    const result = await action(user.id);
+    return res.status(status).json(result);
+  } catch (error: any) {
+    if (error instanceof CallCampaignError) {
+      return res.status(error.statusCode).json({ error: error.code, message: error.message });
+    }
+    console.error('[CallCampaign] Request failed:', error?.message || 'unknown error');
+    return res.status(500).json({ error: 'CALL_CAMPAIGN_ERROR', message: 'The call campaign request failed.' });
+  }
+}
+
+app.get('/api/call-campaigns/options', (req, res) =>
+  callCampaignRoute(req, res, (userId) => callCampaignService.options(userId)));
+
+app.get('/api/call-campaigns', (req, res) =>
+  callCampaignRoute(req, res, (userId) => callCampaignService.list(userId)));
+
+app.post('/api/call-campaigns', (req, res) =>
+  callCampaignRoute(req, res, (userId) => callCampaignService.create(userId, req.body), 201));
+
+app.get('/api/call-campaigns/:id/contacts', (req, res) =>
+  callCampaignRoute(req, res, (userId) => callCampaignService.contacts(userId, req.params.id)));
+
+app.post('/api/call-campaigns/:id/contacts', (req, res) =>
+  callCampaignRoute(req, res, (userId) => callCampaignService.addContacts(userId, req.params.id, req.body), 201));
+
+const callContactUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 5 * 1024 * 1024 },
+  fileFilter: (_req, file, cb) => {
+    const extension = file.originalname.toLowerCase().split('.').pop();
+    if (extension === 'csv' || extension === 'xlsx') cb(null, true);
+    else cb(new Error('Choose a .csv or .xlsx contact file.'));
+  },
+});
+
+app.post('/api/call-campaigns/:id/contacts/import', callContactUpload.single('file'), (req: any, res) =>
+  callCampaignRoute(req, res, (userId) => {
+    const contacts = req.file
+      ? parseContactFile(req.file.buffer, req.file.originalname)
+      : req.body?.contacts;
+    return callCampaignService.importContacts(userId, req.params.id, {
+      contacts,
+      consent_confirmed: req.body?.consent_confirmed,
+      default_country_code: req.body?.default_country_code,
+    });
+  }, 201));
+
+app.patch('/api/call-campaigns/:id/contacts/:contactId', (req, res) =>
+  callCampaignRoute(req, res, (userId) =>
+    callCampaignService.updateContact(userId, req.params.id, req.params.contactId, req.body)));
+
+app.delete('/api/call-campaigns/:id/contacts/:contactId', (req, res) =>
+  callCampaignRoute(req, res, (userId) =>
+    callCampaignService.removeContact(userId, req.params.id, req.params.contactId)));
+
+app.post('/api/call-campaigns/:id/approve', (req, res) =>
+  callCampaignRoute(req, res, (userId) => callCampaignService.approve(userId, req.params.id, req.body?.explicit_confirmation === true)));
+
+app.post('/api/call-campaigns/:id/start', (req, res) =>
+  callCampaignRoute(req, res, (userId) => callCampaignService.start(userId, req.params.id)));
+
+app.post('/api/call-campaigns/:id/pause', (req, res) =>
+  callCampaignRoute(req, res, (userId) => callCampaignService.pause(userId, req.params.id)));
+
+app.post('/api/call-campaigns/:id/stop', (req, res) =>
+  callCampaignRoute(req, res, (userId) => callCampaignService.pause(userId, req.params.id, true)));
+
 app.patch('/api/leads/:id/call-consent', async (req, res) => {
   try {
     const authClient = getSupabaseClient(req as any);
@@ -761,7 +847,25 @@ app.patch('/api/leads/:id/call-consent', async (req, res) => {
     }
 
     const consented = req.body.consented === true;
-    const { data: lead, error } = await getServiceSupabaseClient()
+    const serviceClient = getServiceSupabaseClient();
+    if (consented) {
+      const { data: currentLead, error: currentLeadError } = await serviceClient.from('agent_leads')
+        .select('phone,phone_number,contact_phone')
+        .eq('id', req.params.id).eq('user_id', user.id).maybeSingle();
+      if (currentLeadError) return res.status(500).json({ error: currentLeadError.message });
+      if (!currentLead) return res.status(404).json({ error: 'Lead not found.' });
+      const phone = normalizePhoneE164(currentLead.phone || currentLead.phone_number || currentLead.contact_phone);
+      if (phone) {
+        const { data: suppression, error: suppressionError } = await serviceClient.from('call_suppressions')
+          .select('id').eq('user_id', user.id).eq('phone_e164', phone).maybeSingle();
+        if (suppressionError) return res.status(500).json({ error: 'Could not verify the call suppression list.' });
+        if (suppression) return res.status(409).json({
+          error: 'CALL_SUPPRESSED',
+          message: 'This phone number requested no further calls and cannot be re-enabled from this screen.',
+        });
+      }
+    }
+    const { data: lead, error } = await serviceClient
       .from('agent_leads')
       .update({
         call_consent: consented,
@@ -774,6 +878,7 @@ app.patch('/api/leads/:id/call-consent', async (req, res) => {
       .maybeSingle();
     if (error) return res.status(500).json({ error: error.message });
     if (!lead) return res.status(404).json({ error: 'Lead not found.' });
+    if (!consented) await callCampaignService.recordLeadConsentRevoked(user.id, lead.id);
     return res.json({ lead });
   } catch (error: any) { return res.status(500).json({ error: error.message }); }
 });
@@ -803,6 +908,10 @@ app.post('/api/calls/queue', async (req, res) => {
     if (!/^\+[1-9]\d{7,14}$/.test(destination)) {
       return res.status(400).json({ error: 'LEAD_PHONE_E164_REQUIRED', message: 'The lead needs a phone number in international E.164 format, such as +2348012345678.' });
     }
+    const { data: suppression, error: suppressionError } = await getServiceSupabaseClient().from('call_suppressions')
+      .select('id').eq('user_id', user.id).eq('phone_e164', destination).maybeSingle();
+    if (suppressionError) return res.status(500).json({ error: 'Could not verify the call suppression list.' });
+    if (suppression) return res.status(403).json({ error: 'CALL_SUPPRESSED', message: 'This phone number requested no further calls.' });
     const { data: preferences, error: preferencesError } = await supabase.from('outreach_preferences').select('do_not_call').eq('user_id', user.id).maybeSingle();
     if (preferencesError) return res.status(500).json({ error: preferencesError.message });
     if (preferences?.do_not_call) return res.status(403).json({ error: 'DO_NOT_CALL', message: 'Calling is disabled in your outreach preferences.' });
@@ -904,7 +1013,7 @@ app.post('/api/webhooks/twilio/voice', async (req, res) => {
   if (!valid) return res.status(403).type('text/plain').send('Invalid signature');
   const callId = String(req.query.call_id || '');
   if (!callId) return res.status(400).type('text/plain').send('Missing call id');
-  res.type('text/xml').send(await telephonyService.voiceInstructions(callId));
+  res.type('text/xml').send(await telephonyService.voiceInstructions(callId, params.AnsweredBy || ''));
 });
 
 app.post('/api/webhooks/twilio/voice/turn', async (req, res) => {
@@ -1203,11 +1312,11 @@ app.get('/auth/poll', (req, res) => {
 function buildOAuthClosePage(platform: string, success: boolean, message?: string): string {
   const title = success ? 'Connected!' : 'Connection Failed';
   const body = success
-    ? `Your ${platform} account has been authorized. Return to the AdRoom app to continue.`
-    : (message || `There was a problem connecting your ${platform} account. Please return to the app and try again.`);
+    ? `Your ${platform} account has been authorized. Return to Adirum AI to continue.`
+    : (message || `There was a problem connecting your ${platform} account. Please return to Adirum AI and try again.`);
   const icon = success ? '✅' : '❌';
   return `<!DOCTYPE html><html><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>${title} — AdRoom</title>
+<title>${title} — Adirum AI</title>
 <style>
   :root{color-scheme:dark}*{box-sizing:border-box}
   body{margin:0;padding:24px;min-height:100vh;display:flex;align-items:center;justify-content:center;
@@ -1223,7 +1332,7 @@ function buildOAuthClosePage(platform: string, success: boolean, message?: strin
   p{color:#94A3B8;font-size:14px;line-height:1.6;margin:0}
   .hint{margin-top:24px;font-size:12px;color:#475569}
 </style></head><body><div class="card">
-  <div class="logo">AdRoom</div>
+  <div class="logo">Adirum AI</div>
   <div class="tag">AI Marketing Platform</div>
   <div class="icon">${icon}</div>
   <h1>${title}</h1>
@@ -2445,6 +2554,10 @@ app.post('/api/ai/generate-strategy', async (req, res) => {
             platforms: strategy.platforms,
             content_pillars: strategy.content_pillars,
             schedule: strategy.schedule,
+            current_execution_plan: {
+              ...strategy,
+              updated_at: new Date().toISOString(),
+            },
             estimated_outcomes: strategy.estimated_outcomes,
             status: 'approved',
             selected_accounts: requestedAccounts,
@@ -2652,7 +2765,11 @@ app.post('/api/ai/generate-preview-assets', async (req, res) => {
  * Activate Goal Agents — full autonomous campaign execution begins after user approves strategy
  */
 app.post('/api/ai/activate-agents', async (req, res) => {
-    const { strategyId, goal, platforms, selectedAccounts, videoUrl } = req.body;
+    const { strategyId, goal, platforms, selectedAccounts, videoUrl, telegramPublicChannel } = req.body;
+    const telegramChannelInput = String(telegramPublicChannel ?? '').trim();
+    const requestedTelegramChannel = telegramChannelInput
+      ? normalizePublicTelegramChannel(telegramChannelInput)
+      : null;
     const ts = () => new Date().toISOString();
     console.log(`\n[AgentActivation] ═══════════════════════════════════════`);
     console.log(`[AgentActivation] [${ts()}] ACTIVATING AUTONOMOUS AGENT`);
@@ -2660,6 +2777,12 @@ app.post('/api/ai/activate-agents', async (req, res) => {
 
     if (!strategyId || !goal) {
         return res.status(400).json({ error: 'strategyId and goal are required' });
+    }
+    if (telegramChannelInput && !requestedTelegramChannel) {
+        return res.status(400).json({
+          error: 'Invalid Telegram public channel username.',
+          message: 'Enter a public Telegram channel username such as @MyBrandChannel.',
+        });
     }
 
     try {
@@ -2748,12 +2871,31 @@ app.post('/api/ai/activate-agents', async (req, res) => {
         if (activePlatforms.length === 0) {
             return res.status(409).json({ error: 'SOCIAL_ACCOUNTS_REQUIRED', message: 'This strategy has no selected social accounts. Generate it again and select a connected account.' });
         }
-        const { data: activeConfigs } = await supabase
-          .from('ad_configs')
-          .select('platform, access_token')
-          .eq('user_id', user.id)
-          .in('platform', activePlatforms);
-        const connectedPlatforms = new Set((activeConfigs || []).filter((config: any) => config.access_token).map((config: any) => normalizePlatform(config.platform)));
+        if (requestedTelegramChannel && !activePlatforms.includes('telegram')) {
+            return res.status(400).json({ error: 'TELEGRAM_NOT_SELECTED', message: 'Select a connected Telegram account before setting a public channel.' });
+        }
+        const activeTelegramChannel = activePlatforms.includes('telegram') ? requestedTelegramChannel : null;
+        const currentExecutionPlan = {
+          ...(strategy?.current_execution_plan || {}),
+          telegram_public_channel: activeTelegramChannel,
+          ...(videoUrl ? { user_video_url: videoUrl } : {}),
+        };
+        const publicPlatformAliases = Array.from(new Set(
+          activePlatforms
+            .filter((platform) => !isPersonalProvider(platform))
+            .flatMap((platform) => platformAliases(platform)),
+        ));
+        const { data: activeConfigs, error: configError } = publicPlatformAliases.length
+          ? await supabase
+            .from('ad_configs')
+            .select('platform, access_token, page_id, instagram_account_id, person_urn, org_urn, open_id')
+            .eq('user_id', user.id)
+            .in('platform', publicPlatformAliases)
+          : { data: [], error: null };
+        if (configError) throw new Error(`Could not verify selected social accounts: ${configError.message}`);
+        const connectedPlatforms = new Set((activeConfigs || [])
+          .filter((config: any) => hasPublishCredentials(config.platform, config))
+          .map((config: any) => normalizePlatform(config.platform)));
         const personalPlatforms = activePlatforms.filter((platform) => isPersonalProvider(platform));
         if (personalPlatforms.length) {
           const { data: personalConnections } = await supabase
@@ -2769,24 +2911,25 @@ app.post('/api/ai/activate-agents', async (req, res) => {
         if (missingPlatforms.length > 0) {
             return res.status(409).json({ error: 'SOCIAL_ACCOUNTS_REQUIRED', missing: missingPlatforms, message: `Reconnect these selected accounts before launching: ${missingPlatforms.join(', ')}.` });
         }
-        const activeStrategy = { ...strategy, selected_accounts: activePlatforms, platforms: activePlatforms };
+        const activeStrategy = {
+          ...strategy,
+          telegram_public_channel: activeTelegramChannel,
+          current_execution_plan: currentExecutionPlan,
+          selected_accounts: activePlatforms,
+          platforms: activePlatforms,
+        };
 
         if (activePlatforms.length > 0) {
             await supabase.from('strategies').update({
                 selected_accounts: activePlatforms,
                 platforms: activePlatforms,
+                current_execution_plan: currentExecutionPlan,
                 updated_at: new Date().toISOString(),
             }).eq('id', strategyId).eq('user_id', user.id);
         }
 
         // Store user-supplied video URL in strategy so agents can retrieve it at execution time
         if (videoUrl) {
-            await supabase.from('strategies').update({
-                current_execution_plan: {
-                    ...(strategy?.current_execution_plan || {}),
-                    user_video_url: videoUrl,
-                }
-            }).eq('id', strategyId);
             console.log(`[AgentActivation] User video URL stored for strategy ${strategyId}`);
         }
 
@@ -3565,8 +3708,8 @@ app.post('/api/billing/payment-link', async (req, res) => {
         customer: { email, name: email },
         customizations: {
           title: type === 'subscription'
-            ? `AdRoom ${PLANS[id as keyof typeof PLANS]?.name ?? id} Plan`
-            : 'AdRoom Energy Top-Up',
+            ? `Adirum AI ${PLANS[id as keyof typeof PLANS]?.name ?? id} Plan`
+            : 'Adirum AI Energy Top-Up',
           description: type === 'subscription'
             ? `Monthly subscription — ${id}`
             : `Energy top-up pack — ${id}`,
@@ -3778,9 +3921,9 @@ app.get('/api/billing/flw-callback', async (req, res) => {
     res.send(`
       <html><body style="font-family:sans-serif;text-align:center;padding:40px;background:#0B0F19;color:#E2E8F0">
         <h2 style="color:#00F0FF">Payment Successful!</h2>
-        <p>Your AdRoom Energy has been credited.</p>
+        <p>Your Adirum AI Energy has been credited.</p>
         <p style="color:#64748B">Transaction: ${transaction_id}</p>
-        <p>Return to the AdRoom app to verify and activate your credits.</p>
+        <p>Return to Adirum AI to verify and activate your credits.</p>
       </body></html>
     `);
   } else {
@@ -5877,13 +6020,14 @@ app.post('/api/strategy/:id/daily-summary', async (req, res) => {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return res.status(401).json({ error: 'Unauthorized.' });
 
-    const { data: strategy } = await supabase
-      .from('strategy_memory')
-      .select('*')
-      .eq('strategy_id', req.params.id)
+    const { data: strategy, error: strategyError } = await supabase
+      .from('strategies')
+      .select('id, user_id, title, goal, selected_accounts, platforms, created_at')
+      .eq('id', req.params.id)
       .eq('user_id', user.id)
-      .single();
+      .maybeSingle();
 
+    if (strategyError) return res.status(500).json({ error: strategyError.message });
     if (!strategy) return res.status(404).json({ error: 'Strategy not found.' });
 
     const { DailySummaryService } = await import('./services/dailySummaryService');
@@ -6203,8 +6347,14 @@ app.post('/api/sales/outreach', async (req, res) => {
  * dashboard intervention on every new deployment / environment.
  */
 async function ensureStorageBuckets(): Promise<void> {
-  const REQUIRED_BUCKETS = [
+  const REQUIRED_BUCKETS: Array<{
+    name: string;
+    public: boolean;
+    allowedMimeTypes?: string[];
+    fileSizeLimit?: number;
+  }> = [
     { name: 'creative-assets', public: true },
+    { name: 'call-audio', public: false, allowedMimeTypes: ['audio/mpeg'], fileSizeLimit: 10 * 1024 * 1024 },
   ];
 
   try {
@@ -6224,8 +6374,8 @@ async function ensureStorageBuckets(): Promise<void> {
       }
       const { error: createErr } = await svc.storage.createBucket(bucket.name, {
         public: bucket.public,
-        allowedMimeTypes: undefined, // allow all types
-        fileSizeLimit: undefined,    // no server-side limit (rely on multer)
+        allowedMimeTypes: bucket.allowedMimeTypes,
+        fileSizeLimit: bucket.fileSizeLimit,
       });
       if (createErr) {
         // "already exists" is not a real error — race condition on first boot

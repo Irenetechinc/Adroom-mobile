@@ -24,6 +24,10 @@ const requiredTables = [
   'strategy_conversation_signals',
   'agent_deals',
   'call_logs',
+  'call_campaigns',
+  'call_campaign_contacts',
+  'call_suppressions',
+  'call_credit_charges',
   'shipments',
   'user_phone_numbers',
   'outreach_preferences',
@@ -46,8 +50,26 @@ const requiredColumns: Record<string, string[]> = {
     'recipient_action_day', 'recipient_actions', 'last_inbound_at',
   ],
   social_action_log: ['user_id', 'provider', 'action_type', 'status', 'recipient_hash', 'created_at'],
-  agent_leads: ['call_consent', 'call_consent_at', 'call_consent_source'],
-  call_logs: ['user_id', 'lead_id', 'status', 'consent_confirmed', 'summary'],
+  agent_leads: [
+    'phone', 'phone_number', 'contact_phone', 'contact_timezone', 'call_consent',
+    'call_consent_at', 'call_consent_source',
+  ],
+  call_logs: [
+    'user_id', 'lead_id', 'status', 'consent_confirmed', 'summary',
+    'campaign_id', 'campaign_contact_id', 'credits_charged', 'credits_debited', 'outcome',
+  ],
+  call_campaigns: [
+    'user_id', 'strategy_id', 'name', 'goal', 'product_name', 'product_description',
+    'default_timezone', 'calling_start_hour', 'calling_end_hour', 'daily_limit',
+    'max_attempts', 'status', 'generated_strategy',
+  ],
+  call_campaign_contacts: [
+    'user_id', 'campaign_id', 'lead_id', 'phone_e164', 'time_zone',
+    'call_consent', 'consent_confirmed', 'status', 'attempt_count',
+    'next_attempt_at', 'last_call_id', 'last_finalized_call_id',
+  ],
+  call_suppressions: ['user_id', 'phone_e164', 'source'],
+  call_credit_charges: ['call_id', 'user_id', 'credits', 'balance_after', 'charged_at'],
   shipments: ['user_id', 'product_type', 'pickup_address', 'delivery_address', 'status', 'pickup_details', 'tracking_events'],
   user_phone_numbers: ['user_id', 'phone_number', 'provider', 'provider_sid', 'status'],
   personal_inbound_messages: ['user_id', 'provider', 'external_id', 'sender_id', 'message', 'message_timestamp'],
@@ -80,7 +102,7 @@ async function main(): Promise<void> {
       names.filter((name) => !foundColumns.has(`${table}.${name}`)).map((name) => `${table}.${name}`),
     );
 
-    const requiredFunctions = ['reserve_social_action', 'record_cloudflare_ai_usage'];
+    const requiredFunctions = ['reserve_social_action', 'record_cloudflare_ai_usage', 'charge_call_credits'];
     const functionResult = await pool.query(
       `SELECT routine_name FROM information_schema.routines
        WHERE routine_schema = 'public' AND routine_name = ANY($1)`,
@@ -105,10 +127,10 @@ async function main(): Promise<void> {
        JOIN pg_class c ON c.oid = pr.prrelid
        JOIN pg_namespace n ON n.oid = c.relnamespace
        WHERE p.pubname = 'supabase_realtime' AND n.nspname = 'public'
-         AND c.relname = ANY($1)`,
-      [['agent_tasks', 'agent_leads', 'lead_dm_messages', 'strategies', 'strategy_conversation_runs', 'strategy_conversation_signals', 'agent_deals', 'lead_profile_builder_runs', 'lead_sales_profiles']],
+          AND c.relname = ANY($1)`,
+      [['agent_tasks', 'agent_leads', 'lead_dm_messages', 'strategies', 'strategy_conversation_runs', 'strategy_conversation_signals', 'agent_deals', 'lead_profile_builder_runs', 'lead_sales_profiles', 'call_campaigns', 'call_campaign_contacts', 'call_logs']],
     );
-    const realtimeRequired = ['agent_tasks', 'agent_leads', 'lead_dm_messages', 'strategies', 'strategy_conversation_runs', 'strategy_conversation_signals', 'agent_deals', 'lead_profile_builder_runs', 'lead_sales_profiles'];
+    const realtimeRequired = ['agent_tasks', 'agent_leads', 'lead_dm_messages', 'strategies', 'strategy_conversation_runs', 'strategy_conversation_signals', 'agent_deals', 'lead_profile_builder_runs', 'lead_sales_profiles', 'call_campaigns', 'call_campaign_contacts', 'call_logs'];
     const realtimeTables = new Set(publicationResult.rows.map((row: { table_name: string }) => row.table_name));
     const missingRealtimeTables = realtimeRequired.filter((table) => !realtimeTables.has(table));
 

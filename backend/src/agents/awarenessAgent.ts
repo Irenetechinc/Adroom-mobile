@@ -189,6 +189,7 @@ Return valid JSON only with this schema:
 
         if (!task) return;
 
+        this.normalizeTaskPlatform(task);
         this.log(`Executing AWARENESS task ${taskId} — ${task.task_type} on ${task.platform}`);
         await this.supabase.from('agent_tasks').update({ status: 'executing' }).eq('id', taskId);
 
@@ -240,7 +241,8 @@ Return valid JSON only with this schema:
 
             // Generate a unique, platform-optimized graphic via GraphicsDesignerAgent
             let postImageUrl: string | undefined;
-            if (task.platform !== 'twitter' && task.platform !== 'x' && task.platform !== 'tiktok') {
+            if (!task.content?.video_url && !task.content?.image_url && !task.content?.media_url
+                && task.platform !== 'twitter' && task.platform !== 'x' && task.platform !== 'tiktok' && task.platform !== 'telegram') {
                 try {
                     const { graphicsDesignerAgent } = await import('./graphicsDesignerAgent');
                     postImageUrl = await graphicsDesignerAgent.getImageForPost({
@@ -265,16 +267,35 @@ Return valid JSON only with this schema:
             }
 
             let result;
-            if (task.platform === 'facebook' && tokens.facebook) {
-                result = await this.publishToplatform(task.platform, tokens, body, task.content?.video_url || postImageUrl);
+            if (task.platform === 'telegram' && task.content?.publication_destination) {
+                result = await this.publishToplatform(
+                    task.platform,
+                    tokens,
+                    body,
+                    task.content?.video_url || task.content?.image_url || task.content?.media_url,
+                    task.content.publication_destination,
+                );
+            } else if (task.platform === 'facebook' && tokens.facebook) {
+                result = await this.publishToplatform(task.platform, tokens, body, task.content?.video_url || task.content?.image_url || task.content?.media_url || postImageUrl);
             } else if (task.platform === 'instagram' && tokens.instagram) {
-                const instagramMediaUrl = task.content?.video_url || postImageUrl;
+                const instagramMediaUrl = task.content?.video_url
+                    || task.content?.image_url
+                    || task.content?.media_url
+                    || postImageUrl;
+                const declaredMediaType = String(task.content?.media_type || task.content?.asset_type || '').toLowerCase();
+                const instagramMediaType = task.content?.video_url || declaredMediaType === 'video'
+                    ? 'video'
+                    : task.content?.image_url || declaredMediaType === 'image'
+                        ? 'image'
+                        : undefined;
                 if (!instagramMediaUrl) throw new Error('Instagram requires an image or video — media generation did not return an asset');
-                result = await this.publishToplatform(task.platform, tokens, body, instagramMediaUrl);
+                result = await this.publishToplatform(task.platform, tokens, body, instagramMediaUrl, undefined, instagramMediaType);
             } else if (task.platform === 'twitter' && tokens.twitter) {
                 result = await this.publishToplatform(task.platform, tokens, body.slice(0, 280));
             } else if (task.platform === 'linkedin' && tokens.linkedin) {
                 result = await this.publishToplatform(task.platform, tokens, body);
+            } else if (task.platform === 'bluesky' && tokens.bluesky) {
+                result = await this.publishToplatform(task.platform, tokens, body, task.content?.video_url || task.content?.image_url || task.content?.media_url || postImageUrl);
             } else if (task.platform === 'tiktok' && tokens.tiktok) {
                 let tiktokVideoUrl: string | undefined = task.content?.video_url;
 
@@ -377,7 +398,9 @@ Return valid JSON only with this schema:
         this.log(`Executing CROSS-POST BLITZ for strategy ${params.strategyId}`);
 
         const tokens = await this.getTokens(params.userId);
-        const platforms = Object.keys(tokens).filter(p => tokens[p as keyof typeof tokens]);
+        const platforms = Object.keys(tokens).filter(
+            (p) => p !== '__userId' && Boolean(tokens[p as keyof typeof tokens]),
+        );
 
         for (const platform of platforms) {
             const adapted = await this.generatePlatformContent({
@@ -396,7 +419,20 @@ Return valid JSON only with this schema:
                 if (platform === 'facebook' && tokens.facebook) {
                     await this.publishToplatform(platform, tokens, body);
                 } else if (platform === 'instagram' && tokens.instagram) {
-                    await this.publishToplatform(platform, tokens, body);
+                    const { graphicsDesignerAgent } = await import('./graphicsDesignerAgent');
+                    const imageUrl = await graphicsDesignerAgent.getImageForPost({
+                        userId: params.userId,
+                        strategyId: params.strategyId,
+                        platform: 'instagram',
+                        goal: 'AWARENESS',
+                        agentType: 'AWARENESS',
+                        headline: adapted.headline,
+                        body: adapted.body,
+                        taskType: 'BLITZ_POST',
+                        product: { name: 'Brand awareness post', description: params.content },
+                    });
+                    if (!imageUrl) throw new Error('Instagram blitz requires a generated or uploaded image.');
+                    await this.publishToplatform(platform, tokens, body, imageUrl);
                 } else if (platform === 'twitter' && tokens.twitter) {
                     await this.publishToplatform(platform, tokens, body.slice(0, 280));
                 } else if (platform === 'linkedin' && tokens.linkedin) {
@@ -404,6 +440,7 @@ Return valid JSON only with this schema:
                 } else if (platform === 'tiktok' && tokens.tiktok) {
                     // TikTok requires video — blitz text posts are skipped, log for awareness
                     this.log(`TikTok blitz skipped: no video asset available for blitz post`);
+                    continue;
                 }
                 this.log(`Blitz published to ${platform}`);
             } catch (err: any) {

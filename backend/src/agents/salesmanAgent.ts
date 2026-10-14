@@ -224,6 +224,7 @@ Return valid JSON only with this schema:
             return;
         }
 
+        this.normalizeTaskPlatform(task);
         this.log(`Executing SALESMAN task ${taskId} — ${task.task_type} on ${task.platform}`);
 
         await this.supabase.from('agent_tasks').update({ status: 'executing' }).eq('id', taskId);
@@ -312,7 +313,8 @@ Return valid JSON only with this schema:
 
             // Generate a unique, conversion-optimized graphic via GraphicsDesignerAgent
             let postImageUrl: string | undefined;
-            if (task.platform !== 'twitter' && task.platform !== 'x' && task.platform !== 'tiktok') {
+            if (!task.content?.video_url && !task.content?.image_url && !task.content?.media_url
+                && task.platform !== 'twitter' && task.platform !== 'x' && task.platform !== 'tiktok' && task.platform !== 'telegram') {
                 try {
                     const { graphicsDesignerAgent } = await import('./graphicsDesignerAgent');
                     postImageUrl = await graphicsDesignerAgent.getImageForPost({
@@ -337,16 +339,35 @@ Return valid JSON only with this schema:
             }
 
             let result;
-            if (task.platform === 'facebook' && tokens.facebook) {
-                result = await this.publishToplatform(task.platform, tokens, publishBody, task.content?.video_url || postImageUrl);
+            if (task.platform === 'telegram' && task.content?.publication_destination) {
+                result = await this.publishToplatform(
+                    task.platform,
+                    tokens,
+                    publishBody,
+                    task.content?.video_url || task.content?.image_url || task.content?.media_url,
+                    task.content.publication_destination,
+                );
+            } else if (task.platform === 'facebook' && tokens.facebook) {
+                result = await this.publishToplatform(task.platform, tokens, publishBody, task.content?.video_url || task.content?.image_url || task.content?.media_url || postImageUrl);
             } else if (task.platform === 'instagram' && tokens.instagram) {
-                const instagramMediaUrl = task.content?.video_url || postImageUrl;
+                const instagramMediaUrl = task.content?.video_url
+                    || task.content?.image_url
+                    || task.content?.media_url
+                    || postImageUrl;
+                const declaredMediaType = String(task.content?.media_type || task.content?.asset_type || '').toLowerCase();
+                const instagramMediaType = task.content?.video_url || declaredMediaType === 'video'
+                    ? 'video'
+                    : task.content?.image_url || declaredMediaType === 'image'
+                        ? 'image'
+                        : undefined;
                 if (!instagramMediaUrl) throw new Error('Instagram requires an image or video — media generation did not return an asset');
-                result = await this.publishToplatform(task.platform, tokens, publishBody, instagramMediaUrl);
+                result = await this.publishToplatform(task.platform, tokens, publishBody, instagramMediaUrl, undefined, instagramMediaType);
             } else if (task.platform === 'twitter' && tokens.twitter) {
                 result = await this.publishToplatform(task.platform, tokens, publishBody.slice(0, 280));
             } else if (task.platform === 'linkedin' && tokens.linkedin) {
                 result = await this.publishToplatform(task.platform, tokens, publishBody);
+            } else if (task.platform === 'bluesky' && tokens.bluesky) {
+                result = await this.publishToplatform(task.platform, tokens, publishBody, task.content?.video_url || task.content?.image_url || task.content?.media_url || postImageUrl);
             } else if (task.platform === 'tiktok' && tokens.tiktok) {
                 let tiktokVideoUrl: string | undefined = task.content?.video_url;
 
@@ -455,10 +476,11 @@ Return valid JSON only with this schema:
     private async executeConversationEngage(taskId: string, task: any): Promise<void> {
         const content = task.content || {};
         const platform = normalizePlatform(task.platform);
-            const recipient = String(
+        let recipient = String(
                 task.recipient_id
                 || content.recipient_id
                 || content.recipient
+                || content.platform_user_id
                 || content.author_id
                 || (isPersonalProvider(platform)
                   ? ''
@@ -467,12 +489,32 @@ Return valid JSON only with this schema:
                 || '',
             ).trim();
         if (!recipient) {
-                await this.failTask(
-                    taskId,
-                    isPersonalProvider(platform)
-                      ? 'Personal message task has no explicit recipient or conversation identifier.'
-                      : 'Conversation engagement has no public recipient identity.',
-                );
+            const leadId = String(
+                task.lead_id
+                || content.lead_id
+                || task.conversation_id
+                || content.conversation_id
+                || '',
+            ).trim();
+            if (leadId) {
+                const { data: relatedLead } = await this.supabase
+                    .from('agent_leads')
+                    .select('platform_user_id')
+                    .eq('id', leadId)
+                    .eq('user_id', task.user_id)
+                    .eq('platform', platform)
+                    .maybeSingle();
+                const storedRecipient = String(relatedLead?.platform_user_id || '').trim();
+                if (storedRecipient && !storedRecipient.startsWith('discovery:')) recipient = storedRecipient;
+            }
+        }
+        if (!recipient) {
+            await this.failTask(
+                taskId,
+                isPersonalProvider(platform)
+                    ? 'Personal message task has no resolvable recipient. Include recipient_id, lead_id, or conversation_id.'
+                    : 'Conversation engagement has no public recipient identity.',
+            );
             return;
         }
 
@@ -814,37 +856,10 @@ ${emailChannel
             this.log(`Lead profile queue unavailable for ${lead_id}: ${String(error?.message || error).slice(0, 240)}`);
         });
 
-        try {
-            const { data: prefs, error: preferencesError } = await this.supabase.from('outreach_preferences').select('do_not_call').eq('user_id', task.user_id).maybeSingle();
-            if (preferencesError) throw preferencesError;
-            const callDecision = await this.ai.generateJson(`Decide whether a phone call is warranted for this current sales conversation. Return only {"should_call": boolean, "reason": string}. Use only the supplied evidence. Never call merely to increase contact volume.
-LEAD: ${JSON.stringify({ platform: lead.platform, intent_score: lead.intent_score, phone_present: Boolean(lead.phone || lead.phone_number || lead.contact_phone) })}
-PROFILE: ${JSON.stringify(leadProfile)}
-MESSAGE: ${inbound_message}
-HISTORY: ${conversationThread}`);
-            const rawPhone = String(lead.phone || lead.phone_number || lead.contact_phone || '').trim().replace(/[()\s-]/g, '');
-            if (callDecision?.should_call && lead.call_consent === true && !prefs?.do_not_call && /^\+[1-9]\d{7,14}$/.test(rawPhone)) {
-                const { data: existingCall, error: existingCallError } = await this.supabase
-                    .from('call_logs')
-                    .select('id')
-                    .eq('user_id', task.user_id)
-                    .eq('lead_id', lead_id)
-                    .in('status', ['queued', 'processing', 'provider_started', 'ringing', 'in_progress'])
-                    .maybeSingle();
-                if (existingCallError) throw existingCallError;
-                if (!existingCall) {
-                    const { error: insertCallError } = await this.supabase.from('call_logs').insert({
-                        user_id: task.user_id,
-                        lead_id,
-                        strategy_id: task.strategy_id,
-                        consent_confirmed: true,
-                        status: 'queued',
-                        summary: { requested_goal: callDecision.reason, source: 'salesman_ai_decision', contact_source: lead.contact_source || lead.source || null, country_code: lead.country_code || lead.country || null },
-                    });
-                    if (insertCallError) throw insertCallError;
-                }
-            }
-        } catch (error: any) { this.log(`Call recommendation skipped: ${error.message}`); }
+        // Autonomous outbound calls are queued by the approved campaign scheduler,
+        // which enforces contact consent, opt-out suppression, local calling hours,
+        // per-campaign attempt limits, and daily caps. Do not create unlinked calls
+        // from this inbound-message worker.
 
         // ── Guardrail check before anything else ──────────────────────────────
         const { analyzeIncomingMessage } = await import('../services/guardrailService');

@@ -1,0 +1,554 @@
+# PRODUCT REQUIREMENTS DOCUMENT
+
+## Adirum AI
+
+**Version 1.1**
+**Date:** [Insert Date]
+**Author:** David Divine, Founder and CEO
+**Status:** Live Product with Ongoing Enhancements
+
+---
+
+## 1. Overview
+
+Adirum AI is an autonomous marketing intelligence workforce. It is a mobile application backed by a cloud service that allows any business to connect its social and messaging accounts, define a goal, approve a strategy, and watch an autonomous system find, engage, and close customers on its behalf.
+
+This document describes what Adirum AI is, what it does, who it serves, how it is priced, and how much each autonomous action costs. It is the single source of truth for product direction and feature scope.
+
+---
+
+## 2. Problem Statement
+
+Millions of small and medium businesses have great products, services, or brands but cannot generate consistent sales. They cannot afford advertising at scale. They cannot afford marketing agencies. They do not have in house marketing teams. They spend hours every day manually posting, replying, following up, and chasing leads, yet they still lose customers because they cannot be everywhere at once.
+
+The core problem is not time. It is intelligence. Business owners do not know who is talking about their product right now, who needs it, or how to convert them. Adirum AI solves this by operating as an autonomous workforce that handles the entire marketing lifecycle without human intervention.
+
+---
+
+## 3. Goals and Objectives
+
+**Primary Goal**
+
+Enable any business, regardless of size or budget, to achieve consistent customer acquisition through a fully autonomous marketing system that requires no marketing skill, no advertising budget, and no manual daily effort.
+
+**Secondary Goals**
+
+Reduce the time a business owner spends on marketing to near zero after initial setup. Deliver measurable results within the first week of activation. Maintain eighty five percent gross margin on all revenue. Scale to fifty thousand paying customers within three years across Nigeria, the United States, Canada, the United Kingdom, China, Europe, Dubai, Singapore, India, and South Africa.
+
+---
+
+## 4. Target Users
+
+**Primary Users**
+
+Small and medium business owners who need customers but cannot afford agencies or ads. E commerce sellers across Shopify, WooCommerce, Amazon, Jumia, and AliExpress. Service providers including consultants, coaches, software developers, and local service companies. Marketing agencies that want to scale without hiring more staff.
+
+**Secondary Users**
+
+Large businesses and enterprise teams that want to automate high volume marketing tasks. Content creators who need consistent audience engagement without manual effort.
+
+**User Personas**
+
+The Overwhelmed Owner who has a good product but no time. The Budget Constrained Entrepreneur who cannot afford ads or agencies. The Scaling Agency that needs to manage more clients without more people. The Enterprise Operator who wants to automate repetitive tasks inside an existing marketing department.
+
+---
+
+## 5. Core Features and Functional Requirements
+
+**Account Connection**
+
+Users must be able to connect social and messaging accounts including Facebook, Instagram, TikTok, LinkedIn, Telegram, WhatsApp, Signal, Bluesky, Delta Chat, and Email. Connection must be seamless and non technical. Users must be able to disconnect accounts at any time. Connection status must be visible in the connect accounts screen.
+
+**Strategy Creation**
+
+Users must be able to upload a product, service, or brand. Users must be able to select a goal such as sales, awareness, promotion, launch, or lead generation. Users must be able to select the accounts they want used for the strategy. The AI must generate a complete strategy based on the product, goal, and selected accounts. The user must approve the strategy before execution.
+
+**Autonomous Execution**
+
+After approval, Adirum AI must autonomously execute the strategy. This includes finding leads, creating content, generating images and videos, replying to comments and messages, following up with prospects, and closing deals. No further user intervention is required.
+
+**Product, Brand and Service Management**
+
+Adirum AI must include a dedicated Product Manager Agent that runs continuously alongside the other agents. This agent is responsible for the strategic health of the user's product, brand, or service. It does not promote what the user has. It improves what the user has.
+
+The Product Manager Agent must autonomously monitor market feedback, competitor activity, industry trends, and customer sentiment. It must identify gaps, weaknesses, and emerging opportunities. It must notify the user of changes needed to keep the offering competitive, relevant, and marketable. Where a change can be implemented without the user's direct action, the agent must implement it automatically and notify the user afterward with a clear summary of what was changed and why.
+
+The Product Manager Agent must work in sync with the Awareness Agent, Promotion Agent, Launch Agent, and Sales Agent. Every improvement it makes feeds back into the marketing strategy so that the user's campaigns are always promoting the best possible version of what they sell.
+
+**Real Time Dashboard**
+
+Users must see reach, engagements, conversations started, and customers closed in real time without manually refreshing. Milestones must be shown as they are achieved. Lead screen must update in real time as clients are identified, enriched, and engaged.
+
+**Product and Brand Improvement**
+
+Adirum AI must monitor market feedback, competitor activity, and customer sentiment. It must notify the user of changes needed to keep the offering competitive. Where possible, it must implement simple improvements automatically.
+
+**Delivery and Tracking**
+
+For businesses that sell physical products, Adirum AI must handle the logistics lifecycle including carrier selection, label generation, pickup scheduling, and real time tracking. Users must see shipping progress and products to be shipped in the app.
+
+**Admin Controls**
+
+The admin must be able to enable or disable social account connections per platform, per user, or globally. The admin must be able to enable coming soon mode for any platform. The admin must be able to toggle between free mode for free users and universal free mode for all users.
+
+**Autonomous Calls**
+
+Users must be able to upload a list of phone numbers, describe their product, service, or brand, and set an intent or goal. Adirum AI must proceed with autonomous cold calls, conducting natural conversations that match the active strategy.
+
+---
+
+## 6. Autonomous Action Cost Model
+
+This is the most important section for pricing and margin control. Every action the AI takes consumes energy credits. The number of credits per action reflects the computational cost of the underlying AI inference, the number of steps required, and the complexity of the decision.
+
+**Subscription Credit Allocations**
+
+The Free plan provides fifty credits per month. The Starter plan at twenty dollars provides one hundred credits per month. The Pro plan at forty five dollars provides three hundred credits per month. The Pro Plus plan at one hundred dollars provides six hundred credits per month. The Nigeria Entry tier at six to ten dollars provides a limited monthly allocation designed for the Nigerian small business market.
+
+**Credit Top Ups**
+
+Users who exhaust their monthly allocation can purchase additional credits. Twenty five dollars provides one hundred credits. Fifty dollars provides three hundred credits. One hundred and twenty dollars provides six hundred credits.
+
+**Cost Per Autonomous Action**
+
+Each autonomous action consumes credits based on its complexity. The following is the credit cost per action and the equivalent dollar cost to the user based on the standard top up rate of approximately twenty cents per credit.
+
+Replying to a comment costs one credit, which is approximately twenty cents to the user. Sending a direct message costs one credit, also approximately twenty cents. Analysing a customer review costs two credits, approximately forty cents. Generating a post caption costs three credits, approximately sixty cents. Generating a social media image costs five credits, approximately one dollar. Monitoring brand sentiment costs five credits, approximately one dollar. Discovering leads costs five credits per one hundred businesses, approximately one dollar per hundred businesses. Market analysis costs eight credits, approximately one dollar and sixty cents. Product improvement analysis including market feedback review, competitor monitoring, gap identification, and improvement recommendation costs ten credits, approximately two dollars. Where the Product Manager Agent implements a change automatically, the implementation itself costs an additional three credits, approximately sixty cents. Where the agent conducts a deeper strategic review across a longer time window, the cost may rise to eighteen credits, approximately three dollars and sixty cents. Closing a deal including conversation, objection handling, and payment link costs ten to twenty credits depending on complexity, approximately two to four dollars. Generating a video costs fifteen credits, approximately three dollars. Placing an autonomous cold call costs twenty five credits, approximately five dollars.
+
+**Internal Cost Per Action**
+
+The cost to Adirum AI per action is far lower than the user-facing credit price. Our projected gross margin is eighty five percent, meaning the internal cost of delivering an action is approximately fifteen percent of its credit price. As we transition from external large language models to free tier providers such as Cloudflare Workers AI, and eventually to our own fine tuned and custom models, the internal cost per action will continue to fall while the credit price remains stable. This expands gross margin over time.
+
+**Why This Model Works**
+
+The credit model protects margin. Users pay for what they consume. Heavy users pay more. Light users pay less. The free tier and the Nigeria Entry tier both have tight limits that prevent margin erosion. Top ups let power users spend more without requiring a higher base subscription. The system is self balancing because the Credit Management Agent routes calls to the cheapest capable model in real time.
+
+---
+
+## 7. Subscription Tiers and Pricing
+
+**Free Plan**
+
+Costs nothing. Provides limited autonomous features with strict usage caps. Designed to let users experience the product and upgrade.
+
+**Nigeria Entry Tier**
+
+Costs between six and ten dollars per month. Provides limited autonomous usage including one lead per day, no video generation, and one image per day. Designed specifically for the Nigerian small business market and its spending psychology.
+
+**Starter Plan**
+
+Costs twenty dollars per month. Provides all agents, two social accounts, one hundred credits per month, and email support.
+
+**Pro Plan**
+
+Costs forty five dollars per month. Provides all agents, five social accounts, three hundred credits per month, messaging outreach across Telegram, WhatsApp, Signal, Bluesky, Delta Chat, and Email, and priority support.
+
+**Pro Plus Plan**
+
+Costs one hundred dollars per month. Provides everything in Pro plus six hundred credits per month, a dedicated account manager, custom email domain, and advanced analytics.
+
+---
+
+## 8. Non Functional Requirements
+
+**Performance**
+
+The mobile app must load in under three seconds. The dashboard must update in real time without manual refresh. Autonomous actions must execute within acceptable time frames for each channel.
+
+**Reliability**
+
+The system must handle provider outages by failing over automatically. The Credit Management Agent must route calls to the next available provider without user impact.
+
+**Security**
+
+All session data and credentials must be encrypted at rest. Credentials must never be exposed to the AI agent's reasoning context. Credentials must never be logged. Users must be able to disconnect accounts and delete data at any time.
+
+**Compliance**
+
+The product must comply with GDPR and CCPA. The product must respect platform terms of service for every connected platform. The product must enforce rate limits and human like interaction patterns on every channel.
+
+**Scalability**
+
+The system must support hundreds of thousands of concurrent strategies. Adding new users must not require proportional increases in infrastructure cost.
+
+**Privacy**
+
+Publicly available non sensitive data may be shown to the user. Sensitive or personal data is used only in the backend by the required agent and never shown in the frontend. The product must never sell user data.
+
+---
+
+## 9. Technical Architecture Overview
+
+Adirum AI consists of a React Native mobile application, a Node.js backend deployed on Railway, and a PostgreSQL database hosted on Supabase. The backend runs multiple autonomous agents. These are the Sales Agent, Awareness Agent, Promotion Agent, Launch Agent, Director Agent, Profile Builder Agent, Psychology Agent, Conversation Agent, Communication Agent, and the Product Manager Agent.
+
+The Product Manager Agent runs continuously and independently, monitoring the user's product, brand, or service, and coordinating with the marketing agents so that every campaign reflects the most current and competitive version of the offering.
+
+The Credit Management Agent intercepts every AI call and routes it to the cheapest capable model based on user tier, current system burn rate, and task complexity. The system supports multiple AI providers including paid providers, free tier providers, and open source models running on cost effective infrastructure.
+
+The system operates with zero hard coded rules. Every decision is generated in real time using live data. No fixed prompts, no fixed scripts, no predetermined responses.
+
+---
+
+## 10. Success Metrics
+
+**Product Metrics**
+
+Number of autonomous actions executed per day. Number of deals closed per active strategy. Average time from strategy approval to first result. Average customer lifetime value. Monthly active users and monthly paying users.
+
+**Financial Metrics**
+
+Monthly recurring revenue. Gross margin percentage. Customer acquisition cost. Lifetime value to acquisition cost ratio. Credit top up revenue as a percentage of subscription revenue.
+
+**User Satisfaction Metrics**
+
+Google Play Store rating. Public review sentiment. Customer retention rate. Referral rate.
+
+**Scale Metrics**
+
+Number of paying customers. Number of connected accounts per user. Number of active strategies per user. Geographic distribution of users.
+
+---
+
+## 11. Release Phases
+
+**Phase One: Current Live Product**
+
+Mobile app live on Google Play Store with 4.1 star rating. All core autonomous agents implemented including the Product Manager Agent. Social and messaging account connection implemented. Credit system and subscription tiers implemented. Admin controls implemented. Dashboard and lead screen implemented.
+
+**Phase Two: Expansion**
+
+Autonomous calls. Autonomous order processing and delivery tracking. E commerce platform integrations including Amazon, 1688, AliExpress, Jumia, Shopify, and WooCommerce. Autonomous advertising placement through partner networks. Nigeria Entry tier launch with ground team deployment.
+
+**Phase Three: Intelligence Maturity**
+
+Fine tuning of proprietary models using platform data. Transition from external large language models to in house models for core tasks. Reduced cost per action and expanded gross margin.
+
+**Phase Four: Full Stack Ownership**
+
+Custom models for every major task and autonomy layer. Full independence from third party providers. Enterprise grade deployments and white label options.
+
+---
+
+## 12. Constraints and Assumptions
+
+Adirum AI depends on third party platform APIs. Platform policy changes may affect functionality. Adirum AI is designed to use official APIs and to diversify across platforms to reduce risk.
+
+Adirum AI depends on AI inference providers. The Credit Management Agent and provider rotation mitigate cost and availability risk.
+
+Adirum AI operates in a regulated environment for data protection. The product is designed for compliance with GDPR, CCPA, and applicable Nigerian and UK regulations.
+
+Adirum AI assumes that small businesses will continue to adopt AI driven solutions and that the market for autonomous marketing will continue to expand.
+
+---
+
+## 13. Glossary
+
+**Agent** refers to a specialised autonomous AI worker responsible for a specific marketing function.
+
+**Product Manager Agent** refers to the autonomous agent responsible for monitoring, improving, and advising on the user's product, brand, or service. It coordinates with marketing agents to ensure campaigns promote the best possible version of the offering.
+
+**Credit** refers to the unit of consumption used to measure and price autonomous actions.
+
+**Energy Credit** is used interchangeably with credit throughout the product and marketing.
+
+**Strategy** refers to the complete marketing plan generated by Adirum AI for a specific product, service, or brand.
+
+**User** refers to the business owner using the Adirum AI application.
+
+**Client or Lead** refers to the potential customer the user wants to sell to.
+
+**Credit Management Agent** refers to the internal system that routes AI calls to the cheapest capable provider based on real time conditions.
+
+---
+
+**Prepared by:**
+
+**David Divine**
+Founder and Chief Executive Officer, Adirum AI
+
+**Contact:** daviddivine@adirum.ai
+
+---
+
+*This document is confidential and intended for internal product, engineering, and business use only.*
+
+---
+
+# VERSION 1.2 ADDENDUM — PRODUCT REQUIREMENTS COMPLETION
+
+**Status:** Proposed additions for product, engineering, compliance, and commercial review  
+**Document handling:** This addendum supplements Version 1.1. No Version 1.1 text or requirements have been removed or replaced. Where an item below needs a business, legal, or engineering decision, it is marked **Decision required** rather than assumed to be approved.
+
+## 14. Product Scope, Requirement Status, and Prioritisation
+
+Each feature requirement must have an owner, release phase, acceptance criteria, and one of these statuses: **Proposed**, **Approved**, **In development**, **Live**, or **Deferred**. The “Current Live Product” statements in Section 11 must be verified against the production app before they are used as launch or sales claims.
+
+The product roadmap must distinguish:
+
+- Core marketing automation available to a user after account connection and strategy approval.
+- Optional capabilities that require separate setup, additional permissions, legal review, or a paid plan.
+- Features that depend on a third-party provider or are unavailable in a user's region.
+- Future items that must not be presented as currently available.
+
+No feature may be described as “autonomous” in a way that hides required user setup, channel approval, consent, or legally required human review.
+
+## 15. Onboarding, Business Profile, and Account Ownership
+
+### 15.1 Onboarding
+
+- A new user must be able to create an account, verify ownership of the account, accept the applicable terms and privacy notice, and complete setup without connecting a social account first.
+- The app must explain why each requested permission is needed before the user grants it. Permissions must be limited to the functions the user selects.
+- The user must be able to save and resume setup. The app must clearly identify incomplete steps and must not start external outreach or publish content during onboarding.
+- The user must be able to add a business name, location or service area, website, industry, preferred language, contact details, offer, and customer profile. Optional fields must be identified as optional.
+
+### 15.2 Business and workspace ownership
+
+- A business profile, product/service catalogue, connected account, campaign, lead, and usage record must have an explicit owner and workspace association.
+- Users must not be able to view or operate another user's records by changing a client-side identifier or API request.
+- If agency or team workspaces are supported, the product must define owner, administrator, editor, analyst, and read-only roles, and apply the least-privilege permission for each role. **Decision required:** approve the initial workspace and role model before multi-user workspaces ship.
+- Ownership transfer, team-member removal, and account deletion must revoke the removed person's access promptly and preserve an audit record of the administrative action.
+
+## 16. Strategy Lifecycle and Human Controls
+
+A strategy must have a visible lifecycle: **Draft → Awaiting approval → Approved → Scheduled/Running → Paused, Completed, Cancelled, or Failed**.
+
+- Before approval, the user must be able to inspect the audience, channels, schedule, planned content, lead source, contact method, estimated credit cost, and any actions that require additional consent.
+- Approval must identify the strategy version approved. Editing a material item after approval must create a new version and require approval before the changed action runs.
+- The user must be able to pause, resume, cancel, or stop a strategy. Stop and pause requests must prevent new work from being scheduled; in-flight third-party actions must show whether they can still be cancelled.
+- The user must be able to set quiet hours, contact frequency limits, excluded audiences, prohibited claims or topics, and per-channel permissions. These controls must be enforced by the backend, not only by the mobile UI.
+- High-impact or difficult-to-reverse changes—including changing a published price, changing contractual terms, making regulated product claims, sending a legal notice, or committing the business to an order—must require explicit user approval unless a separately approved product policy permits the action.
+- The app must provide a clear handoff to the user when an agent cannot proceed safely, confidently, or within the approved strategy. The handoff must include the reason and the next action the user can take.
+
+## 17. Lead Discovery, Public Data, and Contact Use
+
+- Lead discovery must use only sources and access methods that the business is authorised to use. Public availability alone does not establish permission to contact an individual.
+- The product must not bypass authentication, paywalls, access controls, CAPTCHAs, robots restrictions, or platform API limits. It must not access private accounts, closed groups, private messages, or non-public records without explicit authorisation.
+- Each lead record must retain, where available, the source, source URL or stable source reference, collection time, evidence summary, confidence level, and the reason the lead is relevant to the user's offer.
+- Lead research must be limited to business-relevant information. Sensitive personal data and inferred protected traits—including health, race or ethnicity, religion, political views, sexual orientation, union membership, and precise location—must not be collected, inferred, scored, or used for targeting.
+- A user-provided or discovered email address or phone number must not be treated as consent. Before outreach, the system must check the applicable consent or lawful-basis requirements, channel rules, suppression lists, and user-defined exclusions.
+- Users must be able to inspect, correct, suppress, export, and delete lead records. An opt-out or do-not-contact request must be recorded and applied across all channels controlled by the product.
+- When source access, identity matching, or evidence is uncertain, the system must label the uncertainty and avoid presenting an inference as a verified fact.
+
+## 18. Channel Compliance, Consent, and Autonomous Calls
+
+- Each channel integration must have a documented permission set, supported operations, rate limits, and current platform-policy constraints. Unsupported actions must be disabled rather than simulated.
+- The system must identify itself accurately where required, honour platform and legal rate limits, avoid repetitive or deceptive engagement, and prevent unsolicited bulk messaging.
+- A user must explicitly enable each channel for a strategy. Connecting an account alone must not authorise every available action.
+- Marketing email and messaging must include legally required sender identity and opt-out controls. An opt-out must suppress future promotional contact promptly and remain effective after strategy edits or retries.
+- Before an autonomous call campaign, the user must confirm that the phone list was obtained and may be used lawfully, select the permitted jurisdictions and calling hours, review the call purpose and script boundaries, and acknowledge any recording or disclosure obligations.
+- The system must support suppression lists, jurisdiction-specific do-not-call checks where required, and a global campaign stop. It must not call a number when the applicable consent, lawful-basis, or suppression check fails.
+- Call recording or transcription must remain off unless permitted and the required notice/consent has been obtained. Call outcomes must distinguish completed, unanswered, busy, invalid, opted out, and blocked by compliance.
+- **Decision required:** legal review must approve the initial call jurisdictions, consent model, recording policy, calling-hour rules, and retention period before autonomous calls are enabled.
+
+## 19. Product Manager Agent and Change Governance
+
+- The Product Manager Agent must distinguish recommendations from changes it actually made. Every recommendation must include supporting evidence, expected benefit, confidence, and any trade-off or risk.
+- Automatically applied changes must be reversible where technically possible. The user must receive a before/after summary, timestamp, affected asset, reason, and rollback action.
+- The agent must not change pricing, refund terms, legal terms, regulated claims, inventory commitments, or customer-facing promises without the user's explicit approval.
+- If the agent's market evidence is stale, low-confidence, contradictory, or from a source that cannot be verified, it must ask for review instead of making an automatic change.
+- The user must be able to disable continuous monitoring, choose which assets may be changed automatically, and review the agent's activity history.
+
+## 20. AI Provider, Model, and Credit Governance
+
+- Provider routing must respect the user's plan, task type, provider availability, configured free allocation, and platform policy. The routing decision and fallback reason must be auditable without recording secrets or unnecessary prompt content.
+- Provider credentials must be held in the backend's encrypted secret-management system. They must never be sent to the mobile app, included in prompts, or returned by admin status endpoints.
+- Text and image providers may use separately configured accounts. Provider status must distinguish **not configured**, **ready**, **degraded**, **unhealthy**, and **quota exhausted**. Admins must be able to enable or disable each provider for the applicable user group.
+- Provider requests must have a finite timeout and a bounded number of model/provider retries. A failed provider must not cause duplicate user actions or duplicate credit charges.
+- A quota or rate-limit response must route to the next eligible provider when available. Rejected credentials must mark the provider unhealthy and generate a redacted admin alert. An unsupported model must use one configured fallback before the normal provider rotation continues.
+- Usage estimates must be labelled as estimates. Provider invoices or provider dashboards remain authoritative for actual provider consumption and billing.
+- AI-generated content must be checked against the user's approved offer, prohibited claims, selected channel, and applicable safety constraints before publication or outreach. The model must not be allowed to override consent, billing, rate-limit, or account-ownership rules.
+- **Decision required:** identify which provider-routing settings are global, per plan, per workspace, and per task before adding user-facing model controls.
+
+## 21. Credits, Billing, Entitlements, and Refunds
+
+- A single server-side entitlement and credit ledger must be the source of truth for subscription allowance, top-ups, reservations, debits, refunds, and adjustments.
+- Each ledger entry must have an idempotency key, user/workspace owner, action type, quantity, timestamp, and a reference to the strategy or operation. Retried jobs must not debit twice.
+- Before a billable action begins, the app must show or otherwise make available the estimated credit cost. If the final action is materially more expensive than the estimate, the system must stop for approval or apply a previously approved maximum.
+- Failed, rejected, cancelled-before-execution, and duplicate actions must have explicit debit/refund rules. A provider retry for the same user-visible action must not create an additional user charge.
+- The app must show current plan, renewal date, included credits, remaining credits, top-up balance, usage history, and any pending reservation. Credit history must reconcile to the backend ledger.
+- Plan upgrades, downgrades, cancellations, failed renewals, refunds, taxes, and charge disputes must have defined entitlement and user-notification behaviour.
+- The existing document's subscription amounts, top-up bundles, and approximate per-credit dollar values do not all resolve to the same unit price. This addendum does not alter those values. **Decision required:** finance/product must approve one published price schedule and decide whether regional prices, currency conversion, taxes, and the Nigeria Entry tier use separate price books.
+
+## 22. Notifications, Support, and User Transparency
+
+- Notifications must state what happened, which strategy or account was affected, whether user action is required, and where the user can review the full event.
+- Users must be able to configure non-essential notification categories and quiet hours. Security, billing, consent, and account-access notices may remain mandatory where legally permitted.
+- The app must show actionable error states for expired account connections, permission changes, provider outages, exhausted credits, failed deliveries, and compliance blocks. It must not display a success state before the external operation is confirmed.
+- Support requests must be linkable to a non-sensitive operation or correlation ID. Support tooling must not reveal provider credentials, full private messages, or unnecessary personal data.
+- The product must provide a clear privacy notice, terms of service, contact/support route, data export request path, and account deletion request path.
+
+## 23. Analytics, Attribution, and Reporting Definitions
+
+Product dashboards and internal analytics must define each metric consistently:
+
+- **Reach:** a channel-reported count, including the source and reporting time; it must not be represented as unique people unless the channel confirms uniqueness.
+- **Engagement:** a channel-reported interaction, with the interaction types included in the count.
+- **Conversation started:** a new attributable conversation, distinct from a reply within an existing conversation.
+- **Qualified lead:** a lead meeting the active strategy's documented qualification criteria.
+- **Customer closed:** a conversion confirmed by the user or an authorised commerce/payment integration; an agent's prediction alone does not count.
+- **Revenue attributed:** a confirmed amount with currency, source, attribution method, and confidence. Estimated or model-attributed revenue must be visibly labelled.
+
+Reports must show the time range, timezone, source coverage, and last successful refresh. Missing or delayed third-party data must be shown as unavailable or delayed, not as zero. Duplicate webhook events must not inflate totals.
+
+## 24. Operational Reliability, Security, and Data Lifecycle
+
+- Long-running agent work must use persistent job state with visible progress, bounded retries, idempotent side effects, and a recoverable failure state. Restarting the backend must not silently lose an approved strategy or create duplicate outreach.
+- The system must expose operational health for API availability, queue age, provider health, webhook processing, failed actions, and database connectivity to authorised operators.
+- Performance and availability targets must be defined for API response time, dashboard freshness, queue delay, uptime, recovery time, and data-loss tolerance. **Decision required:** approve numeric service-level objectives before using them as customer commitments.
+- All app and admin endpoints must enforce authentication, authorisation, input validation, and ownership checks. Administrative changes, provider toggles, credit adjustments, account disconnections, and data exports must be auditable.
+- Credentials and tokens must be encrypted at rest and in transit, redacted from logs, excluded from AI context, and revocable. Access must use least privilege, with a documented rotation and incident-response process.
+- The product must define retention periods for account tokens, leads, messages, call recordings, generated content, analytics, logs, backups, and billing records. Deletion must propagate to active systems and document any legally required backup or financial-record retention.
+- The system must support user data access/export, correction, deletion, and consent withdrawal. Requests must be tracked to completion and must not be defeated by provider retries or cached copies.
+- **Decision required:** security/legal owners must approve the retention schedule, backup deletion window, incident notification process, and encryption/key-rotation requirements.
+
+## 25. Accessibility, Localisation, and Regional Readiness
+
+- Mobile and admin experiences must support screen readers, scalable text, sufficient contrast, keyboard access where applicable, clear focus order, and accessible error messages.
+- Dates, timezones, currencies, numbers, and calling-hour rules must be displayed in the user's selected locale while retaining canonical timestamps and currency values in backend records.
+- User-facing content, consent disclosures, opt-out language, and legal notices must be localised and reviewed for the target jurisdiction; machine translation alone is not sufficient for legal disclosures.
+- The product must define a supported language and region list, including the initial markets, before launch in a new locale. **Decision required:** approve the first non-English interface and support-language targets.
+
+## 26. Acceptance Criteria and Release Gates
+
+A release that changes a core flow is ready only when the applicable criteria below pass:
+
+1. **Account connection:** a user can connect, view status, recover from an expired/revoked permission, disconnect, and confirm that the backend stops using the account.
+2. **Strategy approval:** no external post, message, call, or order action occurs before required approval and consent; a material edit requires a new approval.
+3. **Execution:** duplicate events and retries do not create duplicate messages, actions, or charges; pause/cancel behaviour is observable.
+4. **Lead discovery:** each displayed lead has source and collection time; prohibited data is not collected; opt-outs suppress future contact.
+5. **Credits:** concurrent requests cannot overspend an allowance; failed and retried operations follow the published debit/refund rules.
+6. **Provider failure:** timeout, quota exhaustion, invalid credentials, invalid model, and malformed provider output produce bounded failover and an accurate user/admin status.
+7. **Privacy and deletion:** user data is isolated by owner, export works for the supported data set, and deletion follows the approved retention schedule.
+8. **Dashboard:** metric definitions, attribution source, timezone, and freshness are visible; missing data is not presented as zero.
+9. **Security:** automated tests cover unauthorised access, cross-user resource access, secret redaction, and admin-only actions.
+10. **Release approval:** platform-policy, privacy, security, billing, and jurisdiction-specific compliance reviews are complete for the capabilities enabled in that release.
+
+Numeric performance and availability acceptance thresholds must be added after the service-level objectives are approved; they must not be implied by the phrases “real time,” “instant,” or “hundreds of thousands.”
+
+## 27. Open Product and Business Decisions
+
+The following decisions remain open and must be resolved by the named owner before the relevant capability is represented as generally available:
+
+- **Finance/Product:** reconcile subscription prices, credit bundles, per-action credit costs, and user-facing dollar equivalents.
+- **Legal/Compliance:** approve supported jurisdictions and operating rules for autonomous calls, email, messaging, recording, and public-data-based lead discovery.
+- **Product:** approve the first-release workspace/role model, approval thresholds, and which Product Manager Agent changes may be applied automatically.
+- **Engineering/Security:** approve numeric reliability targets, data-retention periods, and incident-response/backup-deletion policies.
+- **Product/Operations:** define lead qualification, customer-closed confirmation, revenue attribution, and dashboard freshness.
+- **Product/Support:** approve supported languages, regions, support hours, refund rules, and the Nigeria Entry tier's final price and entitlements.
+
+These are tracked decisions, not permission to defer the underlying safeguards. Until a decision is approved, the system must use the more protective behaviour: do not contact, publish, call, charge, or change a high-impact business setting when the required consent, policy, entitlement, or authority is unclear.
+
+## 28. Alternatives and Competitive Landscape
+
+The following is a working hypothesis based on the problem statement in Version 1.1, not a completed market study. Product and sales teams must validate it with customer interviews and current market research before using it as an external competitive claim.
+
+| Alternative | How customers solve the problem today | Hypothesis to validate |
+| --- | --- | --- |
+| Owner-managed social and messaging | The owner plans, posts, replies, and follows up manually across separate apps. | It consumes owner time and makes consistent follow-up difficult. |
+| Marketing agency or freelancer | The business pays another person or team to plan and execute campaigns. | Cost, onboarding time, and limited visibility may be barriers for smaller businesses. |
+| Point tools for scheduling, CRM, or content | The business combines several specialised products and moves information between them. | The tools may solve individual steps without coordinating discovery, engagement, and conversion end to end. |
+| Paid advertising | The business pays platforms to reach audiences and manages campaigns or hires help. | A limited budget, uncertain return, or lack of expertise may constrain adoption. |
+
+Before positioning Adirum AI against a named competitor, the team must document the competitor's current product, pricing source and date, target customer, and the specific user need where Adirum AI is different. Do not claim superiority based only on this hypothesis table.
+
+## 29. Decision Ownership (Proposed DACI)
+
+The following ownership is proposed for review. Names other than the founder identified in Version 1.1 remain unassigned until confirmed.
+
+| Role | Proposed owner | Responsibility |
+| --- | --- | --- |
+| Driver | Product owner, to be confirmed | Maintains this PRD, resolves cross-functional questions, and tracks decisions and acceptance criteria. |
+| Approver | David Divine, Founder and CEO (proposed; confirm) | Provides the single final approval for product scope and release priorities. |
+| Contributors | Engineering lead; product/design lead; legal/compliance and finance representatives | Validate feasibility, user experience, regulatory obligations, credit economics, and launch readiness. |
+| Informed | Operations, support, sales, and affected users | Receive approved scope, release notes, known limitations, and changes to user-facing behaviour. |
+
+No contributor or external provider may independently approve a release that changes legal, financial, privacy, or autonomous-contact behaviour.
+
+## 30. Testable User Stories
+
+The following Given/When/Then scenarios supplement Section 26 and should become automated or documented release checks:
+
+### Strategy approval
+
+**Given** a user has created a draft strategy with at least one connected account  
+**When** the user reviews the strategy  
+**Then** the app shows the channels, planned actions, audience, schedule, and estimated credit cost before approval  
+**And** no external action is sent before the user approves that strategy version.
+
+### Material strategy change
+
+**Given** a strategy has been approved  
+**When** an agent changes its audience, offer, message, channel, or action schedule  
+**Then** the system creates a new strategy version  
+**And** pauses the changed work until the user approves the new version.
+
+### Pause and stop
+
+**Given** a strategy is running  
+**When** the user pauses or cancels it  
+**Then** no new strategy work is scheduled after the request is accepted  
+**And** the app reports the status of any in-flight external action that could not be cancelled.
+
+### Expired account permission
+
+**Given** a connected account's permission has expired or been revoked  
+**When** an action is scheduled for that account  
+**Then** the action is not sent  
+**And** the user sees a reconnection request and the affected action status.
+
+### Lead source and opt-out
+
+**Given** the system has collected a business-relevant lead from an authorised public source  
+**When** the lead appears in the user interface  
+**Then** the user can inspect its source, collection time, relevance reason, and confidence  
+**And** an opt-out or suppression record prevents further promotional outreach across enabled channels.
+
+### Credit retry safety
+
+**Given** a provider times out after an action has been submitted  
+**When** the system retries or fails over  
+**Then** it uses an idempotent operation reference  
+**And** the user's credit ledger contains no duplicate debit for the same user-visible action.
+
+### Data export and deletion
+
+**Given** an authenticated user requests an export or account deletion  
+**When** the request is accepted  
+**Then** the app shows its status and scope  
+**And** completion is recorded without exposing another user's data or retaining data beyond the approved legal schedule.
+
+### Provider outage
+
+**Given** an AI provider is timed out, quota exhausted, or has rejected its credentials  
+**When** an eligible action is requested  
+**Then** the system attempts only the configured bounded fallback path  
+**And** reports a truthful user status and a redacted provider-health event to authorised administrators.
+
+## 31. Prioritisation and Dependency Rules
+
+- **P0 — Release blocker:** account ownership, consent, platform compliance, privacy, authentication, credit correctness, safe stop controls, and data-isolation requirements. A feature with an unmet P0 requirement must not be enabled for the affected user or jurisdiction.
+- **P1 — Core outcome:** onboarding, business profile, approved strategy execution, lead context, action history, usage visibility, and recovery from common provider or connection failures.
+- **P2 — Expansion:** additional commerce, logistics, advertising, enterprise, white-label, and custom-model capabilities that depend on P0 controls and a validated customer need.
+- A later-phase capability must not be a prerequisite for a current-phase user journey unless that dependency is documented and approved.
+- Reach, impact, confidence, and effort scores must use actual product evidence where available. Do not invent analytics or delivery estimates; add unknowns to Section 27 until the responsible owner supplies them.
+
+## 32. Version History for This Addendum
+
+| Version | Date | Status | Change summary |
+| --- | --- | --- | --- |
+| 1.2 addendum | 2026-10-09 | Proposed; approval pending | Added missing user journeys, autonomy controls, public-data and outreach safeguards, billing rules, operations, analytics definitions, release criteria, open decisions, competitive hypotheses, DACI ownership, and testable scenarios. Version 1.1 content remains intact. |
+
+## 33. Non-Goals and Explicit Boundaries
+
+Unless separately approved through a future PRD and the applicable compliance review, Adirum AI is not intended to:
+
+- Guarantee sales, revenue, audience growth, delivery dates, or a specific return on investment.
+- Access private or restricted data, bypass platform controls, or use data obtained without an authorised source and lawful purpose.
+- Treat publicly visible email addresses or phone numbers as consent to contact.
+- Send bulk unsolicited messages, evade rate limits, impersonate a human, or misrepresent the user's identity, product, or offer.
+- Make legal, medical, financial, or other regulated decisions on behalf of a user or customer.
+- Change prices, contractual terms, refunds, or other material business commitments without the approval required by Section 16.
+- Purchase advertising, place an order, or incur a third-party charge on the user's behalf without explicit authorisation and an approved spending limit.
+- Represent a future-phase capability as available in the live product.
+
+These boundaries do not prevent future features. They require a new approved scope, a defined user benefit, applicable safeguards, and testable release criteria before implementation.

@@ -17,6 +17,7 @@ interface ProductData {
   paymentAccountName: string;
   paymentBank: string;
   selectedAccounts: string[];
+  telegramPublicChannel: string;
 }
 
 interface StrategyCreationState {
@@ -58,6 +59,7 @@ const defaultProductData: ProductData = {
   paymentAccountName: '',
   paymentBank: '',
   selectedAccounts: [],
+  telegramPublicChannel: '',
 };
 
 export const useStrategyCreationStore = create<StrategyCreationState>((set) => ({

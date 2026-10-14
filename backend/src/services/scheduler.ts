@@ -15,6 +15,7 @@ import { RadarAgent } from '../agents/radarAgent';
 import { apmaOrchestrator } from '../apma/apmaOrchestrator';
 import { tokenRefreshService } from './tokenRefreshService';
 import { telephonyService } from './telephonyService';
+import { callCampaignService } from './callCampaignService';
 import { DeepProductBrandAnalysisAgent } from './deepProductBrandAnalysisAgent';
 import { dataCollectionAgent } from './dataCollectionAgent';
 import { conversationAgent } from './conversationAgent';
@@ -23,11 +24,12 @@ import { randomUUID } from 'crypto';
 
 async function hasActiveStrategies(): Promise<boolean> {
     const supabase = getServiceSupabaseClient();
-    const { count } = await supabase
+    const { count, error } = await supabase
         .from('strategies')
         .select('id', { count: 'exact', head: true })
         .eq('is_active', true)
         .eq('status', 'active');
+    if (error) throw new Error(`Active strategy lookup failed: ${error.message}`);
     return (count ?? 0) > 0;
 }
 
@@ -615,8 +617,22 @@ export class SchedulerService {
         });
 
         cron.schedule(SCHED_CALLS_CRON, async () => {
-            try { await telephonyService.processQueuedCalls(10); }
-            catch (e: any) { console.error('[Scheduler] Call queue error:', e.message); }
+            try {
+                const synced = await callCampaignService.syncMainStrategyCalls(50);
+                if (synced > 0) console.log(`[Scheduler] Queued ${synced} consented leads from active strategy call actions.`);
+            } catch (e: any) {
+                console.error('[Scheduler] Main-strategy call synchronization error:', e.message);
+            }
+            try {
+                await callCampaignService.queueDueContacts(10);
+            } catch (e: any) {
+                console.error('[Scheduler] Call campaign scheduling error:', e.message);
+            }
+            try {
+                await telephonyService.processQueuedCalls(10);
+            } catch (e: any) {
+                console.error('[Scheduler] Call queue error:', e.message);
+            }
         });
 
         // APMA — Autonomous Political Marketing Agent cycle every 15 minutes

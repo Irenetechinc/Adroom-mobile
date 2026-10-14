@@ -43,6 +43,7 @@ describe('useAgentStore', () => {
         paymentAccountName: '',
         paymentBank: '',
         selectedAccounts: ['twitter'],
+        telegramPublicChannel: '',
       },
       selectedGoal: 'sales',
       selectedDuration: 7,

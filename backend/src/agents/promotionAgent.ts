@@ -190,6 +190,7 @@ Return valid JSON only with this schema:
 
         if (!task) return;
 
+        this.normalizeTaskPlatform(task);
         this.log(`Executing PROMOTION task ${taskId} — ${task.task_type} (${task.content.promo_phase})`);
         await this.supabase.from('agent_tasks').update({ status: 'executing' }).eq('id', taskId);
 
@@ -242,7 +243,8 @@ Return valid JSON only with this schema:
 
             // Generate a unique, urgency-optimized graphic via GraphicsDesignerAgent
             let postImageUrl: string | undefined;
-            if (task.platform !== 'twitter' && task.platform !== 'x' && task.platform !== 'tiktok') {
+            if (!task.content?.video_url && !task.content?.image_url && !task.content?.media_url
+                && task.platform !== 'twitter' && task.platform !== 'x' && task.platform !== 'tiktok' && task.platform !== 'telegram') {
                 try {
                     const { graphicsDesignerAgent } = await import('./graphicsDesignerAgent');
                     postImageUrl = await graphicsDesignerAgent.getImageForPost({
@@ -267,12 +269,29 @@ Return valid JSON only with this schema:
             }
 
             let result;
-            if (task.platform === 'facebook' && tokens.facebook) {
-                result = await this.publishToplatform(task.platform, tokens, body, task.content?.video_url || postImageUrl);
+            if (task.platform === 'telegram' && task.content?.publication_destination) {
+                result = await this.publishToplatform(
+                    task.platform,
+                    tokens,
+                    body,
+                    task.content?.video_url || task.content?.image_url || task.content?.media_url,
+                    task.content.publication_destination,
+                );
+            } else if (task.platform === 'facebook' && tokens.facebook) {
+                result = await this.publishToplatform(task.platform, tokens, body, task.content?.video_url || task.content?.image_url || task.content?.media_url || postImageUrl);
             } else if (task.platform === 'instagram' && tokens.instagram) {
-                const instagramMediaUrl = task.content?.video_url || postImageUrl;
+                const instagramMediaUrl = task.content?.video_url
+                    || task.content?.image_url
+                    || task.content?.media_url
+                    || postImageUrl;
+                const declaredMediaType = String(task.content?.media_type || task.content?.asset_type || '').toLowerCase();
+                const instagramMediaType = task.content?.video_url || declaredMediaType === 'video'
+                    ? 'video'
+                    : task.content?.image_url || declaredMediaType === 'image'
+                        ? 'image'
+                        : undefined;
                 if (!instagramMediaUrl) throw new Error('Instagram requires an image or video — media generation did not return an asset');
-                result = await this.publishToplatform(task.platform, tokens, body, instagramMediaUrl);
+                result = await this.publishToplatform(task.platform, tokens, body, instagramMediaUrl, undefined, instagramMediaType);
             } else if (task.platform === 'tiktok' && tokens.tiktok) {
                 const videoUrl = await this.getVideoForPost({
                     task,
@@ -287,6 +306,8 @@ Return valid JSON only with this schema:
                 result = await this.publishToplatform(task.platform, tokens, body.slice(0, 280));
             } else if (task.platform === 'linkedin' && tokens.linkedin) {
                 result = await this.publishToplatform(task.platform, tokens, body);
+            } else if (task.platform === 'bluesky' && tokens.bluesky) {
+                result = await this.publishToplatform(task.platform, tokens, body, task.content?.video_url || task.content?.image_url || task.content?.media_url || postImageUrl);
             } else {
                 throw new Error(`No token for platform: ${task.platform}`);
             }

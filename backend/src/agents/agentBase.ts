@@ -2,7 +2,12 @@ import { SupabaseClient } from '@supabase/supabase-js';
 import { AIEngine, parseStructuredJson } from '../config/ai-models';
 import fetch from 'node-fetch';
 import { socialAccountService } from '../services/socialAccountService';
-import { normalizePlatform } from '../services/platformIdentity';
+import {
+    isPersonalProvider,
+    normalizePlatform,
+    normalizePublicTelegramChannel,
+    supportsPublicPostsForDestination,
+} from '../services/platformIdentity';
 
 export interface AgentTokens {
     facebook?: { access_token: string; page_id: string };
@@ -50,9 +55,15 @@ const TIKTOK_API = 'https://open.tiktokapis.com/v2';
 
 function mediaKind(mediaUrl: string): 'image' | 'video' | 'unknown' {
     try {
-        const pathname = new URL(mediaUrl).pathname.toLowerCase();
+        const parsed = new URL(mediaUrl);
+        const pathname = parsed.pathname.toLowerCase();
         if (/\.(png|jpe?g|webp|gif|avif)$/.test(pathname)) return 'image';
         if (/\.(mp4|mov|m4v|webm|avi|mkv)$/.test(pathname)) return 'video';
+        const mime = ['mime_type', 'content_type', 'contentType', 'mime']
+            .map((key) => parsed.searchParams.get(key) || '')
+            .find((value) => /^(image|video)\//i.test(value));
+        if (mime?.toLowerCase().startsWith('image/')) return 'image';
+        if (mime?.toLowerCase().startsWith('video/')) return 'video';
     } catch {
         return 'unknown';
     }
@@ -135,6 +146,9 @@ export class AgentBase {
                         image_prompt: `Create a polished ${platform} social creative for ${productName} using the live product context and current audience signals.`,
                         hashtags: [productName.toLowerCase().replace(/\s+/g, ''), platform, 'adiramai'],
                         cta: 'Learn more',
+                        ...(platform === 'telegram' && normalizePublicTelegramChannel(params.strategy?.telegram_public_channel)
+                            ? { publication_destination: normalizePublicTelegramChannel(params.strategy?.telegram_public_channel) }
+                            : {}),
                     }
                 });
             }
@@ -149,6 +163,12 @@ export class AgentBase {
             console.log(`[${this.agentType}] [${ts}] ${msg}`, typeof data === 'object' ? JSON.stringify(data).slice(0, 500) : data);
         } else {
             console.log(`[${this.agentType}] [${ts}] ${msg}`);
+        }
+    }
+
+    protected normalizeTaskPlatform(task: any): void {
+        if (task && typeof task.platform === 'string') {
+            task.platform = normalizePlatform(task.platform);
         }
     }
 
@@ -487,17 +507,21 @@ Return STRICT JSON only (no markdown, no explanation):
         this.log(`Facebook DM sent to ${recipientId}`);
     }
 
-    async publishToInstagram(tokens: AgentTokens['instagram'], body: string, imageUrl?: string): Promise<PublishResult> {
+    async publishToInstagram(
+        tokens: AgentTokens['instagram'],
+        body: string,
+        imageUrl?: string,
+        mediaTypeHint?: 'image' | 'video',
+    ): Promise<PublishResult> {
         if (!tokens) throw new Error('Instagram tokens not configured');
         const { access_token, instagram_account_id } = tokens;
         this.log(`Publishing to Instagram account ${instagram_account_id}`);
 
         if (!imageUrl) {
-            // Text-only post as carousel stub (Instagram requires media — use a reel for text-only)
             throw new Error('Instagram requires an image or video URL');
         }
 
-        const kind = mediaKind(imageUrl);
+        const kind = mediaTypeHint || mediaKind(imageUrl);
         requirePublicMediaUrl(imageUrl, kind === 'video' ? 'video' : 'image');
         const containerBody = kind === 'video'
             ? { media_type: 'REELS', video_url: imageUrl, caption: body, access_token }
@@ -882,8 +906,19 @@ Return STRICT JSON only (no markdown, no explanation):
 
     // ─── UNIFIED PUBLISH DISPATCHER ──────────────────────────────────────────────
 
-    async publishToplatform(platform: string, tokens: AgentTokens, body: string, mediaUrl?: string): Promise<PublishResult> {
+    async publishToplatform(
+        platform: string,
+        tokens: AgentTokens,
+        body: string,
+        mediaUrl?: string,
+        destination?: string,
+        mediaTypeHint?: 'image' | 'video',
+    ): Promise<PublishResult> {
         const normalizedPlatform = normalizePlatform(platform);
+        if (isPersonalProvider(normalizedPlatform)
+            && !supportsPublicPostsForDestination(normalizedPlatform, destination)) {
+            throw new Error(`${normalizedPlatform} is a messaging channel. Use an explicit conversation recipient; public posting is only enabled for supported destinations.`);
+        }
         const { criticAgentService } = await import('../services/criticAgentService');
         const review = await criticAgentService.validateBeforePublish({
             output: body,
@@ -898,23 +933,26 @@ Return STRICT JSON only (no markdown, no explanation):
         this.log(`Dispatching publish to ${normalizedPlatform}`);
         switch (normalizedPlatform) {
             case 'facebook': return this.publishToFacebook(tokens.facebook, body, mediaUrl);
-            case 'instagram': return this.publishToInstagram(tokens.instagram, body, mediaUrl);
+            case 'instagram': return this.publishToInstagram(tokens.instagram, body, mediaUrl, mediaTypeHint);
             case 'twitter': case 'x': return this.publishToTwitter(tokens.twitter, body);
             case 'linkedin': return this.publishToLinkedIn(tokens.linkedin, body);
             case 'tiktok': return this.publishToTikTok(tokens.tiktok, body, mediaUrl);
-            case 'telegram':
-            case 'whatsapp_personal':
-            case 'signal_personal': {
-                const published = await socialAccountService.publish(normalizedPlatform, (tokens as any).__userId || '', body, mediaUrl);
-                return { platform: normalizedPlatform, platform_post_id: published.id, published_at: new Date().toISOString(), url: published.url };
+            case 'telegram': {
+                const channel = normalizePublicTelegramChannel(destination);
+                if (!channel) throw new Error('Telegram public posts require a public channel username such as @MyBrandChannel.');
+                const userId = String((tokens as any).__userId || '');
+                if (!userId) throw new Error('Telegram account context is unavailable.');
+                const published = await socialAccountService.publish('telegram', userId, body, mediaUrl, channel);
+                return {
+                    platform: 'telegram',
+                    platform_post_id: published.id,
+                    published_at: new Date().toISOString(),
+                    url: published.url,
+                };
             }
             case 'bluesky': {
                 const published = await socialAccountService.publish('bluesky', (tokens as any).__userId || '', body, mediaUrl);
                 return { platform: 'bluesky', platform_post_id: published.id, published_at: new Date().toISOString(), url: published.url };
-            }
-            case 'delta_chat': {
-                const published = await socialAccountService.publish('delta_chat', (tokens as any).__userId || '', body, mediaUrl);
-                return { platform: 'delta_chat', platform_post_id: published.id, published_at: new Date().toISOString(), url: published.url };
             }
             default: throw new Error(`Unsupported platform: ${platform}`);
         }

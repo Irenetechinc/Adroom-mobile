@@ -529,9 +529,15 @@ export class AIEngine {
     }
   }
 
-  async generateJson(prompt: string, options?: { cloudflareModel?: string }): Promise<any> {
+  async generateJson(prompt: string, options?: { cloudflareModel?: string; economyMode?: boolean }): Promise<any> {
     if (await useFreeModels()) {
       return (await this.generateStrategyFree({ cloudflareTextModel: options?.cloudflareModel }, prompt)).parsedJson ?? null;
+    }
+    if (options?.economyMode === true) {
+      return (await this.generateStrategyEconomy({}, prompt)).parsedJson ?? null;
+    }
+    if (options?.economyMode === false) {
+      return (await this.generateStrategy({}, prompt)).parsedJson ?? null;
     }
     aiLog('GEMINI-FLASH', `generateJson START — model: ${GEMINI_FLASH_MODEL}`);
     try {
