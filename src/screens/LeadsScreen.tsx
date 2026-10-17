@@ -18,6 +18,7 @@ import { useAuthStore } from '../store/authStore';
 import { useFocusEffect } from '@react-navigation/native';
 import { RootStackParamList } from '../types';
 import FeatureGate from '../components/FeatureGate';
+import { AgentMilestoneBanner } from '../components/AgentMilestoneBanner';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 interface Lead {
@@ -496,6 +497,7 @@ export default function LeadsScreen({ route }: Props) {
     <FeatureGate flag="lead_capture" message="Lead capture has been temporarily disabled by your administrator.">
     <View style={styles.container}>
       <SafeAreaView style={{ flex: 1 }}>
+        <AgentMilestoneBanner />
         {/* ── Header ── */}
         <Animated.View entering={FadeInDown.delay(0).springify()} style={styles.header}>
           <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>

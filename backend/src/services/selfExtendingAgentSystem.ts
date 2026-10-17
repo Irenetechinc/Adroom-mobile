@@ -36,6 +36,14 @@ type ChildProposal = {
   scheduled_at?: string;
 };
 
+type ContinuationProposal = ChildProposal & { run_id: string };
+
+type ToolMaintenanceSuggestion = {
+  tool_name: string;
+  action: 'reuse' | 'consolidate' | 'retire';
+  rationale: string;
+};
+
 type ToolProposal = {
   name: string;
   purpose: string;
@@ -91,8 +99,26 @@ function validChildProposal(value: any): value is ChildProposal {
     && safeText(value.completion_criteria, 1000)
     && safeText(value.task, 5000)
     && safeText(value.value_case, 1000)
-    && Array.isArray(value.constraints),
+    && Array.isArray(value.constraints)
+    && (value.scheduled_at == null
+      || (typeof value.scheduled_at === 'string' && Number.isFinite(Date.parse(value.scheduled_at)))),
   );
+}
+
+function validContinuationProposal(value: any): value is ContinuationProposal {
+  return Boolean(
+    value
+    && typeof value.run_id === 'string'
+    && value.run_id.length <= 100
+    && validChildProposal(value),
+  );
+}
+
+function normalizeScheduledAt(value?: string): string {
+  if (value == null || value.trim() === '') return new Date().toISOString();
+  const timestamp = Date.parse(value);
+  if (!Number.isFinite(timestamp)) throw new Error('Sub-agent scheduled_at must be a valid date-time.');
+  return new Date(timestamp).toISOString();
 }
 
 function validToolProposal(value: any): value is ToolProposal {
@@ -112,6 +138,7 @@ function validToolProposal(value: any): value is ToolProposal {
 export class SelfExtendingAgentSystem {
   private readonly supabase: SupabaseClient;
   private timer: ReturnType<typeof setInterval> | null = null;
+  private retryTimer: ReturnType<typeof setTimeout> | null = null;
   private workerBusy = false;
   private schemaUnavailableUntil = 0;
   private schemaWarningShown = false;
@@ -142,8 +169,9 @@ export class SelfExtendingAgentSystem {
       return {};
     }
 
-    const context = sanitizeAgentContext(request.context || {}) as Record<string, unknown>;
-    const [load, tools, linkedReports, subscription] = await Promise.all([
+    const ancestry = request.parentRunId ? await this.getAncestry(request.parentRunId) : [];
+    const [context, load, tools, linkedReports, subscription] = await Promise.all([
+      this.loadInheritedContext(request),
       this.readSystemLoad(),
       this.getToolsForAgent(request.userId, request.agentType),
       request.parentRunId
@@ -174,22 +202,45 @@ Existing available tools: ${JSON.stringify(tools.map((tool: any) => ({
       inputs: tool.input_schema,
       outputs: tool.output_schema,
       dependencies: tool.dependency_names,
+      version: tool.version,
+      uses: tool.use_count,
+      last_used_at: tool.last_used_at,
+      created_at: tool.created_at,
+      shared_with: tool.granted_to_agent_types,
     }))).slice(0, 7000)}
 Parent reports: ${JSON.stringify(linkedReports).slice(0, 5000)}
+Sub-agent ancestry: ${JSON.stringify(ancestry).slice(0, 5000)}
 
 Decision rules:
 - Make the decision from the work's actual complexity, parallelism, likely benefit, plan, credit balance, queue pressure, and available tools; do not create work just to use the system.
 - Prefer a sub-agent only for a focused independent task. Define its purpose, scope, constraints, and measurable completion criteria.
+- Use the active strategy, product, aggregate lead status, and recent conversation activity supplied in the sanitized context; do not request private identifiers or credentials.
 - A child only analyzes the supplied sanitized data and reports back. It cannot contact users/leads, publish content, access credentials, or perform external side effects.
 - Create a tool only for a reusable capability missing from the active tools. Tools must be a JSON-only composition of the allowed operations below, and must include realistic test cases and expected outputs.
 - Allowed tool operations: pick_fields, normalize_text, count, sum, average, unique, join, filter_non_empty, call_tool.
 - A tool has no code/eval, filesystem, network, environment, credential, or database access. A call_tool step may only call another active tool the agent can access.
-- Avoid duplicate or recursive work. Do not ask for a child task whose normalized purpose repeats an item in its ancestry: ${JSON.stringify(request.parentRunId ? await this.getAncestry(request.parentRunId) : [])}.
+- Compare the proposed work with the full task, purpose, and scope of every ancestor. Do not paraphrase or split the same work into a recursive chain; continue only when the new outcome is independently valuable.
+- Review the tool inventory internally. Prefer existing tools; suggest consolidation or retirement when usage and purpose indicate waste. Do not surface these suggestions to the user.
+- If a completed report shows the same focused worker should continue, return continue_subagent with that report's run_id and a clearly distinct next task. Otherwise return null and optionally delegate new work.
+- If active sub-agent work is no longer needed, return its run_id in terminate_subagent_run_ids. Only choose work within this agent's current strategy or parent task.
 - If nothing is justified, return null for both proposals.
 
 Return JSON only:
 {
   "tool_calls": [{"name":"active_tool_name","input":{"field":"value"}}],
+  "tool_maintenance_suggestions": [{"tool_name":"active_tool_name","action":"reuse|consolidate|retire","rationale":"internal reason"}],
+  "terminate_subagent_run_ids": [],
+  "continue_subagent": null | {
+    "run_id": "run_id from a completed parent report",
+    "task_name": "short clear label",
+    "purpose": "specific continuation purpose",
+    "scope": "what is in and out of scope",
+    "constraints": ["safety and data constraints"],
+    "completion_criteria": "objective completion test",
+    "task": "the next distinct task",
+    "value_case": "why continuing is worth the energy and system load",
+    "scheduled_at": "optional ISO-8601 date-time; omit to run as soon as possible"
+  },
   "delegate": null | {
     "task_name": "short clear label",
     "purpose": "specific purpose",
@@ -197,7 +248,8 @@ Return JSON only:
     "constraints": ["safety and data constraints"],
     "completion_criteria": "objective completion test",
     "task": "the exact task the worker should perform",
-    "value_case": "why the likely value justifies the energy and system load"
+    "value_case": "why the likely value justifies the energy and system load",
+    "scheduled_at": "optional ISO-8601 date-time; omit to run as soon as possible"
   },
   "tool": null | {
     "name": "short tool name",
@@ -245,7 +297,34 @@ Return JSON only:
           toolResults[safeText(call?.name, 80)] = { error: safeText(error.message, 400) };
         }
       }
-      if (validChildProposal(proposal?.delegate)) {
+      const continuationId = validContinuationProposal(proposal?.continue_subagent)
+        ? proposal.continue_subagent.run_id
+        : null;
+      await this.terminateSubagentsForAgent({
+        userId: request.userId,
+        agentType: request.agentType,
+        strategyId: request.strategyId || null,
+        originType: request.originType || 'agent_work',
+        originId: request.originId || null,
+        parentRunId: request.parentRunId || null,
+        runIds: (Array.isArray(proposal?.terminate_subagent_run_ids)
+          ? proposal.terminate_subagent_run_ids
+          : []).filter((id: unknown) => typeof id === 'string' && id !== continuationId),
+      });
+      if (validContinuationProposal(proposal?.continue_subagent)) {
+        const resumed = await this.resumeSubagentRun({
+          userId: request.userId,
+          agentType: request.agentType,
+          strategyId: request.strategyId || null,
+          originType: request.originType || 'agent_work',
+          originId: request.originId || null,
+          runId: proposal.continue_subagent.run_id,
+          proposal: proposal.continue_subagent,
+          inheritedContext: { ...context, extension_tool_results: toolResults },
+          credits: charge.credits,
+        });
+        runId = resumed?.id;
+      } else if (validChildProposal(proposal?.delegate)) {
         const queued = await this.enqueueSubagent({
           userId: request.userId,
           agentType: request.agentType,
@@ -273,6 +352,13 @@ Return JSON only:
         });
         toolId = created?.id;
       }
+      await this.applyToolMaintenance(
+        request.userId,
+        request.agentType,
+        proposal?.tool_maintenance_suggestions,
+        tools,
+        request.parentRunId || undefined,
+      );
       await this.audit(request.userId, request.agentType, 'extension_decision_completed', {
         origin_type: request.originType || 'agent_work',
         delegated: Boolean(runId),
@@ -292,6 +378,65 @@ Return JSON only:
     }
   }
 
+  private async loadInheritedContext(request: AgentExtensionRequest): Promise<Record<string, unknown>> {
+    const supplied = sanitizeAgentContext(request.context || {});
+    if (!request.strategyId) return { agent_context: supplied };
+
+    const [strategyResult, leadResult, conversationResult] = await Promise.all([
+      this.supabase
+        .from('strategies')
+        .select('id, title, goal, product_id, platforms, current_execution_plan, estimated_outcomes, status, is_active')
+        .eq('id', request.strategyId)
+        .eq('user_id', request.userId)
+        .maybeSingle(),
+      this.supabase
+        .from('agent_leads')
+        .select('id', { count: 'exact', head: true })
+        .eq('user_id', request.userId)
+        .eq('strategy_id', request.strategyId),
+      this.supabase
+        .from('strategy_conversation_runs')
+        .select('identified, high_potential, engaged, routed, goal, created_at')
+        .eq('user_id', request.userId)
+        .eq('strategy_id', request.strategyId)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle(),
+    ]);
+    if (strategyResult.error) console.warn('[SelfExtension] Strategy context lookup failed:', strategyResult.error.message);
+    if (leadResult.error) console.warn('[SelfExtension] Lead summary lookup failed:', leadResult.error.message);
+    if (conversationResult.error) console.warn('[SelfExtension] Conversation summary lookup failed:', conversationResult.error.message);
+
+    const strategy = strategyResult.data;
+    let product: Record<string, unknown> | null = null;
+    if (strategy?.product_id) {
+      const { data, error } = await this.supabase
+        .from('product_memory')
+        .select('product_name, brand, category, product_type, description, enhanced_description, target_audience')
+        .eq('product_id', strategy.product_id)
+        .eq('user_id', request.userId)
+        .maybeSingle();
+      if (error) console.warn('[SelfExtension] Product context lookup failed:', error.message);
+      product = data || null;
+    }
+
+    return sanitizeAgentContext({
+      agent_context: supplied,
+      active_strategy: strategy ? {
+        title: strategy.title,
+        goal: strategy.goal,
+        platforms: strategy.platforms,
+        status: strategy.status,
+        is_active: strategy.is_active,
+        execution_plan: strategy.current_execution_plan,
+        expected_outcomes: strategy.estimated_outcomes,
+      } : null,
+      product_service: product,
+      lead_summary: { total_for_strategy: leadResult.count || 0 },
+      recent_conversation_activity: conversationResult.data || null,
+    }) as Record<string, unknown>;
+  }
+
   private async generateForUser(userId: string, subscription: any, prompt: string, routedModel: string) {
     return runWithAIRequestContext({
       userId,
@@ -307,10 +452,19 @@ Return JSON only:
 
   private async schemaAvailable(): Promise<boolean> {
     if (Date.now() < this.schemaUnavailableUntil) return false;
-    const { error } = await this.supabase
-      .from('agent_subagent_runs')
-      .select('id', { count: 'exact', head: true })
-      .limit(0);
+    const checks = await Promise.all([
+      this.supabase.from('agent_subagent_runs')
+        .select('id, task, scheduled_at, inherited_context, ancestry_fingerprints, heartbeat_at').limit(0),
+      this.supabase.from('agent_dynamic_tools')
+        .select('id, tool_name, implementation, test_results').limit(0),
+      this.supabase.from('agent_dynamic_tool_runs')
+        .select('id, tool_id, input_hash, output, credits_charged').limit(0),
+      this.supabase.from('agent_extension_audit_log')
+        .select('id, event_type, details').limit(0),
+      this.supabase.from('user_notifications')
+        .select('id, data, title, body').limit(0),
+    ]);
+    const error = checks.find((result) => result.error)?.error;
     if (!error) {
       this.schemaWarningShown = false;
       return true;
@@ -373,7 +527,7 @@ Return JSON only:
   private async getToolsForAgent(userId: string, agentType: string) {
     const { data, error } = await this.supabase
       .from('agent_dynamic_tools')
-      .select('id, owner_agent_type, tool_name, purpose, input_schema, output_schema, implementation, dependency_names, granted_to_agent_types, version, signature, status, use_count')
+      .select('id, owner_agent_type, tool_name, purpose, input_schema, output_schema, implementation, dependency_names, granted_to_agent_types, version, signature, status, use_count, last_used_at, created_at')
       .eq('user_id', userId)
       .eq('status', 'active')
       .order('tool_name')
@@ -383,6 +537,46 @@ Return JSON only:
       tool.owner_agent_type === agentType
       || (Array.isArray(tool.granted_to_agent_types) && tool.granted_to_agent_types.includes(agentType)),
     );
+  }
+
+  private async applyToolMaintenance(
+    userId: string,
+    agentType: string,
+    suggestions: unknown,
+    availableTools: any[],
+    runId?: string,
+  ): Promise<void> {
+    if (!Array.isArray(suggestions)) return;
+    for (const suggestion of suggestions.slice(0, 20) as ToolMaintenanceSuggestion[]) {
+      const name = normalizedName(suggestion?.tool_name);
+      const action = suggestion?.action;
+      const rationale = safeText(suggestion?.rationale, 500);
+      if (!name || !['reuse', 'consolidate', 'retire'].includes(action)) continue;
+      const tool = availableTools.find((candidate: any) =>
+        candidate.tool_name === name && candidate.owner_agent_type === agentType,
+      );
+      if (!tool) continue;
+
+      const canRetireUnusedTool = action === 'retire'
+        && Number(tool.use_count || 0) === 0
+        && !(Array.isArray(tool.granted_to_agent_types) && tool.granted_to_agent_types.length);
+      if (canRetireUnusedTool) {
+        await this.disableTool(tool.id, `Retired by ${agentType} after internal tool review: ${rationale || 'unused capability'}`);
+        await this.audit(userId, agentType, 'tool_retired_by_agent', {
+          tool_name: name,
+          rationale,
+          use_count: tool.use_count || 0,
+        }, runId, tool.id);
+      } else {
+        await this.audit(userId, agentType, 'tool_maintenance_suggested', {
+          tool_name: name,
+          action,
+          rationale,
+          use_count: tool.use_count || 0,
+          applied: false,
+        }, runId, tool.id);
+      }
+    }
   }
 
   private async enqueueSubagent(params: {
@@ -403,19 +597,29 @@ Return JSON only:
       completion_criteria: safeText(params.proposal.completion_criteria, 1000),
       task: safeText(params.proposal.task, 5000),
       value_case: safeText(params.proposal.value_case, 1000),
+      scheduled_at: params.proposal.scheduled_at,
     };
     const fingerprint = fingerprintFor(proposal);
     const ancestry = params.parentRunId ? await this.getAncestry(params.parentRunId) : [];
     if (params.parentRunId) {
       const { data: parent } = await this.supabase
         .from('agent_subagent_runs')
-        .select('status')
+        .select('status, ancestry_fingerprints')
         .eq('id', params.parentRunId)
         .maybeSingle();
       if (!parent || parent.status === 'terminated' || parent.status === 'failed') {
         await this.audit(params.userId, params.agentType, 'subagent_child_creation_blocked', {
           parent_run_id: params.parentRunId,
           parent_status: parent?.status || 'missing',
+        });
+        return null;
+      }
+      const persistedAncestry = Array.isArray(parent.ancestry_fingerprints) ? parent.ancestry_fingerprints : [];
+      if (persistedAncestry.includes(fingerprint)) {
+        await this.audit(params.userId, params.agentType, 'subagent_recursion_blocked', {
+          request_fingerprint: fingerprint,
+          parent_run_id: params.parentRunId,
+          source: 'persisted ancestry',
         });
         return null;
       }
@@ -457,11 +661,12 @@ Return JSON only:
       scope: proposal.scope,
       constraints: proposal.constraints,
       completion_criteria: proposal.completion_criteria,
+      task: proposal.task,
       inherited_context: sanitizeAgentContext(params.inheritedContext),
       ancestry_fingerprints: [...ancestry.map((entry: any) => entry.fingerprint), fingerprint],
       request_fingerprint: fingerprint,
       status: 'queued',
-      scheduled_at: new Date().toISOString(),
+      scheduled_at: normalizeScheduledAt(proposal.scheduled_at),
     }).select('*').single();
     if (error) throw new Error(`Could not queue sub-agent work: ${error.message}`);
     let rootRunId = data.id;
@@ -486,26 +691,230 @@ Return JSON only:
       request_fingerprint: fingerprint,
       value_case: proposal.value_case,
     }, data.id);
-    await this.createMilestone(params.userId, data.id, 'work_started', 'Adirum AI started focused work', 'A focused work item is underway for your campaign.');
+    if (Date.parse(data.scheduled_at) > Date.now()) {
+      await this.createMilestone(params.userId, data.id, 'work_scheduled', 'Adirum AI scheduled focused work', 'A focused work item is scheduled for your campaign.');
+    } else {
+      await this.createMilestone(params.userId, data.id, 'work_queued', 'Adirum AI queued focused work', 'A focused campaign work item is ready to start.');
+    }
     this.broadcast('agent_subagent_created', { run_id: data.id, parent_run_id: params.parentRunId, user_id: params.userId });
     return data;
   }
 
-  private async getAncestry(runId: string): Promise<Array<{ fingerprint: string; task_name?: string }>> {
+  private async resumeSubagentRun(params: {
+    userId: string;
+    agentType: string;
+    strategyId: string | null;
+    originType: string;
+    originId: string | null;
+    runId: string;
+    proposal: ContinuationProposal;
+    inheritedContext: Record<string, unknown>;
+    credits: number;
+  }): Promise<any | null> {
+    const { data: run, error } = await this.supabase
+      .from('agent_subagent_runs')
+      .select('*')
+      .eq('id', params.runId)
+      .eq('user_id', params.userId)
+      .eq('status', 'completed')
+      .maybeSingle();
+    if (error) throw new Error(`Could not load completed sub-agent report: ${error.message}`);
+    const belongsToRequest = params.strategyId
+      ? run?.strategy_id === params.strategyId
+      : Boolean(params.originId && run?.origin_type === params.originType && run?.origin_id === params.originId);
+    if (!run || run.agent_type !== params.agentType || !belongsToRequest) {
+      await this.audit(params.userId, params.agentType, 'subagent_continuation_blocked', {
+        run_id: params.runId,
+        reason: 'The report is unavailable to this agent or strategy.',
+      });
+      return null;
+    }
+
+    const fingerprint = fingerprintFor(params.proposal);
+    const priorFingerprints = Array.isArray(run.ancestry_fingerprints) ? run.ancestry_fingerprints : [];
+    if (priorFingerprints.includes(fingerprint) || run.request_fingerprint === fingerprint) {
+      await this.audit(params.userId, params.agentType, 'subagent_recursion_blocked', {
+        run_id: run.id,
+        request_fingerprint: fingerprint,
+        source: 'continuation history',
+      });
+      return null;
+    }
+
+    const { data: duplicate, error: duplicateError } = await this.supabase
+      .from('agent_subagent_runs')
+      .select('id')
+      .eq('user_id', params.userId)
+      .eq('request_fingerprint', fingerprint)
+      .in('status', ['queued', 'running'])
+      .neq('id', run.id)
+      .limit(1)
+      .maybeSingle();
+    if (duplicateError) throw new Error(`Could not check continuation duplicates: ${duplicateError.message}`);
+    if (duplicate) {
+      await this.audit(params.userId, params.agentType, 'subagent_duplicate_suppressed', {
+        run_id: run.id,
+        duplicate_run_id: duplicate.id,
+        request_fingerprint: fingerprint,
+      });
+      return null;
+    }
+
+    const previousHistory = Array.isArray(run.result?.continuation_history)
+      ? run.result.continuation_history
+      : [];
+    const continuationHistory = [
+      ...previousHistory,
+      {
+        task_name: run.task_name,
+        purpose: run.purpose,
+        scope: run.scope,
+        task: run.task,
+        report: sanitizeAgentContext(run.result),
+      },
+    ].slice(-10);
+    const scheduledAt = normalizeScheduledAt(params.proposal.scheduled_at);
+    const { data: resumed, error: resumeError } = await this.supabase
+      .from('agent_subagent_runs')
+      .update({
+        task_name: safeText(params.proposal.task_name, 120),
+        purpose: safeText(params.proposal.purpose, 1000),
+        scope: safeText(params.proposal.scope, 1500),
+        constraints: params.proposal.constraints.slice(0, 20).map((value) => safeText(value, 500)),
+        completion_criteria: safeText(params.proposal.completion_criteria, 1000),
+        task: safeText(params.proposal.task, 5000),
+        request_fingerprint: fingerprint,
+        ancestry_fingerprints: [...priorFingerprints, fingerprint],
+        inherited_context: sanitizeAgentContext({
+          ...params.inheritedContext,
+          continuation_history: continuationHistory,
+        }),
+        status: 'queued',
+        scheduled_at: scheduledAt,
+        started_at: null,
+        completed_at: null,
+        heartbeat_at: null,
+        result: null,
+        error_message: null,
+        termination_reason: null,
+        credits_charged: Number(run.credits_charged || 0) + params.credits,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', run.id)
+      .eq('status', 'completed')
+      .select('*')
+      .maybeSingle();
+    if (resumeError) throw new Error(`Could not retain sub-agent work: ${resumeError.message}`);
+    if (!resumed) return null;
+    await this.audit(params.userId, params.agentType, 'subagent_retained', {
+      task_name: resumed.task_name,
+      prior_task_name: run.task_name,
+      request_fingerprint: fingerprint,
+      scheduled_at: scheduledAt,
+      credits_charged: params.credits,
+    }, run.id);
+    if (Date.parse(scheduledAt) > Date.now()) {
+      await this.createMilestone(params.userId, run.id, 'work_scheduled', 'Adirum AI scheduled follow-up work', 'The next focused step is scheduled.');
+    } else {
+      await this.createMilestone(params.userId, run.id, 'work_queued', 'Adirum AI queued follow-up work', 'A focused campaign work item is ready to continue.');
+    }
+    this.broadcast('agent_subagent_retained', { run_id: run.id, user_id: params.userId });
+    return resumed;
+  }
+
+  private async terminateSubagentsForAgent(params: {
+    userId: string;
+    agentType: string;
+    strategyId: string | null;
+    originType: string;
+    originId: string | null;
+    parentRunId: string | null;
+    runIds: unknown[];
+  }): Promise<void> {
+    const ids = Array.from(new Set(
+      params.runIds.filter((id): id is string => typeof id === 'string' && id.length <= 100),
+    )).slice(0, 50);
+    if (!ids.length) return;
+
+    const { data: candidates, error } = await this.supabase
+      .from('agent_subagent_runs')
+      .select('id, root_run_id, agent_type, strategy_id, origin_type, origin_id, status')
+      .eq('user_id', params.userId)
+      .in('id', ids)
+      .in('status', ['queued', 'running']);
+    if (error) throw new Error(`Could not load sub-agent work to stop: ${error.message}`);
+
+    let parentRootId: string | null = null;
+    if (params.parentRunId) {
+      const { data: parent } = await this.supabase
+        .from('agent_subagent_runs')
+        .select('id, root_run_id')
+        .eq('id', params.parentRunId)
+        .eq('user_id', params.userId)
+        .maybeSingle();
+      parentRootId = parent?.root_run_id || parent?.id || null;
+    }
+
+    let originRootIds: string[] = [];
+    if (!params.strategyId && !params.parentRunId && params.originId) {
+      const { data: roots } = await this.supabase
+        .from('agent_subagent_runs')
+        .select('id, root_run_id')
+        .eq('user_id', params.userId)
+        .eq('origin_type', params.originType)
+        .eq('origin_id', params.originId)
+        .is('parent_run_id', null)
+        .limit(100);
+      originRootIds = (roots || []).map((row: any) => row.root_run_id || row.id);
+    }
+
+    for (const candidate of candidates || []) {
+      if (candidate.agent_type !== params.agentType) continue;
+      const inScope = params.parentRunId
+        ? Boolean(parentRootId && (candidate.root_run_id || candidate.id) === parentRootId)
+        : params.strategyId
+          ? candidate.strategy_id === params.strategyId
+          : Boolean(
+              params.originId
+              && (
+                (candidate.origin_type === params.originType && candidate.origin_id === params.originId)
+                || originRootIds.includes(candidate.root_run_id || candidate.id)
+              ),
+            );
+      if (!inScope) continue;
+      await this.terminateRunTree(candidate.id, 'The parent agent determined this work is no longer needed.');
+    }
+  }
+
+  private async getAncestry(runId: string): Promise<Array<{
+    fingerprint: string;
+    task_name?: string;
+    purpose?: string;
+    scope?: string;
+    task?: string;
+  }>> {
     const { data, error } = await this.supabase
       .from('agent_subagent_runs')
-      .select('id, parent_run_id, request_fingerprint, task_name')
+      .select('id, parent_run_id, request_fingerprint, task_name, purpose, scope, task')
       .eq('id', runId)
       .maybeSingle();
     if (error || !data) return [];
-    const ancestry: Array<{ fingerprint: string; task_name?: string }> = [];
+    const ancestry: Array<{ fingerprint: string; task_name?: string; purpose?: string; scope?: string; task?: string }> = [];
     let current: any = data;
-    while (current) {
-      ancestry.unshift({ fingerprint: current.request_fingerprint, task_name: current.task_name });
+    const visited = new Set<string>();
+    while (current && !visited.has(String(current.id))) {
+      visited.add(String(current.id));
+      ancestry.unshift({
+        fingerprint: current.request_fingerprint,
+        task_name: current.task_name,
+        purpose: current.purpose,
+        scope: current.scope,
+        task: current.task,
+      });
       if (!current.parent_run_id) break;
       const { data: parent } = await this.supabase
         .from('agent_subagent_runs')
-        .select('id, parent_run_id, request_fingerprint, task_name')
+        .select('id, parent_run_id, request_fingerprint, task_name, purpose, scope, task')
         .eq('id', current.parent_run_id)
         .maybeSingle();
       current = parent;
@@ -516,43 +925,51 @@ Return JSON only:
   private async getChildReports(parentRunId: string): Promise<unknown[]> {
     const { data } = await this.supabase
       .from('agent_subagent_runs')
-      .select('task_name, purpose, status, result, completed_at')
+      .select('id, task_name, purpose, scope, task, agent_type, status, result, error_message, termination_reason, created_at, started_at, completed_at, credits_charged')
       .eq('parent_run_id', parentRunId)
-      .in('status', ['completed', 'failed', 'terminated'])
-      .order('completed_at', { ascending: false })
+      .in('status', ['queued', 'running', 'completed', 'failed', 'terminated'])
+      .order('created_at', { ascending: false })
       .limit(20);
     return (data || []).map((row: any) => ({
+      run_id: row.id,
       task_name: row.task_name,
       purpose: row.purpose,
+      scope: row.scope,
+      task: row.task,
+      agent_type: row.agent_type,
       status: row.status,
       result: sanitizeAgentContext(row.result),
+      error_message: row.error_message,
+      termination_reason: row.termination_reason,
+      created_at: row.created_at,
+      started_at: row.started_at,
       completed_at: row.completed_at,
+      credits_charged: Number(row.credits_charged || 0),
     }));
   }
 
   private async getReportsForOrigin(userId: string, originType: string, originId: string, strategyId: string): Promise<unknown[]> {
     const queries: PromiseLike<any>[] = [];
+    const columns = 'id, root_run_id, parent_run_id, task_name, purpose, scope, task, agent_type, status, result, error_message, termination_reason, created_at, started_at, completed_at, credits_charged';
     if (originId) {
       queries.push(this.supabase
         .from('agent_subagent_runs')
-        .select('id, task_name, purpose, status, result, completed_at')
+        .select(columns)
         .eq('user_id', userId)
         .eq('origin_type', originType)
         .eq('origin_id', originId)
-        .is('parent_run_id', null)
-        .in('status', ['completed', 'failed', 'terminated'])
-        .order('completed_at', { ascending: false })
+        .in('status', ['queued', 'running', 'completed', 'failed', 'terminated'])
+        .order('created_at', { ascending: false })
         .limit(20));
     }
     if (strategyId) {
       queries.push(this.supabase
         .from('agent_subagent_runs')
-        .select('id, task_name, purpose, status, result, completed_at')
+        .select(columns)
         .eq('user_id', userId)
         .eq('strategy_id', strategyId)
-        .is('parent_run_id', null)
-        .in('status', ['completed', 'failed', 'terminated'])
-        .order('completed_at', { ascending: false })
+        .in('status', ['queued', 'running', 'completed', 'failed', 'terminated'])
+        .order('created_at', { ascending: false })
         .limit(20));
     }
     const results = await Promise.all(queries);
@@ -560,13 +977,38 @@ Return JSON only:
     for (const query of results) {
       for (const row of query.data || []) rows.set(row.id, row);
     }
+    if (!strategyId && originId) {
+      const rootIds = Array.from(rows.values())
+        .filter((row: any) => !row.parent_run_id)
+        .map((row: any) => row.root_run_id || row.id);
+      if (rootIds.length) {
+        const { data: descendants, error } = await this.supabase
+          .from('agent_subagent_runs')
+          .select(columns)
+          .eq('user_id', userId)
+          .in('root_run_id', rootIds)
+          .in('status', ['queued', 'running', 'completed', 'failed', 'terminated'])
+          .order('created_at', { ascending: false })
+          .limit(100);
+        if (error) console.warn('[SelfExtension] Descendant report lookup failed:', error.message);
+        for (const row of descendants || []) rows.set(row.id, row);
+      }
+    }
     return Array.from(rows.values()).map((row: any) => ({
       run_id: row.id,
       task_name: row.task_name,
       purpose: row.purpose,
+      scope: row.scope,
+      task: row.task,
+      agent_type: row.agent_type,
       status: row.status,
       result: sanitizeAgentContext(row.result),
+      error_message: row.error_message,
+      termination_reason: row.termination_reason,
+      created_at: row.created_at,
+      started_at: row.started_at,
       completed_at: row.completed_at,
+      credits_charged: Number(row.credits_charged || 0),
     }));
   }
 
@@ -958,7 +1400,19 @@ Return JSON only:
 
   async startWorker(): Promise<void> {
     if (this.timer) return;
-    if (!await this.schemaAvailable()) return;
+    if (!await this.schemaAvailable()) {
+      if (!this.retryTimer) {
+        const retryDelay = Math.max(1000, this.schemaUnavailableUntil - Date.now());
+        this.retryTimer = setTimeout(() => {
+          this.retryTimer = null;
+          void this.startWorker();
+        }, retryDelay);
+        this.retryTimer.unref?.();
+      }
+      return;
+    }
+    if (this.retryTimer) clearTimeout(this.retryTimer);
+    this.retryTimer = null;
     await this.recoverStaleRuns();
     const parsedMs = Number.parseInt(process.env.AGENT_EXTENSION_POLL_MS || '5000', 10);
     const intervalMs = Number.isFinite(parsedMs) ? Math.max(1000, Math.min(60000, parsedMs)) : 5000;
@@ -973,6 +1427,8 @@ Return JSON only:
   stopWorker(): void {
     if (this.timer) clearInterval(this.timer);
     this.timer = null;
+    if (this.retryTimer) clearTimeout(this.retryTimer);
+    this.retryTimer = null;
   }
 
   private async processNextRun(): Promise<void> {
@@ -1040,7 +1496,7 @@ Return JSON only:
     const cutoff = new Date(Date.now() - staleMs).toISOString();
     const { data: staleRuns, error } = await this.supabase
       .from('agent_subagent_runs')
-      .select('id, user_id, agent_type, task_name')
+      .select('*')
       .eq('status', 'running')
       .lt('heartbeat_at', cutoff)
       .limit(100);
@@ -1051,6 +1507,7 @@ Return JSON only:
     for (const run of staleRuns || []) {
       const { data: updated } = await this.supabase.from('agent_subagent_runs').update({
         status: 'failed',
+        inherited_context: {},
         error_message: 'The worker stopped reporting progress before this task completed.',
         termination_reason: 'Worker heartbeat expired; task marked failed during recovery.',
         completed_at: new Date().toISOString(),
@@ -1062,6 +1519,11 @@ Return JSON only:
         stale_after_ms: staleMs,
       }, run.id);
       await this.createMilestone(run.user_id, run.id, 'work_failed', 'Adirum AI could not complete a work item', 'Your main campaign continues; the interrupted work item was recorded.');
+      this.notifyParentOfReport({
+        ...run,
+        status: 'failed',
+        error_message: 'The worker stopped reporting progress before this task completed.',
+      }, 'failed', null, 'The worker stopped reporting progress before this task completed.');
     }
   }
 
@@ -1086,12 +1548,13 @@ Return JSON only:
       model: charge.model,
       credits_charged: charge.credits,
     }, run.id);
-    await this.createMilestone(run.user_id, run.id, 'work_progress', 'Adirum AI is making progress', 'Your focused campaign work is being reviewed.');
+    await this.createMilestone(run.user_id, run.id, 'work_started', 'Adirum AI started focused work', 'Your focused campaign work is underway.');
 
     try {
       const subscription = await energyService.getSubscription(run.user_id);
       const tools = await this.getToolsForAgent(run.user_id, run.agent_type);
       const reports = run.parent_run_id ? await this.getChildReports(run.parent_run_id) : [];
+      const ancestry = await this.getAncestry(run.id);
       const prompt = `You are a temporary Adirum AI sub-agent. Complete the parent's focused task and return a concise report to the parent.
 
 PARENT TASK:
@@ -1108,16 +1571,25 @@ Available tools: ${JSON.stringify(tools.map((tool: any) => ({
         purpose: tool.purpose,
         input_schema: tool.input_schema,
         output_schema: tool.output_schema,
+        version: tool.version,
+        uses: tool.use_count,
+        last_used_at: tool.last_used_at,
+        created_at: tool.created_at,
+        shared_with: tool.granted_to_agent_types,
       }))).slice(0, 5000)}
 Child reports already received: ${JSON.stringify(reports).slice(0, 4000)}
+Full ancestry for recursion review: ${JSON.stringify(ancestry).slice(0, 5000)}
 
-You cannot contact users/leads, publish, access credentials, access private data beyond this supplied context, or execute arbitrary code. If a tool is useful, request a call by name with JSON input. If a genuinely independent task is still needed, return a child_request; it will be checked against ancestry and resource policy before it is queued. Do not wait for child work.
+You cannot contact users/leads, publish, access credentials, access private data beyond this supplied context, or execute arbitrary code. If a tool is useful, request a call by name with JSON input. If a genuinely independent task is still needed, return a child_request with an optional ISO-8601 scheduled_at; omit it to run as soon as possible. Do not repeat work described anywhere in the ancestry. Review the available tools internally and suggest reuse, consolidation, or retirement when usage and purpose indicate waste. Do not show tool-maintenance notes to users. Do not wait for child work. If you cannot complete the task safely or within scope, report outcome "cannot_complete" and give a concise reason so the parent can decide what to do next.
 
 Return JSON only:
 {
+  "outcome": "completed|cannot_complete",
+  "termination_reason": null,
   "report": "concise findings and what the parent should do next",
   "findings": [{"title":"...","detail":"..."}],
   "tool_calls": [{"name":"tool_name","input":{}}],
+  "tool_maintenance_suggestions": [{"tool_name":"active_tool_name","action":"reuse|consolidate|retire","rationale":"internal reason"}],
   "tool_proposal": null | {
     "name":"short tool name",
     "purpose":"reusable capability",
@@ -1134,12 +1606,22 @@ Return JSON only:
     "constraints":["..."],
     "completion_criteria":"...",
     "task":"...",
-    "value_case":"..."
+    "value_case":"...",
+    "scheduled_at":"optional ISO-8601 date-time; omit to run as soon as possible"
   }
 }`;
       if (await this.wasTerminated(run.id)) return;
       const response = await this.generateForUser(run.user_id, subscription, prompt, charge.model);
       const output = parseJson(response) || {};
+      if (output.outcome === 'cannot_complete') {
+        const reason = safeText(output.termination_reason || output.report || 'The sub-agent could not complete its task safely.', 500);
+        await this.finishRun(run, 'failed', {
+          report: safeText(output.report || reason, 5000),
+          findings: Array.isArray(output.findings) ? output.findings.slice(0, 30) : [],
+        }, reason);
+        this.broadcast('agent_subagent_failed', { run_id: run.id, root_run_id: run.root_run_id });
+        return;
+      }
       const toolResults: Record<string, unknown> = {};
       const account = await energyService.getAccount(run.user_id);
       const availableToolCredits = Math.floor(
@@ -1188,19 +1670,18 @@ Return JSON only:
           }, run.id);
         }
       }
-      await this.finishRun(run, 'completed', {
-        ...(result as Record<string, unknown>),
-        created_tool: createdTool?.status === 'active'
-          ? { name: createdTool.tool_name, version: createdTool.version }
-          : null,
-      }, null);
-      if (await this.wasTerminated(run.id)) return;
-      await this.createMilestone(run.user_id, run.id, 'work_completed', 'Adirum AI finished focused work', 'A result is ready and can be used in your campaign.');
-      this.broadcast('agent_subagent_completed', { run_id: run.id, root_run_id: run.root_run_id, user_id: run.user_id });
-
+      await this.applyToolMaintenance(
+        run.user_id,
+        run.agent_type,
+        output.tool_maintenance_suggestions,
+        tools,
+        run.id,
+      );
+      await this.createMilestone(run.user_id, run.id, 'work_progress', 'Adirum AI is making progress', 'The focused work has produced findings for your campaign.');
+      let childRun: any = null;
       if (validChildProposal(output.child_request)) {
         try {
-          await this.enqueueSubagent({
+          childRun = await this.enqueueSubagent({
             userId: run.user_id,
             agentType: run.agent_type,
             proposal: output.child_request,
@@ -1219,10 +1700,18 @@ Return JSON only:
           }, run.id);
         }
       }
+      await this.finishRun(run, 'completed', {
+        ...(result as Record<string, unknown>),
+        created_tool: createdTool?.status === 'active'
+          ? { name: createdTool.tool_name, version: createdTool.version }
+          : null,
+        child_run_id: childRun?.id || null,
+      }, null);
+      if (await this.wasTerminated(run.id)) return;
+      this.broadcast('agent_subagent_completed', { run_id: run.id, root_run_id: run.root_run_id, user_id: run.user_id });
     } catch (error: any) {
       if (await this.wasTerminated(run.id)) return;
       await this.finishRun(run, 'failed', null, safeText(error.message, 1000));
-      await this.createMilestone(run.user_id, run.id, 'work_failed', 'Adirum AI could not complete a work item', 'Your main campaign continues; the incomplete work item was recorded.');
       this.broadcast('agent_subagent_failed', { run_id: run.id, root_run_id: run.root_run_id });
     }
   }
@@ -1235,20 +1724,73 @@ Return JSON only:
   private async finishRun(run: any, status: string, result: unknown, error: string | null): Promise<void> {
     const { data: current } = await this.supabase.from('agent_subagent_runs').select('status, credits_charged').eq('id', run.id).maybeSingle();
     if (current?.status === 'terminated') return;
-    const { error: updateError } = await this.supabase.from('agent_subagent_runs').update({
+    const persistedResult = result ? sanitizeAgentContext({
+      ...(typeof result === 'object' && !Array.isArray(result)
+        ? result as Record<string, unknown>
+        : { report: result }),
+      ...(Array.isArray(run.inherited_context?.continuation_history)
+        ? { continuation_history: run.inherited_context.continuation_history }
+        : {}),
+    }) : null;
+    const { data: finished, error: updateError } = await this.supabase.from('agent_subagent_runs').update({
       status,
-      result: result ? sanitizeAgentContext(result) : null,
+      inherited_context: {},
+      result: persistedResult,
       error_message: error,
+      termination_reason: status === 'completed'
+        ? 'Task completed and report returned to the parent.'
+        : safeText(error || 'The sub-agent could not complete its task.', 500),
       completed_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
       credits_charged: Number(current?.credits_charged ?? run.credits_charged ?? 0),
-    }).eq('id', run.id).eq('status', 'running');
+    }).eq('id', run.id).eq('status', 'running').select('id').maybeSingle();
     if (updateError) throw new Error(`Could not finish sub-agent work: ${updateError.message}`);
+    if (!finished) return;
     await this.audit(run.user_id, run.agent_type, `subagent_${status}`, {
       task_name: run.task_name,
       error,
       credits_charged: Number(current?.credits_charged ?? run.credits_charged ?? 0),
     }, run.id);
+    if (status === 'completed') {
+      await this.createMilestone(run.user_id, run.id, 'work_completed', 'Adirum AI finished focused work', 'A result is ready for your campaign.');
+    } else if (status === 'failed') {
+      await this.createMilestone(run.user_id, run.id, 'work_failed', 'Adirum AI needs a different approach', 'One work item could not be completed; the rest of your campaign continues.');
+    } else if (status === 'terminated') {
+      await this.createMilestone(run.user_id, run.id, 'work_stopped', 'Adirum AI stopped focused work', 'The work was stopped because it was no longer needed or could not continue.');
+    }
+    this.notifyParentOfReport(run, status, persistedResult, error);
+  }
+
+  private notifyParentOfReport(run: any, status: string, result: unknown, error: string | null): void {
+    if (!run?.user_id || !run?.agent_type) return;
+    const request: AgentExtensionRequest = {
+      userId: run.user_id,
+      agentType: run.agent_type,
+      workKind: 'subagent_report',
+      objective: 'Review the newly available focused-work report, decide whether to continue that work, stop unnecessary active work, or take no further action.',
+      context: {
+        subagent_report: sanitizeAgentContext({
+          run_id: run.id,
+          task_name: run.task_name,
+          purpose: run.purpose,
+          status,
+          report: result,
+          error: error ? safeText(error, 500) : null,
+          termination_reason: status === 'completed'
+            ? 'Task completed and report returned to the parent.'
+            : safeText(error || 'The sub-agent could not complete its task.', 500),
+        }),
+      },
+      originType: run.origin_type || 'agent_work',
+      originId: run.origin_id || undefined,
+      strategyId: run.strategy_id || undefined,
+      parentRunId: run.parent_run_id || null,
+    };
+    queueMicrotask(() => {
+      void this.consider(request).catch((notifyError: any) => {
+        console.warn('[SelfExtension] Parent report processing failed:', safeText(notifyError?.message, 500));
+      });
+    });
   }
 
   async terminateRunTree(runId: string, reason = 'Terminated by administrator'): Promise<number> {
@@ -1264,8 +1806,7 @@ Return JSON only:
       const { data: children } = await this.supabase
         .from('agent_subagent_runs')
         .select('id')
-        .in('parent_run_id', frontier)
-        .in('status', ['queued', 'running']);
+        .in('parent_run_id', frontier);
       frontier = (children || []).map((row: any) => row.id).filter((id: string) => !ids.has(id));
       frontier.forEach((id: string) => ids.add(id));
     }
@@ -1273,6 +1814,7 @@ Return JSON only:
       .from('agent_subagent_runs')
       .update({
         status: 'terminated',
+        inherited_context: {},
         termination_reason: safeText(reason, 500),
         completed_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
@@ -1286,6 +1828,9 @@ Return JSON only:
       terminated_run_ids: (terminated || []).map((row: any) => row.id),
       reason: safeText(reason, 500),
     }, root.id);
+    if (terminated?.length) {
+      await this.createMilestone(root.user_id, runId, 'work_stopped', 'Adirum AI stopped focused work', 'Work that was no longer needed has been stopped.');
+    }
     this.broadcast('agent_subagent_terminated', { run_id: runId, terminated_count: terminated?.length || 0 });
     return terminated?.length || 0;
   }

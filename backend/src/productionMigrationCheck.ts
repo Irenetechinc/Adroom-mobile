@@ -83,20 +83,25 @@ const requiredColumns: Record<string, string[]> = {
   scheduler_cursors: ['cursor_name', 'cursor_value', 'updated_at'],
   email_oauth_states: ['state', 'user_id', 'email', 'expires_at'],
   agent_subagent_runs: [
-    'user_id', 'parent_run_id', 'root_run_id', 'agent_type', 'task_name', 'purpose',
-    'scope', 'completion_criteria', 'request_fingerprint', 'strategy_id', 'status', 'result',
-    'termination_reason', 'credits_charged',
+    'user_id', 'parent_run_id', 'root_run_id', 'origin_type', 'origin_id', 'strategy_id',
+    'agent_type', 'task_name', 'task', 'purpose', 'scope', 'constraints', 'completion_criteria',
+    'inherited_context', 'ancestry_fingerprints', 'request_fingerprint', 'status', 'scheduled_at',
+    'started_at', 'completed_at', 'heartbeat_at', 'result', 'error_message',
+    'termination_reason', 'credits_charged', 'created_at', 'updated_at',
   ],
   agent_dynamic_tools: [
-    'user_id', 'owner_agent_type', 'tool_name', 'input_schema', 'output_schema',
+    'user_id', 'owner_agent_type', 'tool_name', 'purpose', 'input_schema', 'output_schema',
     'implementation', 'dependency_names', 'granted_to_agent_types', 'version',
-    'previous_version_id', 'signature', 'status', 'test_results',
+    'previous_version_id', 'signature', 'status', 'test_results', 'use_count',
+    'last_used_at', 'created_by_run_id', 'disabled_at', 'disabled_reason', 'created_at', 'updated_at',
   ],
   agent_dynamic_tool_runs: [
-    'user_id', 'tool_id', 'tool_version', 'agent_type', 'status', 'input_hash',
-    'output', 'credits_charged',
+    'user_id', 'tool_id', 'tool_version', 'agent_type', 'subagent_run_id', 'status', 'input_hash',
+    'output', 'error_message', 'credits_charged', 'created_at',
   ],
-  agent_extension_audit_log: ['user_id', 'actor_agent_type', 'event_type', 'details', 'created_at'],
+  agent_extension_audit_log: [
+    'user_id', 'actor_agent_type', 'event_type', 'subagent_run_id', 'tool_id', 'details', 'created_at',
+  ],
 };
 
 async function main(): Promise<void> {

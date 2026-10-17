@@ -1,0 +1,82 @@
+Adirum AI – Self-Extending Agent System: Dynamic Sub-Agent Creation and Dynamic Tool Creation
+You are enhancing the existing Adirum AI codebase. This is an additive capability. Do not disrupt, break, or replace any existing feature. Do not change the existing agent pipeline, the Credit Management Agent, the scheduler, the orchestrator, or any other service. This new capability must work in perfect sync with everything already implemented.
+
+You have full access to the entire codebase. I do not. Do not ask me for file paths, data structures, or existing patterns. Find them yourself. Follow the existing implementation patterns. Do not invent new ones.
+
+The goal is to give every agent in Adirum AI the ability to create sub-agents on its own, and the ability to create tools on its own, when the task at hand requires it. No hard-coded rules. No predefined sub-agents. No predefined tools. Everything is decided dynamically by the agent based on the situation.
+
+Part One: Core Concept
+Every agent in Adirum AI must be able to spawn sub-agents when the task it is working on cannot be completed efficiently by itself. A sub-agent is a focused, temporary worker that inherits context from its parent agent and completes a specific task. Once the task is complete, the sub-agent either reports back and terminates, or is retained if the parent agent decides the work is ongoing.
+
+Every agent in Adirum AI must also be able to create tools when the task at hand requires a capability that does not already exist in the platform. A tool is a discrete, callable function that the agent can invoke. It may be a wrapper around an external API, a custom script, a data transformation, or any other operation. Once created, the tool is available to the creating agent and to any agent that the creating agent grants access to.
+
+The agent decides when to spawn a sub-agent and when to create a tool. The decision is made using the same dynamic reasoning that drives every other decision in Adirum AI. No if-then rules. No fixed thresholds. The agent evaluates the task, the available resources, the current strategy, and the expected outcome, and decides accordingly.
+
+Part Two: Sub-Agent Creation
+When an agent determines that a task is large enough, complex enough, or parallel enough to justify a dedicated worker, it creates a sub-agent. The sub-agent must be defined entirely by the parent agent at creation time. There are no pre-registered sub-agent templates.
+
+The parent agent must define, at minimum, the purpose of the sub-agent, the scope of its work, the constraints it must respect, and the criteria for completion. The parent agent may also define the tools the sub-agent can use, the channels it can operate on, the data it can access, and the maximum resources it can consume.
+
+The sub-agent inherits the parent agent's context. It knows the active strategy, the user, the product or service, the leads, and the ongoing conversations. It does not need to be told what is already known. It receives the context automatically and uses it to complete its work.
+
+Sub-agents must be able to spawn their own sub-agents if the task requires it. This creates a tree of agents where the root is the original agent and the leaves are the workers. The tree must be tracked so that the parent can monitor progress, aggregate results, and terminate the entire subtree when the work is complete.
+
+Sub-agents must be able to communicate with their parent and with each other. The communication must be non-blocking. The parent must not stall waiting for a sub-agent. It must continue its own work and process sub-agent reports as they arrive.
+
+Sub-agents must have a lifecycle. They are created, they run, they report, and they terminate. The parent agent decides when a sub-agent should terminate. A sub-agent can also terminate itself if it determines that its task is complete or that it cannot complete the task. The termination must be logged with a reason.
+
+Sub-agents must consume credits from the same pool as their parent. The Credit Management Agent must account for every sub-agent action. The user sees a single consolidated cost, not a breakdown per sub-agent, unless the admin enables detailed reporting.
+
+Part Three: Tool Creation
+When an agent determines that the task at hand requires a capability that does not already exist, it creates a tool. The tool must be defined entirely by the creating agent. There are no pre-registered tool templates.
+
+The tool definition must include, at minimum, the name of the tool, the purpose of the tool, the inputs it accepts, the outputs it produces, and the implementation. The implementation may be a wrapper around an existing API, a custom script, a data transformation pipeline, a query, or any other operation that the agent can express and execute.
+
+The agent must be able to test the tool before it is used in production. The tool must run in a sandboxed environment during testing. If the test fails, the agent must either fix the tool or discard it. The agent must not use an untested tool on real leads or real conversations.
+
+Once a tool passes testing, it is registered in the tool registry and becomes available to the creating agent and to any agent that the creating agent grants access to. The tool must be versioned so that changes are tracked. If the tool is updated, the new version replaces the old version, but the old version remains available for rollback if needed.
+
+Tools must be able to call other tools. This allows agents to compose complex capabilities from simpler building blocks. The composition must be tracked so that the chain of dependencies is visible.
+
+Tools must respect the same security, compliance, and anti-ban guardrails as the rest of Adirum AI. They must not access private data. They must not bypass authentication. They must not violate platform terms of service. They must not expose credentials.
+
+Tools must be reversible. If a tool causes harm or produces incorrect results, the creating agent or an admin must be able to disable it immediately. The disable must take effect across all agents that use the tool.
+
+Part Four: Integration With Existing Systems
+The self-extending agent system must integrate with every existing agent in Adirum AI. The Sales Agent, Awareness Agent, Promotion Agent, Launch Agent, Director Agent, Profile Builder Agent, Psychology Agent, Conversation Agent, Communication Agent, and Product Manager Agent must all be able to create sub-agents and tools.
+
+The self-extending agent system must integrate with the Credit Management Agent. Every sub-agent action and every tool execution must consume credits through the same routing logic as the rest of the platform. If the system is in economy mode, sub-agents and tools must run on economy models. If a user exceeds their threshold, sub-agents and tools are throttled or paused accordingly.
+
+The self-extending agent system must integrate with the scheduler and the orchestrator. Sub-agents and tools must be schedulable. They must be able to run on demand, on a schedule, or triggered by events.
+
+The self-extending agent system must integrate with the dashboard and the lead screen. When a sub-agent is created and starts working, the user must see a milestone appear in real time. The milestone must describe what is happening in clear, non-technical language. No internal methods are revealed. The user sees that new work has begun, that progress is being made, and that results are coming. The user does not see the internal structure of the sub-agent or the tool.
+
+The self-extending agent system must integrate with the admin dashboard. The admin must be able to see the current tree of sub-agents, the current registry of tools, the resources consumed by each, and the outcomes produced. The admin must be able to terminate any sub-agent or disable any tool immediately.
+
+Part Five: Resource Management and Guardrails
+Sub-agent and tool creation must be subject to resource limits. The limits must not be hard-coded. They must be determined dynamically based on the user's subscription tier, the current system load, the active strategy's goals, and the expected return on the work.
+
+The system must prevent runaway creation. If an agent creates sub-agents or tools at a rate that exceeds what the system can sustain, the system must throttle or pause creation until the load returns to acceptable levels. The throttle must be dynamic, not a fixed number.
+
+The system must prevent recursion loops. If a sub-agent creates a sub-agent that creates a sub-agent indefinitely, the system must detect the pattern and stop it. The detection must be dynamic, not a fixed depth limit.
+
+The system must prevent tool proliferation. If an agent creates tools that duplicate existing tools or that are not being used, the system must detect the waste and prompt the agent to consolidate or remove them. The prompt must be internal, not user-facing.
+
+The system must log every sub-agent creation, every tool creation, every use, and every termination. The logs must be available to the admin for audit and to the creating agent for learning.
+
+Part Six: Safety and Compliance
+Sub-agents and tools must respect the same do-not-call lists, opt-out preferences, rate limits, and human-like behavior patterns as the rest of Adirum AI. A sub-agent cannot bypass a guardrail that applies to its parent.
+
+Sub-agents and tools must never access credentials, session tokens, or any sensitive data. They operate on the data they are given, not on the underlying credentials.
+
+Sub-agents and tools must never expose internal methods or proprietary information to users, leads, or the public. Every user-facing output from a sub-agent or tool must be filtered through the same content generation pipeline as the rest of the platform.
+
+Sub-agents and tools must never violate platform terms of service. Any tool that attempts to bypass authentication, scrape private data, or overwhelm a platform must be blocked at creation time.
+
+Sub-agents and tools must comply with GDPR, CCPA, and applicable Nigerian and UK regulations. Personal data must not be stored by sub-agents or tools beyond what is necessary for the current task.
+
+Part Seven: Success Criteria
+The implementation is successful when any agent in Adirum AI can create a sub-agent to handle a focused task without any pre-registered template, when the sub-agent inherits context automatically, when the sub-agent reports back and terminates cleanly, when any agent can create a tool to extend its capabilities without any pre-registered template, when the tool is tested before use, when the tool is registered and available to the creating agent, when sub-agents and tools consume credits correctly through the Credit Management Agent, when the user sees milestones in real time without internal methods being revealed, when the admin can see and control the full tree of sub-agents and the full registry of tools, when no existing feature is broken, when no credentials are exposed, when no hard-coded rules are introduced, and when the system cannot be made to spiral through runaway creation, recursion, or tool proliferation.
+
+Proceed with implementation. Work in sync with what already exists. Enhance without disruption.
+

@@ -1692,6 +1692,9 @@ label{font-size:11px;color:var(--text2);font-weight:600}
     <button class="nav-item" onclick="showSection('evolution')" id="nav-evolution">
       <span class="nav-icon">🧬</span> Self-Evolution
     </button>
+    <a class="nav-item" href="/admin/agent-extension" target="_blank" rel="noreferrer" style="text-decoration:none">
+      <span class="nav-icon">🧩</span> Self-Extending Agents
+    </a>
 
     <div class="nav-section">USER MANAGEMENT</div>
     <button class="nav-item" onclick="showSection('users')" id="nav-users">
