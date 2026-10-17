@@ -1,6 +1,7 @@
 
 import { getServiceSupabaseClient } from '../config/supabase';
 import { AIEngine } from '../config/ai-models';
+import { requestAgentExtension } from './selfExtendingAgentSystem';
 
 export class CommunicationService {
   private supabase = getServiceSupabaseClient();
@@ -72,7 +73,24 @@ export class CommunicationService {
 
     // 4. Generate Text
     const reportText = await this.aiEngine.generateText(prompt);
-    
+    requestAgentExtension({
+      userId,
+      agentType: 'COMMUNICATION',
+      workKind: 'daily_report_created',
+      objective: 'Review the daily marketing report for useful independent analysis or a reusable reporting capability.',
+      originType: 'daily_report',
+      originId: since,
+      context: {
+        strategy_summaries: strategies.map((strategy: any) => ({
+          id: strategy.id,
+          title: strategy.title,
+          goal: strategy.goal,
+          platforms: strategy.platforms,
+        })),
+        engagement_signal_count: engagementLogs?.length || 0,
+        report_summary: reportText.slice(0, 1200),
+      },
+    });
     return reportText;
   }
 

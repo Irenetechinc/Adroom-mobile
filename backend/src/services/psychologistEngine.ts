@@ -1,5 +1,6 @@
 import { AIEngine } from '../config/ai-models';
 import { getServiceSupabaseClient } from '../config/supabase';
+import { requestAgentExtension } from './selfExtendingAgentSystem';
 
 const LEAD_SENSITIVE_DATA = /(?:\b(?:email|e-mail|phone|telephone|mobile|address|dob|date of birth|income|salary|religion|race|ethnicity|sexuality|political|health|diagnos|password|token|secret|api key)\b|[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}|\+?\d[\d\s().-]{7,}\d)/i;
 
@@ -235,6 +236,28 @@ OUTPUT JSON (be specific, data-driven, actionable):
     }, { onConflict: 'product_id' });
 
     console.log(`[PsychologistEngine] Profile updated for "${product.product_name}" — confidence: ${profile.confidence}`);
+
+    if (product.user_id) {
+      requestAgentExtension({
+        userId: product.user_id,
+        agentType: 'PSYCHOLOGY',
+        workKind: 'audience_profile_created',
+        objective: 'Review the completed audience profile for a valuable independent analysis or reusable audience-insight tool.',
+        originType: 'psychologist_profile',
+        originId: product.product_id,
+        context: {
+          product: { name: product.product_name, category: product.category },
+          evidence_counts: {
+            social: socialData.length,
+            emotional_ownership: emotionalData.length,
+            platform: platformData.length,
+            brand_perception: geoData.length,
+          },
+          confidence: profile.confidence,
+          primary_emotional_driver: profile.emotional_triggers?.primary,
+        },
+      });
+    }
 
     return {
       category: product.category,

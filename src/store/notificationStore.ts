@@ -5,11 +5,22 @@ import Constants from 'expo-constants';
 
 const API_URL = process.env.EXPO_PUBLIC_API_URL || Constants.expoConfig?.extra?.apiUrl || 'https://backend.adroomai.com';
 
+export interface AgentExtensionMilestone {
+  id: string;
+  title: string;
+  body: string;
+  milestone: string;
+  runId?: string;
+  createdAt?: string;
+}
+
 interface NotificationState {
   unreadCount: number;
   currentUserId: string | null;
   channel: RealtimeChannel | null;
+  latestAgentMilestone: AgentExtensionMilestone | null;
   setUnread: (n: number) => void;
+  clearAgentMilestone: () => void;
   refresh: (userId: string | null) => Promise<void>;
   attach: (userId: string | null) => Promise<void>;
   detach: () => void;
@@ -27,11 +38,13 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
   unreadCount: 0,
   currentUserId: null,
   channel: null,
+  latestAgentMilestone: null,
 
   setUnread: (n) => set({ unreadCount: Math.max(0, n | 0) }),
+  clearAgentMilestone: () => set({ latestAgentMilestone: null }),
 
   refresh: async (userId) => {
-    if (!userId) { set({ unreadCount: 0 }); return; }
+    if (!userId) { set({ unreadCount: 0, latestAgentMilestone: null }); return; }
 
     // Primary source: backend API (most reliable — not affected by Supabase RLS
     // configuration differences between envs).
@@ -75,7 +88,7 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
     }
 
     if (!userId) {
-      set({ unreadCount: 0, currentUserId: null, channel: null });
+      set({ unreadCount: 0, currentUserId: null, channel: null, latestAgentMilestone: null });
       return;
     }
 
@@ -84,11 +97,28 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'user_notifications', filter: `user_id=eq.${userId}` },
-        () => { get().refresh(userId); },
+        (payload: any) => {
+          if (payload.eventType === 'INSERT') {
+            const row = payload.new as any;
+            if (row?.data?.type === 'agent_extension_milestone') {
+              set({
+                latestAgentMilestone: {
+                  id: String(row.id),
+                  title: String(row.title || 'Adirum AI update'),
+                  body: String(row.body || ''),
+                  milestone: String(row.data.milestone || 'progress'),
+                  runId: row.data.run_id ? String(row.data.run_id) : undefined,
+                  createdAt: row.created_at ? String(row.created_at) : undefined,
+                },
+              });
+            }
+          }
+          get().refresh(userId);
+        },
       )
       .subscribe();
 
-    set({ currentUserId: userId, channel: ch });
+    set({ currentUserId: userId, channel: ch, latestAgentMilestone: null });
     // Fetch count immediately after attaching
     await get().refresh(userId);
   },
@@ -98,6 +128,6 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
     if (channel) {
       try { supabase.removeChannel(channel); } catch { /* ignore */ }
     }
-    set({ unreadCount: 0, currentUserId: null, channel: null });
+    set({ unreadCount: 0, currentUserId: null, channel: null, latestAgentMilestone: null });
   },
 }));

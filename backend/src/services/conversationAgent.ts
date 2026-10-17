@@ -5,6 +5,7 @@ import { pushService } from './pushService';
 import { agentReachAdapter, normalizePublicAuthorName, ReachResult } from './agentReachAdapter';
 import { isPersonalProvider, normalizeSelectedPlatforms } from './platformIdentity';
 import { mapWithConcurrency } from '../utils/asyncConcurrency';
+import { requestAgentExtension } from './selfExtendingAgentSystem';
 
 export type StrategyGoal = 'SALESMAN' | 'AWARENESS' | 'PROMOTION' | 'LAUNCH';
 
@@ -558,7 +559,29 @@ GOAL: ${goal}`;
     }
     this.runningStrategies.add(strategy.id);
     try {
-      return await this.graph.invoke({ strategy, product: normalizeOfferContext({}), signals: [], identified: 0, highPotential: 0, engaged: 0, routed: 0 }) as any;
+      const result = await this.graph.invoke({ strategy, product: normalizeOfferContext({}), signals: [], identified: 0, highPotential: 0, engaged: 0, routed: 0 }) as any;
+      if (strategy.user_id) {
+        requestAgentExtension({
+          userId: strategy.user_id,
+          agentType: 'CONVERSATION',
+          workKind: 'conversation_discovery_completed',
+          objective: 'Review this conversation-discovery result for a focused research task or reusable conversation-analysis tool.',
+          originType: 'strategy_conversation_run',
+          originId: strategy.id,
+          strategyId: strategy.id,
+          context: {
+            strategy_title: strategy.title,
+            goal: strategy.goal,
+            counts: {
+              identified: result.identified,
+              high_potential: result.highPotential,
+              engaged: result.engaged,
+              routed: result.routed,
+            },
+          },
+        });
+      }
+      return result;
     } finally {
       this.runningStrategies.delete(strategy.id);
     }
@@ -570,7 +593,29 @@ GOAL: ${goal}`;
     }
     this.runningStrategies.add(strategy.id);
     try {
-      return await this.graph.invoke({ strategy, product: normalizeOfferContext({}), signals: [], identified: 0, highPotential: 0, engaged: 0, routed: 0 }) as any;
+      const result = await this.graph.invoke({ strategy, product: normalizeOfferContext({}), signals: [], identified: 0, highPotential: 0, engaged: 0, routed: 0 }) as any;
+      if (strategy.user_id) {
+        requestAgentExtension({
+          userId: strategy.user_id,
+          agentType: 'CONVERSATION',
+          workKind: 'conversation_discovery_completed',
+          objective: 'Review this on-demand conversation-discovery result for a focused follow-up or reusable conversation-analysis tool.',
+          originType: 'strategy_conversation_run',
+          originId: strategy.id,
+          strategyId: strategy.id,
+          context: {
+            strategy_title: strategy.title,
+            goal: strategy.goal,
+            counts: {
+              identified: result.identified,
+              high_potential: result.highPotential,
+              engaged: result.engaged,
+              routed: result.routed,
+            },
+          },
+        });
+      }
+      return result;
     } finally {
       this.runningStrategies.delete(strategy.id);
     }

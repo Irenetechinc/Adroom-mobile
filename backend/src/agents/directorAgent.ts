@@ -2,6 +2,7 @@ import { AIEngine } from '../config/ai-models';
 import { getServiceSupabaseClient } from '../config/supabase';
 import { PsychologistEngine } from '../services/psychologistEngine';
 import { resolveIntelligenceFreshness } from '../services/intelligenceFreshness';
+import { requestAgentExtension } from '../services/selfExtendingAgentSystem';
 import crypto from 'crypto';
 
 export interface VisualDirection {
@@ -258,6 +259,28 @@ OUTPUT JSON:
     console.log(
       `[Director] Direction ready for user ${params.userId}: mood="${direction.visual_mood}" | tone="${direction.emotional_tone}" | use_user_video=${direction.should_use_user_video}`
     );
+
+    requestAgentExtension({
+      userId: params.userId,
+      agentType: 'DIRECTOR',
+      workKind: 'visual_direction_created',
+      objective: 'Review the completed visual direction for a valuable independent follow-up or a reusable design-analysis tool.',
+      originType: 'director_profile',
+      originId: savedProfile?.id || params.strategyId || params.productId || null,
+      strategyId: params.strategyId,
+      context: {
+        product: { name: productName, category: params.product?.category },
+        platform: params.platform,
+        campaign_goal: params.goal,
+        direction: {
+          visual_mood: direction.visual_mood,
+          composition_style: direction.composition_style,
+          emotional_tone: direction.emotional_tone,
+          platform_adaptations: direction.platform_adaptations,
+        },
+        intelligence_freshness: intelligenceFreshness,
+      },
+    });
 
     return direction;
   }

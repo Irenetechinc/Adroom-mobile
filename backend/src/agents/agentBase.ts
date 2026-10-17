@@ -8,6 +8,7 @@ import {
     normalizePublicTelegramChannel,
     supportsPublicPostsForDestination,
 } from '../services/platformIdentity';
+import { requestAgentExtension } from '../services/selfExtendingAgentSystem';
 
 export interface AgentTokens {
     facebook?: { access_token: string; page_id: string };
@@ -1083,7 +1084,7 @@ Return STRICT JSON only (no markdown, no explanation):
         }
         const { data: task } = await this.supabase
             .from('agent_tasks')
-            .select('strategy_id, user_id')
+            .select('strategy_id, user_id, task_type, platform, content')
             .eq('id', taskId)
             .maybeSingle();
         const { error } = await this.supabase.from('agent_tasks').update({
@@ -1092,6 +1093,34 @@ Return STRICT JSON only (no markdown, no explanation):
             result,
         }).eq('id', taskId);
         if (error) throw new Error(`Failed to complete task: ${error.message}`);
+
+        if (task?.user_id) {
+            requestAgentExtension({
+                userId: task.user_id,
+                agentType: this.agentType,
+                workKind: 'campaign_task_completed',
+                objective: `Review the completed ${task.task_type || 'campaign'} action and identify any useful independent follow-up analysis or reusable capability.`,
+                originType: 'agent_task',
+                originId: taskId,
+                strategyId: task.strategy_id || undefined,
+                context: {
+                    task_type: task.task_type,
+                    platform: task.platform,
+                    strategy_id: task.strategy_id,
+                    content: {
+                        headline: task.content?.headline,
+                        body: task.content?.body,
+                    },
+                    result: {
+                        platform: result.platform,
+                        published_at: result.published_at,
+                        reach: result.reach,
+                        engagement: result.engagement,
+                        metrics: result.metrics,
+                    },
+                },
+            });
+        }
 
         const skillName = result.skill_name || result.learned_skill_name;
         if (skillName) {

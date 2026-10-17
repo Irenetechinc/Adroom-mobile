@@ -36,6 +36,10 @@ const requiredTables = [
   'scheduler_cursors',
   'cloudflare_ai_provider_settings',
   'cloudflare_ai_daily_usage',
+  'agent_subagent_runs',
+  'agent_dynamic_tools',
+  'agent_dynamic_tool_runs',
+  'agent_extension_audit_log',
 ];
 
 const requiredColumns: Record<string, string[]> = {
@@ -78,6 +82,21 @@ const requiredColumns: Record<string, string[]> = {
   agent_tasks: ['action_type', 'selected_account_id', 'recipient_id', 'conversation_id', 'media'],
   scheduler_cursors: ['cursor_name', 'cursor_value', 'updated_at'],
   email_oauth_states: ['state', 'user_id', 'email', 'expires_at'],
+  agent_subagent_runs: [
+    'user_id', 'parent_run_id', 'root_run_id', 'agent_type', 'task_name', 'purpose',
+    'scope', 'completion_criteria', 'request_fingerprint', 'strategy_id', 'status', 'result',
+    'termination_reason', 'credits_charged',
+  ],
+  agent_dynamic_tools: [
+    'user_id', 'owner_agent_type', 'tool_name', 'input_schema', 'output_schema',
+    'implementation', 'dependency_names', 'granted_to_agent_types', 'version',
+    'previous_version_id', 'signature', 'status', 'test_results',
+  ],
+  agent_dynamic_tool_runs: [
+    'user_id', 'tool_id', 'tool_version', 'agent_type', 'status', 'input_hash',
+    'output', 'credits_charged',
+  ],
+  agent_extension_audit_log: ['user_id', 'actor_agent_type', 'event_type', 'details', 'created_at'],
 };
 
 async function main(): Promise<void> {
@@ -127,10 +146,10 @@ async function main(): Promise<void> {
        JOIN pg_class c ON c.oid = pr.prrelid
        JOIN pg_namespace n ON n.oid = c.relnamespace
        WHERE p.pubname = 'supabase_realtime' AND n.nspname = 'public'
-          AND c.relname = ANY($1)`,
-      [['agent_tasks', 'agent_leads', 'lead_dm_messages', 'strategies', 'strategy_conversation_runs', 'strategy_conversation_signals', 'agent_deals', 'lead_profile_builder_runs', 'lead_sales_profiles', 'call_campaigns', 'call_campaign_contacts', 'call_logs']],
+       AND c.relname = ANY($1)`,
+      [['agent_tasks', 'agent_leads', 'lead_dm_messages', 'strategies', 'strategy_conversation_runs', 'strategy_conversation_signals', 'agent_deals', 'lead_profile_builder_runs', 'lead_sales_profiles', 'call_campaigns', 'call_campaign_contacts', 'call_logs', 'user_notifications']],
     );
-    const realtimeRequired = ['agent_tasks', 'agent_leads', 'lead_dm_messages', 'strategies', 'strategy_conversation_runs', 'strategy_conversation_signals', 'agent_deals', 'lead_profile_builder_runs', 'lead_sales_profiles', 'call_campaigns', 'call_campaign_contacts', 'call_logs'];
+    const realtimeRequired = ['agent_tasks', 'agent_leads', 'lead_dm_messages', 'strategies', 'strategy_conversation_runs', 'strategy_conversation_signals', 'agent_deals', 'lead_profile_builder_runs', 'lead_sales_profiles', 'call_campaigns', 'call_campaign_contacts', 'call_logs', 'user_notifications'];
     const realtimeTables = new Set(publicationResult.rows.map((row: { table_name: string }) => row.table_name));
     const missingRealtimeTables = realtimeRequired.filter((table) => !realtimeTables.has(table));
 

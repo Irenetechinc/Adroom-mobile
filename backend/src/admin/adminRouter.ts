@@ -7,6 +7,7 @@ import { apmaAdminRouter } from '../apma/apmaRouter';
 import { broadcast as _sseBroadcast, registerSSEClient, unregisterSSEClient } from '../events/sseBroadcast';
 import { runAPMAStartupMigration, checkAPMAMigrationStatus } from '../utils/apmaStartupMigration';
 import * as featureFlags from '../services/featureFlagService';
+import { AGENT_EXTENSION_DASHBOARD_HTML } from './agentExtensionDashboard';
 
 const router = Router();
 
@@ -912,6 +913,67 @@ router.post('/api/skills/:skillName/review', auth, async (req, res) => {
     res.json({ skill: data });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── SELF-EXTENDING AGENT SYSTEM ──────────────────────────────────────────────
+router.get('/agent-extension', (_req, res) => {
+  res.type('html').send(AGENT_EXTENSION_DASHBOARD_HTML);
+});
+
+router.get('/api/agent-extension/snapshot', auth, async (_req, res) => {
+  try {
+    const { selfExtendingAgentSystem } = await import('../services/selfExtendingAgentSystem');
+    res.json(await selfExtendingAgentSystem.getAdminSnapshot());
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.post('/api/agent-extension/runs/:runId/terminate', auth, async (req, res) => {
+  try {
+    const reason = String(req.body?.reason || 'Terminated by administrator');
+    const { selfExtendingAgentSystem } = await import('../services/selfExtendingAgentSystem');
+    const terminatedCount = await selfExtendingAgentSystem.terminateRunTree(req.params.runId, reason);
+    await logAction('agent_extension_subagent_terminated', null, null, {
+      run_id: req.params.runId,
+      terminated_count: terminatedCount,
+      reason,
+    });
+    res.json({ ok: true, terminated_count: terminatedCount });
+  } catch (err: any) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+router.post('/api/agent-extension/tools/:toolId/disable', auth, async (req, res) => {
+  try {
+    const reason = String(req.body?.reason || 'Disabled by administrator');
+    const { selfExtendingAgentSystem } = await import('../services/selfExtendingAgentSystem');
+    await selfExtendingAgentSystem.disableTool(req.params.toolId, reason);
+    await logAction('agent_extension_tool_disabled', null, null, {
+      tool_id: req.params.toolId,
+      reason,
+    });
+    res.json({ ok: true });
+  } catch (err: any) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+router.post('/api/agent-extension/tools/:toolId/rollback', auth, async (req, res) => {
+  try {
+    const versionId = String(req.body?.version_id || '');
+    if (!versionId) return res.status(400).json({ error: 'version_id is required' });
+    const { selfExtendingAgentSystem } = await import('../services/selfExtendingAgentSystem');
+    await selfExtendingAgentSystem.rollbackTool(req.params.toolId, versionId);
+    await logAction('agent_extension_tool_rollback', null, null, {
+      tool_id: req.params.toolId,
+      restored_version_id: versionId,
+    });
+    res.json({ ok: true });
+  } catch (err: any) {
+    res.status(400).json({ error: err.message });
   }
 });
 

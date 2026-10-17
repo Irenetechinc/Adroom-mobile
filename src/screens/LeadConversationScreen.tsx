@@ -23,6 +23,7 @@ import {
 import { supabase } from '../services/supabase';
 import { useAuthStore } from '../store/authStore';
 import { OutreachService } from '../services/outreach';
+import { AgentMilestoneBanner } from '../components/AgentMilestoneBanner';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 interface DmMessage {
@@ -242,6 +243,7 @@ export default function LeadConversationScreen() {
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
+      <AgentMilestoneBanner />
       {/* ── Header ── */}
       <Animated.View entering={FadeInDown.delay(0).springify()} style={styles.header}>
         <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>

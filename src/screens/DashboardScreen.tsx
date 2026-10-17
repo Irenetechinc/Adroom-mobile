@@ -20,6 +20,7 @@ import {
 } from 'lucide-react-native';
 import { useEnergyStore, PLAN_DETAILS } from '../store/energyStore';
 import useFeatureFlags from '../hooks/useFeatureFlags';
+import { AgentMilestoneBanner } from '../components/AgentMilestoneBanner';
 
 // ─── Performance Chart Component ─────────────────────────────────────────────
 interface PerfRow {
@@ -678,6 +679,7 @@ export default function DashboardScreen() {
     <>
     {isEnabled('trial_modal') && <TrialPromoModal onStartTrial={(planId) => navigation.navigate('Subscription', { autoStartTrial: planId })} />}
     <SafeAreaView style={styles.safe} edges={['top']}>
+      <AgentMilestoneBanner />
       <View style={styles.header}>
         <TouchableOpacity onPress={() => navigation.dispatch(DrawerActions.openDrawer())} style={styles.menuBtn}>
           <Menu color="#E2E8F0" size={22} />

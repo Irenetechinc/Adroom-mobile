@@ -6616,4 +6616,7 @@ app.listen(PORT, async () => {
   // Start all background intelligence + agent execution loops
   const scheduler = new SchedulerService();
   scheduler.start();
+  void import('./services/selfExtendingAgentSystem')
+    .then(({ selfExtendingAgentSystem }) => selfExtendingAgentSystem.startWorker())
+    .catch((error: any) => console.warn('[Adirum Agent Extension] Worker did not start:', error.message));
 });

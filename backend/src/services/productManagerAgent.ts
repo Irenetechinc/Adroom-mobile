@@ -17,6 +17,7 @@ import { AIEngine } from '../config/ai-models';
 import { getServiceSupabaseClient } from '../config/supabase';
 import { pushService } from './pushService';
 import { dynamicProblemSolver } from './dynamicProblemSolver';
+import { requestAgentExtension } from './selfExtendingAgentSystem';
 
 export class ProductManagerAgent {
   private ai: AIEngine;
@@ -148,6 +149,23 @@ RULES:
         await this.autoImplement(userId, product, strategy, improvement, analysis.summary);
       }
     }
+    requestAgentExtension({
+      userId,
+      agentType: 'PRODUCT_MANAGER',
+      workKind: 'product_review_completed',
+      objective: 'Review the product improvements and their live evidence for a focused follow-up or reusable product-analysis tool.',
+      originType: 'product_review',
+      originId: strategy.id,
+      strategyId: strategy.id,
+      context: {
+        product: { id: product.product_id, name: product.name, category: product.category },
+        summary: analysis.summary,
+        improvement_types: analysis.improvements.map((improvement: any) => improvement.type),
+        performance: {
+          signal_count: performance.signalCount,
+        },
+      },
+    });
   }
 
   /**

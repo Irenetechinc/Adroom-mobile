@@ -6,6 +6,7 @@ import * as featureFlags from './featureFlagService';
 import { pushService } from './pushService';
 import { PsychologistEngine, type LeadPsychologyProfile } from './psychologistEngine';
 import { type PublicProfileTool } from './publicProfileToolAdapters';
+import { requestAgentExtension } from './selfExtendingAgentSystem';
 
 type BuilderStatus =
   | 'queued'
@@ -552,6 +553,33 @@ export class LeadProfileBuilder {
         runId: run.id,
         evidenceCount: result.evidenceCount,
         durationMs: Date.now() - startedAt,
+      });
+      requestAgentExtension({
+        userId,
+        agentType: 'PROFILE_BUILDER',
+        workKind: 'public_lead_profile_completed',
+        objective: 'Review the completed public-evidence lead profile for useful follow-up analysis or a reusable profile-processing capability.',
+        originType: 'lead_profile',
+        originId: leadId,
+        context: {
+          lead_id: leadId,
+          evidence_count: result.evidenceCount,
+          confidence: result.confidence,
+          tools_attempted: result.toolsAttempted,
+          psychology_fallback: psychologyFallback,
+          public_evidence: result.evidence.slice(0, 12).map((item: any) => ({
+            source: item.source,
+            platform: item.platform,
+            excerpt: item.content || item.text,
+          })),
+          profile_insights: {
+            needs: result.statedNeeds,
+            pain_points: result.observedPainPoints,
+            buying_signals: result.buyingSignals,
+            blockers: result.decisionBlockers,
+            topics: result.preferredTopics,
+          },
+        },
       });
       return result;
     } catch (error: any) {

@@ -13,6 +13,7 @@
     "test:flutterwave-encryption": "npm run build && node dist/services/flutterwaveService.test.js",
     "test:cloudflare": "npm run build && node dist/services/cloudflareWorkersAi.test.js",
     "test:public-profile": "npm run build && node dist/services/publicProfileToolAdapters.test.js && node dist/leadProfileBuilderMigration.test.js",
+    "test:self-extension": "npm run build && node dist/services/agentToolSandbox.test.js",
     "smoke:production": "npm run build && node dist/productionSmoke.js",
     "check:migrations": "npm run build && node dist/productionMigrationCheck.js",
     "start": "node dist/server.js",
