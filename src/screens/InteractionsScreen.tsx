@@ -4,7 +4,7 @@ import {
   ActivityIndicator, RefreshControl, StyleSheet, ScrollView, Platform,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useNavigation } from '@react-navigation/native';
+import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { DrawerActions } from '@react-navigation/native';
 import {
   Menu, MessageSquare, Heart, CornerDownRight, ThumbsUp, Edit3,
@@ -618,10 +618,14 @@ export default function InteractionsScreen() {
       const profileByLead = new Map<string, any>(
         (profiles || []).map((row: any) => [String(row.lead_id), row.profile]),
       );
-      setLeads(rows.map((lead) => ({
+      const updatedLeads = rows.map((lead) => ({
         ...lead,
         profile: profileByLead.get(lead.id),
-      })));
+      }));
+      setLeads(updatedLeads);
+      setSelectedLead((current) => current
+        ? updatedLeads.find((lead) => lead.id === current.id) || current
+        : current);
     } catch (e) {
       console.error('[Interactions] Load leads error:', e);
     } finally {
@@ -640,7 +644,7 @@ export default function InteractionsScreen() {
         supabase.from('lead_dm_messages')
           .select('id, direction, message, persona_name, sequence_step, sent_at, meta')
           .eq('lead_id', lead.id)
-          .order('sent_at', { ascending: true })
+          .order('sent_at', { ascending: false })
           .limit(100),
         supabase.from('agent_tasks')
           .select('id, scheduled_at, task_type, content')
@@ -652,7 +656,7 @@ export default function InteractionsScreen() {
           .order('scheduled_at', { ascending: true })
           .limit(3),
       ]);
-      setLeadMessages((msgRes.data as DmMessage[]) || []);
+      setLeadMessages(((msgRes.data as DmMessage[]) || []).reverse());
       setScheduledTasks((taskRes.data as ScheduledTask[]) || []);
     } catch (e) {
       console.error('[Interactions] Load lead messages error:', e);
@@ -737,13 +741,17 @@ export default function InteractionsScreen() {
   }, [user, loadInteractions, loadLeads, loadLeadMessages]);
 
   useEffect(() => {
-    loadInteractions();
-    loadLeads();
     subscribeRealtime();
     return () => {
       if (channelRef.current) supabase.removeChannel(channelRef.current);
     };
-  }, [loadInteractions, loadLeads, subscribeRealtime]);
+  }, [subscribeRealtime]);
+
+  useFocusEffect(useCallback(() => {
+    void loadInteractions();
+    void loadLeads();
+    if (selectedLeadRef.current) void loadLeadMessages(selectedLeadRef.current);
+  }, [loadInteractions, loadLeads, loadLeadMessages]));
 
   const onRefresh = () => { setRefreshing(true); loadInteractions(); };
   const onLeadsRefresh = () => { setLeadsRefreshing(true); loadLeads(); };

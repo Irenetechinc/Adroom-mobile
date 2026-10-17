@@ -635,13 +635,21 @@ function ConversionTrackerPanel({
     try {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
-      const { data, error: qErr } = await supabase
-        .from('agent_leads')
-        .select('platform, stage')
-        .eq('strategy_id', strategyId)
-        .eq('user_id', user.id);
-      if (qErr) throw qErr;
-      const leadRows = data ?? [];
+      const pageSize = 1000;
+      const leadRows: { platform: string; stage: string }[] = [];
+      for (let offset = 0; ; offset += pageSize) {
+        const { data, error: qErr } = await supabase
+          .from('agent_leads')
+          .select('id, platform, stage')
+          .eq('strategy_id', strategyId)
+          .eq('user_id', user.id)
+          .order('id', { ascending: true })
+          .range(offset, offset + pageSize - 1);
+        if (qErr) throw qErr;
+        const page = data ?? [];
+        leadRows.push(...page);
+        if (page.length < pageSize) break;
+      }
       if (leadRows.length > 0) {
         processLeads(leadRows);
       } else if (BACKEND_URL) {
@@ -874,14 +882,26 @@ export default function StrategyHistoryScreen() {
     if (!strategyIds.length) return;
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
-    const { data } = await supabase
-      .from('agent_leads')
-      .select('strategy_id, stage')
-      .eq('user_id', user.id)
-      .in('strategy_id', strategyIds);
-    if (!data) return;
+    const pageSize = 1000;
+    const leadRows: { strategy_id: string | null; stage: string | null }[] = [];
+    for (let offset = 0; ; offset += pageSize) {
+      const { data, error } = await supabase
+        .from('agent_leads')
+        .select('id, strategy_id, stage')
+        .eq('user_id', user.id)
+        .in('strategy_id', strategyIds)
+        .order('id', { ascending: true })
+        .range(offset, offset + pageSize - 1);
+      if (error) {
+        console.error('[StrategyHistory] Could not load lead counts:', error);
+        return;
+      }
+      const page = data ?? [];
+      leadRows.push(...page);
+      if (page.length < pageSize) break;
+    }
     const counts: Record<string, number> = {};
-    for (const row of data) {
+    for (const row of leadRows) {
       const sid = row.strategy_id;
       if (!sid) continue;
       if (FUNNEL_MAP[(row.stage ?? '').toLowerCase()]) {

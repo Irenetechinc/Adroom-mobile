@@ -7,7 +7,7 @@ import { useAuthStore } from '../store/authStore';
 import { useProfileStore } from '../store/profileStore';
 import {
   Bot, LayoutDashboard, Settings, LogOut, X, History,
-  ChevronRight, Users, MessageSquare, Zap, Target,
+  ChevronRight, Users, MessageSquare, Zap, Target, Megaphone, Truck,
 } from 'lucide-react-native';
 import Animated, { FadeInLeft } from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -17,6 +17,8 @@ const menuItems = [
   { label: 'Dashboard', icon: LayoutDashboard, route: 'Dashboard', description: 'Performance Overview' },
   { label: 'Strategy History', icon: History, route: 'StrategyHistory', description: 'Past Strategies' },
   { label: 'Interactions', icon: MessageSquare, route: 'Interactions', description: 'Real-time Comments & Messages' },
+  { label: 'Autonomous Calls', icon: Megaphone, route: 'CallCampaigns', description: 'Consent-based Call Campaigns', rootRoute: true },
+  { label: 'Orders & Shipping', icon: Truck, route: 'Shipments', description: 'Physical Order Dispatch', rootRoute: true },
   { label: 'Community', icon: Users, route: 'Community', description: 'Adirum AI Global Network' },
   { label: 'Settings', icon: Settings, route: 'Settings', description: 'App Preferences' },
 ];
@@ -92,7 +94,14 @@ export default function SideMenu(props: DrawerContentComponentProps) {
             return (
               <Animated.View key={item.route} entering={FadeInLeft.delay(index * 60).springify()}>
                 <TouchableOpacity
-                  onPress={() => props.navigation.navigate(item.route)}
+                  onPress={() => {
+                    if (item.rootRoute) {
+                      props.navigation.closeDrawer();
+                      navigation.navigate(item.route);
+                    } else {
+                      props.navigation.navigate(item.route);
+                    }
+                  }}
                   style={{
                     flexDirection: 'row', alignItems: 'center',
                     paddingHorizontal: 14, paddingVertical: 13,
