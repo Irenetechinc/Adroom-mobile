@@ -36,7 +36,7 @@ export class PublicDataCollectionService {
     const analysis = await this.ai.generateJson(`Analyze these public excerpts for purchase intent about ${product.name}.
 Return JSON array only with {"index": number, "intent_score": number, "buying_signals": string[]}.
 Do not identify, infer, or enrich private personal information.
-EXCERPTS: ${JSON.stringify(mentions)}`);
+EXCERPTS: ${JSON.stringify(mentions)}`, { modelRole: 'complex' });
     const results = Array.isArray(analysis) ? analysis : [];
     const rows = mentions.map((mention, index) => {
       const item = results.find((entry: any) => Number(entry?.index) === index) || {};

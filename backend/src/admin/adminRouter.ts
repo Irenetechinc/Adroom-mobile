@@ -1029,7 +1029,7 @@ router.post('/api/critic/auto-improve/:agentType', auth, async (req, res) => {
 // ─── MODEL OVERRIDE: STATUS ────────────────────────────────────────────────────
 router.get('/api/models/status', auth, async (_req, res) => {
   try {
-    const { getModelOverride } = await import('../config/ai-models');
+    const { AI_MODEL_ASSIGNMENTS, getAIProviderStatus, getModelOverride } = await import('../config/ai-models');
     const override = getModelOverride();
     const sb = getServiceSupabaseClient();
     const { data: cmaStats } = await sb
@@ -1049,24 +1049,34 @@ router.get('/api/models/status', auth, async (_req, res) => {
       override: { ...override, mode: persistedMode, reason: policy?.reason || override.reason, setAt: policy?.updated_at || override.setAt },
       policy: persistedMode,
       quota: { requests: quota?.request_count ?? 0, requestLimit: 500, tokens: quota?.token_count ?? 0, tokenLimit: 1000000, updatedAt: quota?.updated_at ?? null },
+      providerHealth: getAIProviderStatus(),
       cma: {
         systemBurnRate:        (cmaStats as any)?.system_burn_rate ?? null,
         dynamicEconomyActive:  (cmaStats as any)?.dynamic_economy_active ?? false,
       },
       models: {
         premium:  process.env.OPENAI_TEXT_MODEL || 'gpt-4o',
-        economy:  'gemini-2.0-flash',
-        freeText: 'gpt-4.1-free',
-        freeSmallTask: 'gpt-4.1-nano-free',
-        freeVision: 'gemini-3.1-flash-image-preview-free',
-        freeImage: 'gemini-3.1-flash-image-preview-free',
+        economy:  AI_MODEL_ASSIGNMENTS.general,
+        general: AI_MODEL_ASSIGNMENTS.general,
+        complex: AI_MODEL_ASSIGNMENTS.complex,
+        profile: AI_MODEL_ASSIGNMENTS.profile,
+        coordinator: AI_MODEL_ASSIGNMENTS.coordinator,
+        freeText: AI_MODEL_ASSIGNMENTS.general,
+        freeSmallTask: AI_MODEL_ASSIGNMENTS.general,
+        freeVision: AI_MODEL_ASSIGNMENTS.profile,
+        freeFallbackText: 'gpt-4.1-free',
+        freeFallbackSmallTask: 'gpt-4.1-nano-free',
+        freeFallbackVision: 'gemini-3.1-flash-image-preview-free',
+        freeImage: 'black-forest-labs/FLUX.1-dev',
+        freeFallbackImage: 'gemini-3.7-flash-free',
+        freeVideo: 'larryvrh/MiniMax-H3-Turbo-Lora',
       },
       description: {
         auto:    'CMA decides per-user based on subscription tier and burn rate',
-        economy: 'All AI operations routed to Gemini Flash (cheaper, faster)',
+        economy: 'Free-mode providers are tried in order, including configured NVIDIA and eligible Cloudflare/free endpoints',
         premium: 'All AI operations routed to GPT-4o (highest quality)',
         tiered:  'Trial users use free models; active subscribers use paid models',
-        free:    'All users use free models; web search and AI video generation are disabled',
+        free:    'All users use free routes first; configured Runway may be used for video failover and may incur charges',
         paid:    'All users use the configured paid models',
       },
     });
@@ -2498,6 +2508,7 @@ label{font-size:11px;color:var(--text2);font-weight:600}
             <button class="btn btn-primary btn-sm" onclick="saveModelPolicy()">Apply Policy</button>
           </div>
           <div id="model-policy-quota" style="font-size:11px;color:#94A3B8;margin-top:10px">Free quota: loading…</div>
+          <div id="model-provider-health" style="font-size:11px;color:#94A3B8;margin-top:8px">AI provider health: loading…</div>
           <div style="margin-top:18px;padding-top:16px;border-top:1px solid #1E293B">
             <div style="font-size:14px;font-weight:700;color:#E2E8F0">Cloudflare Workers AI</div>
             <div style="font-size:11px;color:#64748B;margin:4px 0 12px">Admin-only provider controls and estimated daily usage. Account usage resets at 00:00 UTC.</div>
@@ -3792,7 +3803,11 @@ async function loadCMAStats() {
   }
 }
 
+let modelPolicyLoading = false;
+
 async function loadModelPolicy() {
+  if (modelPolicyLoading) return;
+  modelPolicyLoading = true;
   try {
     const d = await api('GET', '/api/models/status');
     const mode = ['free', 'paid', 'tiered'].includes(d.policy) ? d.policy : 'tiered';
@@ -3802,9 +3817,27 @@ async function loadModelPolicy() {
     if (status) status.textContent = 'Active: ' + mode;
     const quota = document.getElementById('model-policy-quota');
     if (quota) quota.textContent = 'Free quota today: ' + (d.quota?.requests || 0).toLocaleString() + ' / ' + (d.quota?.requestLimit || 500).toLocaleString() + ' requests · ' + (d.quota?.tokens || 0).toLocaleString() + ' / ' + (d.quota?.tokenLimit || 1000000).toLocaleString() + ' tokens';
+    const providerHealth = document.getElementById('model-provider-health');
+    if (providerHealth) {
+      const providers = Array.isArray(d.providerHealth) ? d.providerHealth : [];
+      providerHealth.textContent = providers.length
+        ? 'AI provider health (this Railway process): ' + providers.map(p => {
+          const code = p.lastStatusCode ? ' HTTP ' + p.lastStatusCode : '';
+          const retry = p.nextRetryAt ? '; retry after ' + new Date(p.nextRetryAt).toLocaleTimeString() : '';
+          const error = p.lastError ? '; ' + p.lastError : '';
+          return p.provider + '/' + p.task + ': ' + p.healthStatus + code +
+            ' (' + p.requestsToday + ' requests, ' + p.successesToday + ' successful)' + retry + error;
+        }).join(' · ')
+        : 'AI provider health unavailable';
+      providerHealth.style.color = providers.some(p => ['busy', 'exhausted', 'unhealthy', 'degraded'].includes(p.healthStatus))
+        ? '#F59E0B'
+        : '#94A3B8';
+    }
   } catch (e) {
     const status = document.getElementById('model-policy-status');
     if (status) status.textContent = 'Unavailable';
+  } finally {
+    modelPolicyLoading = false;
   }
 }
 
@@ -3894,7 +3927,10 @@ async function saveCloudflareSettings() {
 
 function startCloudflarePolling() {
   stopCloudflarePolling();
-  cloudflarePoller = setInterval(loadCloudflareStatus, 10000);
+  cloudflarePoller = setInterval(() => {
+    loadCloudflareStatus();
+    loadModelPolicy();
+  }, 10000);
 }
 
 function stopCloudflarePolling() {

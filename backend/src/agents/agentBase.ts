@@ -352,7 +352,7 @@ Return STRICT JSON only (no markdown, no explanation):
   "cta": "Clear call to action"
 }
 `;
-        const response = await this.ai.generateStrategy({}, prompt);
+        const response = await this.ai.generateStrategy({}, prompt, { modelRole: 'complex' });
         const content = response.parsedJson || {
             headline: 'Check this out',
             body: params.context,
@@ -1189,7 +1189,7 @@ Return JSON — all fields must be prose descriptions, NOT templates with placeh
   "what_to_produce": "Describe in prose what the AI Brain should output when using this skill — e.g. a direct sales reply, a content post, an analysis report",
   "success_metric": "How to measure whether the skill execution was successful"
 }`;
-        const response = await this.ai.generateStrategy({}, prompt);
+        const response = await this.ai.generateStrategy({}, prompt, { modelRole: 'complex' });
         const skill = (response?.parsedJson && typeof response.parsedJson === 'object')
             ? response.parsedJson
             : parseStructuredJson(response?.text);
@@ -1240,7 +1240,7 @@ ${Object.entries(variables).map(([k, v]) => `${k}: ${typeof v === 'object' ? JSO
 
 Based only on the skill description and the live data above, produce the output now. Write a response that directly executes the skill goal. Be specific, use the live data, and produce immediately actionable output. Do not reference the skill name or description in your response.`;
 
-        const response = await this.ai.generateStrategy({}, freshPromptBuilder);
+        const response = await this.ai.generateStrategy({}, freshPromptBuilder, { modelRole: 'complex' });
         await this.supabase.from('agent_skills').update({ used_count: (skill.used_count || 0) + 1, last_used_at: new Date().toISOString() }).eq('skill_name', skillName);
         return response.parsedJson || response.text;
     }
@@ -1524,7 +1524,7 @@ For PROMOTION goal: create mild urgency, mention offer if relevant.
 For LAUNCH goal: build excitement, exclusive energy.
 
 Return ONLY the reply text, nothing else.
-`);
+`, { modelRole: 'complex' });
             const replyText = result.text?.trim().replace(/^"|"$/g, '').substring(0, 120) || null;
 
             if (!replyText) return null;
@@ -1678,7 +1678,7 @@ Only include comments that should be replied to.`;
 
         let replyPlan: any[] = [];
         try {
-            const aiResult = await this.ai.generateStrategy({}, classifyPrompt);
+            const aiResult = await this.ai.generateStrategy({}, classifyPrompt, { modelRole: 'complex' });
             replyPlan = aiResult.parsedJson?.replies || [];
 
             // Critic: evaluate the reply plan batch as a whole (fire-and-forget)
@@ -2091,7 +2091,7 @@ Return JSON ONLY:
   "confidence": 0.0
 }
 `;
-            const response = await this.ai.generateStrategy({}, prompt);
+            const response = await this.ai.generateStrategy({}, prompt, { modelRole: 'complex' });
             const learning = response.parsedJson;
 
             if (!learning?.skill_name || (learning.confidence || 0) < 0.4) {

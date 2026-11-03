@@ -8,6 +8,7 @@ import {
   generateCloudflareImage,
   generateCloudflareText,
   getCloudflareProviderSettings,
+  isCloudflareConfigured,
 } from '../services/cloudflareWorkersAi';
 import {
   aiProviderIsAvailable,
@@ -198,20 +199,22 @@ async function reserveFreeQuota(estimatedTokens: number) {
   return reservation;
 }
 
-function aiProviderStatus() {
+export function getAIProviderStatus() {
   const freeKeys = [
     process.env.FREE_MODELS_API,
     ...Array.from({ length: 20 }, (_, index) => process.env[`FREE_MODELS_API_${index + 1}`]),
   ];
   return getAIProviderHealth([
     { provider: 'nvidia', task: 'text', configured: Boolean(process.env.NVIDIA_API) },
+    { provider: 'nvidia', task: 'image', configured: Boolean(process.env.NVIDIA_API) },
     { provider: 'huggingface', task: 'image', configured: isHuggingFaceConfigured() },
     { provider: 'huggingface', task: 'video', configured: isHuggingFaceConfigured() },
-    { provider: 'cloudflare_workers_ai', task: 'text', configured: Boolean(process.env.CLOUDFLARE_ACCOUNT_ID && process.env.CLOUDFLARE_API_TOKEN) },
-    { provider: 'cloudflare_workers_ai', task: 'image', configured: Boolean(process.env.CLOUDFLARE_ACCOUNT_ID && process.env.CLOUDFLARE_API_TOKEN) },
+    { provider: 'cloudflare_workers_ai', task: 'text', configured: isCloudflareConfigured('text') },
+    { provider: 'cloudflare_workers_ai', task: 'image', configured: isCloudflareConfigured('image') },
     { provider: 'free_models', task: 'text', configured: freeKeys.some(Boolean) },
     { provider: 'free_models', task: 'image', configured: freeKeys.some(Boolean) },
     { provider: 'openai', task: 'text', configured: Boolean(process.env.OPENAI_API_KEY) },
+    { provider: 'openai', task: 'image', configured: Boolean(process.env.OPENAI_API_KEY) },
     { provider: 'gemini', task: 'text', configured: Boolean(process.env.GEMINI_API_KEY) },
     { provider: 'gemini', task: 'image', configured: Boolean(process.env.GEMINI_API_KEY) },
     { provider: 'runway', task: 'video', configured: Boolean(process.env.RUNWAY_API_KEY) },
@@ -314,6 +317,8 @@ async function freeChat(params: any, role: AIModelRole = 'general') {
         status: error?.status || error?.statusCode || error?.response?.status || 'unknown',
       });
     }
+  } else if (String(process.env.NVIDIA_API || '').trim()) {
+    lastError = new Error('NVIDIA provider is cooling down after a recent failure.');
   }
 
   if (await shouldRouteToCloudflare()) {
@@ -649,10 +654,10 @@ export class AIEngine {
     // previous hardcoded model bypassed that route and returned a multipart
     // error from the provider.
     if (await useFreeModels()) {
-      return this.generateStrategyFree({}, prompt, 'general');
+      return this.generateStrategyFree({}, prompt, 'complex');
     }
 
-    return this.generateStrategyEconomy({}, prompt, 'general');
+    return this.generateStrategyEconomy({}, prompt, 'complex');
   }
 
   // Internal helper used when admin forces premium mode on economy calls
@@ -915,27 +920,26 @@ export class AIEngine {
       }
     }
 
-    // Free mode must not unexpectedly spend a paid Runway key. The configured
-    // Hugging Face provider is the free-mode text-to-video route.
-    if (freeMode) {
-      throw new Error(errors.length
-        ? `Video generation failed on Hugging Face: ${errors.map((error) => error?.message || 'provider error').join(' | ')}`
-        : imageBase64
-          ? 'Image-to-video is not supported by the configured free-mode video model.'
-          : 'Hugging Face video inference is not configured in free mode; set HF_TOKEN in Railway.');
+    if (freeMode && imageBase64) {
+      throw new Error('Image-to-video is not supported in free mode; the configured Hugging Face route supports text-to-video only.');
     }
 
     const key = String(process.env.RUNWAY_API_KEY || '').trim();
     if (!key) {
       throw new Error(errors.length
-        ? `Video generation failed on Hugging Face and no Runway provider is configured: ${errors.map((error) => error?.message || 'provider error').join(' | ')}`
-        : 'No video generation provider is configured.');
+        ? `Video generation failed on Hugging Face and no Runway fallback is configured: ${errors.map((error) => error?.message || 'provider error').join(' | ')}`
+        : freeMode
+          ? 'Hugging Face video inference is unavailable and no Runway fallback is configured; set HF_TOKEN or RUNWAY_API_KEY in Railway.'
+          : 'No video generation provider is configured.');
     }
     if (!aiProviderIsAvailable('runway', 'video')) {
       throw new Error('Runway video provider is cooling down after a recent failure.');
     }
 
     try {
+      if (freeMode) {
+        aiLog('RUNWAY-VIDEO', 'Using configured Runway fallback after the Hugging Face free route was unavailable; this may incur charges.');
+      }
       const body: Record<string, unknown> = {
         model: 'gen3a_turbo',
         promptText: promptText.slice(0, 512),

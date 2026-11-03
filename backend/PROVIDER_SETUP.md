@@ -18,6 +18,29 @@ Set backend values on the Railway backend service, not in the mobile app:
 
 For mobile authentication, also configure the app's public Supabase URL and anon key using its existing `EXPO_PUBLIC_` Supabase settings. Do not put the service-role key or any provider secret in mobile configuration. Enable the `calling_ui` and `shipping_ui` feature flags for the test user; subscription checks still apply to calling.
 
+## AI provider routing
+
+Set `NVIDIA_API` and `HF_TOKEN` as backend Railway secrets. NVIDIA uses
+`https://integrate.api.nvidia.com/v1`; the backend routes general text and
+conversation/web-research tasks to `nvidia/nemotron-3.5-lightning-30b-a3b`,
+complex strategy/sales/tool/multimodal work to
+`nvidia/nemotron-3.5-super-vl-120b-a12b`, profile and psychology builders to
+`deepseek-ai/deepseek-v4.1-flash`, and strategy coordination to
+`nvidia/nemotron-3-ultra-550b-a55b`. Hugging Face handles text-to-image with
+`black-forest-labs/FLUX.1-dev` and text-to-video with
+`larryvrh/MiniMax-H3-Turbo-Lora`.
+
+The admin CMA model policy controls tiered/free/paid routing. In free mode,
+configured NVIDIA is tried first, then eligible Cloudflare Workers AI and
+configured free-model routes; unsuccessful requests rotate to the next
+available route rather than being treated as completed. Text-to-video tries
+the configured Hugging Face model first and may use `RUNWAY_API_KEY` as a
+paid failover if Hugging Face is unavailable; this can incur charges. Image-
+to-video remains unavailable in free mode. Provider failures,
+HTTP status, daily quota exhaustion, and retry time are visible in the model
+policy status. These runtime health counters are process-local and reset when
+the Railway process restarts; service-side quota limits remain authoritative.
+
 ## Twilio autonomous calling
 
 Set these Railway variables on the backend service. The first two are required for calls:

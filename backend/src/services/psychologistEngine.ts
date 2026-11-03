@@ -291,7 +291,7 @@ Use only explicit evidence. Do not identify the person, infer health, race, reli
 precise location, income, or any other sensitive trait. Do not make eligibility or personality claims.
 Return JSON exactly:
 {"communicationStyle":"","conversationTopics":[],"helpfulSignals":[],"cautionSignals":[],"recommendedTone":"","confidence":0,"evidenceBasis":[]}
-PUBLIC PROFILE: ${JSON.stringify(publicProfile).slice(0, 16000)}`);
+PUBLIC PROFILE: ${JSON.stringify(publicProfile).slice(0, 16000)}`, { modelRole: 'profile' });
     if (!response || typeof response !== 'object') {
       throw new Error('Psychology engine returned no structured profile.');
     }

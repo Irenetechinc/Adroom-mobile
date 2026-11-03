@@ -122,8 +122,8 @@ export function recordAIProviderFailure(
   const statusCode = extractStatusCode(error);
   const message = extractMessage(error);
   const lowerMessage = message.toLowerCase();
-  const quotaError = (statusCode === 402 || statusCode === 429) &&
-    /daily|quota|credit|allocation|exhaust|billing|limit exceeded/.test(lowerMessage);
+  const quotaError = statusCode === 402 ||
+    (statusCode === 429 && /daily|quota|credit|allocation|exhaust|billing|limit exceeded/.test(lowerMessage));
   const authError = statusCode === 401 || statusCode === 403;
   const rateLimited = statusCode === 429 || statusCode === 503 || statusCode === 502 || statusCode === 504;
   const state = getState(provider, task, now);

@@ -710,7 +710,7 @@ or other sensitive traits. Prefer the user's selected platforms. Return JSON arr
 identifiers=${JSON.stringify(identifiers)}
 leadPlatform=${context.platform}
 selectedPlatforms=${JSON.stringify(context.selectedPlatforms)}
-allowedTools=${JSON.stringify(TOOL_NAMES)}`);
+allowedTools=${JSON.stringify(TOOL_NAMES)}`, { modelRole: 'profile' });
     } catch (error: any) {
       console.warn(`[LeadProfileBuilder] dynamic discovery planner unavailable: ${error.message}`);
     }
@@ -925,7 +925,7 @@ identifiers=${JSON.stringify(context.identifiers)}
 leadPlatform=${context.platform}
 selectedPlatforms=${JSON.stringify(context.selectedPlatforms)}
 attemptedTools=${JSON.stringify(attemptedTools)}
-allowedTools=${JSON.stringify(remainingTools)}`);
+allowedTools=${JSON.stringify(remainingTools)}`, { modelRole: 'profile' });
       const planned = Array.isArray(response) ? response.map((step: any) => ({
         tool: step.tool,
         platform: normalizePlatform(step.platform),
@@ -1040,7 +1040,7 @@ contain only explicitly named public accounts, organizations, or communities vis
  Return exactly {"displayName":"","bio":"","profilePictureUrl":"","interests":[],"publicConnections":[],"socialHandles":[{"platform":"","handle":"","url":"","source":""}]}.
 Known lead platform: ${context.platform}
 Known public username: ${context.platformUsername}
-EXCERPTS: ${JSON.stringify(evidence).slice(0, 14000)}`);
+EXCERPTS: ${JSON.stringify(evidence).slice(0, 14000)}`, { modelRole: 'profile' });
     } catch (error: any) {
       console.warn(`[LeadProfileBuilder] public identity extraction unavailable: ${error.message}`);
     }
@@ -1097,7 +1097,7 @@ Do not state guesses as facts. Use empty arrays when evidence is absent.
 Return JSON with exactly: communicationStyle, statedNeeds, observedPainPoints, buyingSignals, decisionBlockers, preferredTopics,
 observedTiming {"activeHours":[],"responsePattern":""}, recommendedTone, confidence.
 LEAD PLATFORM: ${context.platform}
-EVIDENCE: ${JSON.stringify(evidence).slice(0, 18000)}`);
+EVIDENCE: ${JSON.stringify(evidence).slice(0, 18000)}`, { modelRole: 'profile' });
     } catch (error: any) {
       console.warn(`[LeadProfileBuilder] sales profile generation unavailable: ${error.message}`);
       return null;
