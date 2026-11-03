@@ -104,7 +104,7 @@ Schema:
   ]
 }
 `;
-        const response = await this.ai.generateStrategy({}, planPrompt);
+        const response = await this.ai.generateStrategy({}, planPrompt, { modelRole: 'complex' });
         let plan: any = response.parsedJson;
 
         if (!plan?.daily_tasks?.length) {
@@ -129,7 +129,7 @@ Return valid JSON only with this schema:
   "daily_tasks": [{ "day": 1, "platform": "selected-platform-name", "task_type": "POST", "hour": 9, "minute": 0, "headline": "string", "body": "string", "image_prompt": "string", "hashtags": ["tag"], "cta": "string", "sales_tactic": "social_proof|urgency|benefit|demo|offer" }]
 }
 `;
-            const retry = await this.ai.generateStrategy({}, retryPrompt);
+            const retry = await this.ai.generateStrategy({}, retryPrompt, { modelRole: 'complex' });
             const retryPlan = retry.parsedJson;
             if (!retryPlan?.daily_tasks?.length) {
                 const fallbackTasks = this.buildDynamicFallbackTasks({
@@ -586,7 +586,7 @@ Do not claim private facts or invent a relationship. Address the public signal d
 ${emailChannel
     ? 'For email, write plain text under 80 words, use no more than one link, and include no link in this first email. Include a truthful 4-8 word subject that matches the message and strategy; do not use a fake reply prefix or clickbait. Return JSON: {"subject":"...","message":"..."}'
     : 'Return JSON: {"message":"..."}'}`;
-            const response = await this.ai.generateStrategy({}, prompt);
+            const response = await this.ai.generateStrategy({}, prompt, { modelRole: 'complex' });
             const message = String(response.parsedJson?.message || '').trim();
             const emailSubject = emailChannel ? String(response.parsedJson?.subject || '').trim() : undefined;
             if (!message) throw new Error('AI could not generate a conversation message.');
@@ -1022,7 +1022,7 @@ ${emailReplyConstraints}
 
 Return JSON: { "message": "the reply text", "reasoning": "why this reply" }`;
 
-        const response = await this.ai.generateStrategy({}, replyPrompt);
+        const response = await this.ai.generateStrategy({}, replyPrompt, { modelRole: 'complex' });
         const reply = response.parsedJson?.message;
 
         if (!reply) {
@@ -1269,7 +1269,7 @@ Based on the decision:
 Keep it under 3 sentences. Natural human tone. No jargon.
 Return JSON: { "message": "the reply" }`;
 
-        const response = await this.ai.generateStrategy({}, replyPrompt);
+        const response = await this.ai.generateStrategy({}, replyPrompt, { modelRole: 'complex' });
         const reply = response.parsedJson?.message;
         if (!reply) { await this.failTask(taskId, 'AI Brain could not generate payment response'); return; }
 
@@ -1400,7 +1400,7 @@ Low intent signals: casual comment, joke, unrelated.
 Comment: "${text}"
 Return JSON: { "intent_score": 0.0 }
 `;
-        const response = await this.ai.generateStrategy({}, prompt);
+        const response = await this.ai.generateStrategy({}, prompt, { modelRole: 'complex' });
         return response.parsedJson?.intent_score || 0;
     }
 
@@ -1517,7 +1517,7 @@ Rules:
 
 Return JSON: ${emailLead ? '{ "subject": "truthful 4-8 word subject", "message": "plain text body" }' : '{ "message": "string" }'}
 `;
-                const response = await this.ai.generateStrategy({}, dmPrompt);
+                const response = await this.ai.generateStrategy({}, dmPrompt, { modelRole: 'complex' });
                 const message = response.parsedJson?.message;
                 const emailSubject = emailLead ? String(response.parsedJson?.subject || '').trim() : undefined;
                 if (!message) continue;
@@ -1693,7 +1693,7 @@ Return JSON:
   "reasoning": "why this specific approach will close the deal"
 }
 `;
-        const response = await this.ai.generateStrategy({}, closingPrompt);
+        const response = await this.ai.generateStrategy({}, closingPrompt, { modelRole: 'complex' });
         const closing = response.parsedJson;
         if (!closing?.message) {
             this.log(`Deal close failed — could not generate closing message for lead ${lead.id}`);
@@ -2075,7 +2075,7 @@ Return JSON:
   "impact_score": 0.0
 }
 `;
-            const response = await this.ai.generateStrategy({}, optimizePrompt);
+            const response = await this.ai.generateStrategy({}, optimizePrompt, { modelRole: 'complex' });
             const intervention = response.parsedJson;
 
             if (intervention?.action) {

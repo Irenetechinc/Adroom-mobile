@@ -188,9 +188,9 @@ CRITICAL RULES:
 
 Write ONLY the ${action.type} text. No quotes. No label.`;
 
-    try {
-      return ((await this.ai.generateText(prompt)) || '').trim() || null;
-    } catch { return null; }
+    const generated = await this.ai.generateText(prompt, { modelRole: 'complex' });
+    if (!generated.trim()) throw new Error('AI content generation returned an empty response.');
+    return generated.trim();
   }
 
   private async _publishContent(
@@ -557,7 +557,7 @@ Return ONLY this JSON:
 Only valid JSON.`;
 
     try {
-      const resp = await this.ai.generateText(prompt);
+      const resp = await this.ai.generateText(prompt, { modelRole: 'complex' });
       return JSON.parse((resp || '').replace(/```json|```/g, '').trim());
     } catch { return null; }
   }

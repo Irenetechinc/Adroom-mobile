@@ -446,7 +446,7 @@ Return JSON only:
       const ai = AIEngine.getInstance();
       return routedModel === 'gemini-flash' || routedModel === 'free_provider'
         ? ai.generateStrategyEconomy({}, prompt)
-        : ai.generateStrategy({}, prompt);
+        : ai.generateStrategy({}, prompt, { modelRole: 'complex' });
     });
   }
 

@@ -106,7 +106,7 @@ export class DecisionEngine {
 
     const response = economyMode
       ? await this.ai.generateStrategyEconomy({}, prompt)
-      : await this.ai.generateStrategy({}, prompt);
+      : await this.ai.generateStrategy({}, prompt, { modelRole: 'complex' });
 
     const rawStrategy = response.parsedJson ?? parseStructuredJson(response.text) ?? {};
     const strategy: AIStrategy = this.normalizeStrategy(rawStrategy, memory, goal, duration, weights);
@@ -257,7 +257,7 @@ export class DecisionEngine {
             }
         `;
 
-        const response = await this.ai.generateStrategy({}, prompt);
+        const response = await this.ai.generateStrategy({}, prompt, { modelRole: 'complex' });
         const analysis = response.parsedJson;
 
         await this.supabase
@@ -298,7 +298,7 @@ export class DecisionEngine {
       }
     `;
 
-    const response = await this.ai.generateStrategy({}, prompt);
+    const response = await this.ai.generateStrategy({}, prompt, { modelRole: 'complex' });
     const recommendation = response.parsedJson;
 
     try {
@@ -450,7 +450,7 @@ export class DecisionEngine {
       Return ONLY the reply text.
     `;
     
-    return (await this.ai.generateStrategy({}, prompt)).text;
+    return (await this.ai.generateStrategy({}, prompt, { modelRole: 'complex' })).text;
   }
 
   async evaluateRisk(content: string, platform: string): Promise<any> {
@@ -459,6 +459,6 @@ export class DecisionEngine {
       Content: "${content}"
       Return JSON: { "compliant": boolean, "risk_level": "low"|"medium"|"high", "issues": [] }
     `;
-    return (await this.ai.generateStrategy({}, prompt)).parsedJson;
+    return (await this.ai.generateStrategy({}, prompt, { modelRole: 'complex' })).parsedJson;
   }
 }

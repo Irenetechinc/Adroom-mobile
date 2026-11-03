@@ -161,7 +161,7 @@ Headline: ${brief.postContent.headline}; body: ${brief.postContent.body.slice(0,
 Current algorithm signals: ${JSON.stringify(intel.ipe.slice(0, 2))}
 Current audience signals: ${JSON.stringify(intel.social.slice(0, 8))}
 Return one concise concept describing subject, composition, motion/energy, typography treatment, and why it is native to this platform.`;
-    const result = await this.ai.generateStrategy({}, prompt);
+    const result = await this.ai.generateStrategy({}, prompt, { modelRole: 'complex' });
     const concept = result.text?.trim().replace(/^"|"$/g, '').slice(0, 800);
     if (!concept) throw new Error(`The creative director returned no concept for ${brief.platform}.`);
     return concept;
@@ -234,7 +234,7 @@ The image must DEMAND attention and drive toward: ${this.getGoalVisualCTA(brief.
 Return ONLY the image prompt text, nothing else.
 `;
 
-    const result = await this.ai.generateStrategy({}, designDirective);
+    const result = await this.ai.generateStrategy({}, designDirective, { modelRole: 'complex' });
     const rawPrompt = result.text?.trim().replace(/^"|"$/g, '').replace(/```.*?```/gs, '').trim() || '';
 
     if (rawPrompt.length > 30) {

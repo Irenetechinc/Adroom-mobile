@@ -49,7 +49,7 @@ export class CreativeService {
                 Elements to AVOID: ${JSON.stringify(direction?.avoid_elements || [])}
                 
                 Output JSON: { "prompt": "..." }
-            `);
+            `, { modelRole: 'complex' });
             const imagePrompt = promptResult.parsedJson?.prompt ||
                 `${directorPrefix}Professional studio photography of ${productDetails.name}, clean background, commercial lighting${moodHint}${colorHint}`;
 
@@ -57,11 +57,6 @@ export class CreativeService {
                 `Professional commercial advertisement: ${imagePrompt}. Photorealistic, high-fidelity, 8K.`,
                 productDetails.user_id || productDetails.userId,
             );
-
-            if (!imageResult) {
-                console.warn('[Creative:Imagen] Image generation returned null, using original');
-                return baseImageUri;
-            }
 
             const fileName = `creative_${Date.now()}.${imageResult.mimeType.split('/')[1] || 'png'}`;
             const buffer = Buffer.from(imageResult.base64, 'base64');
@@ -82,7 +77,7 @@ export class CreativeService {
             return publicUrlData.publicUrl;
         } catch (e: any) {
             console.error('[Creative:Imagen] Image generation failed:', e.message);
-            return baseImageUri;
+            throw e;
         }
     }
 
@@ -128,7 +123,7 @@ export class CreativeService {
                     "music_vibe": "string",
                     "cta": "string"
                 }
-            `);
+            `, { modelRole: 'complex' });
             const script = scriptResult.parsedJson;
             if (!script || !Array.isArray(script.scenes) || script.scenes.length === 0) {
                 throw new Error('Failed to generate video script: AI response did not contain scenes.');
@@ -143,7 +138,7 @@ export class CreativeService {
                     ? `${directorPrefix}, ${scene.visual_description}${moodSuffix}${lightingSuffix}. Commercial quality, 4K.`
                     : `Commercial video frame for ${platform}: ${scene.visual_description}. Cinematic, 4K.`;
 
-                const imgResult = await this.ai.generateImage(scenePrompt);
+                const imgResult = await this.ai.generateImage(scenePrompt, productDetails.user_id || productDetails.userId);
                 let imageUrl: string | null = null;
                 if (imgResult) {
                     const fileName = `scene_${Date.now()}_${Math.random().toString(36).substr(2, 5)}.${imgResult.mimeType.split('/')[1] || 'png'}`;

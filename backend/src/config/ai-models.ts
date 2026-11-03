@@ -9,6 +9,21 @@ import {
   generateCloudflareText,
   getCloudflareProviderSettings,
 } from '../services/cloudflareWorkersAi';
+import {
+  aiProviderIsAvailable,
+  getAIProviderHealth,
+  recordAIProviderFailure,
+  recordAIProviderSuccess,
+  type AIProviderId,
+  type AIProviderTask,
+} from '../services/aiProviderHealth';
+import {
+  generateHuggingFaceImage,
+  generateHuggingFaceVideo,
+  HUGGING_FACE_IMAGE_MODEL,
+  HUGGING_FACE_VIDEO_MODEL,
+  isHuggingFaceConfigured,
+} from '../services/huggingFaceInference';
 
 dotenv.config();
 
@@ -32,6 +47,16 @@ const FREE_TEXT_MODEL = 'gpt-4.1-free';
 const FREE_SMALL_MODEL = 'gpt-4.1-nano-free';
 const FREE_VISION_MODEL = 'gemini-3.1-flash-image-preview-free';
 const FREE_IMAGE_MODEL = 'gemini-3.7-flash-free';
+const NVIDIA_BASE_URL = 'https://integrate.api.nvidia.com/v1';
+
+export type AIModelRole = 'general' | 'complex' | 'profile' | 'coordinator';
+
+export const AI_MODEL_ASSIGNMENTS: Record<AIModelRole, string> = {
+  general: 'nvidia/nemotron-3.5-lightning-30b-a3b',
+  complex: 'nvidia/nemotron-3.5-super-vl-120b-a12b',
+  profile: 'deepseek-ai/deepseek-v4.1-flash',
+  coordinator: 'nvidia/nemotron-3-ultra-550b-a55b',
+};
 
 export type AIRequestContext = {
   userId: string;
@@ -173,7 +198,89 @@ async function reserveFreeQuota(estimatedTokens: number) {
   return reservation;
 }
 
-async function freeChat(params: any) {
+function aiProviderStatus() {
+  const freeKeys = [
+    process.env.FREE_MODELS_API,
+    ...Array.from({ length: 20 }, (_, index) => process.env[`FREE_MODELS_API_${index + 1}`]),
+  ];
+  return getAIProviderHealth([
+    { provider: 'nvidia', task: 'text', configured: Boolean(process.env.NVIDIA_API) },
+    { provider: 'huggingface', task: 'image', configured: isHuggingFaceConfigured() },
+    { provider: 'huggingface', task: 'video', configured: isHuggingFaceConfigured() },
+    { provider: 'cloudflare_workers_ai', task: 'text', configured: Boolean(process.env.CLOUDFLARE_ACCOUNT_ID && process.env.CLOUDFLARE_API_TOKEN) },
+    { provider: 'cloudflare_workers_ai', task: 'image', configured: Boolean(process.env.CLOUDFLARE_ACCOUNT_ID && process.env.CLOUDFLARE_API_TOKEN) },
+    { provider: 'free_models', task: 'text', configured: freeKeys.some(Boolean) },
+    { provider: 'free_models', task: 'image', configured: freeKeys.some(Boolean) },
+    { provider: 'openai', task: 'text', configured: Boolean(process.env.OPENAI_API_KEY) },
+    { provider: 'gemini', task: 'text', configured: Boolean(process.env.GEMINI_API_KEY) },
+    { provider: 'gemini', task: 'image', configured: Boolean(process.env.GEMINI_API_KEY) },
+    { provider: 'runway', task: 'video', configured: Boolean(process.env.RUNWAY_API_KEY) },
+  ]);
+}
+
+async function nvidiaChat(params: any, role: AIModelRole, task: AIProviderTask = 'text') {
+  const apiKey = String(process.env.NVIDIA_API || '').trim();
+  if (!apiKey) throw Object.assign(new Error('NVIDIA_API is not configured.'), { providerNotConfigured: true });
+  if (!aiProviderIsAvailable('nvidia', task)) {
+    throw Object.assign(new Error('NVIDIA provider is cooling down after a recent failure.'), { status: 429 });
+  }
+
+  const request = { ...params, model: AI_MODEL_ASSIGNMENTS[role] };
+  delete request.cloudflare_model;
+  delete request.cloudflareModel;
+  try {
+    const client = new OpenAI({
+      apiKey,
+      baseURL: NVIDIA_BASE_URL,
+      maxRetries: 0,
+      timeout: 60_000,
+    });
+    const response = await client.chat.completions.create(request);
+    if (!response?.choices?.[0]) throw Object.assign(new Error('NVIDIA returned an empty chat completion.'), { status: 502 });
+    recordAIProviderSuccess('nvidia', task);
+    return response;
+  } catch (error) {
+    recordAIProviderFailure('nvidia', task, error);
+    throw error;
+  }
+}
+
+async function paidChat(params: any, role: AIModelRole, task: AIProviderTask = 'text') {
+  let lastError: any;
+  if (String(process.env.NVIDIA_API || '').trim()) {
+    try {
+      return await nvidiaChat(params, role, task);
+    } catch (error: any) {
+      lastError = error;
+      aiLog('NVIDIA', 'Provider failed; rotating to configured paid providers', {
+        status: error?.status || error?.statusCode || error?.response?.status || 'unknown',
+      });
+    }
+  }
+
+  if (String(process.env.OPENAI_API_KEY || '').trim()) {
+    if (aiProviderIsAvailable('openai', task)) {
+      try {
+        const request = { ...params, model: OPENAI_STRATEGY_MODEL };
+        delete request.cloudflare_model;
+        delete request.cloudflareModel;
+        const response = await openai.chat.completions.create(request);
+        if (!response?.choices?.[0]) throw Object.assign(new Error('OpenAI returned an empty chat completion.'), { status: 502 });
+        recordAIProviderSuccess('openai', task);
+        return response;
+      } catch (error: any) {
+        lastError = error;
+        recordAIProviderFailure('openai', task, error);
+      }
+    } else {
+      lastError = new Error('OpenAI provider is cooling down after a recent failure.');
+    }
+  }
+
+  throw lastError || new Error('No configured paid text AI provider is available.');
+}
+
+async function freeChat(params: any, role: AIModelRole = 'general') {
   const reservation = await reserveFreeQuota(Number(params.max_tokens || 4096));
   const keys = Array.from(new Set([
     process.env.FREE_MODELS_API,
@@ -188,9 +295,31 @@ async function freeChat(params: any) {
   delete existingProviderParams.cloudflareModel;
   let lastError: any;
 
+  if (String(process.env.NVIDIA_API || '').trim() && aiProviderIsAvailable('nvidia', 'text')) {
+    try {
+      const response = await nvidiaChat(existingProviderParams, role, 'text');
+      const usage = Number((response as any).usage?.total_tokens || 0);
+      await getServiceSupabaseClient().from('ai_usage_logs').insert({
+        user_id: getAIRequestContext()?.userId || null,
+        model: AI_MODEL_ASSIGNMENTS[role],
+        operation: 'free_ai_request',
+        actual_cost_usd: 0,
+        energy_debited: 0,
+        metadata: { tokens: usage, quota: reservation, provider: 'nvidia' },
+      });
+      return response;
+    } catch (error: any) {
+      lastError = error;
+      aiLog('NVIDIA', 'Free-mode provider failed; rotating to other configured free providers', {
+        status: error?.status || error?.statusCode || error?.response?.status || 'unknown',
+      });
+    }
+  }
+
   if (await shouldRouteToCloudflare()) {
     try {
       const response = await generateCloudflareText(params);
+      recordAIProviderSuccess('cloudflare_workers_ai', 'text');
       const usage = Number((response as any).usage?.total_tokens || 0);
       await getServiceSupabaseClient().from('ai_usage_logs').insert({
         user_id: getAIRequestContext()?.userId || null,
@@ -203,6 +332,7 @@ async function freeChat(params: any) {
       return response;
     } catch (error: any) {
       lastError = error;
+      recordAIProviderFailure('cloudflare_workers_ai', 'text', error);
       console.warn(`[AI:CLOUDFLARE] Text provider failed; rotating to existing free providers status=${error?.statusCode || error?.status || 'unknown'}`);
     }
   }
@@ -214,8 +344,10 @@ async function freeChat(params: any) {
     const apiKey = keys[keyIndex];
     for (const baseURL of baseUrls) {
       try {
-        const client = new OpenAI({ apiKey, baseURL });
+        const client = new OpenAI({ apiKey, baseURL, maxRetries: 0, timeout: 60_000 });
         const response = await client.chat.completions.create(existingProviderParams);
+        if (!response?.choices?.[0]) throw Object.assign(new Error('Free provider returned an empty chat completion.'), { status: 502 });
+        recordAIProviderSuccess('free_models', 'text');
         const usage = Number((response as any).usage?.total_tokens || 0);
         await getServiceSupabaseClient().from('ai_usage_logs').insert({
           user_id: getAIRequestContext()?.userId || null,
@@ -223,11 +355,12 @@ async function freeChat(params: any) {
           operation: 'free_ai_request',
           actual_cost_usd: 0,
           energy_debited: 0,
-          metadata: { tokens: usage, quota: reservation },
+          metadata: { tokens: usage, quota: reservation, provider: 'free_models' },
         });
         return response;
       } catch (error: any) {
         lastError = error;
+        recordAIProviderFailure('free_models', 'text', error);
         console.warn(`[AI:FREE] Provider failed; rotating route key=${keyIndex + 1}/${keys.length} base=${baseURL} status=${error?.status || error?.response?.status || 'unknown'} reason=${error?.message || 'unknown'}`);
       }
     }
@@ -352,80 +485,90 @@ export class AIEngine {
     return AIEngine.instance;
   }
 
-  async analyzeImage(imageBase64: string, prompt: string): Promise<AIResponse> {
-    if (await useFreeModels()) return this.analyzeImageFree(imageBase64, prompt);
-    aiLog('GEMINI-VISION', `analyzeImage START — model: ${GEMINI_VISION_MODEL}`);
+  async analyzeImage(imageBase64: string, prompt: string, userId?: string): Promise<AIResponse> {
+    if (await useFreeModels(userId)) return this.analyzeImageFree(imageBase64, prompt);
+    const messages = [{ role: 'user', content: [
+      { type: 'text', text: prompt },
+      { type: 'image_url', image_url: { url: `data:image/jpeg;base64,${imageBase64}` } },
+    ] as any }];
     try {
-      const model = genAI.getGenerativeModel({ model: GEMINI_VISION_MODEL });
-      
-      const imagePart = {
-        inlineData: {
-          data: imageBase64,
-          mimeType: 'image/jpeg' as const,
-        },
-      };
-
-      const result = await model.generateContent([prompt, imagePart]);
-      const response = await result.response;
-      const text = response.text();
-      
-      let parsedJson;
-      try {
-        parsedJson = parseStructuredJson(text);
-      } catch (_e) {
-        console.warn('[AI:GEMINI-VISION] Could not parse JSON, returning raw text');
+      const completion = await paidChat({
+        messages,
+        response_format: { type: 'json_object' },
+        temperature: 0.2,
+      }, 'profile', 'image');
+      const text = completion.choices[0]?.message?.content || '';
+      return { text, parsedJson: parseStructuredJson(text) };
+    } catch (primaryError: any) {
+      if (!String(process.env.GEMINI_API_KEY || '').trim() || !aiProviderIsAvailable('gemini', 'image')) {
+        throw new Error(`Image analysis failed after provider rotation: ${primaryError?.message || 'no provider response'}`);
       }
-
-      aiLog('GEMINI-VISION', 'analyzeImage SUCCESS', { textLength: text.length, hasParsedJson: !!parsedJson });
-      return { text, parsedJson };
-    } catch (error: any) {
-      aiLog('GEMINI-VISION', 'analyzeImage ERROR', error.message);
-      throw new Error(`Gemini Vision Analysis Failed: ${error.message}`);
+      try {
+        const model = genAI.getGenerativeModel({ model: GEMINI_VISION_MODEL });
+        const result = await model.generateContent([prompt, {
+          inlineData: { data: imageBase64, mimeType: 'image/jpeg' as const },
+        }]);
+        const response = await result.response;
+        const text = response.text();
+        recordAIProviderSuccess('gemini', 'image');
+        return { text, parsedJson: parseStructuredJson(text) };
+      } catch (error: any) {
+        recordAIProviderFailure('gemini', 'image', error);
+        throw new Error(`Image analysis failed on NVIDIA/OpenAI and Gemini: ${error.message}`);
+      }
     }
   }
 
-  async generateStrategy(context: any, prompt: string): Promise<AIResponse> {
-    if (await useFreeModels()) return this.generateStrategyFree(context, prompt);
-    // Admin economy override: route premium request to Gemini Flash
+  async generateStrategy(
+    context: any,
+    prompt: string,
+    options?: { modelRole?: AIModelRole; userId?: string },
+  ): Promise<AIResponse> {
+    const role = options?.modelRole || 'general';
+    if (await useFreeModels(options?.userId)) return this.generateStrategyFree(context, prompt, role);
     if (_globalModelOverride === 'economy') {
-      aiLog('GPT-4o', 'generateStrategy OVERRIDE→economy (admin forced)');
-      return this.generateStrategyEconomy(context, prompt);
+      aiLog('AI', 'generateStrategy OVERRIDE→economy (admin forced)');
+      return this.generateStrategyEconomy(context, prompt, role);
     }
-    aiLog('GPT-4o', `generateStrategy START — model: ${OPENAI_STRATEGY_MODEL}`);
+
+    const messages = [
+      {
+        role: 'system',
+        content: 'You are Adirum AI Core Brain. Always respond with valid JSON only, no markdown, no code blocks.',
+      },
+      { role: 'user', content: `Context: ${JSON.stringify(context)}\n\nTask: ${prompt}` },
+    ];
     try {
-      const completion = await openai.chat.completions.create({
-        messages: [
-          {
-            role: 'system',
-            content: 'You are Adirum AI Core Brain — a world-class marketing strategist. Always respond with valid JSON only, no markdown, no code blocks.',
-          },
-          {
-            role: 'user',
-            content: `Context: ${JSON.stringify(context)}\n\nTask: ${prompt}`,
-          },
-        ],
-        model: OPENAI_STRATEGY_MODEL,
+      const completion = await paidChat({
+        messages,
         response_format: { type: 'json_object' },
         temperature: 0.7,
-      });
-
-      const text = completion.choices[0].message.content || '';
-      let parsedJson;
-      try {
-        parsedJson = parseStructuredJson(text);
-      } catch (_e) {
-        console.warn('[AI:GPT-4o] Could not parse JSON from response');
+      }, role);
+      const text = completion.choices[0]?.message?.content || '';
+      return { text, parsedJson: parseStructuredJson(text) };
+    } catch (primaryError: any) {
+      if (!String(process.env.GEMINI_API_KEY || '').trim() || !aiProviderIsAvailable('gemini', 'text')) {
+        throw new Error(`Strategy generation failed after provider rotation: ${primaryError?.message || 'no provider response'}`);
       }
-
-      aiLog('GPT-4o', 'generateStrategy SUCCESS', { textLength: text.length });
-      return { text, parsedJson };
-    } catch (error: any) {
-      aiLog('GPT-4o', 'generateStrategy ERROR', error.message);
-      throw new Error(`OpenAI Strategy Generation Failed: ${error.message}`);
+      try {
+        const model = genAI.getGenerativeModel({ model: GEMINI_FLASH_MODEL });
+        const result = await model.generateContent([
+          'You are Adirum AI Core Brain. Return ONLY valid JSON, no markdown, no code blocks.',
+          `Context: ${JSON.stringify(context)}`,
+          `Task: ${prompt}`,
+        ].join('\n\n'));
+        const response = await result.response;
+        const text = response.text().trim();
+        recordAIProviderSuccess('gemini', 'text');
+        return { text, parsedJson: parseStructuredJson(text) };
+      } catch (error: any) {
+        recordAIProviderFailure('gemini', 'text', error);
+        throw new Error(`Strategy generation failed on configured providers: ${error.message}`);
+      }
     }
   }
 
-  private async generateStrategyFree(context: any, prompt: string): Promise<AIResponse> {
+  private async generateStrategyFree(context: any, prompt: string, role: AIModelRole = 'general'): Promise<AIResponse> {
     try {
       const completion = await freeChat({
         model: FREE_TEXT_MODEL,
@@ -436,7 +579,7 @@ export class AIEngine {
         ],
         response_format: { type: 'json_object' },
         temperature: 0.7,
-      });
+      }, role);
       const text = completion.choices[0]?.message?.content || '';
       const parsedJson = parseStructuredJson(text);
       return { text, parsedJson };
@@ -452,7 +595,7 @@ export class AIEngine {
           { type: 'image_url', image_url: { url: `data:image/jpeg;base64,${imageBase64}` } },
         ] as any }],
         response_format: { type: 'json_object' },
-      });
+      }, 'profile');
       const text = completion.choices[0]?.message?.content || '';
       const parsedJson = parseStructuredJson(text);
       return { text, parsedJson };
@@ -460,38 +603,44 @@ export class AIEngine {
   }
 
   /**
-   * Economy strategy generation using Gemini Flash.
-   * Used by the Credit Management Agent for non-Pro users.
-   * Produces the same JSON structure as generateStrategy.
+   * Strategy generation through the same role-aware provider rotation.
    */
-  async generateStrategyEconomy(context: any, prompt: string): Promise<AIResponse> {
+  async generateStrategyEconomy(context: any, prompt: string, role: AIModelRole = 'complex'): Promise<AIResponse> {
     if (await useFreeModels()) {
-      aiLog('GEMINI-FLASH', 'generateStrategyEconomy ROUTE->free-provider');
-      return this.generateStrategyFree(context, prompt);
+      aiLog('AI', 'generateStrategyEconomy ROUTE->free-provider');
+      return this.generateStrategyFree(context, prompt, role);
     }
-    // Admin premium override: route economy request up to GPT-4o
     if (_globalModelOverride === 'premium') {
-      aiLog('GEMINI-FLASH', 'generateStrategyEconomy OVERRIDE→premium (admin forced)');
-      return this._generateStrategyOpenAI(context, prompt);
+      aiLog('AI', 'generateStrategyEconomy OVERRIDE→premium (admin forced)');
+      return this._generateStrategyOpenAI(context, prompt, role);
     }
-    aiLog('GEMINI-FLASH', `generateStrategyEconomy START (economy routing)`);
+    const messages = [
+      { role: 'system', content: 'You are Adirum AI Core Brain. Return ONLY valid JSON, no markdown, no code blocks.' },
+      { role: 'user', content: `Context: ${JSON.stringify(context)}\n\nTask: ${prompt}` },
+    ];
     try {
-      const model = genAI.getGenerativeModel({ model: GEMINI_FLASH_MODEL });
-      const fullPrompt = [
-        'You are Adirum AI Core Brain — a world-class marketing strategist.',
-        'Return ONLY valid JSON, no markdown, no code blocks.',
-        `Context: ${JSON.stringify(context)}`,
-        `Task: ${prompt}`,
-      ].join('\n\n');
-      const result = await model.generateContent(fullPrompt);
-      const response = await result.response;
-      const text = response.text().trim();
-      const parsedJson = parseStructuredJson(text);
-      aiLog('GEMINI-FLASH', 'generateStrategyEconomy SUCCESS', { textLength: text.length });
-      return { text, parsedJson };
-    } catch (error: any) {
-      aiLog('GEMINI-FLASH', 'generateStrategyEconomy ERROR', error.message);
-      throw new Error(`Gemini Economy Strategy Failed: ${error.message}`);
+      const completion = await paidChat({ messages, response_format: { type: 'json_object' }, temperature: 0.7 }, role);
+      const text = completion.choices[0]?.message?.content || '';
+      return { text, parsedJson: parseStructuredJson(text) };
+    } catch (primaryError: any) {
+      if (!String(process.env.GEMINI_API_KEY || '').trim() || !aiProviderIsAvailable('gemini', 'text')) {
+        throw new Error(`Strategy generation failed after provider rotation: ${primaryError?.message || 'no provider response'}`);
+      }
+      try {
+        const model = genAI.getGenerativeModel({ model: GEMINI_FLASH_MODEL });
+        const result = await model.generateContent([
+          'You are Adirum AI Core Brain. Return ONLY valid JSON, no markdown, no code blocks.',
+          `Context: ${JSON.stringify(context)}`,
+          `Task: ${prompt}`,
+        ].join('\n\n'));
+        const response = await result.response;
+        const text = response.text().trim();
+        recordAIProviderSuccess('gemini', 'text');
+        return { text, parsedJson: parseStructuredJson(text) };
+      } catch (error: any) {
+        recordAIProviderFailure('gemini', 'text', error);
+        throw new Error(`Strategy generation failed on configured providers: ${error.message}`);
+      }
     }
   }
 
@@ -500,83 +649,108 @@ export class AIEngine {
     // previous hardcoded model bypassed that route and returned a multipart
     // error from the provider.
     if (await useFreeModels()) {
-      return this.generateStrategyFree({}, prompt);
+      return this.generateStrategyFree({}, prompt, 'general');
     }
 
-    return this.generateStrategyEconomy({}, prompt);
+    return this.generateStrategyEconomy({}, prompt, 'general');
   }
 
   // Internal helper used when admin forces premium mode on economy calls
-  private async _generateStrategyOpenAI(context: any, prompt: string): Promise<AIResponse> {
-    aiLog('GPT-4o', `_generateStrategyOpenAI START (premium override)`);
-    try {
-      const completion = await openai.chat.completions.create({
-        messages: [
-          { role: 'system', content: 'You are Adirum AI Core Brain — a world-class marketing strategist. Always respond with valid JSON only, no markdown, no code blocks.' },
-          { role: 'user', content: `Context: ${JSON.stringify(context)}\n\nTask: ${prompt}` },
-        ],
-        model: OPENAI_STRATEGY_MODEL,
-        response_format: { type: 'json_object' },
-        temperature: 0.7,
-      });
-      const text = completion.choices[0].message.content || '';
-      const parsedJson = parseStructuredJson(text);
-      aiLog('GPT-4o', '_generateStrategyOpenAI SUCCESS', { textLength: text.length });
-      return { text, parsedJson };
-    } catch (error: any) {
-      aiLog('GPT-4o', '_generateStrategyOpenAI ERROR', error.message);
-      throw new Error(`OpenAI Premium Override Failed: ${error.message}`);
-    }
+  private async _generateStrategyOpenAI(context: any, prompt: string, role: AIModelRole = 'complex'): Promise<AIResponse> {
+    const completion = await paidChat({
+      messages: [
+        { role: 'system', content: 'You are Adirum AI Core Brain. Always respond with valid JSON only, no markdown, no code blocks.' },
+        { role: 'user', content: `Context: ${JSON.stringify(context)}\n\nTask: ${prompt}` },
+      ],
+      response_format: { type: 'json_object' },
+      temperature: 0.7,
+    }, role);
+    const text = completion.choices[0]?.message?.content || '';
+    return { text, parsedJson: parseStructuredJson(text) };
   }
 
-  async generateJson(prompt: string, options?: { cloudflareModel?: string; economyMode?: boolean }): Promise<any> {
-    if (await useFreeModels()) {
-      return (await this.generateStrategyFree({ cloudflareTextModel: options?.cloudflareModel }, prompt)).parsedJson ?? null;
-    }
-    if (options?.economyMode === true) {
-      return (await this.generateStrategyEconomy({}, prompt)).parsedJson ?? null;
+  async generateJson(
+    prompt: string,
+    options?: { cloudflareModel?: string; economyMode?: boolean; modelRole?: AIModelRole; userId?: string },
+  ): Promise<any> {
+    const role = options?.modelRole || 'general';
+    const context = { cloudflareTextModel: options?.cloudflareModel };
+    if (await useFreeModels(options?.userId)) {
+      const completion = await freeChat({
+        model: FREE_TEXT_MODEL,
+        cloudflare_model: options?.cloudflareModel,
+        messages: [{ role: 'user', content: `Return ONLY valid JSON, no markdown fences, no explanation.\n\n${prompt}` }],
+        response_format: { type: 'json_object' },
+      }, role);
+      const parsed = parseStructuredJson(completion.choices[0]?.message?.content || '');
+      if (parsed === null) throw new Error('Free AI providers returned a response that was not valid JSON.');
+      return parsed;
     }
     if (options?.economyMode === false) {
-      return (await this.generateStrategy({}, prompt)).parsedJson ?? null;
+      const result = await this.generateStrategy({}, prompt, { modelRole: role, userId: options?.userId });
+      if (result.parsedJson === null || result.parsedJson === undefined) throw new Error('AI providers returned a response that was not valid JSON.');
+      return result.parsedJson;
     }
-    aiLog('GEMINI-FLASH', `generateJson START — model: ${GEMINI_FLASH_MODEL}`);
+
+    const messages = [{ role: 'user', content: `Return ONLY valid JSON, no markdown fences, no explanation.\n\n${prompt}` }];
     try {
-      const model = genAI.getGenerativeModel({ model: GEMINI_FLASH_MODEL });
-      const result = await model.generateContent(
-        `Return ONLY valid JSON, no markdown fences, no explanation.\n\n${prompt}`
-      );
-      const response = await result.response;
-      const text = response.text().trim();
-      aiLog('GEMINI-FLASH', 'generateJson SUCCESS', { textLength: text.length });
-      return parseStructuredJson(text);
-    } catch (error: any) {
-      aiLog('GEMINI-FLASH', 'generateJson ERROR', error.message);
-      return null;
+      const completion = await paidChat({ messages, response_format: { type: 'json_object' } }, role);
+      const parsed = parseStructuredJson(completion.choices[0]?.message?.content || '');
+      if (parsed === null) throw new Error('Configured AI providers returned a response that was not valid JSON.');
+      return parsed;
+    } catch (primaryError: any) {
+      if (!String(process.env.GEMINI_API_KEY || '').trim() || !aiProviderIsAvailable('gemini', 'text')) throw primaryError;
+      try {
+        const model = genAI.getGenerativeModel({ model: GEMINI_FLASH_MODEL });
+        const result = await model.generateContent(`Return ONLY valid JSON, no markdown fences, no explanation.\n\n${prompt}`);
+        const response = await result.response;
+        const text = response.text().trim();
+        recordAIProviderSuccess('gemini', 'text');
+        const parsed = parseStructuredJson(text);
+        if (parsed === null) throw new Error('Gemini returned a response that was not valid JSON.');
+        return parsed;
+      } catch (error: any) {
+        recordAIProviderFailure('gemini', 'text', error);
+        throw new Error(`JSON generation failed after provider rotation: ${error.message}`);
+      }
     }
   }
 
-  async generateText(prompt: string, options?: { cloudflareModel?: string }): Promise<string> {
-    if (await useFreeModels()) {
-      try {
-        const result = await freeChat({
-          model: FREE_SMALL_MODEL,
-          cloudflare_model: options?.cloudflareModel || getAIRequestContext()?.cloudflareTextModel,
-          messages: [{ role: 'user', content: prompt }],
-        });
-        return result.choices[0]?.message?.content || '';
-      } catch (error: any) { throw providerError(error); }
-    }
-    aiLog('GEMINI-FLASH', `generateText START — model: ${GEMINI_FLASH_MODEL}`);
-    try {
-      const model = genAI.getGenerativeModel({ model: GEMINI_FLASH_MODEL });
-      const result = await model.generateContent(prompt);
-      const response = await result.response;
-      const text = response.text();
-      aiLog('GEMINI-FLASH', 'generateText SUCCESS', { textLength: text.length });
+  async generateText(
+    prompt: string,
+    options?: { cloudflareModel?: string; modelRole?: AIModelRole; userId?: string },
+  ): Promise<string> {
+    const role = options?.modelRole || 'general';
+    if (await useFreeModels(options?.userId)) {
+      const result = await freeChat({
+        model: FREE_SMALL_MODEL,
+        cloudflare_model: options?.cloudflareModel || getAIRequestContext()?.cloudflareTextModel,
+        messages: [{ role: 'user', content: prompt }],
+      }, role);
+      const text = result.choices[0]?.message?.content;
+      if (typeof text !== 'string' || !text.trim()) throw new Error('Free AI providers returned an empty text response.');
       return text;
-    } catch (error: any) {
-      aiLog('GEMINI-FLASH', 'generateText ERROR', error.message);
-      throw new Error(`Gemini Text Generation Failed: ${error.message}`);
+    }
+
+    try {
+      const completion = await paidChat({ messages: [{ role: 'user', content: prompt }] }, role);
+      const text = completion.choices[0]?.message?.content;
+      if (typeof text !== 'string' || !text.trim()) throw new Error('Configured AI providers returned an empty text response.');
+      return text;
+    } catch (primaryError: any) {
+      if (!String(process.env.GEMINI_API_KEY || '').trim() || !aiProviderIsAvailable('gemini', 'text')) throw primaryError;
+      try {
+        const model = genAI.getGenerativeModel({ model: GEMINI_FLASH_MODEL });
+        const result = await model.generateContent(prompt);
+        const response = await result.response;
+        const text = response.text();
+        if (!text.trim()) throw new Error('Gemini returned an empty text response.');
+        recordAIProviderSuccess('gemini', 'text');
+        return text;
+      } catch (error: any) {
+        recordAIProviderFailure('gemini', 'text', error);
+        throw new Error(`Text generation failed after provider rotation: ${error.message}`);
+      }
     }
   }
 
@@ -584,117 +758,183 @@ export class AIEngine {
     imagePrompt: string,
     userId?: string,
     options?: { cloudflareModel?: string },
-  ): Promise<{ base64: string; mimeType: string } | null> {
-    if (await useFreeModels(userId)) {
+  ): Promise<{ base64: string; mimeType: string }> {
+    const freeMode = await useFreeModels(userId);
+    const errors: any[] = [];
+    if (freeMode) await reserveFreeQuota(0);
+
+    if (isHuggingFaceConfigured() && aiProviderIsAvailable('huggingface', 'image')) {
       try {
-        await reserveFreeQuota(0);
-
-        if (await shouldRouteToCloudflare(userId)) {
-          try {
-            const image = await generateCloudflareImage(
-              imagePrompt,
-              options?.cloudflareModel || getAIRequestContext()?.cloudflareImageModel,
-            );
-            await getServiceSupabaseClient().from('ai_usage_logs').insert({
-              user_id: getAIRequestContext()?.userId || userId || null,
-              model: 'cloudflare_workers_ai',
-              operation: 'free_ai_request',
-              actual_cost_usd: 0,
-              energy_debited: 0,
-              metadata: { tokens: 0, provider: 'cloudflare_workers_ai', neuronUsageEstimated: true },
-            });
-            return image;
-          } catch (error: any) {
-            aiLog('CLOUDFLARE-IMAGE', 'generateImage FAILED — rotating to existing free providers', {
-              status: error?.statusCode || error?.status || 'unknown',
-            });
-          }
+        const image = await generateHuggingFaceImage(imagePrompt);
+        if (freeMode) {
+          await getServiceSupabaseClient().from('ai_usage_logs').insert({
+            user_id: getAIRequestContext()?.userId || userId || null,
+            model: HUGGING_FACE_IMAGE_MODEL,
+            operation: 'free_ai_request',
+            actual_cost_usd: 0,
+            energy_debited: 0,
+            metadata: { tokens: 0, provider: 'huggingface' },
+          });
         }
+        return image;
+      } catch (error: any) {
+        errors.push(error);
+        aiLog('HUGGINGFACE-IMAGE', 'Provider failed; rotating to other allowed image providers', {
+          status: error?.status || error?.statusCode || error?.response?.status || 'unknown',
+        });
+      }
+    }
 
-        aiLog('AIHUBMIX-IMAGE', `generateImage FREE START — model: ${FREE_IMAGE_MODEL}`);
-        const mediaUrls = [
-          `${(process.env.FREE_MODELS_MEDIA_BASE_URL || 'https://aihubmix.com/ai/v1').replace(/\/$/, '')}/images/generations`,
-          `${(process.env.FREE_MODELS_FALLBACK_MEDIA_BASE_URL || 'https://api.inferera.com/ai/v1').replace(/\/$/, '')}/images/generations`,
-        ];
-        let response: Response | null = null;
-        let data: any = {};
-        const apiKeys = Array.from(new Set([
-          process.env.FREE_MODELS_API,
-          ...Array.from({ length: 20 }, (_, index) => process.env[`FREE_MODELS_API_${index + 1}`]),
-        ].filter(Boolean))) as string[];
-        for (const apiKey of apiKeys) {
-          for (const url of mediaUrls) {
-            response = await fetch(url, {
+    if (freeMode) {
+      if (await shouldRouteToCloudflare(userId) && aiProviderIsAvailable('cloudflare_workers_ai', 'image')) {
+        try {
+          const image = await generateCloudflareImage(
+            imagePrompt,
+            options?.cloudflareModel || getAIRequestContext()?.cloudflareImageModel,
+          );
+          recordAIProviderSuccess('cloudflare_workers_ai', 'image');
+          await getServiceSupabaseClient().from('ai_usage_logs').insert({
+            user_id: getAIRequestContext()?.userId || userId || null,
+            model: 'cloudflare_workers_ai',
+            operation: 'free_ai_request',
+            actual_cost_usd: 0,
+            energy_debited: 0,
+            metadata: { tokens: 0, provider: 'cloudflare_workers_ai', neuronUsageEstimated: true },
+          });
+          return image;
+        } catch (error: any) {
+          errors.push(error);
+          recordAIProviderFailure('cloudflare_workers_ai', 'image', error);
+        }
+      }
+
+      const mediaUrls = [
+        `${(process.env.FREE_MODELS_MEDIA_BASE_URL || 'https://aihubmix.com/ai/v1').replace(/\/$/, '')}/images/generations`,
+        `${(process.env.FREE_MODELS_FALLBACK_MEDIA_BASE_URL || 'https://api.inferera.com/ai/v1').replace(/\/$/, '')}/images/generations`,
+      ];
+      const apiKeys = Array.from(new Set([
+        process.env.FREE_MODELS_API,
+        ...Array.from({ length: 20 }, (_, index) => process.env[`FREE_MODELS_API_${index + 1}`]),
+      ].filter(Boolean))) as string[];
+
+      for (const apiKey of apiKeys) {
+        for (const url of mediaUrls) {
+          try {
+            const response = await fetch(url, {
               method: 'POST',
               headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
               body: JSON.stringify({ model: FREE_IMAGE_MODEL, prompt: imagePrompt, n: 1, response_format: 'b64_json' }),
+              signal: AbortSignal.timeout(60_000),
             });
-            data = await response.json().catch(() => ({}));
-            if (response.ok) break;
+            const data: any = await response.json().catch(() => ({}));
+            if (!response.ok) {
+              const error = Object.assign(new Error(data?.error?.message || data?.message || `Free image provider returned HTTP ${response.status}`), { status: response.status });
+              errors.push(error);
+              recordAIProviderFailure('free_models', 'image', error);
+              continue;
+            }
+            const base64 = data?.data?.[0]?.b64_json;
+            if (!base64) {
+              const error = Object.assign(new Error('Free image provider returned no image data.'), { status: 502 });
+              errors.push(error);
+              recordAIProviderFailure('free_models', 'image', error);
+              continue;
+            }
+            recordAIProviderSuccess('free_models', 'image');
+            await getServiceSupabaseClient().from('ai_usage_logs').insert({
+              user_id: getAIRequestContext()?.userId || userId || null,
+              model: FREE_IMAGE_MODEL,
+              operation: 'free_ai_request',
+              actual_cost_usd: 0,
+              energy_debited: 0,
+              metadata: { tokens: 0, provider: 'free_models' },
+            });
+            return { base64, mimeType: 'image/png' };
+          } catch (error: any) {
+            errors.push(error);
+            recordAIProviderFailure('free_models', 'image', error);
           }
-          if (response?.ok) break;
         }
-        if (!response?.ok) throw Object.assign(new Error(data?.error?.message || `Provider error ${response?.status || 503}`), { status: response?.status || 503 });
-        const base64 = data?.data?.[0]?.b64_json;
-        if (!base64) throw new Error('No image data returned by the free image model');
-        await getServiceSupabaseClient().from('ai_usage_logs').insert({
-          user_id: getAIRequestContext()?.userId || null,
-          model: FREE_IMAGE_MODEL,
-          operation: 'free_ai_request',
-          actual_cost_usd: 0,
-          energy_debited: 0,
-          metadata: { tokens: 0 },
-        });
-        return { base64, mimeType: 'image/png' };
-      } catch (error: any) { aiLog('AIHUBMIX-IMAGE', 'generateImage ERROR', error.message); return null; }
-    }
-    const GEMINI_API_KEY = process.env.GEMINI_API_KEY || '';
-    aiLog('GEMINI-IMAGEN', `generateImage START — prompt: ${imagePrompt.substring(0, 80)}...`);
-
-    try {
-      const response = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/imagen-3.0-generate-001:predict?key=${GEMINI_API_KEY}`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            instances: [{ prompt: imagePrompt }],
-            parameters: { sampleCount: 1, aspectRatio: '1:1' },
-          }),
-        }
-      );
-
-      if (!response.ok) {
-        const errData: any = await response.json();
-        throw new Error(errData?.error?.message || `Imagen API Error: ${response.status}`);
       }
 
-      const data: any = await response.json();
-      const base64 = data?.predictions?.[0]?.bytesBase64Encoded;
-      const mimeType = data?.predictions?.[0]?.mimeType || 'image/png';
-
-      if (!base64) throw new Error('No image data in Imagen response');
-
-      aiLog('GEMINI-IMAGEN', 'generateImage SUCCESS');
-      return { base64, mimeType };
-    } catch (error: any) {
-      aiLog('GEMINI-IMAGEN', 'generateImage ERROR', error.message);
-      return null;
+      throw new Error(errors.length
+        ? `Image generation failed on all configured free providers: ${errors.map((error) => error?.message || 'provider error').join(' | ')}`
+        : 'No configured image provider is available in free mode.');
     }
+
+    if (String(process.env.GEMINI_API_KEY || '').trim() && aiProviderIsAvailable('gemini', 'image')) {
+      try {
+        const response = await fetch(
+          `https://generativelanguage.googleapis.com/v1beta/models/imagen-3.0-generate-001:predict?key=${process.env.GEMINI_API_KEY}`,
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              instances: [{ prompt: imagePrompt }],
+              parameters: { sampleCount: 1, aspectRatio: '1:1' },
+            }),
+            signal: AbortSignal.timeout(60_000),
+          },
+        );
+        const data: any = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          throw Object.assign(new Error(data?.error?.message || `Gemini Imagen returned HTTP ${response.status}`), { status: response.status });
+        }
+        const base64 = data?.predictions?.[0]?.bytesBase64Encoded;
+        const mimeType = data?.predictions?.[0]?.mimeType || 'image/png';
+        if (!base64) throw Object.assign(new Error('Gemini Imagen returned no image data.'), { status: 502 });
+        recordAIProviderSuccess('gemini', 'image');
+        return { base64, mimeType };
+      } catch (error: any) {
+        recordAIProviderFailure('gemini', 'image', error);
+        errors.push(error);
+      }
+    }
+
+    throw new Error(errors.length
+      ? `Image generation failed on all configured providers: ${errors.map((error) => error?.message || 'provider error').join(' | ')}`
+      : 'No image generation provider is configured.');
   }
 
   async generateVideo(
     promptText: string,
     imageBase64?: string | null,
     imageMime = 'image/png',
-  ): Promise<{ url: string; taskId: string } | null> {
-    if (await useFreeModels()) {
-      aiLog('AIHUBMIX', 'generateVideo SKIP — video generation is disabled in free AI mode');
-      return null;
+  ): Promise<{ url: string; taskId: string }> {
+    const freeMode = await useFreeModels();
+    const errors: any[] = [];
+
+    if (!imageBase64 && isHuggingFaceConfigured() && aiProviderIsAvailable('huggingface', 'video')) {
+      try {
+        return await generateHuggingFaceVideo(promptText);
+      } catch (error: any) {
+        errors.push(error);
+        aiLog('HUGGINGFACE-VIDEO', 'Provider failed; rotating to an allowed video provider', {
+          status: error?.status || error?.statusCode || error?.response?.status || 'unknown',
+        });
+      }
     }
-    const key = process.env.RUNWAY_API_KEY || '';
-    if (!key) { aiLog('RUNWAY', 'generateVideo SKIP — RUNWAY_API_KEY not set'); return null; }
-    aiLog('RUNWAY', `generateVideo START — prompt: ${promptText.slice(0, 80)}...`);
+
+    // Free mode must not unexpectedly spend a paid Runway key. The configured
+    // Hugging Face provider is the free-mode text-to-video route.
+    if (freeMode) {
+      throw new Error(errors.length
+        ? `Video generation failed on Hugging Face: ${errors.map((error) => error?.message || 'provider error').join(' | ')}`
+        : imageBase64
+          ? 'Image-to-video is not supported by the configured free-mode video model.'
+          : 'Hugging Face video inference is not configured in free mode; set HF_TOKEN in Railway.');
+    }
+
+    const key = String(process.env.RUNWAY_API_KEY || '').trim();
+    if (!key) {
+      throw new Error(errors.length
+        ? `Video generation failed on Hugging Face and no Runway provider is configured: ${errors.map((error) => error?.message || 'provider error').join(' | ')}`
+        : 'No video generation provider is configured.');
+    }
+    if (!aiProviderIsAvailable('runway', 'video')) {
+      throw new Error('Runway video provider is cooling down after a recent failure.');
+    }
+
     try {
       const body: Record<string, unknown> = {
         model: 'gen3a_turbo',
@@ -702,9 +942,7 @@ export class AIEngine {
         duration: 5,
         ratio: '1280:768',
       };
-      if (imageBase64) {
-        body.promptImage = `data:${imageMime};base64,${imageBase64}`;
-      }
+      if (imageBase64) body.promptImage = `data:${imageMime};base64,${imageBase64}`;
       const createRes = await fetch('https://api.runwayml.com/v1/image_to_video', {
         method: 'POST',
         headers: {
@@ -713,33 +951,36 @@ export class AIEngine {
           'X-Runway-Version': '2024-11-06',
         },
         body: JSON.stringify(body),
+        signal: AbortSignal.timeout(60_000),
       });
       if (!createRes.ok) {
-        const err = await createRes.json().catch(() => ({}));
-        throw new Error((err as any)?.error || `Runway API error ${createRes.status}`);
+        const err: any = await createRes.json().catch(() => ({}));
+        throw Object.assign(new Error(err?.error || err?.message || `Runway API returned HTTP ${createRes.status}`), { status: createRes.status });
       }
-      const { id: taskId } = await createRes.json();
-      if (!taskId) throw new Error('No task ID from Runway');
+      const { id: taskId } = await createRes.json() as any;
+      if (!taskId) throw Object.assign(new Error('Runway returned no task ID.'), { status: 502 });
 
       const deadline = Date.now() + 120_000;
       while (Date.now() < deadline) {
-        await new Promise((r) => setTimeout(r, 8000));
-        const pollRes = await fetch(`https://api.runwayml.com/v1/tasks/${taskId}`, {
+        await new Promise((resolve) => setTimeout(resolve, 8_000));
+        const pollRes = await fetch(`https://api.runwayml.com/v1/tasks/${encodeURIComponent(taskId)}`, {
           headers: { Authorization: `Bearer ${key}`, 'X-Runway-Version': '2024-11-06' },
+          signal: AbortSignal.timeout(30_000),
         });
-        if (!pollRes.ok) continue;
-        const task = await pollRes.json();
-        if (task.status === 'SUCCEEDED' && task.output?.[0]) {
-          aiLog('RUNWAY', 'generateVideo SUCCESS');
-          return { url: task.output[0] as string, taskId };
+        if (!pollRes.ok) {
+          throw Object.assign(new Error(`Runway task status returned HTTP ${pollRes.status}`), { status: pollRes.status });
         }
-        if (task.status === 'FAILED') throw new Error('Runway video generation failed');
+        const task: any = await pollRes.json();
+        if (task.status === 'SUCCEEDED' && task.output?.[0]) {
+          recordAIProviderSuccess('runway', 'video');
+          return { url: task.output[0] as string, taskId: String(taskId) };
+        }
+        if (task.status === 'FAILED') throw Object.assign(new Error('Runway video generation failed.'), { status: 502 });
       }
-      aiLog('RUNWAY', 'generateVideo TIMEOUT — task not completed in 120s');
-      return null;
-    } catch (e: any) {
-      aiLog('RUNWAY', 'generateVideo ERROR', e.message);
-      return null;
+      throw Object.assign(new Error('Runway video generation exceeded its time limit.'), { status: 504 });
+    } catch (error: any) {
+      recordAIProviderFailure('runway', 'video', error);
+      throw new Error(`Video generation failed after provider rotation: ${error.message}`);
     }
   }
 }

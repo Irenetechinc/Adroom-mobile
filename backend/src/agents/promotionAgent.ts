@@ -74,7 +74,7 @@ Schema:
   ]
 }
 `;
-        const response = await this.ai.generateStrategy({}, planPrompt);
+        const response = await this.ai.generateStrategy({}, planPrompt, { modelRole: 'complex' });
         let plan: any = response.parsedJson;
 
         if (!plan?.daily_tasks?.length) {
@@ -101,7 +101,7 @@ Return valid JSON only with this schema:
   "daily_tasks": [{ "day": 1, "platform": "selected-platform-name", "task_type": "POST", "hour": 10, "minute": 0, "headline": "string", "body": "string", "image_prompt": "string", "hashtags": ["tag"], "cta": "string", "promo_phase": "problem_agitation|solution_reveal|fomo_ignition|urgency_finale", "emotional_trigger": "fear_of_missing_out|trust|curiosity|excitement" }]
 }
 `;
-            const retry = await this.ai.generateStrategy({}, retryPrompt);
+            const retry = await this.ai.generateStrategy({}, retryPrompt, { modelRole: 'complex' });
             const retryPlan = retry.parsedJson;
             if (!retryPlan?.daily_tasks?.length) {
                 const fallbackTasks = this.buildDynamicFallbackTasks({
@@ -352,7 +352,7 @@ Return JSON:
   ]
 }
 `;
-        const response = await this.ai.generateStrategy({}, urgencyPrompt);
+        const response = await this.ai.generateStrategy({}, urgencyPrompt, { modelRole: 'complex' });
         const escalation = response.parsedJson;
 
         if (!escalation?.posts?.length) return;

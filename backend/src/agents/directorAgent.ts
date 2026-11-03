@@ -210,7 +210,7 @@ OUTPUT JSON:
 }
 `;
 
-    const response = await this.ai.generateStrategy({}, prompt);
+    const response = await this.ai.generateStrategy({}, prompt, { modelRole: 'complex' });
     const direction: VisualDirection = response.parsedJson;
     if (!direction) {
       throw new Error('Director could not generate a visual direction from current intelligence.');

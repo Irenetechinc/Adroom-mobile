@@ -129,7 +129,7 @@ Rules:
 - Optimize for ${request.goal} conversion
     `;
 
-    const result = await this.ai.generateStrategy({}, prompt);
+    const result = await this.ai.generateStrategy({}, prompt, { modelRole: 'complex' });
     const plan = result.parsedJson;
 
     if (!plan) throw new Error('AI failed to generate video edit plan.');

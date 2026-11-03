@@ -202,7 +202,7 @@ OUTPUT JSON (be specific, data-driven, actionable):
 }
 `;
 
-    const response = await this.ai.generateStrategy({}, prompt);
+    const response = await this.ai.generateStrategy({}, prompt, { modelRole: 'profile', userId: product.user_id });
     const profile = response.parsedJson;
 
     if (!profile) return null;

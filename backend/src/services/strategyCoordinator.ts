@@ -1,4 +1,5 @@
 import { getServiceSupabaseClient } from '../config/supabase';
+import { AIEngine } from '../config/ai-models';
 import { conversationAgent } from './conversationAgent';
 import { dataCollectionAgent } from './dataCollectionAgent';
 import { AgentOrchestrator } from '../agents/agentOrchestrator';
@@ -23,6 +24,7 @@ function normalizePlatforms(value: unknown): string[] {
  */
 export class StrategyCoordinator {
   private readonly supabase = getServiceSupabaseClient();
+  private readonly ai = AIEngine.getInstance();
   private readonly orchestrator = new AgentOrchestrator(this.supabase);
   private running = new Set<string>();
 
@@ -87,32 +89,65 @@ export class StrategyCoordinator {
     const platforms = normalizePlatforms(strategy.selected_accounts || strategy.platforms);
     const actions: string[] = [];
 
-    if (ageMs(conversation.data?.created_at) >= MIN_CONVERSATION_GAP_MS) {
-      const result = await conversationAgent.runForStrategy(strategy);
-      actions.push(`conversation:${result.identified}/${result.highPotential}/${result.engaged}`);
+    const eligible = [
+      ageMs(conversation.data?.created_at) >= MIN_CONVERSATION_GAP_MS ? 'conversation' : null,
+      ageMs(collection.data?.created_at) >= MIN_COLLECTION_GAP_MS ? 'evidence' : null,
+      failures >= 2 && ageMs(tasks.find((task: any) => task.task_type === 'OPTIMIZATION')?.created_at) >= MIN_OPTIMIZATION_GAP_MS
+        ? 'optimization'
+        : null,
+    ].filter(Boolean) as string[];
+
+    // The coordinator model prioritizes work but cannot remove an eligible job.
+    // If the coordinator provider is busy or out of quota, deterministic order
+    // still executes the same set of actions.
+    let orderedActions = [...eligible];
+    if (eligible.length > 1) {
+      try {
+        const decision = await this.ai.generateJson(`Order these already-approved strategy coordination actions by urgency.
+Do not omit or invent actions. Return JSON exactly: {"orderedActions":["one or more supplied action names"]}.
+Actions: ${JSON.stringify(eligible)}
+Strategy goal: ${String(strategy.goal || 'active strategy improvement').slice(0, 800)}
+Recent failed tasks: ${failures}
+Pending tasks: ${pending}
+Recent performance rows: ${(performance.data || []).length}`, {
+          modelRole: 'coordinator',
+          userId: strategy.user_id,
+        });
+        if (Array.isArray(decision?.orderedActions)) {
+          const suppliedOrder = decision.orderedActions.filter((item: unknown) =>
+            typeof item === 'string' && eligible.includes(item),
+          );
+          orderedActions = [...new Set([...suppliedOrder, ...eligible])];
+        }
+      } catch (error: any) {
+        console.warn(`[StrategyCoordinator] priority model unavailable; retaining all eligible actions: ${error.message}`);
+      }
     }
 
-    if (ageMs(collection.data?.created_at) >= MIN_COLLECTION_GAP_MS) {
-      const result = await dataCollectionAgent.collectForStrategy({
-        strategyId: strategy.id,
-        userId: strategy.user_id,
-        strategyGoal: strategy.goal || 'active strategy improvement',
-         productName: product.name || product.product_name || 'active product',
-        category: product.category || 'general',
-         dataNeed: failures > 0 ? 'fresh evidence to diagnose failed agent work and improve the active strategy' : 'fresh market and audience evidence for the promoted product or service',
-         audience: product.target_audience || 'current target audience',
-         marketContext: [product.brand, product.description || product.enhanced_description].filter(Boolean).join(' — ') || 'active product or service',
-        sourceHints: platforms.length ? platforms : ['search', 'social', 'news'],
-        timeWindowHours: 24,
-      });
-      actions.push(`evidence:${result.evidence.verified.length}`);
-    }
-
-    if (failures >= 2 && ageMs(tasks.find((task: any) => task.task_type === 'OPTIMIZATION')?.created_at) >= MIN_OPTIMIZATION_GAP_MS) {
-      const agentType = strategy.agent_type || 'AWARENESS';
-      const agent = this.orchestrator.getAgentForCoordination(agentType);
-      await agent.optimizeStrategy(strategy.id, strategy.user_id);
-      actions.push(`optimization:failures=${failures}`);
+    for (const action of orderedActions) {
+      if (action === 'conversation') {
+        const result = await conversationAgent.runForStrategy(strategy);
+        actions.push(`conversation:${result.identified}/${result.highPotential}/${result.engaged}`);
+      } else if (action === 'evidence') {
+        const result = await dataCollectionAgent.collectForStrategy({
+          strategyId: strategy.id,
+          userId: strategy.user_id,
+          strategyGoal: strategy.goal || 'active strategy improvement',
+          productName: product.name || product.product_name || 'active product',
+          category: product.category || 'general',
+          dataNeed: failures > 0 ? 'fresh evidence to diagnose failed agent work and improve the active strategy' : 'fresh market and audience evidence for the promoted product or service',
+          audience: product.target_audience || 'current target audience',
+          marketContext: [product.brand, product.description || product.enhanced_description].filter(Boolean).join(' — ') || 'active product or service',
+          sourceHints: platforms.length ? platforms : ['search', 'social', 'news'],
+          timeWindowHours: 24,
+        });
+        actions.push(`evidence:${result.evidence.verified.length}`);
+      } else if (action === 'optimization') {
+        const agentType = strategy.agent_type || 'AWARENESS';
+        const agent = this.orchestrator.getAgentForCoordination(agentType);
+        await agent.optimizeStrategy(strategy.id, strategy.user_id);
+        actions.push(`optimization:failures=${failures}`);
+      }
     }
 
     if (!actions.length && pending === 0 && (performance.data || []).length === 0) {

@@ -4379,7 +4379,7 @@ Write a message to the customer confirming the discount was approved.
 Return JSON: { "message": "the reply" }`;
 
         try {
-          const aiRes = await ai.generateStrategy({}, replyPrompt);
+          const aiRes = await ai.generateStrategy({}, replyPrompt, { modelRole: 'complex' });
           const reply = aiRes.parsedJson?.message;
           if (reply && lead.platform_user_id) {
             const tokens = await agent.getTokens(user.id);
@@ -4464,7 +4464,7 @@ Write a message declining the discount while keeping the customer engaged.
 Return JSON: { "message": "the reply" }`;
 
         try {
-          const aiRes = await ai.generateStrategy({}, denyPrompt);
+          const aiRes = await ai.generateStrategy({}, denyPrompt, { modelRole: 'complex' });
           const reply = aiRes.parsedJson?.message;
           if (reply && lead.platform_user_id) {
             const tokens = await agent.getTokens(user.id);

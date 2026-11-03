@@ -174,7 +174,7 @@ export class PlatformIntelligenceEngine {
     `;
 
     try {
-        const response = await this.ai.generateStrategy({}, prompt);
+        const response = await this.ai.generateStrategy({}, prompt, { modelRole: 'complex' });
         const result = response.parsedJson;
         if (Array.isArray(result)) return result;
         if (Array.isArray(result?.shifts)) return result.shifts;
@@ -211,7 +211,7 @@ export class PlatformIntelligenceEngine {
     `;
 
     try {
-        const response = await this.ai.generateStrategy({}, prompt);
+        const response = await this.ai.generateStrategy({}, prompt, { modelRole: 'complex' });
         const result = response.parsedJson;
         if (Array.isArray(result)) return result;
         if (Array.isArray(result?.trends)) return result.trends;
@@ -249,7 +249,7 @@ export class PlatformIntelligenceEngine {
     `;
 
     try {
-        const response = await this.ai.generateStrategy({}, prompt);
+        const response = await this.ai.generateStrategy({}, prompt, { modelRole: 'complex' });
         const result = response.parsedJson;
         if (Array.isArray(result)) return result;
         if (Array.isArray(result?.opportunities)) return result.opportunities;
@@ -287,7 +287,7 @@ export class PlatformIntelligenceEngine {
     `;
     
     try {
-        const response = await this.ai.generateStrategy({}, prompt);
+        const response = await this.ai.generateStrategy({}, prompt, { modelRole: 'complex' });
         const result = response.parsedJson;
         if (Array.isArray(result)) return result;
         if (Array.isArray(result?.risks)) return result.risks;
